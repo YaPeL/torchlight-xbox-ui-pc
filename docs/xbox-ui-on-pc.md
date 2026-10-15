@@ -695,6 +695,16 @@ whether it is attacking. **[read: the runs]**
   heavy is likely the overshoot: on release the hero walked on to its last goal, up to 2 units;
   now it stops. (That `setDestination` at its own position stops it is inferred; the numbers
   agree.)
+- **The stop, second version.** In the user's session (the real pad) the hero still walked on
+  after release in most releases (up to 4.7 units, some of it maybe X's chases): a destination at
+  the hero's own position leaves the end of the old path in GOG. The release now calls
+  `stopPathing` (`0x486150`, what PC's `clickLeft` calls before an attack): 8 releases in 8
+  directions, 0.00 units each. **[read: the runs]**
+- **The user's session (real pad):** "anda mejor", still a little heavy; X: 25 swings in the air,
+  6 chases, 5 attacks in range; A: 40 presses, `findItemWithinView` found nothing even at 180
+  degrees and 20 units, so the list it walks or the object passed as the level is wrong, not the
+  cone (left for later, the user's order); the hotbar buttons were not used (LB drank a potion in
+  my run, without focus). **[read: the logs]**
 - **Searches and the diagnosis log run only on a press** of X or A (and while X is held), no
   longer every 0.1 s.
 

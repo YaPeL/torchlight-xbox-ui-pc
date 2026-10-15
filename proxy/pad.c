@@ -627,11 +627,10 @@ static void order(void) {
             }
         }
     } else if (was_active) {
-        /* Let go: stop where the hero is (the 360 sends a last destination on release). */
-        if (face_each_frame) {
-            ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0], pos[2]);
-            dest_calls++;
-        }
+        /* Let go: stop where the hero is. The 360 sends a last destination on release; a
+         * destination at the hero's own position left a few steps of the old path in GOG, so the
+         * path is cut with stopPathing, as PC's clickLeft does before an attack. */
+        if (face_each_frame) ((void_fn)GOG_STOP_PATHING)(hero, 0);
         release_t0 = now;
         change_t0 = 0;
         release_pos[0] = pos[0]; release_pos[1] = pos[1]; release_pos[2] = pos[2];
