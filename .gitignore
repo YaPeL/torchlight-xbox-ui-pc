@@ -1,0 +1,24 @@
+# Game data never goes into this repository: the tools read the user's own copies.
+*.pak
+*.zip
+*.dds
+*.layout
+*.uilayout
+*.imageset
+*.scheme
+*.looknfeel
+*.font
+*.ttf
+*.exe
+*.dll
+*.xex
+*.raw
+*.dat
+*.tsv
+*.sav
+# Copies of the game or of its folders, and tool output
+game/
+games/
+media/
+out/
+__pycache__/
