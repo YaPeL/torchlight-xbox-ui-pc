@@ -106,6 +106,11 @@ static void open_log(void) {
 /* For proxy/pad.c. */
 void x360_log(const char *s) { put(s); }
 
+void x360_log_num(long v) {
+    if (v < 0) { put("-"); v = -v; }
+    put_dec((unsigned long)v);
+}
+
 static void stamp(void) { put("["); put_dec(GetTickCount()); put("] "); }
 
 /* ---- the configuration ---- */

@@ -42,6 +42,7 @@ IMPORT BOOL __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long l
 #define IMPORT_SCREEN_TO_CLIENT(w, p) ((w) ? ScreenToClient((w), (p)) : 0)
 
 void x360_log(const char *s);
+void x360_log_num(long v);
 void x360_inject_left(int down, float x, float y);
 
 typedef BOOL(__stdcall *get_cursor_pos_fn)(POINT *p);
@@ -122,10 +123,41 @@ static void poll(void) {
             xinput_get_state = m ? (xinput_get_state_fn)GetProcAddress(m, "XInputGetState") : 0;
             x360_log(xinput_get_state ? "pad: XInput found\r\n" : "pad: no XInput\r\n");
         }
-        if (!xinput_get_state || xinput_get_state(0, &st) != 0) { lx = ly = 0; buttons = 0; return; }
+        {
+            static long last_result = -1;
+            long result = xinput_get_state ? (long)xinput_get_state(0, &st) : -2;
+            if (result != last_result) {
+                /* 0: pad 0 connected; 1167 (ERROR_DEVICE_NOT_CONNECTED): none. */
+                x360_log("pad: XInputGetState(0) = ");
+                x360_log_num(result);
+                x360_log("\r\n");
+                last_result = result;
+            }
+            if (result != 0) { lx = ly = 0; buttons = 0; return; }
+        }
         lx = st.lx * 1000 / 32767;
         ly = st.ly * 1000 / 32767;
         buttons = st.buttons;
+    }
+    {
+        /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */
+        static unsigned logged_buttons;
+        static int logged_active;
+        int active = lx * lx + ly * ly > DEAD_ZONE * DEAD_ZONE;
+        if (buttons != logged_buttons) {
+            x360_log("pad: buttons ");
+            x360_log_num((long)buttons);
+            x360_log("\r\n");
+            logged_buttons = buttons;
+        }
+        if (active != logged_active) {
+            x360_log(active ? "pad: stick out " : "pad: stick back ");
+            x360_log_num(lx);
+            x360_log(" ");
+            x360_log_num(ly);
+            x360_log("\r\n");
+            logged_active = active;
+        }
     }
     if ((buttons & 0x1000) && !(old & 0x1000)) a_pressed_at = now;
 }
