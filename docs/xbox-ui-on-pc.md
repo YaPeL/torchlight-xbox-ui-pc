@@ -467,11 +467,16 @@ at that death.
   one keeps a stale frame; `grab_window.py` grabs the untitled one when there is one. A screen
   can also take a few seconds to change after a click (the title to the load screen: about 3 s).
 
-## 9. Gameplay with the pad: the study (2026-10-15, in progress)
+## 9. Gameplay with the pad: the study (2026-10-15)
 
 Sources: the 360 image (`guest-image.bin`) and the recompiled code of `~/torchlight-recomp`, read
 only (its `tools/guest_re` scripts run with `python3 -B`, writing nothing there); GOG's
-`Torchlight.exe` disassembled (`llvm-objdump`); GOG runs.
+`Torchlight.exe` disassembled (`llvm-objdump`); GOG runs. Function names marked *(OT)* come from
+OpenTorchlight (github.com/Qweasd123tg/OpenTorchlight, a decompilation of the Linux build), its
+symbol list `research/original-symbols.txt` and call graph `research/original-callgraph.tsv`,
+read only, cloned outside this repository (`~/ext/OpenTorchlight`); its addresses are of a 64-bit
+GCC build and do not apply here: every function below was found in GOG's executable (or the 360
+image) by its shape, callers and callees, as stated for each.
 
 ### 9a. The 360's scheme
 
@@ -489,61 +494,116 @@ labels by position): **[read]**
 | right stick up/down | camera zoom |
 | Back, Start | inventory and submenus; options |
 
-**Reading the pad.** `sub_821FE1D0` polls XInput every frame: it keeps each pad's state in a
-16-byte record at 0x83557E80 (+8, +10 the left stick, +12, +14 the right one, +6, +7 the
-triggers), applies XInput's dead zones (7849 left, 8689 right) and turns button edges into
-events (`GamepadButtonDown/Up`, a CEGUI extension of Runic's: `GamepadEventArgs`). The getters:
-`sub_82191018` (left stick, a vector scaled by 1/32767), `sub_822DF6D8` and `sub_822DF738` (the
-triggers, 0..1), and `sub_822DF798` (a button or a stick direction, for menus). **[read]**
+**Reading the pad.** `sub_821FE1D0` polls XInput every frame and keeps each pad's state in a
+16-byte record at 0x83557E80 (+8, +10 the left stick; +12, +14 the right one; +6, +7 the
+triggers), with XInput's dead zones (7849 left, 8689 right); button edges become events
+(`GamepadButtonDown/Up`, a CEGUI extension of Runic's: `GamepadEventArgs`). Getters:
+`sub_82191018` (left stick, scaled by 1/32767), `sub_822DF6D8`/`sub_822DF738` (the triggers, 0..1),
+`sub_822DF798` (a button or a stick direction, for menus). **[read]**
 
-**Moving: a point ahead of the hero, every frame.** `sub_8221C838(controller, Vector3* out)`
-reads the left stick; if its length is over 0.1, the point is the hero's position plus the stick
-times 2.0 (world units), rotated by the camera's yaw (from the camera's direction, `atan2`, minus
-90 degrees); with the stick at rest it can give the point ahead along the hero's facing. The
-frame update (`sub_821EBA48`) hands that point to `sub_8228F7E0(unit, x, z)`, which stores it in
-the unit (+0x1C0..+0x1C8) and the normalised direction to it (+0x1CC..+0x1D4): no pathfinder is
-called there. So the 360 steers: a goal 2 units ahead, renewed each frame, which the unit walks
-toward. **[read; that the unit's own update walks straight toward it, without the A* pathfinder
-(`CAstarPathfinder`), inferred]**
+**Moving: the engine's click-to-move, with the stick's point instead of the cursor's.**
+- `sub_8221C838(client, Vector3* out)`: if the left stick's length is over 0.1, the point is the
+  hero's position plus the stick times 2.0 world units, rotated by the camera's yaw (from the
+  camera's direction, `atan2`, minus 90 degrees). **[read]**
+- `sub_8221C730` is the 360's `CGameClient::moveToMouse` *(OT)*: same shape as GOG's (below), with
+  that point where PC has the world point under the cursor: if the point moved, it calls
+  `sub_8228F8C8(hero, level, x, z)` = `CCharacter::setDestination(CLevel&, float, float)` *(OT)*
+  and sets a 0.1 s timer (`client+0x40`), calling it again when the timer runs out. **[read; the
+  names by shape: the same fields, the same timer, the A* path in the callee]**
+- Every frame, the frame update (`sub_821EBA48`) also hands the point to `sub_8228F7E0(hero, x, z)`
+  = `CCharacter::setTargetDirection(float, float)` *(OT)* (it stores the point and the normalised
+  direction to it, as OT's does): the hero faces the stick. **[read]**
+- So the 360 walks by pathfinding toward a goal 2 units ahead, renewed every 0.1 s, facing the
+  stick every frame. It does not use `CCharacter::moveToPosition` *(OT)*: that one sets a position
+  at once after `passableBetween` (OT's call graph: skill events use it), it does not walk.
+  **[read: OT's call graph for moveToPosition; the 360's calls above]**
+- The client's fields match between the 360 and GOG: +0x2c the hero, +0x38 the level, +0x40 the
+  move timer. **[read]**
 
-**Targets.** The player controller (`sub_8221B8E8`, `sub_8221BC80`) keeps several unit handles
-(+0x1B4, +0x1BC, +0x1C4, +0x1CC: a current target and candidates) and drops the target as soon as
-the stick moves out of its dead zone. How a candidate is chosen (nearest, cone) is not read yet.
-**[read: the fields and the drop; the rule not yet]**
+**Choosing a target (the 360's own code, per frame, `sub_821EB598`).** **[read]**
+1. A cone search, `sub_821B58C0` = the engine's `CLevel::findCharacterWithinView(Matrix4,
+   alignment, range, ...)` *(OT)* (a matrix of the hero, `atan2`, the same arguments), alignment 5,
+   range 7.0 or the weapon's range plus 2.0 if longer; the result is the candidate at +0x1BC.
+2. If none, the same search with alignment 3 and range 3.5, from a shifted origin.
+3. An item search (`sub_821A4470`) for A: the item candidate at +0x1C4.
+4. X attacks the candidate; moving the stick drops the current target (`sub_8221B8E8`,
+   `sub_8221BC80`).
+The cone's angle comes from a field of the unit (`CSkill::getFindTargetAngle` *(OT)* exists in
+the engine); not read yet. **[read; the angle not yet]**
 
-### 9b. PC's scheme
+### 9b. PC's scheme (GOG build)
 
-- **The mouse is polled.** Small engine functions read the buttons with `GetAsyncKeyState`
-  (`0x5cd4e0` the left button, honouring swapped buttons; `0x5cd510` the right one; `0x5cd540`
-  the middle one) and the cursor with `GetCursorPos`/`ScreenToClient` (`0x5cd5a0`, `0x5cd550`
-  "inside the window"). Their callers are all in one class, between 0x467000 and 0x46d000: the
-  player's controller. **[read]**
-- The right button with no Shift turns the camera (it re-centres the cursor with `SetCursorPos`,
-  0x46d740). **[read]**
-- When the left button is down, or one of four command keys (0x25-0x28) is, the controller calls
-  `0x468910`, which builds an event with the camera's `FORWARD`, `RIGHT`, `UP` and `POSITION`:
-  the ray from the cursor into the world. **[read; what the event does next not yet read]**
-- The executable subclasses its window (`SetWindowLongW`, `CallWindowProcW`): it has a window
-  procedure of its own. **[read]**
+- **Polled mouse.** Small engine functions read the buttons with `GetAsyncKeyState` (`0x5cd4e0`
+  the left button, honouring swapped buttons; `0x5cd510` the right; `0x5cd540` the middle) and the
+  cursor (`0x5cd5a0`, `0x5cd550`). **[read]**
+- **The click comes as a window message.** The executable subclasses its window
+  (`SetWindowLongW`, procedure 0x403080 → 0x401730); mouse messages go to `0x40de60`, which calls
+  `0x53ff90(msg, wparam)` (OT's `CGameClient::mouseEvent(unsigned, unsigned)` shape): it injects
+  the button into CEGUI and queues the event (`0x4e7370`). **[read]**
+- **Moving.** `0x4129d0` = `CGameClient::moveToMouse(bool)` *(OT)*: `findWorldLocation` *(OT)*
+  (`0x411d60`, which reads the cursor itself with `GetCursorPos`), the hero's position
+  (`0x510eb0`, `CPositionableObject::getPosition(bool)` *(OT)*), then `0x494b30` =
+  `CCharacter::setDestination(CLevel&, float, float)` *(OT)* with `[client+0x2c]` (hero) and
+  `[client+0x38]` (level), and the 0.1 s timer at `[client+0x40]`. `0x494b30` was identified by
+  its callees matching OT's: three `CLevel::passableBetween` (`0x4f0340`, `ret 0x14`), three
+  `CPath::AddPoint` (`0x5bf3d0`, `ret 0xc`), three `CPath::GetPoint` (`0x5bd950`, `ret 8`), two
+  `positionPassable` (`0x4eeb40`), the game UI's `getUIIsInCinematic` (`0x5fe160` →
+  `0x541db0`). **[read]**
+- **The client.** The application object is `[0xc1ad64]`; its `CGameClient` is at `+0x64`
+  (`CGameClient::update`, `0x415a00`, is called on it every frame). **[read]**
+- **Attacking, skills, items** (OT's names, in the same engine; not located in GOG yet):
+  `CGameClient::clickLeft` uses `mouseOverCharacter`, `CCharacter::setTarget(CCharacter*)`,
+  `inAttackRange`, `attack`, `setTargetItem(CItem*)`; skills go through
+  `CCharacter::updateSkillKeys`, `setActiveSkill(CSkill*, bool)`, `castSkill`; the cone search
+  `CLevel::findCharacterWithinView` is in the engine (monsters use it). **[OT; to locate in GOG]**
 
-### 9c. The first prototype (option a, a virtual mouse): not working yet
+### 9c. Prototypes (GOG, the virtual pad from a file; frames in `~/torchlight-gog/screens/`)
 
-`proxy/pad.c`, `pad=1` in `x360_ui.ini`: the proxy points the executable's imports of
-`GetCursorPos` and `GetAsyncKeyState` at its own (no code patched). While the left stick is out
-of its dead zone, the cursor is a point 14 % of the window's height from its centre (where the
-camera keeps the hero) in the stick's direction, and the left button reads as down. The input
-is XInput or, for tests, a file (`pad_file=`). **[read: the build and the runs]**
-1. The button held (polled) only: the hero turns toward the point and does not walk.
-2. Plus the press and release injected into CEGUI (`injectMousePosition`,
-   `injectMouseButtonDown/Up`, from the game's thread): the same.
+`proxy/pad.c`, `pad=1` in `x360_ui.ini`. The proxy points the executable's imports of
+`GetCursorPos` and `GetAsyncKeyState` at its own (no code patched).
 
-Two hypotheses failed; stopped here (the user's rule). The likely path of a click on the world
-is the window procedure's `WM_LBUTTONDOWN` (above), not CEGUI's events: the next try would post
-`WM_LBUTTONDOWN`/`WM_LBUTTONUP` to the window at the virtual point. **[inferred]** Frames:
-`~/torchlight-gog/screens/pad-prototype-1.gif`.
+| Try | What | Result |
+|-----|------|--------|
+| a1 | the left button reads as held, the cursor 14 % of the height from the centre in the stick's direction | the hero turns, does not walk |
+| a2 | plus the press and release injected into CEGUI | the same |
+| a3 | the press and release as `WM_LBUTTONDOWN/UP` posted to the window (`pad_edges=message`) | **the hero walks** (`pad-prototype-a-messages.gif`) |
+| b1 | `pad_mode=direct`: the proxy calls `setDestination`, client taken at `[app+0x3c]` (wrong) | nothing |
+| b2 | the same with the client at `[app+0x64]` | **the hero walks** (`pad-prototype-b-setdestination.gif`) |
 
-### 9d. Not done yet
+Option b, as run: while the stick is out of its dead zone, every 100 ms, the proxy asks the
+game's `findWorldLocation` for the world point under the stick's screen point (the virtual cursor
+holds only during that call), takes the direction from the hero to it (so it is relative to the
+camera, as the 360's), and calls `setDestination` 2 world units that way: the 360's numbers. No
+synthetic click, no held button: the mouse stays free. GOG addresses only (section 5). **[read:
+the runs]** Option a3 works too, but leaves the game believing a button is held and a cursor sits
+where it is not, which every hover and UI check sees; a3 is not the way. **[inferred]**
 
-The 360's target choice, skills and potions; PC's move and attack functions (what `0x468910`'s
-event leads to) and whether the proxy can call them; the options (a, b, c) with cost and quality;
-the screens with logic of their own (inventory and the rest), 360 and PC; the vertical slice.
+### 9d. Options for PC
+
+| Option | What | Feels right | Feels wrong | Cost |
+|--------|------|-------------|-------------|------|
+| a. virtual mouse | stick → cursor ahead of the hero, synthetic clicks (a3) | works on any build without addresses | hover, tooltips and the UI see a fake cursor; attack and pick-up depend on what lies under the point; aiming is the mouse's | 2-3 days to make it usable; weak base |
+| b. engine calls | stick → `setDestination` 2 units ahead every 0.1 s (done); X → `setTarget`/`attack` on a target of ours; A → `setTargetItem` | the 360's movement exactly (the same engine call, the same numbers); the mouse stays real | the targeting is ours to write (nearest, cone) | movement done; attack, pick-up, skills, potions 1-2 weeks |
+| c. the 360's scheme on b | b plus the 360's own target choice: `findCharacterWithinView` cone, 7.0/3.5 ranges, item candidate for A, facing by `setTargetDirection` every frame | the closest to the 360 (its rules, the engine's search) | the cone's angle still to read; the 360's HUD prompts need a HUD | b + 1 week |
+
+Pathfinding toward a point 2 units ahead is what the 360 itself does, so b and c inherit its
+feel: the hero follows walls and turns around obstacles instead of sliding into them; the cost is
+a short delay at a sharp turn (the goal moves every 0.1 s). **[read: the 360; the feel inferred]**
+
+**Recommendation: c, on b's base.** Movement is validated. Next: locate in GOG `setTarget`,
+`attack`, `setTargetItem`, `findCharacterWithinView`, `setTargetDirection` and the skill entry
+points the way `setDestination` was located; then X attacks the cone's target, A picks up, B, Y,
+LT, RT fire the skills in the hotbar slots, LB/RB drink potions, the d-pad switches the set.
+
+**The gameplay HUD the 360 needs on PC:** the skill slots on buttons (`SkillSlotGamepadButtonX/Y/
+LT/RT`, the 360's `hud.uilayout`), the two skill sets, the potion counters (`POTIONCOUNT`,
+`MANACOUNT`), the target's name and health (`TargetName`, `TargetHealthBar`) and the interact
+prompt (`TargetInteractHover`). PC's HUD has a hotbar of keys 1-0 instead. **[read: the layouts]**
+
+**Menus with the pad (plan, not built).** CEGUI already draws a hovered state. When a layout loads,
+the proxy lists its windows with an `onClick` (as the trace showed the game reading them); the pad
+moves a virtual hover through that list (`MouseEnters`/`MouseLeaves` on the windows, what the
+looks' `Hover` state follows in CEGUI 0.6), in reading order or by nearest neighbour in the
+stick's direction; A fires the marked window's `onClick` (a click injected on it). Cost: 3-5
+days for every `onClick` menu; screens with logic of their own (inventory, skills) are separate
+(section 10). **[inferred]**
