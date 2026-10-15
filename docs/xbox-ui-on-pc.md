@@ -748,6 +748,27 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   such an enemy, it is because its hero is already facing it (the turning, above), not because its
   cone is wider. **[read: the run; the cause inferred]**
 
+**The three loose ends of combat (2026-10-15).** **[read; the runs]**
+- **The turn rate is the same.** The hero's `TURN_RATE` in GOG at run time (`+0x224`) is 10.0, as
+  the 360's default (`sub_822883F0`, 0x82288FD4). The 360's player controller writing `+0x218`
+  (`sub_8219A7F8`) is not a turn rate: it fills a 4x4 matrix at `+0x1FC`. So nothing to set; the
+  spin in place is still open.
+- **The second pass of the target search.** The 360 (`sub_821EB598`): if no enemy is in the cone
+  within 7, any unit (alignment 3) in the cone within 3.5 becomes the candidate. Done, with
+  GOG's own filters; the 360 leaves out the hero's pet there (the first of its list at `+0x5AC`)
+  and a unit `sub_82198E48` returns; GOG's version leaves out the units on the player's side
+  instead (the alignment test with 1). Breakables: not seen near the hero yet; the log lists the
+  class of every unit and item within 4 units on each press of X or A, to see where they are.
+- **A, the 360's item rule** (`sub_821A4470`, read in full): the level's item list (GOG
+  `[[level+0x68]]`), shown (`+0x19C`), the virtual `+0x20`, `+0x161`; first pass: within ±60
+  degrees and 3, or within 0.5, gold counting 0.8 nearer, out of sight counting 10 farther; second
+  pass: any within 2.0; the nearest. A then picks it up as PC's click on an item does. PC's
+  `findItemWithinView` was the wrong function: it keeps only GOG's kind 0x1d, which the 360's rule
+  leaves out. The unit kind numbers differ between the builds (GOG's 0x7a is not gold), and GOG's
+  list also holds trigger units (A once "picked up" a `CTriggerUnit` under the hero): GOG's version
+  keeps objects of class `CItem` and below (RTTI) and gives the bonus to `CItemGold`. In a run, A
+  picked up a `CEquipment` next to two `CItemGold`. **[read; the run]**
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.

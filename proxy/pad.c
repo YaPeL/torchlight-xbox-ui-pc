@@ -94,6 +94,8 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_ALIGNMENT_MATCHES 0x004eec80 /* cdecl (alignment, unit): findCharacterWithinView's filter */
 #define GOG_UNIT_OK 0x0040e6e0           /* thiscall bool: findCharacterWithinView's last filter */
 #define GOG_SIGHT_UNOBSTRUCTED 0x004fdd60 /* CLevel::sightUnobstructed(Vector3 const*, Vector3 const*, bool) */
+#define GOG_ISA 0x00480760               /* CBaseUnit::ISA(type), thiscall */
+#define GOG_LEVEL_ITEMS 0x68             /* the level's item list: [[level+0x68]] the first node {item, next} */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
                                             angle, float range) */
 
@@ -384,26 +386,22 @@ static void highlight(unsigned char *level, void *unit) {
 typedef unsigned char(__cdecl *align_fn)(int alignment, void *unit);
 typedef unsigned char(__fastcall *sight_fn)(void *level, void *edx, const float *from, const float *to, int flag);
 
-static void *enemy_in_view(unsigned char *hero, unsigned char *level, const float *m) {
+static void *unit_in_view(unsigned char *hero, unsigned char *level, const float *m, int alignment, float range) {
     void **node = *(void ***)*(void **)(level + GOG_LEVEL_UNITS);
     void *best = 0;
     float best_d = 1e9f, tan30 = 0.57735f;
-    int n = 0, c_units = 0, c_alive = 0, c_active = 0, c_flags = 0, c_align = 0, c_ok = 0, c_cone = 0, c_sight = 0;
+    int n = 0;
     for (; node && n < 100000; node = (void **)node[1], n++) {
         unsigned char *u = (unsigned char *)node[0];
         float p[3], dx, dz, lx, lz, d;
         if (!u || u == hero) continue;
-        c_units++;
         if (!((bool_fn)GOG_ALIVE)(u, 0)) continue;
-        c_alive++;
         if (!((bool_fn)(*(void ***)u)[0x20 / 4])(u, 0)) continue;
-        c_active++;
         if (!u[0x6d] || !u[0x161]) continue;
-        c_flags++;
-        if (!((align_fn)GOG_ALIGNMENT_MATCHES)(ALIGN_ENEMY, u)) continue;
-        c_align++;
+        if (!((align_fn)GOG_ALIGNMENT_MATCHES)(alignment, u)) continue;
+        /* The 360 leaves out the hero's pet in this search; GOG: units on the player's side. */
+        if (alignment == ALIGN_ANY && ((align_fn)GOG_ALIGNMENT_MATCHES)(1, u)) continue;
         if (!((bool_fn)GOG_UNIT_OK)(u, 0)) continue;
-        c_ok++;
         ((get_position_fn)GOG_GET_POSITION)(u, 0, p, 1);
         dx = p[0] - m[3];
         dz = p[2] - m[11];
@@ -413,47 +411,134 @@ static void *enemy_in_view(unsigned char *hero, unsigned char *level, const floa
          * the same direction the old cone used. lz: along it; lx: across it. */
         lz = m[2] * dx + m[10] * dz;
         lx = m[10] * dx - m[2] * dz;
-        if (GetTickCount() < log_until) {
-            x360_log("pad:   enemy d x100 "); x360_log_num((long)(d * 100));
-            x360_log(" local x "); x360_log_num((long)(lx * 100));
-            x360_log(" z "); x360_log_num((long)(lz * 100));
-            x360_log("\r\n");
-        }
         if (d > TARGET_MIN) {
             float from[3], to[3];
-            if (!(lz > 0 && (lx < 0 ? -lx : lx) <= lz * tan30 && d <= TARGET_RANGE)) continue;
-            c_cone++;
+            if (!(lz > 0 && (lx < 0 ? -lx : lx) <= lz * tan30 && d <= range)) continue;
             from[0] = m[3]; from[1] = m[7] + 5.0f; from[2] = m[11];
             to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
             if (!((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0)) continue;
-            c_sight++;
         }
         best = u;
         best_d = d;
     }
-    if (GetTickCount() < log_until) {
-        x360_log("pad: filters units "); x360_log_num(c_units);
-        x360_log(" alive "); x360_log_num(c_alive);
-        x360_log(" active "); x360_log_num(c_active);
-        x360_log(" flags "); x360_log_num(c_flags);
-        x360_log(" enemy "); x360_log_num(c_align);
-        x360_log(" ok "); x360_log_num(c_ok);
-        x360_log(" cone "); x360_log_num(c_cone);
-        x360_log(" sight "); x360_log_num(c_sight);
-        x360_log("\r\n");
-    }
     return best;
+}
+
+static const char *class_of(void *object) {
+    unsigned char *col = object ? *(unsigned char **)(*(unsigned char **)object - 4) : 0;
+    unsigned char *td = col ? *(unsigned char **)(col + 12) : 0;
+    return td ? (const char *)(td + 8) : "?";
+}
+
+/* True if the object's class is NAME or derives from it (MSVC RTTI: the class hierarchy). */
+static int derives_from(void *object, const char *name) {
+    unsigned char *col = object ? *(unsigned char **)(*(unsigned char **)object - 4) : 0;
+    unsigned char *chd = col ? *(unsigned char **)(col + 16) : 0;
+    unsigned n, k;
+    unsigned char **bases;
+    if (!chd) return 0;
+    n = *(unsigned *)(chd + 8);
+    bases = *(unsigned char ***)(chd + 12);
+    for (k = 0; k < n && k < 64; k++) {
+        const char *b = (const char *)(*(unsigned char **)bases[k] + 8), *q = name;
+        while (*b && *b == *q) b++, q++;
+        if (!*b && !*q) return 1;
+    }
+    return 0;
+}
+
+/* The 360's item candidate (sub_821A4470): items of the level not of kind 0x1d, shown (+0x19c),
+ * the virtual +0x20, not +0x19d, +0x161; first pass: within 60 degrees and 3 units, or within
+ * 0.5; gold (kind 0x7a) counts 0.8 nearer; out of sight counts 10 farther; the nearest. Second
+ * pass, if none: any such item within 2.0. */
+static void *item_in_view(unsigned char *hero, unsigned char *level, const float *m, float *out_d) {
+    int pass;
+    float tan60 = 1.7320508f;
+    for (pass = 0; pass < 2; pass++) {
+        void **node = *(void ***)*(void **)(level + GOG_LEVEL_ITEMS);
+        void *best = 0;
+        float best_d = 1e9f;
+        int n = 0;
+        for (; node && n < 100000; node = (void **)node[1], n++) {
+            unsigned char *it = (unsigned char *)node[0];
+            float p[3], dx, dz, lx, lz, d;
+            int ok;
+            if (!it || !it[0x19c]) continue;
+            if (!((bool_fn)(*(void ***)it)[0x20 / 4])(it, 0)) continue;
+            /* The 360 leaves out its unit kind 0x1d here; the kind numbers differ between the builds
+             * (GOG's 0x7a is not gold), and GOG's list also holds trigger units: items only. */
+            if (!derives_from(it, ".?AVCItem@@")) continue;
+            if (it[0x19d] || !it[0x161]) continue;
+            ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
+            dx = p[0] - m[3];
+            dz = p[2] - m[11];
+            d = root(dx * dx + dz * dz);
+            lz = m[2] * dx + m[10] * dz;
+            lx = m[10] * dx - m[2] * dz;
+            if (pass == 0) {
+                int in_cone = lz > 0 && (lx < 0 ? -lx : lx) <= lz * tan60;
+                ok = (in_cone && d <= ITEM_RANGE) || d <= 0.5f;
+                if (derives_from(it, ".?AVCItemGold@@")) {
+                    d -= 0.8f;
+                    if (in_cone && d <= ITEM_RANGE) ok = 1;
+                }
+            } else {
+                ok = d <= 2.0f;
+            }
+            if (!ok) continue;
+            {
+                float from[3], to[3];
+                from[0] = m[3]; from[1] = m[7] + 5.0f; from[2] = m[11];
+                to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
+                if (!((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0)) d += 10.0f;
+            }
+            if (d < best_d) { best = it; best_d = d; }
+        }
+        if (best) { if (out_d) *out_d = best_d; return best; }
+    }
+    return 0;
+}
+
+/* On a press of X or A: what is near the hero, units and items, with their class (a diagnosis). */
+static void list_near(unsigned char *hero, unsigned char *level, const float *m) {
+    int list;
+    for (list = 0; list < 2; list++) {
+        void **node = *(void ***)*(void **)(level + (list ? GOG_LEVEL_ITEMS : GOG_LEVEL_UNITS));
+        int n = 0;
+        for (; node && n < 100000; node = (void **)node[1], n++) {
+            unsigned char *u = (unsigned char *)node[0];
+            float p[3], dx, dz, d, lz, lx;
+            if (!u || u == hero) continue;
+            ((get_position_fn)GOG_GET_POSITION)(u, 0, p, 1);
+            dx = p[0] - m[3]; dz = p[2] - m[11];
+            d = root(dx * dx + dz * dz);
+            if (d > 4.0f) continue;
+            lz = m[2] * dx + m[10] * dz;
+            lx = m[10] * dx - m[2] * dz;
+            x360_log(list ? "pad:   item " : "pad:   unit ");
+            x360_log(class_of(u));
+            x360_log(" d x100 "); x360_log_num((long)(d * 100));
+            x360_log(" x "); x360_log_num((long)(lx * 100));
+            x360_log(" z "); x360_log_num((long)(lz * 100));
+            if (list) {
+                x360_log(((bool_int_fn)GOG_ISA)(u, 0, 0x1d) ? " kind1d" : "");
+                x360_log(((bool_int_fn)GOG_ISA)(u, 0, 0x7a) ? " gold" : "");
+            }
+            x360_log("\r\n");
+        }
+    }
 }
 
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
     void *c, *a, *it;
     hero_matrix(hero, m);
-    c = enemy_in_view(hero, level, m);
-    a = c ? c : ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ANY, TARGET_MIN, TARGET_HALF_ANGLE,
-                                                        TARGET_RANGE_ANY, 1, hero, 0);
-    it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, ITEM_HALF_ANGLE, ITEM_RANGE);
-    if (!it) it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, 180.0f, 0.5f); /* the 360: any item within 0.5 */
+    /* The 360 (sub_821EB598): an enemy in the cone within 7; else any unit in the cone within 3.5;
+     * both become the candidate X acts on and A talks to. */
+    c = unit_in_view(hero, level, m, ALIGN_ENEMY, TARGET_RANGE);
+    if (!c) c = unit_in_view(hero, level, m, ALIGN_ANY, TARGET_RANGE_ANY);
+    a = c;
+    it = item_in_view(hero, level, m, 0);
     if (GetTickCount() < log_until) {
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
         x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
@@ -554,9 +639,13 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
             ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 4);
             ((float_ptr_fn)vt[GOG_CHASE_SLOT])(hero, 0, 0.0f, attack_level);
-            x360_log("pad: A: pick up\r\n");
+            x360_log("pad: A: pick up ");
+            x360_log(class_of(item_candidate));
+            x360_log("\r\n");
         } else if (any_candidate) {
-            x360_log("pad: A: setTarget (interact)\r\n");
+            x360_log("pad: A: interact with ");
+            x360_log(class_of(any_candidate));
+            x360_log("\r\n");
             ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
         } else {
             float m[16];
@@ -655,6 +744,15 @@ static void order(void) {
     if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
     diag_level = level;
     attack_level = level;
+    {
+        static int said;
+        if (!said) {
+            said = 1;
+            x360_log("pad: hero turn rate (+0x224) x100 ");
+            x360_log_num((long)(*(float *)(hero + 0x224) * 100));
+            x360_log("\r\n");
+        }
+    }
     pressed = buttons & ~prev_buttons;
     prev_buttons = buttons;
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
@@ -719,6 +817,12 @@ static void order(void) {
     {
         static unsigned last_search;
         if (pressed & (0x4000 | 0x1000)) log_until = now + 3000;
+        if (pressed & (0x4000 | 0x1000)) {
+            float m[16];
+            hero_matrix(hero, m);
+            x360_log(pressed & 0x4000 ? "pad: X pressed; near:\r\n" : "pad: A pressed; near:\r\n");
+            list_near(hero, level, m);
+        }
         if ((!candidate && (pressed & 0x4000)) || (pressed & 0x1000) || now - last_search >= 100) {
             last_search = now;
             choose_targets(hero, level);
