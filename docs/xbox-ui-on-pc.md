@@ -1,0 +1,92 @@
+# The 360 interface in the PC game: feasibility (study, 2026-10-15)
+
+This study was written in the recomp's repository (`torchlight-recomp`), where `docs/pc-ui.md`,
+`docs/mods.md` and `game_menu/wide_layout.h` live; references to them below are to that repository.
+No game file, from the 360 or from PC, goes into this one: only tools that read the user's own
+copies (`tools/`). PC was not run for this study; everything is read from the user's files (PC's
+`Pak.zip`, `Torchlight.exe` and its DLLs, the Xbox pak and the decrypted Xbox image). Marks:
+**[read]** (read in the files), **[inferred]**, **[to verify]**.
+
+## 1. What the 360 interface is made of
+
+- **48 layouts** (`media/UI/*.uilayout`), CEGUI XML (`GUILayout`) like PC's `.layout`, with the
+  `ceguiWidget/*` window types of `media/ui/hud/schemes/ceguiWidgets.scheme` and its
+  `ceguiWidgets.looknfeel`. The scheme maps every type onto standard CEGUI classes and Falagard
+  renderers (no Runic window class), as PC's `GuiLookSkin.scheme` does. **[read]**
+- **Imagesets and textures:** `ceguiWidget.imageset`, `icons2/widgets*.imageset`,
+  `ratings.imageset`, `loading.imageset` and the screens' own; authored at 1024x768 with
+  `AutoScaled`, as PC's; the textures are ordinary little-endian DDS (DXT3 for the widgets), which
+  PC's renderer reads as they are. **[read]**
+- **Fonts:** the same names and TTF files as PC's (`Serif*`, `FrizQuadrata*`), plus `Serif14` and
+  `FrizQuadrataSmall/NoScale`. **[read]**
+- **Item icons:** the Xbox `itemicons13/14/16` atlases differ from PC's (other image counts and
+  places, `docs/pc-ui.md` 1b): a 360 screen in PC must keep using PC's icon imagesets, which the
+  PC game's item data points at. **[read]**
+
+## 2. What PC would have to run them
+
+- **CEGUI on PC is a DLL** (`CEGUIBase.dll`, `CEGUIFalagardWRBase.dll`, `CEGUIExpatParser.dll`,
+  `OgreGUIRenderer.dll`; CEGUI 0.6 era, with OGRE 1.6 **[inferred]**). `Torchlight.exe` imports 175
+  functions from `CEGUIBase.dll`, `WindowManager::loadWindowLayout` among them, and names its scheme
+  (`media/ui/guilookskin.scheme`, `windowslook.scheme`) and its layouts (`media/ui/pethud.layout`,
+  ...) as strings. **[read]** A proxy `CEGUIBase.dll` (same exports, forwarding to the real one) is
+  therefore a clean place to load the 360 scheme after PC's and to hand the game a 360 layout when
+  it asks for a PC one, without patching `Torchlight.exe`. The executable has no packer or Steam
+  DRM section (`.text`, `.rdata`, `.data`, `.rsrc`, `.reloc`). **[read]**
+- **The menus' code:** PC's classes find PC's window names. Of the windows PC's code expects (its
+  layout's named windows), the 360 layout of the same screen has: waypoints 21 of 25, quest dialog
+  18 of 20, character load 24 of 41, death 7 of 9, modal 5 of 6, tip 2 of 7, pet HUD 6 of 15,
+  settings 8 of 26; inventory 5 of 98, pet menu 3 of 95, stats 0 of 52, quests 1 of 35, journal
+  0 of 7. **[read]** The 360's gameplay screens are `...Xenon` classes (`CInventoryMenuXenon`,
+  `CCharacterMenuXenon`, `CCharSkillsMenuXenon`, `CStashMenuXenon`, `CMerchantMenuXenon`,
+  `CEnchantMenuXenon`, `CQuestMenuXenon`, `CStatsMenuXenon`, `CSettingsMenuXenon`,
+  `CGameSaveMenuXenon`, `CHowToMenu`, ...) that PC does not have. **[read: RTTI of both]** So, as in
+  the other direction, only the small shared screens can take the other platform's layout; the
+  360's inventory, character sheet and skill screens would have to be written again for PC.
+- **The pad:** PC has none. No XInput, and `OIS.dll` ships but `Torchlight.exe` does not import
+  it; input is Win32 (`GetAsyncKeyState`, `GetCursorPos`, `SetCursorPos`, `ShowCursor`) fed to
+  CEGUI's `inject*`. **[read]** The 360's focus movement lives in Xbox-only classes
+  (`CDropdownMenuTabNavigationHandler`, `CSubMenuTabNavigationHandler`) **[read]**, so on PC the pad
+  needs: XInput read by the proxy (or a `xinput1_3.dll`/`dinput8.dll` proxy), a focus model per
+  screen written anew, and the pad's buttons turned into PC's commands (`GUIACCEPT`, `GUIBACK`,
+  `GUITOGGLEINVENTORY`, ...) or keys. Moving and fighting with the stick is a separate, larger
+  piece: PC's character moves by mouse clicks on the ground.
+- **Resolution:** the 360 layouts are drawn for a 16:9 1280x720 frame with a safe area; PC runs any
+  resolution with its 1024x768-based layouts. The 360 layouts at 4:3 or 16:10 need the band
+  re-anchoring the recomp already does the other way (`game_menu/wide_layout.h`).
+
+## 3. Plan by stages and cost
+
+| Stage | What | Cost | Needs PC to run |
+|-------|------|------|-----------------|
+| 0 | A converter from the user's 360 copy: the UI files (`.uilayout` as `.layout`, the scheme, looknfeel, imagesets, widget textures, the extra fonts) into a folder PC can read (a PC mod folder or the replacements-style folder of the new project); nothing of the game in the repository | 1-2 days | no |
+| 1 | The proxy `CEGUIBase.dll`: forward every export; after PC loads `guilookskin.scheme`, load the 360 scheme; log the layouts PC asks for | 2-3 days (x86, MSVC 2008 ABI: the exports are C++ members, forwarded by ordinal/name) | yes |
+| 2 | The small shared screens with the 360 look: waypoints, quest dialog, modal, death, character load; the windows PC's code expects added to the converted layouts | 1-2 days each | yes |
+| 3 | The pad on PC: XInput read by the proxy, a focus model for the shared screens, the buttons as PC commands | 1-2 weeks | yes |
+| 4 | The 360's gameplay screens (inventory, character, skills, stash, merchant, enchant): written for PC against PC's game data, from the proxy | weeks per screen family | yes |
+| 5 | Playing with the pad (stick movement, targeting, the 360's skill wheel): hooks into `Torchlight.exe` itself | a project of its own | yes |
+
+Stages 0-2 are a few weeks and give the 360 look on PC's small screens; the 360 experience as a
+whole (pad play and its screens) is stages 3-5, far larger, and mostly new code on PC.
+
+## 4. Running the PC game: precautions (not done; needs the user's OK)
+
+The work is done on the GOG version, in a prefix of its own (section 5); the Steam version is
+tried last, with the precautions below.
+
+Nothing in this study needed PC to run. Stage 1 onwards does. Before any run:
+
+1. **Copies with hashes:** the Proton prefix used, and Steam's `userdata/<id>/41500/` (the cloud
+   folder), copied aside; a SHA-256 list of every file in both, kept with the copy.
+2. **A separate prefix**, never `compatdata/41500`, which holds the user's saves and settings: a
+   new prefix for the tests, the game folder copied into it (or a copy of the game folder), so the
+   proxy DLL never lands in the user's install.
+3. **Steam closed and unable to relaunch the game:** with Steam closed, the game asks Steam to
+   start it (`steam://run/...`), which reopens it in the real prefix (seen in the 2026-10-14
+   benchmark). The usual guard is a `steam_appid.txt` next to the copy's executable, with which
+   Steamworks does not restart the app **[to verify with this build, in the separate prefix]**; and
+   no Steam process left before each run (checked, not assumed), with the `steam` command not
+   reachable from the test's environment.
+4. **Steam Cloud off** for the game, so nothing the test writes is uploaded.
+5. **After each session:** the hash lists checked against the copies, the real prefix and
+   `userdata/<id>/41500/` unchanged; anything changed is restored from the copy and reported.
