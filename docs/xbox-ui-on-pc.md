@@ -607,3 +607,88 @@ looks' `Hover` state follows in CEGUI 0.6), in reading order or by nearest neigh
 stick's direction; A fires the marked window's `onClick` (a click injected on it). Cost: 3-5
 days for every `onClick` menu; screens with logic of their own (inventory, skills) are separate
 (section 10). **[inferred]**
+
+## 10. The 360's screens with logic of their own, against PC's (2026-10-15)
+
+Sources as in section 9. The 360's classes and their bases are read from the image's RTTI (the
+class hierarchy descriptors); PC's names are OpenTorchlight's *(OT)*, the same engine.
+
+### 10a. The same model under both
+
+- **The model classes are on both:** the 360 image has RTTI for `CInventory`, `CEquipment`,
+  `CEquipmentRef`, `CItem`, `CItemGold`, `CGameUI`, `CSubMenu`, `CPlayer`, `CCharacter` and the
+  interface `iInventoryListener`, the classes OT names in PC's item code. **[read]**
+- **The 360's screens are new views over that model:** `CInventoryMenuXenon`,
+  `CStashMenuXenon`, `CMerchantMenuXenon`, `CEnchantMenuXenon`, `CSkillMenuXenon`,
+  `CStatsMenuXenon` and `CQuestMenuXenon` all derive from `CMasterHousingXenon` (the 360's tabbed
+  frame, switched with LT/RT, `mastermenu_xenon`) and from `CSubMenu`, PC's menu base too;
+  `CInventoryMenuXenon`, `CInventoryXenon` (its list) and `CCharacterMenuXenon` also implement
+  `iInventoryListener`, as PC's `CInventoryMenu` does *(OT)*: they are told of the same model
+  events (equipped, unequipped, picked up, dropped, used). **[read]**
+- **PC's entry point for every item screen:** `CGameUI::menuItemClick(CCharacter*, CSubMenu*,
+  int slot, bool)` *(OT)*, the handler of a click on a slot in the inventory, stash, merchant,
+  pet and enchanter screens. By OT's call graph it does the whole job: take and drop
+  (`CInventory::pickupEquipment`, `removeEquipment`, the dragged item kept by `CGameUI`,
+  `returnDraggedItem`), equip (`canEquip`, `equipEquipmentIntoFirstFreeLocation`,
+  `findEquipmentSlot`), compare (`getComparisonItems`), sell and buy (`sellPrice`, `buyPrice`,
+  `giveGold`, `CPlayer::soldItem`), drop to the ground (`CLevel::addItem`), the shared stash, the
+  sounds. `CInventory` *(OT)* is the model: panes and slots (`getPaneSize`, `getItemPane`,
+  `getEquipmentInSlot`, `findFreeSlot`), equipping (`equipEquipmentIntoSpecificLocation`,
+  `unequipEquipment`, `swapWeaponSet`), `useEquipment`. **[OT; to locate in GOG]**
+- **So the approach the user proposed holds:** a controller of ours in the proxy that drives the
+  360's layout and calls PC's model, mostly through the same `menuItemClick` PC's mouse uses
+  (one call per pad action on a slot index), plus `CInventory`'s getters to fill the 360's
+  rows. Whether the 360's own code calls `menuItemClick` or `CInventory` directly is not read
+  yet; it does not change the approach. **[inferred]**
+
+### 10b. The screens
+
+| 360 screen (class; layout) | What it is on the 360 | PC's counterpart *(OT)* | Cost on PC |
+|---|---|---|---|
+| Inventory (`CInventoryMenuXenon` + `CInventoryXenon`; `inventorymenu_xenon`) | **a list, not a grid**: 5 visible rows (`ItemTray0-4`: name, quality, damage/armour, enchantments, sockets, gold, an "equipped" mark), filters by kind (weapons, armour, jewellery, potions, spells, fish) on LB/RB, scroll arrows, a buy-and-sell mode (`buyandsell`) and the transmuter | `CInventoryMenu` (a grid of 63 slots in tabs and a paperdoll; drag and drop through `CGameUI`) | 2-3 weeks, with the shared infrastructure |
+| Character (`CCharacterMenuXenon`; `charactermenu_xenon`, `statsmenu_xenon`) | stats and the points to spend (`strPts`, `dexPts`, `magicPts`, `defPts`, `spendPoints`, `removePoint`) | the stats menu (`CStatsMenu`) | 1 week |
+| Skills (`CSkillMenuXenon`, `CCharSkillsMenuXenon`; `skillsmenu_xenon`) | 3 trees of 12 skills (36 cells), 4 spells, **8 pad slots** (`SkillSlot0-7`: 2 sets of X, Y, LT, RT... as the HUD) | the skill menu (`setActiveSkill`, `spendSkillPoint`) | 2 weeks (needs the pad skill bar of section 9) |
+| Pet (`petmenu_xenon`, `petcommands_xenon`) | stats, 2 spells, commands (to town, feed) | `CPetMenu` | 1-2 weeks |
+| Stash, merchant (`CStashMenuXenon`, `CMerchantMenuXenon`) | the inventory's list with a second list (buy and sell, transfer) | `CStashMenu`, `CMerchantMenu`, `menuItemClick` | 1-2 weeks each, on the inventory |
+| Enchanter (`CEnchantMenuXenon`; `enchantermenu_xenon`) | an item, a price, one button per action (enchant, add or destroy a socket, retire) | `CEnchantMenu` | 1 week |
+| Quests, journal, stats (`CQuestMenuXenon`, `CJournalXenon`, `CStatsXenon`) | lists to read; quest rewards in rows | `CQuestMenu`, journal | 1 week each |
+| The tabbed frame (`CMasterHousingXenon`; `mastermenu_xenon`) | LT/RT between the screens, item compare toggle, pet commands | none (PC opens each screen by its key) | 1 week |
+
+Shared infrastructure, once (1-2 weeks): the proxy hosts a 360 layout as a window of its own
+(loaded with the real `loadWindowLayout`, attached to the root, shown and hidden), the controller
+framework (pad events, focus, the rows), and locating PC's functions in GOG the way
+`setDestination` was located (then again in Steam's build). **[inferred: the costs]**
+
+**The 360 inventory's pad handling** (`CInventoryMenuXenon`'s `GamepadButtonDown` handler,
+0x8236FEF0, subscribed with `MouseMove` in 0x8236F3E0; Runic's button codes from `sub_822DF308`:
+d-pad 1-4, A 5, B 6, X 7, Y 8, RT 9, RB 10, LT 11, LB 12, Start 13, Back 14, the left stick 17-20,
+the right one 21-24): **[read]**
+- d-pad left and right, A, X, Y: one action function (0x8236A810), which works on the selected
+  row of the list (`CInventoryXenon`, at the menu's +0xC0);
+- B and Back: close; RB and LB: one function (the filters, by the layout's bumpers); RT, LT: the
+  housing's tabs;
+- the left stick up and down: the row selection; left and right: two other functions.
+What A, X and Y do to the item (equip, drop, compare: the layout's `ToggleItemCompare` and the
+help texts) is not read yet: it is the first task of the slice. **[read: the dispatch; the
+actions not yet]**
+
+### 10c. The vertical slice: proposal (for the user's approval)
+
+**Screen: the inventory**, as the user suggested, with one correction to the scope: the 360's
+inventory has no cells and no drag; it is a filtered list where A acts on the selected row. So
+"move a cursor over cells, take and drop an item" is PC's model, not the 360's. The slice:
+1. Read the 360's actions (A, X, Y, and what the list shows per row) in 0x8236A810 and its
+   callees; locate in GOG `CGameUI::menuItemClick` and `CInventory`'s getters (as
+   `setDestination` was).
+2. The proxy opens the 360's `inventorymenu_xenon` on the pad's Back (PC's inventory stays
+   closed), fills its 5 rows from the hero's `CInventory` (name, quality, the equipped mark), and
+   handles: the stick up and down (the selection and the scroll), LB/RB (the filters), A (equip
+   or use the item: `menuItemClick` on its slot, as PC's right click does), B (close).
+3. Checked in the game: the list matches PC's inventory, A equips a weapon and PC's paperdoll and
+   stats show it, the game's save keeps it.
+
+Why the inventory and not another: it is the most used and the one that exercises the most of the
+stack (a list filled from the model, an action through PC's own handler, the model's events back).
+The enchanter would be smaller (one item, a few buttons) but tests less; the skills need the pad's
+skill bar first. Estimated 1-2 weeks for the slice, of the 2-3 for the whole inventory.
+**[inferred]**
