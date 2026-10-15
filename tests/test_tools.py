@@ -14,6 +14,7 @@ import check_no_game_files  # noqa: E402
 import compare_installs  # noqa: E402
 import convert_x360_ui  # noqa: E402
 import layout_windows  # noqa: E402
+import send_input  # noqa: E402
 import steam_guard  # noqa: E402
 from pe_info import PE  # noqa: E402
 
@@ -296,6 +297,18 @@ class ConvertX360Test(unittest.TestCase):
                              "the 360 pak's .layout files are not taken")
             self.assertTrue(os.path.isfile(os.path.join(root, "o", "media", "ui", "x360", "modalmenu.layout")))
             self.assertTrue(os.path.isfile(os.path.join(root, "o", "x360_ui_report.json")))
+
+
+class SendInputTest(unittest.TestCase):
+    def test_translate(self):
+        self.assertEqual(send_input.translate(["move", "10", "20", "click", "key", "Return", "key", "a", "wait", "0.5",
+                                               "where", "rclick"]),
+                         ["move", "10", "20", "click", "key", "13", "key", "65", "wait", "500", "where", "rclick"])
+
+    def test_bad_steps(self):
+        for steps in (["move", "1"], ["key", "NoSuchKey"], ["jump"], ["wait"]):
+            with self.assertRaises(ValueError):
+                send_input.translate(steps)
 
 
 class SteamGuardTest(unittest.TestCase):

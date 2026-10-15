@@ -29,11 +29,23 @@ HOOKS = {
     "?loadWindowLayout@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@_N@Z": "@hook_load_layout2@16",
     "?loadWindowLayout@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00P6A_NPAV32@AAV42@2PAX@Z3@Z":
         "@hook_load_layout5@28",
+    # Traced (trace=1 in x360_ui.ini), forwarded to the real ones otherwise.
+    "?getChild@Window@CEGUI@@QBEPAV12@ABVString@2@@Z": "@hook_get_child@12",
+    "?recursiveChildSearch@Window@CEGUI@@QBEPAV12@ABVString@2@@Z": "@hook_child_search@12",
+    "?getProperty@PropertySet@CEGUI@@QBE?AVString@2@ABV32@@Z": "@hook_get_property@16",
+    "?setText@Window@CEGUI@@QAEXABVString@2@@Z": "@hook_set_text@12",
+    "?injectKeyDown@System@CEGUI@@QAE_NI@Z": "@hook_key_down@12",
+    "?injectKeyUp@System@CEGUI@@QAE_NI@Z": "@hook_key_up@12",
+    "?injectChar@System@CEGUI@@QAE_NI@Z": "@hook_char@12",
 }
 # The kernel32 functions the proxy imports, with their stdcall argument bytes.
 KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "CreateFileA": 28,
             "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
             "ReadFile": 20, "CloseHandle": 4}
+# send_input.exe's imports (proxy/send_input.c, a test helper that runs in the game's prefix).
+KERNEL32_EXE = {"GetCommandLineA": 0, "Sleep": 4, "ExitProcess": 4, "GetStdHandle": 4}
+USER32 = {"EnumWindows": 8, "GetWindowTextA": 12, "IsWindowVisible": 4, "IsIconic": 4, "GetClientRect": 8, "ShowWindow": 8, "SetForegroundWindow": 4, "ClientToScreen": 8, "SetCursorPos": 8, "SendInput": 12,
+          "MapVirtualKeyA": 8, "GetCursorPos": 4, "ScreenToClient": 8, "GetForegroundWindow": 0}
 # msvcr90's SEH handler, which clang-cl's __try/__except on x86 registers (cdecl: no @bytes).
 MSVCR90 = ["_except_handler3"]
 
@@ -109,19 +121,30 @@ def build(real_dll, out):
     with open(os.path.join(out, "proxy.def"), "w") as f:
         f.write(proxy_def(pe.exports()))
     with open(os.path.join(out, "kernel32.def"), "w") as f:
-        f.write(import_def("kernel32.dll", KERNEL32))
+        f.write(import_def("kernel32.dll", {**KERNEL32, **KERNEL32_EXE}))
+    with open(os.path.join(out, "user32.def"), "w") as f:
+        f.write(import_def("user32.dll", USER32))
     with open(os.path.join(out, "msvcr90.def"), "w") as f:
         f.write(import_def("msvcr90.dll", MSVCR90))
     steps = [
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "kernel32.def", "-l", "kernel32.lib"],
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],
+        [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "user32.def", "-l", "user32.lib"],
         ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Focegui_proxy.obj", src],
         ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
          "/def:proxy.def", "cegui_proxy.obj", "kernel32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
+    helper = os.path.join(repo, "proxy", "send_input.c")
+    steps += [
+        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding",
+         "/Fosend_input.obj", helper],
+        ["lld-link", "/subsystem:console", "/machine:x86", "/nodefaultlib", "/entry:start", "/safeseh:no",
+         "send_input.obj", "kernel32.lib", "user32.lib", "/out:send_input.exe"],
+    ]
     for step in steps:
         subprocess.run(step, cwd=out, check=True)
-    print(f"built {os.path.join(out, 'CEGUIBase.dll')}: {len(pe.exports())} exports, {len(HOOKS)} hooked")
+    print(f"built {os.path.join(out, 'CEGUIBase.dll')}: {len(pe.exports())} exports, {len(HOOKS)} hooked; "
+          f"and send_input.exe")
 
 
 def install(game, proxy):

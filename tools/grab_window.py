@@ -57,22 +57,39 @@ def windows(d, w):
         yield from windows(d, kids[i])
 
 
-def main():
-    title, out = sys.argv[1].encode(), sys.argv[2]
-    d = x.XOpenDisplay(b":0")
-    best = None
+def find(d, title):
+    """(window, width, height): the largest mapped window titled TITLE, or, when one exists, an
+    untitled mapped window of the same place and size. Once Wine restores the game's window, the
+    game draws (Vulkan, DXVK) into such an untitled window, and the titled one keeps a stale frame."""
+    best, plain = None, []
     for w in windows(d, x.XDefaultRootWindow(d)):
         name = ctypes.c_char_p()
         x.XFetchName(d, w, ctypes.byref(name))
         a = Attrs()
         x.XGetWindowAttributes(d, w, ctypes.byref(a))
-        if name.value and title in name.value and a.map_state == 2:
+        if a.map_state != 2:
+            continue
+        if name.value and title in name.value:
             if not best or a.width * a.height > best[1] * best[2]:
-                best = (w, a.width, a.height, name.value)
+                best = (w, a.width, a.height, a.x, a.y)
+        elif not name.value:
+            plain.append((w, a.width, a.height, a.x, a.y))
     if not best:
+        return None
+    for p in plain:
+        if p[1:] == best[1:]:
+            return p[:3]
+    return best[:3]
+
+
+def main():
+    title, out = sys.argv[1].encode(), sys.argv[2]
+    d = x.XOpenDisplay(b":0")
+    found = find(d, title)
+    if not found:
         print("no mapped window titled", title)
         return 1
-    w, width, height, name = best
+    w, width, height = found
     img = x.XGetImage(d, w, 0, 0, width, height, 0xFFFFFFFF, 2)
     if not img:
         print("XGetImage failed")
@@ -81,7 +98,7 @@ def main():
     raw = ctypes.string_at(i.data, i.bytes_per_line * i.height)
     im = Image.frombuffer("RGBX", (i.width, i.height), raw, "raw", "BGRX", i.bytes_per_line, 1).convert("RGB")
     im.save(out)
-    print(name.decode(errors="replace"), im.size, "extrema", im.getextrema())
+    print(hex(w), im.size)
     return 0
 
 

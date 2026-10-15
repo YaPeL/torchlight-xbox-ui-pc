@@ -14,6 +14,7 @@ read those copies and write what they produce into folders outside this reposito
   layouts) converted from the user's 360 `pak.zip` into a folder for the PC game.
 - `tools/build_proxy.py`: builds the proxy `CEGUIBase.dll` (`proxy/cegui_proxy.c`) from the user's DLL.
 - `tools/grab_window.py`: a screenshot of the game's window.
+- `tools/send_input.py`: mouse and keyboard input for the game, from inside its Wine prefix.
 - `tools/steam_guard.py`: hash snapshot and verify of the Steam folders that must not change.
 - `tools/run_gog.sh`: runs the GOG copy through Proton's script in a prefix of its own.
 - `tools/check_no_game_files.py`: run by CI; fails if a game file type is committed.

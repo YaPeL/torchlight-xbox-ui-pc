@@ -16,6 +16,9 @@
  * x360_ui.ini next to this DLL (optional; without it the proxy only logs):
  *   mode=scheme                                 after PC loads GuiLookSkin.scheme, load the 360 one
  *   out=Z:\home\me\torchlight-gog\x360ui        the converter's OUT (tools/convert_x360_ui.py)
+ *   trace=1                                     also log, once each, the window names the game's
+ *                                               own code (Torchlight.exe) looks up, the properties
+ *                                               it reads and the texts it sets
  * In mode=scheme, OUT is added to Ogre's world resource group (a FileSystem location, recursive),
  * so the converted files' own paths (media/ui/x360/...) resolve, and then
  * media/ui/x360/ceguiWidgets.scheme is loaded once, inside __try: if it throws, the game's own
@@ -97,7 +100,7 @@ static void stamp(void) { put("["); put_dec(GetTickCount()); put("] "); }
 
 /* ---- the configuration ---- */
 
-static int mode_scheme, x360_done;
+static int mode_scheme, x360_done, trace;
 static char out_dir[400];
 
 static int starts(const char *s, const char *prefix) {
@@ -121,11 +124,13 @@ static void read_config(void) {
         while (*end && *end != '\r' && *end != '\n') end++;
         if (*end) *end++ = 0;
         if (starts(line, "mode=scheme")) mode_scheme = 1;
+        if (starts(line, "trace=1")) trace = 1;
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
         line = end;
         while (*line == '\r' || *line == '\n') line++;
     }
-    put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"\r\n");
+    put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"");
+    put(trace ? ", trace\r\n" : "\r\n");
 }
 
 /* ---- the real DLL ---- */
@@ -291,6 +296,142 @@ void *__fastcall hook_load_layout5(void *self, void *edx, const void *file, cons
     r = real_load_layout5(self, 0, file, prefix, group, callback, userdata);
     stamp(); put("loadWindowLayout -> "); put_hex((unsigned long)r); put("\r\n");
     return r;
+}
+
+/* ---- the trace (trace=1): what the game's code asks of its windows ---- */
+
+typedef void *(__fastcall *get_child_fn)(const void *self, void *edx, const void *name);
+typedef void *(__fastcall *get_property_fn)(const void *self, void *edx, void *ret, const void *name);
+typedef void (__fastcall *set_text_fn)(void *self, void *edx, const void *text);
+typedef const void *(__fastcall *get_name_fn)(const void *self, void *edx);
+
+static get_child_fn real_get_child, real_child_search;
+static get_property_fn real_get_property;
+static set_text_fn real_set_text;
+static get_name_fn real_get_name;
+static unsigned long exe_lo, exe_hi;
+static unsigned long seen[8192];
+
+static void resolve_trace(void) {
+    unsigned char *base;
+    if (real_get_child) return;
+    resolve();
+    real_get_child = (get_child_fn)need("?getChild@Window@CEGUI@@QBEPAV12@ABVString@2@@Z");
+    real_child_search = (get_child_fn)need("?recursiveChildSearch@Window@CEGUI@@QBEPAV12@ABVString@2@@Z");
+    real_get_property = (get_property_fn)need("?getProperty@PropertySet@CEGUI@@QBE?AVString@2@ABV32@@Z");
+    real_set_text = (set_text_fn)need("?setText@Window@CEGUI@@QAEXABVString@2@@Z");
+    real_get_name = (get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    base = (unsigned char *)GetModuleHandleA(0);
+    exe_lo = (unsigned long)base;
+    exe_hi = exe_lo + *(DWORD *)(base + *(DWORD *)(base + 0x3c) + 0x50);
+}
+
+static unsigned long fnv(unsigned long h, const char *s) {
+    while (s && *s) h = (h ^ (unsigned char)*s++) * 16777619UL;
+    return h;
+}
+
+/* True the first time this (kind, window, name, found) is seen. */
+static int first(const char *kind, const char *window, const char *name, int found) {
+    unsigned long h = fnv(fnv(fnv(2166136261UL + found, kind), window), name) | 1;
+    unsigned i = h & 8191, n;
+    for (n = 0; n < 8192; n++, i = (i + 1) & 8191) {
+        if (seen[i] == h) return 0;
+        if (!seen[i]) { seen[i] = h; return 1; }
+    }
+    return 0;
+}
+
+static int from_game(void *ret) {
+    unsigned long r = (unsigned long)ret;
+    return trace && r >= exe_lo && r < exe_hi;
+}
+
+static const char *name_of(const void *window) {
+    return window && real_get_name ? real_c_str(real_get_name(window, 0), 0) : "(null)";
+}
+
+static void *child_lookup(const char *kind, get_child_fn real_fn, const void *self, const void *name, void *ret) {
+    void *r = real_fn(self, 0, name);
+    if (from_game(ret)) {
+        const char *window = name_of(self), *wanted = real_c_str(name, 0);
+        if (first(kind, window, wanted, r != 0)) {
+            stamp(); put(kind); put(" in \""); put(window); put("\": \""); put(wanted);
+            put(r ? "\" found\r\n" : "\" NOT FOUND\r\n");
+        }
+    }
+    return r;
+}
+
+void *__fastcall hook_get_child(const void *self, void *edx, const void *name) {
+    resolve_trace();
+    return child_lookup("getChild", real_get_child, self, name, __builtin_return_address(0));
+}
+
+void *__fastcall hook_child_search(const void *self, void *edx, const void *name) {
+    resolve_trace();
+    return child_lookup("recursiveChildSearch", real_child_search, self, name, __builtin_return_address(0));
+}
+
+void *__fastcall hook_get_property(const void *self, void *edx, void *ret, const void *name) {
+    void *r;
+    resolve_trace();
+    r = real_get_property(self, 0, ret, name);
+    if (from_game(__builtin_return_address(0))) {
+        /* PropertySet is Window's first base: the same address, for a window. */
+        const char *window = name_of(self), *prop = real_c_str(name, 0);
+        if (first("getProperty", window, prop, 1)) {
+            stamp(); put("getProperty \""); put(prop); put("\" of \""); put(window); put("\" = \"");
+            put(real_c_str(r, 0)); put("\"\r\n");
+        }
+    }
+    return r;
+}
+
+void __fastcall hook_set_text(void *self, void *edx, const void *text) {
+    resolve_trace();
+    if (from_game(__builtin_return_address(0))) {
+        const char *window = name_of(self);
+        if (first("setText", window, "", 1)) {
+            char clip[81];
+            const char *t = real_c_str(text, 0);
+            unsigned n = length(t);
+            if (n > 80) n = 80;
+            memcpy(clip, t, n);
+            clip[n] = 0;
+            stamp(); put("setText \""); put(window); put("\" = \""); put(clip); put("\"\r\n");
+        }
+    }
+    real_set_text(self, 0, text);
+}
+
+typedef unsigned char (__fastcall *inject_fn)(void *self, void *edx, unsigned code);
+static inject_fn real_key_down, real_key_up, real_char;
+
+static unsigned char injected(const char *what, inject_fn *real, const char *name, void *self, unsigned code,
+                              void *ret) {
+    unsigned char r;
+    if (!*real) { resolve_trace(); *real = (inject_fn)need(name); }
+    r = (*real)(self, 0, code);
+    if (from_game(ret)) {
+        stamp(); put(what); put(" "); put_dec(code); put(r ? " consumed\r\n" : " not consumed\r\n");
+    }
+    return r;
+}
+
+unsigned char __fastcall hook_key_down(void *self, void *edx, unsigned code) {
+    return injected("injectKeyDown", &real_key_down, "?injectKeyDown@System@CEGUI@@QAE_NI@Z", self, code,
+                    __builtin_return_address(0));
+}
+
+unsigned char __fastcall hook_key_up(void *self, void *edx, unsigned code) {
+    return injected("injectKeyUp", &real_key_up, "?injectKeyUp@System@CEGUI@@QAE_NI@Z", self, code,
+                    __builtin_return_address(0));
+}
+
+unsigned char __fastcall hook_char(void *self, void *edx, unsigned code) {
+    return injected("injectChar", &real_char, "?injectChar@System@CEGUI@@QAE_NI@Z", self, code,
+                    __builtin_return_address(0));
 }
 
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {

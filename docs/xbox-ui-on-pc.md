@@ -57,7 +57,8 @@ This repository is the whole of this project; the recomp's repository is only a 
    Steam need not be open: GOG's executable does not import `steam_api`, so "Failed to connect to
    Steam" in the log is harmless.
    With the proxy installed (section 7), `x360_ui.log` in the game folder lists every scheme and
-   layout the game asks for. `tools/grab_window.py Torchlight OUT.png` saves a screenshot.
+   layout the game asks for (and, with `trace=1`, section 8). `tools/grab_window.py Torchlight
+   OUT.png` saves a screenshot; `tools/send_input.py` clicks and types (section 8).
 3. The game opens at 1920x1080 (the desktop's size; `local_settings.txt` has `WINDOW_WIDTH`,
    `RES_WIDTH`, `FULLSCREEN`) with DXVK, and reaches the main menu. Close it when done: Alt+F4 or
    the game's own Quit, or, from a script, Proton's `files/bin/wineserver -k` with
@@ -88,6 +89,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 | `convert_x360_ui.py` | Stage 0: the 360 UI files from the user's `pak.zip` into `OUT/media/ui/x360/` (section 6) |
 | `build_proxy.py` | Stage 1: builds the proxy `CEGUIBase.dll` from the user's DLL (clang-cl, lld-link); installs and removes it in a game folder |
 | `grab_window.py` | A screenshot of the game's window (X11 under Xwayland) |
+| `send_input.py` | Mouse and keyboard input for the game, sent from inside its prefix (`send_input.exe`, built by `build_proxy.py`) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
 | `run_gog.sh` | The GOG run above (shell, no test) |
 | `check_no_game_files.py` | The CI check |
@@ -404,3 +406,51 @@ PC's scheme had just loaded. So by then the mod folder's new paths are not in th
 reads from. **[read: the run]** It is not known whether the game adds mods later or to another
 group. With a mod folder present the start took about 20 s longer (the mod scan); `mods.dat` was
 not changed. The probe was removed after the run.
+
+## 8. Stage 2, first findings: what PC's code asks of its windows (2026-10-15)
+
+**The trace (`trace=1` in `x360_ui.ini`).** The proxy also intercepts, for calls from
+`Torchlight.exe` only (by return address), `Window::getChild(const String&)`,
+`Window::recursiveChildSearch`, `PropertySet::getProperty`, `Window::setText` and
+`System::injectKeyDown/KeyUp/Char`, and logs each distinct case once. A full run (start, a new
+character, the town, the options menu, back to the title, the load screen) is kept outside the
+repository (`~/torchlight-gog/x360_ui-trace-pc.log`). **[read: the run]**
+- The game finds windows by their unprefixed names (`Accept`), though in the tree they are
+  prefixed (`20_Accept`, the layouts' random prefixes being a counter): Runic's CEGUI compares
+  names without the prefix. It does not use `WindowManager::getWindow` at all.
+- After each layout loads, the game reads `onClick` of every window that has the property (a
+  Falagard property of the look) and binds the click to that command (`guiAccept`, `guiOk`,
+  `guiSelect1`, ...).
+- The modal (`MODALMENU.LAYOUT`, loaded at start, prefix `20_`): `recursiveChildSearch` of
+  `Decline`, `Accept`, `Ok`, `Dialog`, `Title` from the root; `onClick` read on `Decline`,
+  `Accept`, `Ok` and the root `Frame` (empty); `setText` of `Title` (`"Dialog"`). Its class keeps
+  `Ok`, `Accept`, `Decline` at +0x6c, +0x70, +0x74 (`CModalMenu`, vtable 0xab7d04, constructor
+  0x590d40, init 0x590860). **[read: the trace and the disassembly, GOG build]**
+- The tip (`TIPMENU.LAYOUT`, `21_`): `Ok`, `Dialog`, `Title`, `ShowTips`; `onClick` of `Ok`; its
+  text is set when it opens (the town's first tip at a new game). Enter closes it (the game's own
+  key handling: CEGUI does not consume Enter).
+
+**What this means for the 360 modal.** Its `Accept`, `Ok` and `Decline` are `DefaultWindow`
+containers (a pad button icon and a label), with no `onClick` property: PC's code would find
+them by name but bind no click. Mapping them means giving the windows of those names a type
+whose look defines `onClick` and takes the mouse (or turning the label into one), with the icon
+and label passing the mouse through. **[inferred]**
+
+**When PC shows the modal.** `CModalMenu`'s show method (0x590bf0, `ret 0x10`) has one caller
+(0x54cb69, a UI wrapper at 0x54ca50), which has one caller: 0x4e16c5, in a function of the
+player's death handling (it goes on to `DESTROY_ON_DEATH`), after a check of a flag (`0xab`).
+**[read: the disassembly; that it is the hardcore death inferred]** The confirmations met in
+play are other screens' own windows: deleting a character is `characterload.layout`'s
+`DeleteConfirm`; "Exit to Title" and "Quit Game" ask nothing. So the modal is seen in play only
+at that death.
+
+**Input and screenshots under Xwayland.**
+- X11's XTest does not move the pointer in this Xwayland (24.1; GNOME). `send_input.exe`
+  (`proxy/send_input.c`, x86, no CRT) runs inside the GOG prefix with Proton's wine binary (it
+  joins the game's wineserver) and calls `SendInput`/`SetCursorPos`. Mouse and keyboard both
+  reach the game: the clicks press its buttons, the keys reach `injectKeyDown`/`injectChar`.
+- When the game loses the focus, Wine minimizes its window (for Wine; X still shows it), and
+  input does not reach it; `send_input.exe` restores it first.
+- After that restore the game draws into an untitled X window of the same size, and the titled
+  one keeps a stale frame; `grab_window.py` grabs the untitled one when there is one. A screen
+  can also take a few seconds to change after a click (the title to the load screen: about 3 s).
