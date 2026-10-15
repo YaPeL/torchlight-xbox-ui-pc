@@ -730,6 +730,24 @@ whether it is attacking. **[read: the runs]**
   in place when the stick spins fast comes from something else (when the hero starts walking while
   it turns); not found yet. **[read]**
 
+**The target choice, the 360's rule (2026-10-15, after the user: "lo tengo muy cerca y no me hace
+el highlight; a veces me hace el highlight pero le pega a otro").**
+- **X hits the highlighted candidate.** It searched again on the press and could pick another unit;
+  now X uses the candidate already highlighted (it searches only if there is none).
+- **The 360's rule** (`sub_821B58C0`, read in full): each unit that passes the engine's filters;
+  within 0.5 at any angle, else within ±30 degrees of the hero's facing and the range (7, or the
+  weapon's + 2), and with a clear line of sight beyond 0.5; the nearest (a priority by
+  `sub_822A48D0`, not read, and a 5-degree angle tie). The matrix is the hero's world transform,
+  its virtual `+0x6C`, which in GOG returns `+0xAC`: the one already used. The proxy now walks
+  the level's unit list itself with GOG's own filters (those of `findCharacterWithinView`: alive,
+  the virtual `+0x20`, the bytes `+0x6D` and `+0x161`, the alignment test `0x4eec80`, `0x40e6e0`)
+  and `CLevel::sightUnobstructed` (`0x4fdd60`), with the 360's numbers, instead of PC's own
+  "best" rule. **[read]**
+- **In a run** (the mine, 7 units, 4 enemies after the filters): the nearest enemy was 2.96 units
+  away at 63 degrees from the hero's facing, so not a candidate, as on the 360. If the 360 picks
+  such an enemy, it is because its hero is already facing it (the turning, above), not because its
+  cone is wider. **[read: the run; the cause inferred]**
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.

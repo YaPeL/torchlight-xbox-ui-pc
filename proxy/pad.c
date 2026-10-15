@@ -90,6 +90,10 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_SET_TARGET_DIRECTION 0x00486180 /* CCharacter::setTargetDirection(float x, float z) */
 #define GOG_SET_HIGHLIGHTED_SLOT (0x100 / 4) /* virtual CCharacter::setHighlighted(bool): the unit and its equipment */
 #define GOG_LEVEL_UNITS 0x5c              /* the level's unit list: [[level+0x5c]] the first node {unit, next} */
+#define GOG_ALIVE 0x00485780             /* CCharacter::alive() */
+#define GOG_ALIGNMENT_MATCHES 0x004eec80 /* cdecl (alignment, unit): findCharacterWithinView's filter */
+#define GOG_UNIT_OK 0x0040e6e0           /* thiscall bool: findCharacterWithinView's last filter */
+#define GOG_SIGHT_UNOBSTRUCTED 0x004fdd60 /* CLevel::sightUnobstructed(Vector3 const*, Vector3 const*, bool) */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
                                             angle, float range) */
 
@@ -373,47 +377,92 @@ static void highlight(unsigned char *level, void *unit) {
     if (unit) ((set_bool_fn)(*(void ***)unit)[GOG_SET_HIGHLIGHTED_SLOT])(unit, 0, 1);
 }
 
+/* The 360's choice of target (sub_821B58C0, read in section 9e): every unit that passes PC's
+ * own filters (those of findCharacterWithinView, GOG 0x5006c0), within 0.5 at any angle or within
+ * 30 degrees of the hero's facing and 7 units, with a clear line of sight beyond 0.5; the nearest.
+ * (The 360 also prefers units of a kind sub_822A48D0 tells, not read yet.) */
+typedef unsigned char(__cdecl *align_fn)(int alignment, void *unit);
+typedef unsigned char(__fastcall *sight_fn)(void *level, void *edx, const float *from, const float *to, int flag);
+
+static void *enemy_in_view(unsigned char *hero, unsigned char *level, const float *m) {
+    void **node = *(void ***)*(void **)(level + GOG_LEVEL_UNITS);
+    void *best = 0;
+    float best_d = 1e9f, tan30 = 0.57735f;
+    int n = 0, c_units = 0, c_alive = 0, c_active = 0, c_flags = 0, c_align = 0, c_ok = 0, c_cone = 0, c_sight = 0;
+    for (; node && n < 100000; node = (void **)node[1], n++) {
+        unsigned char *u = (unsigned char *)node[0];
+        float p[3], dx, dz, lx, lz, d;
+        if (!u || u == hero) continue;
+        c_units++;
+        if (!((bool_fn)GOG_ALIVE)(u, 0)) continue;
+        c_alive++;
+        if (!((bool_fn)(*(void ***)u)[0x20 / 4])(u, 0)) continue;
+        c_active++;
+        if (!u[0x6d] || !u[0x161]) continue;
+        c_flags++;
+        if (!((align_fn)GOG_ALIGNMENT_MATCHES)(ALIGN_ENEMY, u)) continue;
+        c_align++;
+        if (!((bool_fn)GOG_UNIT_OK)(u, 0)) continue;
+        c_ok++;
+        ((get_position_fn)GOG_GET_POSITION)(u, 0, p, 1);
+        dx = p[0] - m[3];
+        dz = p[2] - m[11];
+        d = root(dx * dx + dz * dz);
+        if (d >= best_d) continue;
+        /* The hero's facing, in the world, is the third column of its rotation (m[2], m[10]):
+         * the same direction the old cone used. lz: along it; lx: across it. */
+        lz = m[2] * dx + m[10] * dz;
+        lx = m[10] * dx - m[2] * dz;
+        if (GetTickCount() < log_until) {
+            x360_log("pad:   enemy d x100 "); x360_log_num((long)(d * 100));
+            x360_log(" local x "); x360_log_num((long)(lx * 100));
+            x360_log(" z "); x360_log_num((long)(lz * 100));
+            x360_log("\r\n");
+        }
+        if (d > TARGET_MIN) {
+            float from[3], to[3];
+            if (!(lz > 0 && (lx < 0 ? -lx : lx) <= lz * tan30 && d <= TARGET_RANGE)) continue;
+            c_cone++;
+            from[0] = m[3]; from[1] = m[7] + 5.0f; from[2] = m[11];
+            to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
+            if (!((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0)) continue;
+            c_sight++;
+        }
+        best = u;
+        best_d = d;
+    }
+    if (GetTickCount() < log_until) {
+        x360_log("pad: filters units "); x360_log_num(c_units);
+        x360_log(" alive "); x360_log_num(c_alive);
+        x360_log(" active "); x360_log_num(c_active);
+        x360_log(" flags "); x360_log_num(c_flags);
+        x360_log(" enemy "); x360_log_num(c_align);
+        x360_log(" ok "); x360_log_num(c_ok);
+        x360_log(" cone "); x360_log_num(c_cone);
+        x360_log(" sight "); x360_log_num(c_sight);
+        x360_log("\r\n");
+    }
+    return best;
+}
+
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
     void *c, *a, *it;
     hero_matrix(hero, m);
-    c = ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ENEMY, TARGET_MIN, TARGET_HALF_ANGLE,
-                                                TARGET_RANGE, 1, hero, 0);
+    c = enemy_in_view(hero, level, m);
     a = c ? c : ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ANY, TARGET_MIN, TARGET_HALF_ANGLE,
                                                         TARGET_RANGE_ANY, 1, hero, 0);
     it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, ITEM_HALF_ANGLE, ITEM_RANGE);
     if (!it) it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, 180.0f, 0.5f); /* the 360: any item within 0.5 */
     if (GetTickCount() < log_until) {
-        static int said_node;
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
-        x360_log(" stick "); x360_log_num(lx); x360_log(" "); x360_log_num(ly);
-        x360_log(stick_active() ? " out" : " rest");
-        x360_log(" dest "); x360_log_num((long)dest_calls);
-        x360_log(" drop "); x360_log_num((long)drop_calls);
         x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
         x360_log(" enemy "); x360_log_num((long)c);
-        if (c) { x360_log(((bool_fn)0x00485780)(c, 0) ? " alive" : " dead"); }
         x360_log(" hero target "); x360_log_num((long)*(void **)(hero + 0x290));
-        x360_log(" lock658 "); x360_log_num((long)hero[0x658]);
-        x360_log(" state "); x360_log_num((long)*(int *)(hero + 0x284));
-        x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking" : "");
-        x360_log("\r\n");
-        dest_calls = drop_calls = 0;
-        if (!said_node) {
-            /* The class of the hero's +0x58 object (what getPosition asks): MSVC RTTI. */
-            unsigned char *node = *(unsigned char **)(hero + 0x58);
-            said_node = 1;
-            if (node) {
-                unsigned char *col = *(unsigned char **)(*(unsigned char **)node - 4);
-                unsigned char *td = col ? *(unsigned char **)(col + 12) : 0;
-                x360_log("pad: hero+0x58 is ");
-                x360_log(td ? (const char *)(td + 8) : "?");
-                x360_log("\r\n");
-            }
-        }
+        x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking\r\n" : "\r\n");
     }
-    any_candidate = a;
     candidate = c;
+    any_candidate = a;
     item_candidate = it;
 }
 
@@ -670,7 +719,7 @@ static void order(void) {
     {
         static unsigned last_search;
         if (pressed & (0x4000 | 0x1000)) log_until = now + 3000;
-        if ((pressed & (0x4000 | 0x1000)) || now - last_search >= 100) {
+        if ((!candidate && (pressed & 0x4000)) || (pressed & 0x1000) || now - last_search >= 100) {
             last_search = now;
             choose_targets(hero, level);
             highlight(level, candidate);
@@ -680,7 +729,6 @@ static void order(void) {
     if ((buttons & 0x4000) && !(pressed & 0x4000) && now - last_order >= 100) {
         /* X held: search again and keep attacking, as holding PC's button repeats the click. */
         last_order = now;
-        choose_targets(hero, level);
         if (candidate) attack_candidate(hero);
         else swing(hero);
     }
