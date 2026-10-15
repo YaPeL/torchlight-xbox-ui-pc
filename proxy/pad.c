@@ -61,6 +61,21 @@ static unsigned a_pressed_at;  /* GetTickCount of A's last press, for a short sy
 static unsigned last_poll;
 static int held;               /* the virtual left button, as last injected */
 static int edges_by_message;   /* 1: the edges are WM_LBUTTONDOWN/UP posted to the window; 0: CEGUI */
+static int direct;             /* option b: no virtual button; the proxy calls setDestination */
+static int in_probe;           /* inside our own call of findWorldLocation: the cursor is virtual */
+static unsigned last_order;    /* GetTickCount of the last setDestination */
+
+/* GOG build 17870 only (docs/xbox-ui-on-pc.md, section 9): the game client and its members.
+ * Names from OpenTorchlight's symbols of the Linux build (research/original-symbols.txt);
+ * the addresses found in GOG's Torchlight.exe by shape, callers and callees. */
+#define GOG_APP_GLOBAL 0x00c1ad64        /* the application object; +0x64 its CGameClient */
+#define GOG_FIND_WORLD_LOCATION 0x00411d60 /* CGameClient::findWorldLocation(Vector3&, bool) */
+#define GOG_GET_POSITION 0x00510eb0      /* CPositionableObject::getPosition(bool) */
+#define GOG_SET_DESTINATION 0x00494b30   /* CCharacter::setDestination(CLevel&, float, float) */
+
+typedef unsigned char(__fastcall *find_world_fn)(void *client, void *edx, float *out, int flag);
+typedef float *(__fastcall *get_position_fn)(void *unit, void *edx, float *out, int flag);
+typedef void(__fastcall *set_destination_fn)(void *hero, void *edx, void *level, float x, float z);
 
 /* A press or release of the left button at (x, y), client pixels. */
 static void edge(HWND w, int down, long x, long y) {
@@ -119,11 +134,16 @@ static int stick_active(void) { return lx * lx + ly * ly > DEAD_ZONE * DEAD_ZONE
 
 static int clicking(void) { return a_pressed_at && GetTickCount() - a_pressed_at < CLICK_MS; }
 
+static void order(void);
+
 static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     BOOL r = real_get_cursor_pos(p);
     HWND w;
     RECT rc;
     poll();
+    if (direct) {
+        if (!in_probe) { order(); return r; }
+    }
     if (!(stick_active() || (buttons & 0x1000) || clicking())) {
         if (held) {
             /* Released: the button goes up where the real cursor is. */
@@ -154,7 +174,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         {
             /* The press and the release are injected (the game starts a move or an attack on the
              * button's down event); while held, the game polls GetAsyncKeyState and the cursor. */
-            int now_held = stick_active() || clicking();
+            int now_held = !direct && (stick_active() || clicking());
             if (now_held != held) {
                 held = now_held;
                 edge(w, held, q.x, q.y);
@@ -168,7 +188,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
 
 static short __stdcall pad_get_async_key_state(int vk) {
     short r = real_get_async_key_state(vk);
-    if (vk == 1) {
+    if (vk == 1 && !direct) {
         poll();
         if (stick_active() || clicking()) return (short)0x8000;
     }
@@ -208,8 +228,46 @@ static void *patch_import(const char *dll, const char *name, void *replacement) 
     return 0;
 }
 
-void x360_pad_start(const char *file, int by_message) {
+/* Option b, once per 100 ms while the stick is out: the world point under the stick's screen
+ * point (the game's own findWorldLocation, with the virtual cursor only for that call) gives the
+ * camera-relative direction; the hero is sent 2 world units that way, as the 360 does. */
+static void note(int what, const char *s) {
+    static int said[4];
+    if (!said[what]) { said[what] = 1; x360_log(s); }
+}
+
+static void order(void) {
+    unsigned now = GetTickCount();
+    unsigned char *app, *client, *hero, *level;
+    float hit[3], pos[3], dx, dz, len2, len;
+    if (!stick_active() || in_probe || now - last_order < 100) return;
+    app = *(unsigned char **)GOG_APP_GLOBAL;
+    client = app ? *(unsigned char **)(app + 0x64) : 0;
+    hero = client ? *(unsigned char **)(client + 0x2c) : 0;
+    level = client ? *(unsigned char **)(client + 0x38) : 0;
+    if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
+    last_order = now;
+    in_probe = 1;
+    if (!((find_world_fn)GOG_FIND_WORLD_LOCATION)(client, 0, hit, hero[0x20a])) {
+        in_probe = 0;
+        note(2, "pad: findWorldLocation found nothing\r\n");
+        return;
+    }
+    in_probe = 0;
+    note(3, "pad: setDestination called\r\n");
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    dx = hit[0] - pos[0];
+    dz = hit[2] - pos[2];
+    len2 = dx * dx + dz * dz;
+    if (len2 < 1e-6f) return;
+    len = len2; /* a square root without the CRT: a few Newton steps */
+    { int i; float g = len2 > 1 ? len2 / 2 : 1; for (i = 0; i < 12; i++) g = 0.5f * (g + len2 / g); len = g; }
+    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * dx / len, pos[2] + 2.0f * dz / len);
+}
+
+void x360_pad_start(const char *file, int by_message, int direct_mode) {
     edges_by_message = by_message;
+    direct = direct_mode;
     if (file && file[0]) {
         unsigned n = 0;
         while (file[n] && n < sizeof pad_file - 1) { pad_file[n] = file[n]; n++; }
@@ -219,7 +277,7 @@ void x360_pad_start(const char *file, int by_message) {
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
-    x360_log(edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
+    x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
     if (pad_file[0]) { x360_log(pad_file); x360_log("\r\n"); }
 }
