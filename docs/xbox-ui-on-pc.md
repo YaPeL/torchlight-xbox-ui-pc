@@ -79,6 +79,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 | `pe_info.py` | Sections, imports and exports of an `.exe`/`.dll` |
 | `compare_installs.py` | Two installs' binaries compared: hash, link time, sections, imports, exports |
 | `layout_windows.py` | The named windows of a CEGUI layout, and how many of them another layout has |
+| `convert_x360_ui.py` | Stage 0: the 360 UI files from the user's `pak.zip` into `OUT/media/ui/x360/` (section 6) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
 | `run_gog.sh` | The GOG run above (shell, no test) |
 | `check_no_game_files.py` | The CI check |
@@ -92,20 +93,22 @@ Run the tests with `python3 -m unittest discover -s tests -v`.
   GOG carries over to Steam where it goes through CEGUI and the data, not where it hooks addresses
   of the executable.
 - GOG runs (section 5a).
-- No code of the port exists yet.
+- Stage 0, the converter, is done (section 6): `tools/convert_x360_ui.py`, tested on synthetic
+  paks and run on the user's 360 pak. Nothing of it has been loaded by the PC game yet; that is
+  stage 1.
 
 **Next, in order (section 3's stages):**
-1. **Stage 0, the converter:** a tool that reads the user's Xbox `pak.zip` and writes the 360 UI
-   files (`.uilayout` as `.layout`, `ceguiWidgets.scheme`/`.looknfeel`, the imagesets, widget
-   textures and extra fonts) into a folder outside the repository. Tests on synthetic layouts.
-   It does not need the game to run.
-2. **Stage 1, the proxy `CEGUIBase.dll`** (x86, MSVC 2008 ABI, exports forwarded by name):
+1. **Stage 1, the proxy `CEGUIBase.dll`** (x86, exports forwarded by name to the real DLL, renamed):
    - first only log the layouts and schemes PC asks for;
-   - then load the 360 scheme after PC's.
-   - It needs a 32-bit Windows toolchain (mingw-w64 cannot match MSVC's C++ ABI for forwarded
-     members; forwarding by name in a `.def` file does not need it), and GOG runs to check it. The
-     proxy goes into the copy's game folder only.
-3. Stages 2 to 5 as in section 3.
+   - then load the 360 scheme (`media/ui/x360/ceguiWidgets.scheme`, from stage 0) after PC's.
+   - The toolchain is not on this machine: `clang-cl` and `llvm-dlltool` are, `lld-link` and
+     mingw-w64 are not. A proxy that forwards by name in a `.def` file and intercepts a few
+     members with `__thiscall` thunks needs no MSVC C++ ABI and no CRT, only a linker.
+   - The converted files must reach PC's resource groups: the proxy adding `OUT` as a resource
+     location, or a folder under the GOG prefix's `mods/` **[to verify: whether PC's mod loading
+     takes new paths, not only replacements]**.
+   - The proxy goes into the copy's game folder only.
+2. Stages 2 to 5 as in section 3.
 
 ## 1. What the 360 interface is made of
 
@@ -288,3 +291,45 @@ by ordinal). **[inferred]** Steam is tried last, with section 4's precautions.
     it does when Steam starts a game.
 
   The first prefix (`~/torchlight-gog/prefix`, wine alone) is now used only as the game's folder.
+
+## 6. Stage 0: the converter (2026-10-15)
+
+`tools/convert_x360_ui.py PAK OUT` reads the user's 360 `pak.zip` and writes
+`OUT/media/ui/x360/` (flat) and `OUT/x360_ui_report.json`. It refuses an `OUT` inside this
+repository. Run on the user's pak: 71 files, 48 layouts, 6 imagesets, 7 fonts. **[read: the run]**
+
+**What it takes.** Driven by the 360 scheme (`media/ui/hud/schemes/ceguiWidgets.scheme`):
+- the scheme and its looknfeel;
+- the 6 imagesets the scheme names (`ceguiWidget`, `Loading`, `widgets`, `widgets1`, `widgets2`,
+  `ratings`) and their DDS textures (DXT3, `loading.dds` DXT1; little-endian, as PC's);
+- the fonts it names (`Serif14.font` once, though the scheme names it twice) and their TTFs;
+- every `.uilayout` (48), written as `.layout` under its own name.
+
+It does not take the 360 pak's `.layout` files (PC's own, and `*_xenon.layout` versions of the
+360 screens; the 360 game's are the `.uilayout` ones **[inferred: the recomp's docs/mods.md]**),
+the item icon atlases (section 1: PC's must stay), or the screens' own imagesets (the class
+intros, `vignettebackdrop`, `deadordraake`, `WindowsLook`: the same files as PC's). **[read]**
+
+**What it changes.** Only names and paths; every converted layout equals its `.uilayout` once
+`set:X360_` is read as `set:`, and every output XML file parses. **[read]**
+- Every path becomes `media/ui/x360/<file>`, so no path of PC's UI is replaced.
+- Every imageset of the scheme becomes `X360_<name>` in the imagesets, the scheme, the looknfeel
+  (`imageset="..."`, `set:...`) and the layouts. Both games have an imageset `Loading`, on
+  different `loading.dds` textures, and CEGUI keeps the first imageset of a name.
+- The scheme becomes `X360_newHud`. Window types keep their names (`ceguiWidget/*`; PC's are
+  `GuiLook/*` and `WindowsLook/*`).
+- Font names are kept. The 360's `Serif`, `SerifBig`, `SerifHuge`, `SerifSmall`, `FrizQuadrata`,
+  `FrizQuadrataBig` and the three TTFs are the same files as PC's, so whichever loads first draws
+  the same; `Serif14` is the 360's only new font, and its layouts use it 234 times. **[read]**
+
+**What PC's CEGUI will meet.** The layouts use 10 window types, all mapped by the scheme onto
+standard CEGUI classes and Falagard renderers. Their properties are standard CEGUI 0.6 ones
+(`WantsMultiClickEvents`, `VerticalAlignment`, `UnifiedMinSize` are strings of PC's
+`CEGUIBase.dll`) or are defined by the 360 looknfeel itself (`tabOrder`, `DisabledImage`). **[read]**
+
+**Left as they are, and reported.** 8 layouts name imagesets that are in neither the scheme nor
+the pak: `widgets3` to `widgets6` and `characters` (`charpetstatsmenu_xenon`,
+`charskillsmenu_xenon`, `controls_tray`, `skills_controls_tray`, `stats_controls_tray`,
+`equipmenu_xenon`, `playerpetstats_journal_menu_xenon`, `skillsmenu_xenon`), and
+`equipmenu_xenon` an editor image (`set:1024X768.PNG`). Those windows will draw no image on PC,
+as on the 360 if it loads them at all. **[read]**

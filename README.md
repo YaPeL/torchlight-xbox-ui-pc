@@ -10,6 +10,8 @@ read those copies and write what they produce into folders outside this reposito
 - `tools/pe_info.py`: sections, imports and exports of an .exe or .dll of the PC install.
 - `tools/compare_installs.py`: the executables and DLLs of two PC installs (GOG, Steam), compared.
 - `tools/layout_windows.py`: the named windows of a CEGUI layout, and which of them another has.
+- `tools/convert_x360_ui.py`: the 360 interface's files (scheme, looknfeel, imagesets, fonts,
+  layouts) converted from the user's 360 `pak.zip` into a folder for the PC game.
 - `tools/steam_guard.py`: hash snapshot and verify of the Steam folders that must not change.
 - `tools/run_gog.sh`: runs the GOG copy through Proton's script in a prefix of its own.
 - `tools/check_no_game_files.py`: run by CI; fails if a game file type is committed.
