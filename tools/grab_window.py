@@ -57,10 +57,17 @@ def windows(d, w):
         yield from windows(d, kids[i])
 
 
-def find(d, title):
-    """(window, width, height): the largest mapped window titled TITLE, or, when one exists, an
-    untitled mapped window of the same place and size. Once Wine restores the game's window, the
-    game draws (Vulkan, DXVK) into such an untitled window, and the titled one keeps a stale frame."""
+ERROR_HANDLER = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+_ignore_errors = ERROR_HANDLER(lambda d, e: 0)  # a failed XGetImage returns NULL instead of exiting
+x.XSetErrorHandler.argtypes = [ERROR_HANDLER]
+x.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+
+def candidates(d, title):
+    """[(window, width, height)] to grab, best first: untitled mapped windows of the place and size
+    of the largest mapped window titled TITLE, then that window. Once Wine restores the game's
+    window, the game draws (Vulkan, DXVK) into such an untitled window, and the titled one keeps a
+    stale frame; at other times the untitled one cannot be read."""
     best, plain = None, []
     for w in windows(d, x.XDefaultRootWindow(d)):
         name = ctypes.c_char_p()
@@ -75,23 +82,24 @@ def find(d, title):
         elif not name.value:
             plain.append((w, a.width, a.height, a.x, a.y))
     if not best:
-        return None
-    for p in plain:
-        if p[1:] == best[1:]:
-            return p[:3]
-    return best[:3]
+        return []
+    return [p[:3] for p in plain if p[1:] == best[1:]] + [best[:3]]
 
 
 def main():
     title, out = sys.argv[1].encode(), sys.argv[2]
     d = x.XOpenDisplay(b":0")
-    found = find(d, title)
+    x.XSetErrorHandler(_ignore_errors)
+    found = candidates(d, title)
     if not found:
         print("no mapped window titled", title)
         return 1
-    w, width, height = found
-    img = x.XGetImage(d, w, 0, 0, width, height, 0xFFFFFFFF, 2)
-    if not img:
+    for w, width, height in found:
+        img = x.XGetImage(d, w, 0, 0, width, height, 0xFFFFFFFF, 2)
+        x.XSync(d, 0)
+        if img:
+            break
+    else:
         print("XGetImage failed")
         return 1
     i = img.contents

@@ -109,6 +109,11 @@ Run the tests with `python3 -m unittest discover -s tests -v`.
   `mode=scheme` adds the converted folder to Ogre and loads the 360 scheme after PC's. The game
   reaches its main menu with it, unchanged. No 360 layout is shown yet.
 
+**Focus (2026-10-15, the user's order):** the core of the project is gameplay with the pad and the
+360's screens with logic of their own (inventory, character, skills, pet, merchant, enchanter);
+the `onClick` menus are the cheap part, done last or when a test needs them. Section 9 holds the
+gameplay study, in progress.
+
 **Paused (2026-10-15, the user's order):** stage 2 (the modal and the small screens) is paused
 where section 8 leaves it, on branch `stage2-modal`; the work now is gameplay with the pad
 (section 9).
@@ -461,3 +466,84 @@ at that death.
 - After that restore the game draws into an untitled X window of the same size, and the titled
   one keeps a stale frame; `grab_window.py` grabs the untitled one when there is one. A screen
   can also take a few seconds to change after a click (the title to the load screen: about 3 s).
+
+## 9. Gameplay with the pad: the study (2026-10-15, in progress)
+
+Sources: the 360 image (`guest-image.bin`) and the recompiled code of `~/torchlight-recomp`, read
+only (its `tools/guest_re` scripts run with `python3 -B`, writing nothing there); GOG's
+`Torchlight.exe` disassembled (`llvm-objdump`); GOG runs.
+
+### 9a. The 360's scheme
+
+**The buttons** (the "How To Play" screen, `howto_xenon.uilayout`, its icons paired with their
+labels by position): **[read]**
+
+| Button | Action |
+|--------|--------|
+| left stick | move (the diagram does not label it); click (L3): automap |
+| X | attack |
+| A | interact, pick up an item |
+| B, Y, LT, RT | skills, each assigned from the skill menu (`SkillSlotGamepadButtonX/Y/LT/RT` in the HUD) |
+| LB, RB | health potion, mana potion |
+| d-pad up/down | switch the active skill set (`SkillSet1`, `SkillSet2`) |
+| right stick up/down | camera zoom |
+| Back, Start | inventory and submenus; options |
+
+**Reading the pad.** `sub_821FE1D0` polls XInput every frame: it keeps each pad's state in a
+16-byte record at 0x83557E80 (+8, +10 the left stick, +12, +14 the right one, +6, +7 the
+triggers), applies XInput's dead zones (7849 left, 8689 right) and turns button edges into
+events (`GamepadButtonDown/Up`, a CEGUI extension of Runic's: `GamepadEventArgs`). The getters:
+`sub_82191018` (left stick, a vector scaled by 1/32767), `sub_822DF6D8` and `sub_822DF738` (the
+triggers, 0..1), and `sub_822DF798` (a button or a stick direction, for menus). **[read]**
+
+**Moving: a point ahead of the hero, every frame.** `sub_8221C838(controller, Vector3* out)`
+reads the left stick; if its length is over 0.1, the point is the hero's position plus the stick
+times 2.0 (world units), rotated by the camera's yaw (from the camera's direction, `atan2`, minus
+90 degrees); with the stick at rest it can give the point ahead along the hero's facing. The
+frame update (`sub_821EBA48`) hands that point to `sub_8228F7E0(unit, x, z)`, which stores it in
+the unit (+0x1C0..+0x1C8) and the normalised direction to it (+0x1CC..+0x1D4): no pathfinder is
+called there. So the 360 steers: a goal 2 units ahead, renewed each frame, which the unit walks
+toward. **[read; that the unit's own update walks straight toward it, without the A* pathfinder
+(`CAstarPathfinder`), inferred]**
+
+**Targets.** The player controller (`sub_8221B8E8`, `sub_8221BC80`) keeps several unit handles
+(+0x1B4, +0x1BC, +0x1C4, +0x1CC: a current target and candidates) and drops the target as soon as
+the stick moves out of its dead zone. How a candidate is chosen (nearest, cone) is not read yet.
+**[read: the fields and the drop; the rule not yet]**
+
+### 9b. PC's scheme
+
+- **The mouse is polled.** Small engine functions read the buttons with `GetAsyncKeyState`
+  (`0x5cd4e0` the left button, honouring swapped buttons; `0x5cd510` the right one; `0x5cd540`
+  the middle one) and the cursor with `GetCursorPos`/`ScreenToClient` (`0x5cd5a0`, `0x5cd550`
+  "inside the window"). Their callers are all in one class, between 0x467000 and 0x46d000: the
+  player's controller. **[read]**
+- The right button with no Shift turns the camera (it re-centres the cursor with `SetCursorPos`,
+  0x46d740). **[read]**
+- When the left button is down, or one of four command keys (0x25-0x28) is, the controller calls
+  `0x468910`, which builds an event with the camera's `FORWARD`, `RIGHT`, `UP` and `POSITION`:
+  the ray from the cursor into the world. **[read; what the event does next not yet read]**
+- The executable subclasses its window (`SetWindowLongW`, `CallWindowProcW`): it has a window
+  procedure of its own. **[read]**
+
+### 9c. The first prototype (option a, a virtual mouse): not working yet
+
+`proxy/pad.c`, `pad=1` in `x360_ui.ini`: the proxy points the executable's imports of
+`GetCursorPos` and `GetAsyncKeyState` at its own (no code patched). While the left stick is out
+of its dead zone, the cursor is a point 14 % of the window's height from its centre (where the
+camera keeps the hero) in the stick's direction, and the left button reads as down. The input
+is XInput or, for tests, a file (`pad_file=`). **[read: the build and the runs]**
+1. The button held (polled) only: the hero turns toward the point and does not walk.
+2. Plus the press and release injected into CEGUI (`injectMousePosition`,
+   `injectMouseButtonDown/Up`, from the game's thread): the same.
+
+Two hypotheses failed; stopped here (the user's rule). The likely path of a click on the world
+is the window procedure's `WM_LBUTTONDOWN` (above), not CEGUI's events: the next try would post
+`WM_LBUTTONDOWN`/`WM_LBUTTONUP` to the window at the virtual point. **[inferred]** Frames:
+`~/torchlight-gog/screens/pad-prototype-1.gif`.
+
+### 9d. Not done yet
+
+The 360's target choice, skills and potions; PC's move and attack functions (what `0x468910`'s
+event leads to) and whether the proxy can call them; the options (a, b, c) with cost and quality;
+the screens with logic of their own (inventory and the rest), 360 and PC; the vertical slice.

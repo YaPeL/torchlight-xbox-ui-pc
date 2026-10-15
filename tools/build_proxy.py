@@ -41,11 +41,12 @@ HOOKS = {
 # The kernel32 functions the proxy imports, with their stdcall argument bytes.
 KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "CreateFileA": 28,
             "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
-            "ReadFile": 20, "CloseHandle": 4}
+            "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16}
 # send_input.exe's imports (proxy/send_input.c, a test helper that runs in the game's prefix).
 KERNEL32_EXE = {"GetCommandLineA": 0, "Sleep": 4, "ExitProcess": 4, "GetStdHandle": 4}
 USER32 = {"EnumWindows": 8, "GetWindowTextA": 12, "IsWindowVisible": 4, "IsIconic": 4, "GetClientRect": 8, "ShowWindow": 8, "SetForegroundWindow": 4, "ClientToScreen": 8, "SetCursorPos": 8, "SendInput": 12,
-          "MapVirtualKeyA": 8, "GetCursorPos": 4, "ScreenToClient": 8, "GetForegroundWindow": 0}
+          "MapVirtualKeyA": 8, "GetCursorPos": 4, "ScreenToClient": 8, "GetForegroundWindow": 0,
+          "GetActiveWindow": 0}
 # msvcr90's SEH handler, which clang-cl's __try/__except on x86 registers (cdecl: no @bytes).
 MSVCR90 = ["_except_handler3"]
 
@@ -131,8 +132,10 @@ def build(real_dll, out):
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "user32.def", "-l", "user32.lib"],
         ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Focegui_proxy.obj", src],
+        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fopad.obj",
+         os.path.join(repo, "proxy", "pad.c")],
         ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
-         "/def:proxy.def", "cegui_proxy.obj", "kernel32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
+         "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
     helper = os.path.join(repo, "proxy", "send_input.c")
     steps += [

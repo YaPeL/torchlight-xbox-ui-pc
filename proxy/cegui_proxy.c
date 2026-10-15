@@ -19,6 +19,8 @@
  *   trace=1                                     also log, once each, the window names the game's
  *                                               own code (Torchlight.exe) looks up, the properties
  *                                               it reads and the texts it sets
+ *   pad=1                                       the pad moves the hero (proxy/pad.c, a prototype)
+ *   pad_file=Z:\path\pad.txt                    its input from a file instead of XInput (tests)
  * In mode=scheme, OUT is added to Ogre's world resource group (a FileSystem location, recursive),
  * so the converted files' own paths (media/ui/x360/...) resolve, and then
  * media/ui/x360/ceguiWidgets.scheme is loaded once, inside __try: if it throws, the game's own
@@ -64,6 +66,9 @@ static HMODULE real;
 
 /* ---- the log ---- */
 
+/* The MSVC ABI expects this symbol in any image that uses floating point (no CRT here). */
+int _fltused = 0;
+
 static unsigned length(const char *s) { unsigned n = 0; while (s && s[n]) n++; return n; }
 
 static void put(const char *s) {
@@ -96,11 +101,15 @@ static void open_log(void) {
     put("x360_ui proxy CEGUIBase.dll: loaded\r\n");
 }
 
+/* For proxy/pad.c. */
+void x360_log(const char *s) { put(s); }
+
 static void stamp(void) { put("["); put_dec(GetTickCount()); put("] "); }
 
 /* ---- the configuration ---- */
 
-static int mode_scheme, x360_done, trace;
+static int mode_scheme, x360_done, trace, pad;
+static char pad_file[400];
 static char out_dir[400];
 
 static int starts(const char *s, const char *prefix) {
@@ -125,6 +134,8 @@ static void read_config(void) {
         if (*end) *end++ = 0;
         if (starts(line, "mode=scheme")) mode_scheme = 1;
         if (starts(line, "trace=1")) trace = 1;
+        if (starts(line, "pad=1")) pad = 1;
+        if (starts(line, "pad_file=") && length(line + 9) < sizeof pad_file) memcpy(pad_file, line + 9, length(line + 9) + 1);
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
         line = end;
         while (*line == '\r' || *line == '\n') line++;
@@ -434,12 +445,41 @@ unsigned char __fastcall hook_char(void *self, void *edx, unsigned code) {
                     __builtin_return_address(0));
 }
 
+void x360_pad_start(const char *file);
+
+/* For proxy/pad.c: a left button press or release at (x, y) in the window's pixels, injected into
+ * CEGUI as the game injects real ones, so the game's own handlers (the click on the world) run. */
+typedef void *(__cdecl *system_get_fn)(void);
+typedef unsigned char (__fastcall *inject_xy_fn)(void *self, void *edx, float x, float y);
+typedef unsigned char (__fastcall *inject_button_fn)(void *self, void *edx, int button);
+
+void x360_inject_left(int down, float x, float y) {
+    static system_get_fn get_system;
+    static inject_xy_fn inject_position;
+    static inject_button_fn inject_down, inject_up;
+    void *system;
+    if (!get_system) {
+        resolve();
+        get_system = (system_get_fn)need("?getSingletonPtr@?$Singleton@VSystem@CEGUI@@@CEGUI@@SAPAVSystem@2@XZ");
+        inject_position = (inject_xy_fn)need("?injectMousePosition@System@CEGUI@@QAE_NMM@Z");
+        inject_down = (inject_button_fn)need("?injectMouseButtonDown@System@CEGUI@@QAE_NW4MouseButton@2@@Z");
+        inject_up = (inject_button_fn)need("?injectMouseButtonUp@System@CEGUI@@QAE_NW4MouseButton@2@@Z");
+    }
+    if (!get_system || !inject_position || !inject_down || !inject_up) return;
+    system = get_system();
+    if (!system) return;
+    inject_position(system, 0, x, y);
+    if (down) inject_down(system, 0, 0 /* LeftButton */);
+    else inject_up(system, 0, 0);
+}
+
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
     if (reason == 1) {
         self_module = module;
         DisableThreadLibraryCalls(module);
         open_log();
         read_config();
+        if (pad) x360_pad_start(pad_file);
     }
     return 1;
 }
