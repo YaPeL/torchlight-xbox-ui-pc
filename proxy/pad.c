@@ -78,6 +78,13 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_FIND_CHARACTER 0x005006c0    /* CLevel::findCharacterWithinView(Matrix4 const&, EAlignment,
                                             float min, float half angle, float range, bool best,
                                             CCharacter* exclude, CSkill*) */
+#define GOG_STOP_PATHING 0x00486150     /* CCharacter::stopPathing() */
+#define GOG_PERFORMING_ATTACK 0x004863b0 /* CCharacter::performingAttackLoose() */
+#define GOG_PERFORMING_SKILL 0x00486550  /* CCharacter::performingSkill() */
+#define GOG_IN_ATTACK_RANGE 0x00492160   /* CCharacter::inAttackRange(EATTACK_RANGE_TYPE) */
+#define GOG_ATTACK 0x00491bc0            /* CCharacter::attack() */
+#define GOG_SET_MODE_SLOT (0x174 / 4)    /* virtual, (int): clickLeft passes 4 before chasing */
+#define GOG_CHASE_SLOT (0x1ac / 4)       /* virtual, (float 0, CLevel*): clickLeft's next call */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
                                             angle, float range) */
 
@@ -85,6 +92,14 @@ typedef unsigned char(__fastcall *find_world_fn)(void *client, void *edx, float 
 typedef float *(__fastcall *get_position_fn)(void *unit, void *edx, float *out, int flag);
 typedef void(__fastcall *set_destination_fn)(void *hero, void *edx, void *level, float x, float z);
 typedef void(__fastcall *set_target_fn)(void *hero, void *edx, void *target);
+typedef void(__fastcall *void_fn)(void *hero, void *edx);
+typedef unsigned char(__fastcall *bool_fn)(void *hero, void *edx);
+typedef unsigned char(__fastcall *bool_int_fn)(void *hero, void *edx, int arg);
+typedef void(__fastcall *int_fn)(void *hero, void *edx, int arg);
+typedef void(__fastcall *float_ptr_fn)(void *hero, void *edx, float f, void *p);
+
+/* Diagnostics: what our own code did since the last search. */
+static unsigned dest_calls, drop_calls, log_until;
 typedef void *(__fastcall *find_character_fn)(void *level, void *edx, const float *matrix, int alignment,
                                              float min, float half_angle, float range, int best,
                                              void *exclude, void *skill);
@@ -343,11 +358,35 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     a = c ? c : ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ANY, TARGET_MIN, TARGET_HALF_ANGLE,
                                                         TARGET_RANGE_ANY, 1, hero, 0);
     it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, ITEM_HALF_ANGLE, ITEM_RANGE);
-    if (c != candidate) {
-        x360_log("pad: enemy candidate ");
-        x360_log_num((long)c);
+    if (c != candidate || GetTickCount() < log_until) {
+        static int said_node;
+        x360_log("pad: t "); x360_log_num((long)GetTickCount());
+        x360_log(" stick "); x360_log_num(lx); x360_log(" "); x360_log_num(ly);
+        x360_log(stick_active() ? " out" : " rest");
+        x360_log(" dest "); x360_log_num((long)dest_calls);
+        x360_log(" drop "); x360_log_num((long)drop_calls);
+        x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+        x360_log(" enemy "); x360_log_num((long)c);
+        if (c) { x360_log(((bool_fn)0x00485780)(c, 0) ? " alive" : " dead"); }
+        x360_log(" hero target "); x360_log_num((long)*(void **)(hero + 0x290));
+        x360_log(" lock658 "); x360_log_num((long)hero[0x658]);
+        x360_log(" state "); x360_log_num((long)*(int *)(hero + 0x284));
+        x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking" : "");
         x360_log("\r\n");
+        dest_calls = drop_calls = 0;
         candidate = c;
+        if (!said_node) {
+            /* The class of the hero's +0x58 object (what getPosition asks): MSVC RTTI. */
+            unsigned char *node = *(unsigned char **)(hero + 0x58);
+            said_node = 1;
+            if (node) {
+                unsigned char *col = *(unsigned char **)(*(unsigned char **)node - 4);
+                unsigned char *td = col ? *(unsigned char **)(col + 12) : 0;
+                x360_log("pad: hero+0x58 is ");
+                x360_log(td ? (const char *)(td + 8) : "?");
+                x360_log("\r\n");
+            }
+        }
     }
     any_candidate = a;
     if (it != item_candidate) {
@@ -355,6 +394,26 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         x360_log_num((long)it);
         x360_log("\r\n");
         item_candidate = it;
+    }
+}
+
+/* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
+static unsigned char *attack_level;
+static void attack_candidate(unsigned char *hero) {
+    void **vt = *(void ***)hero;
+    if (((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
+    ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+    if (((bool_int_fn)GOG_IN_ATTACK_RANGE)(hero, 0, 0)) {
+        if (*(int *)(hero + 0x284) == 3 || ((bool_fn)GOG_PERFORMING_SKILL)(hero, 0)) return;
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((void_fn)GOG_ATTACK)(hero, 0);
+        x360_log("pad: X: in range, attack\r\n");
+    } else {
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+        ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 4);
+        ((float_ptr_fn)vt[GOG_CHASE_SLOT])(hero, 0, 0.0f, attack_level);
+        x360_log("pad: X: out of range, chase\r\n");
     }
 }
 
@@ -387,10 +446,8 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     };
     unsigned i;
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
-    if ((pressed & 0x4000) && candidate) {
-        x360_log("pad: X: setTarget\r\n");
-        ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
-    }
+    if (pressed & 0x4000) log_until = GetTickCount() + 3000;
+    if ((pressed & 0x4000) && candidate) attack_candidate(hero);
     if (pressed & 0x1000) {
         if (item_candidate) {
             x360_log("pad: A: setTargetItem\r\n");
@@ -427,13 +484,15 @@ static void order(void) {
             /* Moving the stick drops the target, as on the 360. */
             ((set_target_fn)GOG_SET_TARGET)(hero, 0, 0);
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
+            drop_calls++;
         }
         was_active = stick_active();
         diag_level = level;
+        attack_level = level;
         if (pressed) buttons_pressed(hero, pressed);
         if ((buttons & 0x4000) && candidate && now - last_order >= 100) {
-            /* X held: keep attacking the candidate, and no move orders meanwhile. */
-            ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+            /* X held: keep attacking the candidate, as holding PC's button repeats the click. */
+            attack_candidate(hero);
         }
         if (now - last_order >= 100) choose_targets(hero, level);
     }
@@ -462,6 +521,7 @@ static void order(void) {
     face_x = dx / len;
     face_z = dz / len;
     ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * dx / len, pos[2] + 2.0f * dz / len);
+    dest_calls++;
 }
 
 void x360_pad_start(const char *file, int by_message, int direct_mode) {

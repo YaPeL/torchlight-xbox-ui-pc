@@ -644,6 +644,31 @@ alternates (its `best` loop, or the unit's visibility flag); take the facing fro
 orientation the engine renders (`getOrientation` *(OT)*). The monster the user saw die was killed
 by the pet. **[read: the logs; the causes inferred]** GIF: `~/torchlight-gog/screens/combat-x-flicker.gif`.
 
+**Diagnosis and fix (2026-10-15, the user's order: diagnose before more hypotheses).** A log line
+per search, in the same frame: the stick, our `setDestination` calls and target drops since the
+last search, the facing, the search's result, the hero's target (`+0x290`), state (`+0x284`) and
+whether it is attacking. **[read: the runs]**
+- **The alternation was not ours.** With the stick at rest our code calls neither
+  `setDestination` nor `setTarget(0)` (the virtual pad rests at exactly 0, inside the dead zone;
+  the 8BitDo's session logged its rest inside it too). With the cone oriented by the hero's own
+  matrix the candidate is stable at rest; it changes only when the facing turns.
+- **X did nothing because `setTarget` alone does nothing visible.** PC's click on an enemy
+  (`clickLeft`, GOG `0x4142a0`, read against OT's): out of range, `stopPathing` (`0x486150`),
+  `setTarget`, the hero's virtual `+0x174` with 4 (a mode), and its virtual `+0x1AC` with
+  `(0.0f, level)`; in range, `stopPathing` and `CCharacter::attack()` (`0x491bc0`), after
+  `performingAttackLoose` (`0x4863b0`), the state at `+0x284` not 3 and `performingSkill`
+  (`0x486550`); `inAttackRange(0)` is `0x492160`. `setTarget` itself does nothing while the byte
+  `+0x658` is set. X now does exactly that sequence, and repeats it every 100 ms while held (as a
+  held mouse button repeats the click), unless an attack is under way.
+- **Result: X attacks.** The hero chased the candidate (state 4), turned to it, attacked
+  ("attacking" for 4 searches) and killed it (blood, "9 Gold"; the target cleared). The candidate
+  is not held for 300 ms: the 360 does no such thing that we read, and it was not needed.
+  GIF: `~/torchlight-gog/screens/combat-x-attacks.gif`. **[read: the run]**
+- **Not working yet:** A (the item search `0x500a50` never returned an item, not even gold on the
+  floor: its arguments or its identification are to be checked); LB (the hotbar key posted as
+  `WM_KEYDOWN` did not reach the game in its one try, likely with the window unfocused); B, Y, LT,
+  RT not tried. **[read: the runs]**
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.
