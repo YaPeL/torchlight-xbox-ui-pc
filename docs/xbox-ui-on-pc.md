@@ -708,6 +708,28 @@ whether it is attacking. **[read: the runs]**
 - **Searches and the diagnosis log run only on a press** of X or A (and while X is held), no
   longer every 0.1 s.
 
+**X like the 360, the candidate's highlight, the turn (2026-10-15).**
+- **X never walks to its target.** The user felt "the game drives itself" when X chased. The
+  360's X path (`sub_8221BC80`, the action `sub_82293548` and their callees) calls no
+  `setDestination`: it faces the target and attacks where the hero stands. X now: in range,
+  PC's attack; out of range, the hold-position attack toward the target; no target, the same
+  toward the facing. The user: "parece casi idéntico". **[read; the user's session]**
+- **The highlight.** The 360 marks its candidate. GOG's `CCharacter::setHighlighted(bool)` is the
+  virtual at `+0x100` of the unit vtable (CPlayer's `0x488550`: it calls `CBaseUnit::
+  setHighlighted`, `0x4812a0`, which stores `+0x170` and highlights the model, then highlights the
+  12 equipped items; OT's code does the same; found by the getter after it, `+0x104`). The
+  candidate is searched every 0.1 s again (the 360 does it every frame) and highlighted; the
+  previous one is switched off only if it is still in the level's unit list (`[[level+0x5c]]`,
+  nodes {unit, next}). It ran without trouble; the highlight itself was not seen yet (no enemy
+  in the cone at the right moment). **[read; not yet seen]**
+- **The turn is not the difference.** Both builds turn the hero toward its target direction with
+  the same `turnToward` (the 360's `sub_821E0188`, GOG's `0x48d390`; the same constants: 180,
+  360, a 5-degree dead band, ±1000), at the unit's `TURN_RATE` (the 360's `+0x218`, GOG's
+  `+0x224`), loaded by the unit's init (`sub_822883F0` at 0x82288FB8; GOG at `0x4a04e0`) with the
+  same default, 10.0, which the hero's data does not override in either pak. So the 360's turning
+  in place when the stick spins fast comes from something else (when the hero starts walking while
+  it turns); not found yet. **[read]**
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.

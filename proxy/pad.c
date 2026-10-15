@@ -88,6 +88,8 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_HOLD_POSITION 0x20a         /* byte: PC's hold-position key (Shift); with it set,
                                             setDestination attacks toward the point instead of walking */
 #define GOG_SET_TARGET_DIRECTION 0x00486180 /* CCharacter::setTargetDirection(float x, float z) */
+#define GOG_SET_HIGHLIGHTED_SLOT (0x100 / 4) /* virtual CCharacter::setHighlighted(bool): the unit and its equipment */
+#define GOG_LEVEL_UNITS 0x5c              /* the level's unit list: [[level+0x5c]] the first node {unit, next} */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
                                             angle, float range) */
 
@@ -352,6 +354,24 @@ static void hero_matrix(unsigned char *hero, float *m) {
 }
 
 static void *any_candidate;                 /* anyone near, for A: talk, use */
+static void *highlighted;                   /* the unit we highlighted, as the 360 marks its candidate */
+
+static int in_level(unsigned char *level, void *unit) {
+    void **node = *(void ***)*(void **)(level + GOG_LEVEL_UNITS);
+    int n = 0;
+    for (; node && n < 100000; node = (void **)node[1], n++)
+        if (node[0] == unit) return 1;
+    return 0;
+}
+
+static void highlight(unsigned char *level, void *unit) {
+    typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
+    if (unit == highlighted) return;
+    if (highlighted && in_level(level, highlighted))
+        ((set_bool_fn)(*(void ***)highlighted)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted, 0, 0);
+    highlighted = unit;
+    if (unit) ((set_bool_fn)(*(void ***)unit)[GOG_SET_HIGHLIGHTED_SLOT])(unit, 0, 1);
+}
 
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
@@ -645,10 +665,16 @@ static void order(void) {
     }
     was_active = stick_active();
 
-    /* X and A search for their target when pressed (and X while held), not all the time. */
-    if (pressed & (0x4000 | 0x1000)) {
-        log_until = now + 3000;
-        choose_targets(hero, level);
+    /* The 360 chooses its candidate every frame and highlights it; here every 0.1 s, and again at
+     * once on a press of X or A. */
+    {
+        static unsigned last_search;
+        if (pressed & (0x4000 | 0x1000)) log_until = now + 3000;
+        if ((pressed & (0x4000 | 0x1000)) || now - last_search >= 100) {
+            last_search = now;
+            choose_targets(hero, level);
+            highlight(level, candidate);
+        }
     }
     if (pressed) buttons_pressed(hero, pressed);
     if ((buttons & 0x4000) && !(pressed & 0x4000) && now - last_order >= 100) {
