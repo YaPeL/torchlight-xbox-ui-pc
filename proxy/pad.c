@@ -362,6 +362,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     a = c ? c : ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ANY, TARGET_MIN, TARGET_HALF_ANGLE,
                                                         TARGET_RANGE_ANY, 1, hero, 0);
     it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, ITEM_HALF_ANGLE, ITEM_RANGE);
+    if (!it) it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, 180.0f, 0.5f); /* the 360: any item within 0.5 */
     if (GetTickCount() < log_until) {
         static int said_node;
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
@@ -448,9 +449,12 @@ static void diagnose(unsigned char *hero) {
     x360_log("\r\n");
 }
 
+static HWND game_window;                     /* the game's window, cached the first time it is active */
 static void post_key(unsigned vk) {
     HWND w = GetActiveWindow();
-    if (!w) return;
+    if (w) game_window = w;
+    w = game_window;
+    if (!w) { x360_log("pad: no game window for the key\r\n"); return; }
     PostMessageW(w, 0x0100 /* WM_KEYDOWN */, vk, 1);
     PostMessageW(w, 0x0101 /* WM_KEYUP */, vk, (long)0xC0000001UL);
 }
@@ -468,11 +472,24 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     if ((pressed & 0x4000) && candidate) attack_candidate(hero);
     if (pressed & 0x1000) {
         if (item_candidate) {
-            x360_log("pad: A: setTargetItem\r\n");
+            /* PC's click on an item (clickLeft): stopPathing, setTargetItem, mode 4, chase. */
+            void **vt = *(void ***)hero;
+            ((void_fn)GOG_STOP_PATHING)(hero, 0);
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
+            ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 4);
+            ((float_ptr_fn)vt[GOG_CHASE_SLOT])(hero, 0, 0.0f, attack_level);
+            x360_log("pad: A: pick up\r\n");
         } else if (any_candidate) {
             x360_log("pad: A: setTarget (interact)\r\n");
             ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
+        } else {
+            float m[16];
+            void *wide;
+            hero_matrix(hero, m);
+            wide = ((find_item_fn)GOG_FIND_ITEM)(attack_level, 0, m, 180.0f, 20.0f);
+            x360_log("pad: A: nothing; any item within 20: ");
+            x360_log_num((long)wide);
+            x360_log("\r\n");
         }
     }
     for (i = 0; i < sizeof keys / sizeof keys[0]; i++)
@@ -549,6 +566,7 @@ static void measure_turn(unsigned char *hero, unsigned now) {
 
 static void order(void) {
     unsigned now = GetTickCount();
+    if (!game_window) game_window = GetActiveWindow();
     unsigned char *app, *client, *hero, *level;
     float pos[3];
     static int was_active;
