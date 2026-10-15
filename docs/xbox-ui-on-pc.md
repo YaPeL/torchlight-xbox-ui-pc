@@ -159,10 +159,31 @@ by ordinal). **[inferred]** Steam is tried last, with section 4's precautions.
   Proton into the prefix's `syswow64`, `d3d9=n`) it was "Failed to create Direct3D9 Device"
   (DXVK: cannot create a 6352240x1 X8R8G8B8 texture). It did not reach the main menu. **[read: the
   runs]**
-- Two hypotheses failed, so this stopped here. Next candidates, for the user to choose:
-  - run the copy through Proton's own launcher script with the separate prefix
-    (`STEAM_COMPAT_DATA_PATH` set to a folder of ours), which sets the runtime and the DLLs as for
-    Steam games, still without Steam;
-  - Wayland/XWayland's window size: try a virtual desktop
-    (`explorer /desktop=TL,1280x720`);
-  - `FULLSCREEN :1` in `local_settings.txt`.
+- **Step 0 (the user's order: the error first).** With `WINEDEBUG=+loaddll,err` and wine's builtin
+  `d3d9`/`wined3d`, the crash is a page fault in `CEGUIBase.dll` +0x7b6b8 (`flds 0x1c(%eax)`, a
+  null pointer), after `CreateViewports` measured the window as 6352240 x 0. The game's only log
+  is `Ogre.log` in the AppData folder above; there is none next to the executable. The extracted
+  build is the base installer 1.15(a), build 17870, not GOG's 1.0.1 update, which is reported to
+  fail under Wine.
+- **Step 1: Proton's own script works.** The run was `proton run` from Proton Experimental:
+  - `STEAM_COMPAT_DATA_PATH=~/torchlight-gog/compat` (a new prefix, made by the script);
+  - `STEAM_COMPAT_CLIENT_INSTALL_PATH` set to Steam's folder, only for the script to find it;
+  - `SteamGameId=gogtl` and `SteamAppId=0`: without an id the script stopped at once with code 1
+    and wrote no log;
+  - `WINEDLLOVERRIDES="winemenubuilder.exe=d"` and `PROTON_LOG=1` into `~/torchlight-gog`.
+
+  The game opened at 1920x1080 with DXVK (`CreateViewports AspectRatio message - 1920 x 1080`) and
+  reached the main menu (seen by the user, who closed it). "Failed to connect to Steam" in the log
+  is harmless: GOG's executable does not use Steam. Sound has no driver here either.
+- **Saves of the working setup:**
+  `~/torchlight-gog/compat/pfx/drive_c/users/steamuser/AppData/Roaming/Runic Games/Torchlight/`
+  (`save/`, `mods/`, `settings.txt`, `local_settings.txt`, `resourceconfig.dat`, `Ogre.log`).
+  The game folder stays at `~/torchlight-gog/prefix/drive_c/GOG Games/Torchlight` and is run
+  through `Z:`.
+- **Checks after step 1:**
+  - Steam's `compatdata/41500` and `userdata/<id>/41500` are unchanged (hashes and tree).
+  - No desktop or menu entry was made.
+  - In Proton's folder only `dist.lock` changed: the lock file the script opens on every run, as
+    it does when Steam starts a game.
+
+  The first prefix (`~/torchlight-gog/prefix`, wine alone) is now used only as the game's folder.
