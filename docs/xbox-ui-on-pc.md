@@ -32,8 +32,11 @@ This repository is the whole of this project; the recomp's repository is only a 
 | Its files, extracted with `innoextract -e` (nothing run) | `~/torchlight-gog/extract` |
 | The game folder used | `~/torchlight-gog/prefix/drive_c/GOG Games/Torchlight` (a copy of the extract, without `tmp/`, `__redist/`, `commonappdata/`) |
 | The working prefix (Proton's script) | `~/torchlight-gog/compat/pfx` |
-| GOG saves, settings, mods, `Ogre.log` | `~/torchlight-gog/compat/pfx/drive_c/users/steamuser/AppData/Roaming/Runic Games/Torchlight/` (`save/`, `mods/`, `settings.txt`, `local_settings.txt`, `resourceconfig.dat`) |
+| GOG saves, settings, mods, `Ogre.log` | `~/torchlight-gog/compat/pfx/drive_c/users/steamuser/AppData/Roaming/runic games/torchlight/` (lower case on disk; `save/`, `mods/`, `settings.txt`, `local_settings.txt`, `resourceconfig.dat`) |
 | Proton's logs of our runs | `~/torchlight-gog/steam-gogtl.log` |
+| The converter's output (stage 0) | `~/torchlight-gog/x360ui` (`media/ui/x360/`) |
+| The proxy's build | `~/torchlight-gog/build/proxy` (`CEGUIBase.dll`, the generated `.def` files) |
+| The proxy, installed | the game folder: `CEGUIBase.dll` (proxy), `CEGUIBase_orig.dll` (real), `x360_ui.ini`, `x360_ui.log` |
 | Steam snapshot (hashes) | `~/torchlight-gog/hashes/steam-guard.json` (2404 entries, 2026-10-15) |
 | Steam's Torchlight install (read only, for comparisons) | `~/.steam/debian-installation/steamapps/common/Torchlight` |
 | The Xbox game data (read only) | `~/360tools/extracted/extracted` (`pak.zip`) |
@@ -53,9 +56,12 @@ This repository is the whole of this project; the recomp's repository is only a 
 
    Steam need not be open: GOG's executable does not import `steam_api`, so "Failed to connect to
    Steam" in the log is harmless.
+   With the proxy installed (section 7), `x360_ui.log` in the game folder lists every scheme and
+   layout the game asks for. `tools/grab_window.py Torchlight OUT.png` saves a screenshot.
 3. The game opens at 1920x1080 (the desktop's size; `local_settings.txt` has `WINDOW_WIDTH`,
    `RES_WIDTH`, `FULLSCREEN`) with DXVK, and reaches the main menu. Close it when done: Alt+F4 or
-   the game's own Quit.
+   the game's own Quit, or, from a script, Proton's `files/bin/wineserver -k` with
+   `WINEPREFIX=~/torchlight-gog/compat/pfx` (it stops that prefix's processes only).
 4. Run `tools/steam_guard.py verify ~/torchlight-gog/hashes/steam-guard.json`. It must print
    UNCHANGED. Also check that nothing new appeared on the desktop (`~/Escritorio`) or in
    `~/.local/share/applications`.
@@ -80,6 +86,8 @@ This repository is the whole of this project; the recomp's repository is only a 
 | `compare_installs.py` | Two installs' binaries compared: hash, link time, sections, imports, exports |
 | `layout_windows.py` | The named windows of a CEGUI layout, and how many of them another layout has |
 | `convert_x360_ui.py` | Stage 0: the 360 UI files from the user's `pak.zip` into `OUT/media/ui/x360/` (section 6) |
+| `build_proxy.py` | Stage 1: builds the proxy `CEGUIBase.dll` from the user's DLL (clang-cl, lld-link); installs and removes it in a game folder |
+| `grab_window.py` | A screenshot of the game's window (X11 under Xwayland) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
 | `run_gog.sh` | The GOG run above (shell, no test) |
 | `check_no_game_files.py` | The CI check |
@@ -94,21 +102,19 @@ Run the tests with `python3 -m unittest discover -s tests -v`.
   of the executable.
 - GOG runs (section 5a).
 - Stage 0, the converter, is done (section 6): `tools/convert_x360_ui.py`, tested on synthetic
-  paks and run on the user's 360 pak. Nothing of it has been loaded by the PC game yet; that is
-  stage 1.
+  paks and run on the user's 360 pak.
+- Stage 1, the proxy `CEGUIBase.dll`, is done (section 7): it logs what PC loads, and with
+  `mode=scheme` adds the converted folder to Ogre and loads the 360 scheme after PC's. The game
+  reaches its main menu with it, unchanged. No 360 layout is shown yet.
 
 **Next, in order (section 3's stages):**
-1. **Stage 1, the proxy `CEGUIBase.dll`** (x86, exports forwarded by name to the real DLL, renamed):
-   - first only log the layouts and schemes PC asks for;
-   - then load the 360 scheme (`media/ui/x360/ceguiWidgets.scheme`, from stage 0) after PC's.
-   - The toolchain is not on this machine: `clang-cl` and `llvm-dlltool` are, `lld-link` and
-     mingw-w64 are not. A proxy that forwards by name in a `.def` file and intercepts a few
-     members with `__thiscall` thunks needs no MSVC C++ ABI and no CRT, only a linker.
-   - The converted files must reach PC's resource groups: the proxy adding `OUT` as a resource
-     location, or a folder under the GOG prefix's `mods/` **[to verify: whether PC's mod loading
-     takes new paths, not only replacements]**.
-   - The proxy goes into the copy's game folder only.
-2. Stages 2 to 5 as in section 3.
+1. **Stage 2, the small shared screens with the 360 look** (waypoints, quest dialog, modal,
+   death, character load): in the proxy's `loadWindowLayout`, hand the game the converted 360
+   layout instead of PC's, with the windows PC's code expects added to it (section 2's counts).
+   The first one should be the one closest to PC's: the waypoints (21 of 25) or the modal box
+   (5 of 6). A check that the 360 scheme's imagesets and fonts really loaded comes with it (the
+   first 360 layout drawn), since this build writes no CEGUI log.
+2. Stages 3 to 5 as in section 3.
 
 ## 1. What the 360 interface is made of
 
@@ -333,3 +339,68 @@ the pak: `widgets3` to `widgets6` and `characters` (`charpetstatsmenu_xenon`,
 `equipmenu_xenon`, `playerpetstats_journal_menu_xenon`, `skillsmenu_xenon`), and
 `equipmenu_xenon` an editor image (`set:1024X768.PNG`). Those windows will draw no image on PC,
 as on the 360 if it loads them at all. **[read]**
+
+## 7. Stage 1: the proxy CEGUIBase.dll (2026-10-15)
+
+**The DLL.** `proxy/cegui_proxy.c`, built by `tools/build_proxy.py build REAL_DLL BUILD_DIR` with
+`clang-cl` and `lld-link` 21 (`--target=i686-pc-windows-msvc`, freestanding, no CRT; import
+libraries for `kernel32` and `msvcr90` made by `llvm-dlltool` from generated `.def` files). Its
+export table is generated from the user's own DLL at build time and not kept here: each of the
+3839 exports is forwarded by name, with its own ordinal, to `CEGUIBase_orig.dll` (the real DLL,
+renamed), except three, which go to `__fastcall` thunks (the `__thiscall` convention with a
+dummy `edx`; they pop 8, 8 and 20 bytes, checked in the disassembly):
+`SchemeManager::loadScheme(const String&, const String&)` and the two
+`WindowManager::loadWindowLayout`. The build also checks that every function the source looks
+up at run time is exported by the game folder's DLLs (a typo in a mangled name cost one run).
+`build_proxy.py install|remove|status GAME_DIR` swaps the DLLs and refuses to overwrite a real
+DLL. **[read: the build]**
+
+**All 32-bit.** `Torchlight.exe`, `CEGUIBase.dll`, `OgreMain.dll`, `OgreGUIRenderer.dll` and the
+proxy are i386 (machine 0x14c). **[read]**
+
+**One DLL for GOG and Steam.** GOG's and Steam's `CEGUIBase.dll` export the same 3839 names with
+the same ordinals (no export by ordinal only), and the proxy built from GOG's has exactly that
+table. Every module that imports `CEGUIBase.dll` (`Torchlight.exe` 175 functions,
+`CEGUIFalagardWRBase` 195, `OgreGUIRenderer` 61, `CEGUIExpatParser` 22) imports by name. So the
+same proxy serves both. The functions the proxy looks up at run time (in `CEGUIBase`,
+`OgreMain`, `msvcp90`) are all exported by Steam's DLLs too, by the build's name check run on
+Steam's folder, read only. **[read; no Steam run done]**
+
+**Log mode (no `x360_ui.ini`): the game is unchanged.** The game reached its main menu as it
+did without the proxy: the screenshots' UI band (the bottom 120 rows at 1920x1080) is identical
+pixel for pixel, the rest differs only in the animated 3D scene. **[read: the runs]** What PC
+loads, in order, before the main menu (`x360_ui.log`; none returned null):
+- schemes `MEDIA/UI/GUILOOKSKIN.SCHEME`, then `MEDIA/UI/WINDOWSLOOK.SCHEME`, both with an empty
+  resource group (paths upper-cased by the game);
+- 37 layouts: `LOADING`, `BOTTOMHUD`, `PETHUD`, `INVENTORYMENU`, `SKILLMENU`, `JOURNALMENU`,
+  `QUESTMENU`, `MERCHANTMENU`, `ENCHANTMENU`, `COMBINEMENU`, `STASHMENU`, `STATSMENU`, `PETMENU`,
+  `OPTIONSMENU`, `SETTINGSMENU`, `DIEMENU`, `WAYPOINTMENU`, `DIALOGMENU`, `QUESTDIALOGMENU`,
+  `CINEMATICMENU`, `MODALMENU`, `TIPMENU`, `INTERACTIVEMENU`, `FISHINGMENU`, `CONSOLE`,
+  `MAINMENUFRAME`, `CHARACTERCREATE`, `CHARACTERLOAD`, `DIFFICULTY` through the two-argument
+  `loadWindowLayout` (random prefix); `SKILLTOOLTIP` (4 times), `TOOLTIP`, `TOOLTIPCOMPARE`
+  (twice) and `SKILLFOLDOUT` through the five-argument one, with prefixes `gui__NNNN`. Every
+  screen's layout is loaded once at start, not when the screen opens: replacing a layout means
+  replacing it at this point.
+
+**Scheme mode.** `x360_ui.ini` in the game folder:
+`mode=scheme` and `out=Z:\home\<user>\torchlight-gog\x360ui` (the converter's `OUT`). After
+the game's `loadScheme` of `GUILOOKSKIN.SCHEME` returns, the proxy:
+1. adds `OUT` to Ogre's world resource group (`General`) as a recursive `FileSystem` location.
+   `OUT`, not `OUT/media/ui/x360`, because the converted files name each other by their own
+   paths (`media/ui/x360/...`); the folder added holds only those files and the report. Ogre's
+   `std::string` arguments are built and destroyed by `msvcp90.dll`'s own exported members;
+2. loads `media/ui/x360/ceguiWidgets.scheme` with the real `loadScheme`, inside `__try` (an
+   exception there is logged and the game's call returns as it would have).
+
+Run (2026-10-15): the location was added, `resourceExists` found the scheme, and the 360 scheme
+loaded in 44 ms (`loadScheme (360)` returned a scheme, so its imagesets, fonts and looknfeel
+were all found **[inferred: CEGUI 0.6 throws on a missing file]**). Then `WINDOWSLOOK.SCHEME` and the 37 layouts
+loaded as before and the game reached the same main menu, its UI band again identical to the
+run without the proxy. **[read: the run]**
+
+**`mods/` (a data point only).** With a file at a new path in a mod folder
+(`mods/X360Probe/media/ui/x360probe/probe.txt`), `resourceExists` in `General` said no when
+PC's scheme had just loaded. So by then the mod folder's new paths are not in the group the UI
+reads from. **[read: the run]** It is not known whether the game adds mods later or to another
+group. With a mod folder present the start took about 20 s longer (the mod scan); `mods.dat` was
+not changed. The probe was removed after the run.
