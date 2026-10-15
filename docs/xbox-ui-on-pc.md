@@ -7,6 +7,106 @@ copies (`tools/`). PC was not run for this study; everything is read from the us
 `Pak.zip`, `Torchlight.exe` and its DLLs, the Xbox pak and the decrypted Xbox image). Marks:
 **[read]** (read in the files), **[inferred]**, **[to verify]**.
 
+## 0. Start here (handover, 2026-10-15)
+
+This repository is the whole of this project; the recomp's repository is only a reference.
+
+**Rules from the user, standing:**
+- No game file in the repository (CI fails on one: `tools/check_no_game_files.py`); tools convert
+  from the user's own copies, into folders outside the repository.
+- Tests use synthetic data only.
+- The repository is private and has no license until the user decides.
+- Work on the GOG version. Steam is tried last, with section 4's full protocol.
+- Never use Steam's prefix (`compatdata/41500`) and never touch the user's saves. Before any PC
+  run, take a hash snapshot; after it, verify the snapshot.
+- Ask before running the game when the user has not approved that kind of run. When a run needs
+  them, give the steps and stop.
+- Docs, commits and code are in English. Replies to the user are in Spanish (voseo).
+- If two hypotheses in a row fail on one point, stop, write down what was found, and report.
+
+**Where things are on this machine:**
+
+| What | Where |
+|------|-------|
+| GOG offline installer (the user's) | `~/<the GOG offline installer, 1.15a build 23675>.exe` |
+| Its files, extracted with `innoextract -e` (nothing run) | `~/torchlight-gog/extract` |
+| The game folder used | `~/torchlight-gog/prefix/drive_c/GOG Games/Torchlight` (a copy of the extract, without `tmp/`, `__redist/`, `commonappdata/`) |
+| The working prefix (Proton's script) | `~/torchlight-gog/compat/pfx` |
+| GOG saves, settings, mods, `Ogre.log` | `~/torchlight-gog/compat/pfx/drive_c/users/steamuser/AppData/Roaming/Runic Games/Torchlight/` (`save/`, `mods/`, `settings.txt`, `local_settings.txt`, `resourceconfig.dat`) |
+| Proton's logs of our runs | `~/torchlight-gog/steam-gogtl.log` |
+| Steam snapshot (hashes) | `~/torchlight-gog/hashes/steam-guard.json` (2404 entries, 2026-10-15) |
+| Steam's Torchlight install (read only, for comparisons) | `~/.steam/debian-installation/steamapps/common/Torchlight` |
+| The Xbox game data (read only) | `~/360tools/extracted/extracted` (`pak.zip`) |
+| The first prefix (wine alone; it does not work, now only holds the game folder) | `~/torchlight-gog/prefix` |
+
+**Running GOG, step by step:**
+1. Snapshot Steam:
+   `tools/steam_guard.py snapshot ~/torchlight-gog/hashes/steam-guard.json ~/.steam/debian-installation/steamapps/compatdata/41500 ~/.steam/debian-installation/userdata/<steam-id>/41500`.
+   If a snapshot was already taken, check that it still holds with `verify` before overwriting it.
+2. Run `tools/run_gog.sh`. It calls `proton run` from Proton Experimental with:
+   - `STEAM_COMPAT_DATA_PATH=~/torchlight-gog/compat`;
+   - `STEAM_COMPAT_CLIENT_INSTALL_PATH` set to Steam's folder, only so the script finds it;
+   - `SteamGameId=gogtl` and `SteamAppId=0`, both needed: without them the script exits at once
+     with code 1 and no log;
+   - `WINEDLLOVERRIDES="winemenubuilder.exe=d"`, so no shortcuts are made;
+   - `PROTON_LOG=1`.
+
+   Steam need not be open: GOG's executable does not import `steam_api`, so "Failed to connect to
+   Steam" in the log is harmless.
+3. The game opens at 1920x1080 (the desktop's size; `local_settings.txt` has `WINDOW_WIDTH`,
+   `RES_WIDTH`, `FULLSCREEN`) with DXVK, and reaches the main menu. Close it when done: Alt+F4 or
+   the game's own Quit.
+4. Run `tools/steam_guard.py verify ~/torchlight-gog/hashes/steam-guard.json`. It must print
+   UNCHANGED. Also check that nothing new appeared on the desktop (`~/Escritorio`) or in
+   `~/.local/share/applications`.
+
+   The only file of Steam's tree a run touches is Proton's own `dist.lock`, the lock file the
+   script opens on every run. It is outside the guarded folders.
+
+**What does not work yet:**
+- **Sound:** "No driver from pulse,alsa,oss,coreaudio", because the unix side of `winepulse`
+  cannot be loaded. Proton normally runs inside Steam's runtime container
+  (`SteamLinuxRuntime_sniper`), which provides the PulseAudio/PipeWire client libraries its unix
+  modules link against. Likely fixes, untried: run through the runtime's `_v2-entry-point` as Steam
+  does, or with the host's `libpulse` visible to Proton's `winepulse.so`. Not needed for the UI
+  work.
+- **Wine alone (no Proton script):** it stops before the menu (section 5a), so do not use it.
+
+**The tools** (`tools/`; tests in `tests/test_tools.py`, synthetic only, run by CI):
+
+| Tool | What it does |
+|------|--------------|
+| `pe_info.py` | Sections, imports and exports of an `.exe`/`.dll` |
+| `compare_installs.py` | Two installs' binaries compared: hash, link time, sections, imports, exports |
+| `layout_windows.py` | The named windows of a CEGUI layout, and how many of them another layout has |
+| `steam_guard.py` | Hash snapshot and verify of folders that must not change |
+| `run_gog.sh` | The GOG run above (shell, no test) |
+| `check_no_game_files.py` | The CI check |
+
+Run the tests with `python3 -m unittest discover -s tests -v`.
+
+**State:**
+- The feasibility study is done (sections 1 to 3).
+- The GOG/Steam comparison is done (section 5): two builds, the same UI data except
+  `charactercreate.layout`, and the same CEGUI imports but for one function. Work done against
+  GOG carries over to Steam where it goes through CEGUI and the data, not where it hooks addresses
+  of the executable.
+- GOG runs (section 5a).
+- No code of the port exists yet.
+
+**Next, in order (section 3's stages):**
+1. **Stage 0, the converter:** a tool that reads the user's Xbox `pak.zip` and writes the 360 UI
+   files (`.uilayout` as `.layout`, `ceguiWidgets.scheme`/`.looknfeel`, the imagesets, widget
+   textures and extra fonts) into a folder outside the repository. Tests on synthetic layouts.
+   It does not need the game to run.
+2. **Stage 1, the proxy `CEGUIBase.dll`** (x86, MSVC 2008 ABI, exports forwarded by name):
+   - first only log the layouts and schemes PC asks for;
+   - then load the 360 scheme after PC's.
+   - It needs a 32-bit Windows toolchain (mingw-w64 cannot match MSVC's C++ ABI for forwarded
+     members; forwarding by name in a `.def` file does not need it), and GOG runs to check it. The
+     proxy goes into the copy's game folder only.
+3. Stages 2 to 5 as in section 3.
+
 ## 1. What the 360 interface is made of
 
 - **48 layouts** (`media/UI/*.uilayout`), CEGUI XML (`GUILayout`) like PC's `.layout`, with the
@@ -69,12 +169,13 @@ copies (`tools/`). PC was not run for this study; everything is read from the us
 Stages 0-2 are a few weeks and give the 360 look on PC's small screens; the 360 experience as a
 whole (pad play and its screens) is stages 3-5, far larger, and mostly new code on PC.
 
-## 4. Running the PC game: precautions (not done; needs the user's OK)
+## 4. Running the PC game: precautions
 
 The work is done on the GOG version, in a prefix of its own (section 5); the Steam version is
 tried last, with the precautions below.
 
-Nothing in this study needed PC to run. Stage 1 onwards does. Before any run:
+Nothing in the study needed PC to run; stage 1 onwards does. For GOG, section 0's snapshot and
+verify are the check. For Steam, before any run:
 
 1. **Copies with hashes:** the Proton prefix used, and Steam's `userdata/<id>/41500/` (the cloud
    folder), copied aside; a SHA-256 list of every file in both, kept with the copy.

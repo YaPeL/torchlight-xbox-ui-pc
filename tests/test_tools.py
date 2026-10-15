@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import check_no_game_files  # noqa: E402
 import compare_installs  # noqa: E402
 import layout_windows  # noqa: E402
+import steam_guard  # noqa: E402
 from pe_info import PE  # noqa: E402
 
 
@@ -130,6 +131,25 @@ class LayoutTest(unittest.TestCase):
     def test_overlap(self):
         have, missing = layout_windows.overlap(layout_windows.windows(self.XML), {"Root": 0, "Deep": 0})
         self.assertEqual((have, missing), (["Root", "Deep"], ["Root/Ok"]))
+
+
+class SteamGuardTest(unittest.TestCase):
+    def test_snapshot_and_differences(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "pfx", "save"))
+            write(os.path.join(root, "pfx", "save", "0.svt"), b"synthetic save")
+            write(os.path.join(root, "pfx", "settings.txt"), "a")
+            os.symlink("save", os.path.join(root, "pfx", "link"))
+            before = steam_guard.snapshot([os.path.join(root, "pfx")])
+            self.assertEqual(steam_guard.differences(before, steam_guard.snapshot(before.keys())), [])
+            write(os.path.join(root, "pfx", "settings.txt"), "b")
+            write(os.path.join(root, "pfx", "new.txt"), "x")
+            os.remove(os.path.join(root, "pfx", "save", "0.svt"))
+            lines = steam_guard.differences(before, steam_guard.snapshot(before.keys()))
+            self.assertEqual(len(lines), 3)
+            self.assertTrue(any(line.startswith("changed:") and line.endswith("settings.txt") for line in lines))
+            self.assertTrue(any(line.startswith("new:") and line.endswith("new.txt") for line in lines))
+            self.assertTrue(any(line.startswith("gone:") and line.endswith("0.svt") for line in lines))
 
 
 class NoGameFilesTest(unittest.TestCase):
