@@ -608,6 +608,46 @@ stick's direction; A fires the marked window's `onClick` (a click injected on it
 days for every `onClick` menu; screens with logic of their own (inventory, skills) are separate
 (section 10). **[inferred]**
 
+### 9e. Combat with the pad: first tries (2026-10-15, stopped after two hypotheses)
+
+**The real pad works.** The user's session with the 8BitDo (XInput, `pad_mode=direct`): XInput
+found, pad 0 connected, the stick and every button reached the proxy (log in
+`~/torchlight-gog/x360_ui-user-pad.log`); the user: "se siente perfecto". **[read: the run]**
+
+**Located in GOG** (names *(OT)*, by callees and shape; all `__thiscall`):
+- `0x4949d0` `CCharacter::setTarget(CCharacter*)` and `0x494ab0` `setTargetItem(CItem*)`: the
+  safe pointers at `+0x290`/`+0x298`, called from `clickLeft` (`0x4142a0`) with
+  `[client+0x2c]`. **[read]**
+- `0x5006c0` `CLevel::findCharacterWithinView(Matrix4 const&, alignment, float min, float half
+  angle, float range, bool best, CCharacter* exclude, CSkill*)`: the only function with
+  `Matrix4::inverse`, `atan2` (`fpatan`) and `ret 0x20`. `0x500a50` `findItemWithinView(Matrix4
+  const&, half angle, range)`. **[read]**
+- The hero's position is at `+0x70`; a 4x4 rotation at `+0xAC` (found in a dump). **[read]**
+
+**The 360's target rule (read):** `findCharacterWithinView` with the hero's matrix, alignment 5
+(units of alignment 2), min 0.5, a cone of **±30 degrees**, range 7.0 (or the weapon's + 2),
+the best one; else alignment 3 within 3.5. Items: a cone of ±60 degrees within 3.0 (the 360's own
+loop in `sub_821A4470`, same numbers). Constants at 0x820AA2C0 (+0x3B0 = 30, +0x240 = 60,
++0x1EC = 3, +0x400 = 7, +0x2F8 = 3.5). **[read]**
+
+**Tries** (the mine, floor 1, from a restored save):
+1. The cone oriented by the stick's last direction: X found no enemy; the engine's search with
+   180 degrees found one 2 units away, behind the stick's direction.
+2. The cone oriented by the hero's own matrix (`+0xAC`): X found no enemy either. **[read: the
+   runs]**
+
+What the log shows: the enemy candidate alternates every 100 ms between a unit and none, so a
+press of X lands on "none" half the time (and the matrix at `+0xAC` gave the same facing as the
+stick, so it may be the facing the hero is turning to, not the one it has). The next hypotheses,
+not tried (the user's rule): keep a candidate until it is gone for 300 ms; find why the search
+alternates (its `best` loop, or the unit's visibility flag); take the facing from the
+orientation the engine renders (`getOrientation` *(OT)*). The monster the user saw die was killed
+by the pet. **[read: the logs; the causes inferred]** GIF: `~/torchlight-gog/screens/combat-x-flicker.gif`.
+
+**A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
+at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
+with the game closed into the prefix's `runic games/torchlight/save/`.
+
 ## 10. The 360's screens with logic of their own, against PC's (2026-10-15)
 
 Sources as in section 9. The 360's classes and their bases are read from the image's RTTI (the

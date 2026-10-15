@@ -73,10 +73,41 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_FIND_WORLD_LOCATION 0x00411d60 /* CGameClient::findWorldLocation(Vector3&, bool) */
 #define GOG_GET_POSITION 0x00510eb0      /* CPositionableObject::getPosition(bool) */
 #define GOG_SET_DESTINATION 0x00494b30   /* CCharacter::setDestination(CLevel&, float, float) */
+#define GOG_SET_TARGET 0x004949d0        /* CCharacter::setTarget(CCharacter*) */
+#define GOG_SET_TARGET_ITEM 0x00494ab0   /* CCharacter::setTargetItem(CItem*) */
+#define GOG_FIND_CHARACTER 0x005006c0    /* CLevel::findCharacterWithinView(Matrix4 const&, EAlignment,
+                                            float min, float half angle, float range, bool best,
+                                            CCharacter* exclude, CSkill*) */
+#define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
+                                            angle, float range) */
 
 typedef unsigned char(__fastcall *find_world_fn)(void *client, void *edx, float *out, int flag);
 typedef float *(__fastcall *get_position_fn)(void *unit, void *edx, float *out, int flag);
 typedef void(__fastcall *set_destination_fn)(void *hero, void *edx, void *level, float x, float z);
+typedef void(__fastcall *set_target_fn)(void *hero, void *edx, void *target);
+typedef void *(__fastcall *find_character_fn)(void *level, void *edx, const float *matrix, int alignment,
+                                             float min, float half_angle, float range, int best,
+                                             void *exclude, void *skill);
+typedef void *(__fastcall *find_item_fn)(void *level, void *edx, const float *matrix, float half_angle,
+                                        float range);
+
+/* The 360's numbers (docs/xbox-ui-on-pc.md, section 9a). */
+#define TARGET_HALF_ANGLE 30.0f
+#define TARGET_MIN 0.5f
+#define TARGET_RANGE 7.0f
+#define TARGET_RANGE_ANY 3.5f
+#define ITEM_HALF_ANGLE 60.0f
+#define ITEM_RANGE 3.0f
+#define ALIGN_ENEMY 5
+#define ALIGN_ANY 3
+
+static float face_x = 0.0f, face_z = 1.0f; /* the hero's facing: the stick's last direction, in the world */
+static void *candidate, *item_candidate;    /* the 360's +0x1BC and +0x1C4 */
+static unsigned aim_until;                  /* the virtual cursor aims ahead of the hero until then */
+static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
+static unsigned prev_buttons;
+#define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
+#define BUTTON_RT 0x20000u
 
 /* A press or release of the left button at (x, y), client pixels. */
 static void edge(HWND w, int down, long x, long y) {
@@ -137,7 +168,7 @@ static void poll(void) {
         }
         lx = st.lx * 1000 / 32767;
         ly = st.ly * 1000 / 32767;
-        buttons = st.buttons;
+        buttons = st.buttons | (st.lt > 64 ? BUTTON_LT : 0) | (st.rt > 64 ? BUTTON_RT : 0);
     }
     {
         /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */
@@ -174,9 +205,12 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     RECT rc;
     poll();
     if (direct) {
-        if (!in_probe) { order(); return r; }
+        if (!in_probe) {
+            order();
+            if (!(aim_until && GetTickCount() < aim_until)) return r;
+        }
     }
-    if (!(stick_active() || (buttons & 0x1000) || clicking())) {
+    if (!(stick_active() || (buttons & 0x1000) || clicking() || (direct && aim_until && GetTickCount() < aim_until))) {
         if (held) {
             /* Released: the button goes up where the real cursor is. */
             POINT c = *p;
@@ -202,6 +236,12 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
             while (len * len < len2) len++;
             q.x = cx + lx * radius / len;
             q.y = cy - ly * radius / len;
+        } else if (direct) {
+            /* Aiming a skill with the stick at rest: ahead of the hero, the stick's last direction. */
+            long l2 = (long)aim_lx * aim_lx + (long)aim_ly * aim_ly, len = 1;
+            while (len * len < l2) len++;
+            q.x = cx + aim_lx * radius / len;
+            q.y = cy - aim_ly * radius / len;
         }
         {
             /* The press and the release are injected (the game starts a move or an attack on the
@@ -268,15 +308,141 @@ static void note(int what, const char *s) {
     if (!said[what]) { said[what] = 1; x360_log(s); }
 }
 
+static float root(float v) {
+    float g = v > 1 ? v / 2 : 1;
+    int i;
+    if (v <= 0) return 0;
+    for (i = 0; i < 12; i++) g = 0.5f * (g + v / g);
+    return g;
+}
+
+/* The 360's choice of target, every 100 ms (section 9a): an enemy in a 60-degree cone ahead of
+ * the hero within 7 units, else anyone within 3.5; an item in a 120-degree cone within 3. */
+/* The hero's own world matrix (Ogre's row-major Matrix4): its rotation is kept at +0xAC in GOG's
+ * build (a 4x4 with a zero translation; read in a dump, section 9), its position at +0x70. */
+#define GOG_UNIT_ROTATION 0xac
+static void hero_matrix(unsigned char *hero, float *m) {
+    const float *r = (const float *)(hero + GOG_UNIT_ROTATION);
+    float pos[3];
+    int i;
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    for (i = 0; i < 16; i++) m[i] = r[i];
+    m[3] = pos[0];
+    m[7] = pos[1];
+    m[11] = pos[2];
+}
+
+static void *any_candidate;                 /* anyone near, for A: talk, use */
+
+static void choose_targets(unsigned char *hero, unsigned char *level) {
+    float m[16];
+    void *c, *a, *it;
+    hero_matrix(hero, m);
+    c = ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ENEMY, TARGET_MIN, TARGET_HALF_ANGLE,
+                                                TARGET_RANGE, 1, hero, 0);
+    a = c ? c : ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ANY, TARGET_MIN, TARGET_HALF_ANGLE,
+                                                        TARGET_RANGE_ANY, 1, hero, 0);
+    it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, ITEM_HALF_ANGLE, ITEM_RANGE);
+    if (c != candidate) {
+        x360_log("pad: enemy candidate ");
+        x360_log_num((long)c);
+        x360_log("\r\n");
+        candidate = c;
+    }
+    any_candidate = a;
+    if (it != item_candidate) {
+        x360_log("pad: item candidate ");
+        x360_log_num((long)it);
+        x360_log("\r\n");
+        item_candidate = it;
+    }
+}
+
+/* Diagnostics for X with no candidate: the same search, wide and far, and the hero's facing. */
+static unsigned char *diag_level;
+static void diagnose(unsigned char *hero) {
+    float m[16];
+    void *c;
+    hero_matrix(hero, m);
+    x360_log("pad: X with no enemy in the cone; facing ");
+    x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+    c = ((find_character_fn)GOG_FIND_CHARACTER)(diag_level, 0, m, ALIGN_ENEMY, 0.0f, 180.0f, 20.0f, 1, hero, 0);
+    x360_log("; nearest enemy within 20: "); x360_log_num((long)c);
+    x360_log("\r\n");
+}
+
+static void post_key(unsigned vk) {
+    HWND w = GetActiveWindow();
+    if (!w) return;
+    PostMessageW(w, 0x0100 /* WM_KEYDOWN */, vk, 1);
+    PostMessageW(w, 0x0101 /* WM_KEYUP */, vk, (long)0xC0000001UL);
+}
+
+/* The buttons, on their press (the 360's scheme, section 9a): X attacks the candidate, A picks up
+ * the item or talks to the candidate, LB/RB and B, Y, LT, RT press the hotbar's keys 1 to 6. */
+static void buttons_pressed(unsigned char *hero, unsigned pressed) {
+    static const struct { unsigned bit; unsigned key; const char *name; } keys[] = {
+        {0x0100, '1', "LB"}, {0x0200, '2', "RB"}, {0x2000, '3', "B"}, {0x8000, '4', "Y"},
+        {BUTTON_LT, '5', "LT"}, {BUTTON_RT, '6', "RT"},
+    };
+    unsigned i;
+    if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
+    if ((pressed & 0x4000) && candidate) {
+        x360_log("pad: X: setTarget\r\n");
+        ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+    }
+    if (pressed & 0x1000) {
+        if (item_candidate) {
+            x360_log("pad: A: setTargetItem\r\n");
+            ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
+        } else if (any_candidate) {
+            x360_log("pad: A: setTarget (interact)\r\n");
+            ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
+        }
+    }
+    for (i = 0; i < sizeof keys / sizeof keys[0]; i++)
+        if (pressed & keys[i].bit) {
+            x360_log("pad: ");
+            x360_log(keys[i].name);
+            x360_log(": hotbar key\r\n");
+            aim_until = GetTickCount() + 400;
+            post_key(keys[i].key);
+        }
+}
+
 static void order(void) {
     unsigned now = GetTickCount();
     unsigned char *app, *client, *hero, *level;
     float hit[3], pos[3], dx, dz, len2, len;
-    if (!stick_active() || in_probe || now - last_order < 100) return;
+    static int was_active;
+    if (in_probe) return;
     app = *(unsigned char **)GOG_APP_GLOBAL;
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
+    if (hero && level) {
+        unsigned pressed = buttons & ~prev_buttons;
+        prev_buttons = buttons;
+        if (stick_active() && !was_active) {
+            /* Moving the stick drops the target, as on the 360. */
+            ((set_target_fn)GOG_SET_TARGET)(hero, 0, 0);
+            ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
+        }
+        was_active = stick_active();
+        diag_level = level;
+        if (pressed) buttons_pressed(hero, pressed);
+        if ((buttons & 0x4000) && candidate && now - last_order >= 100) {
+            /* X held: keep attacking the candidate, and no move orders meanwhile. */
+            ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+        }
+        if (now - last_order >= 100) choose_targets(hero, level);
+    }
+    if (!stick_active() || (buttons & 0x4000) || now - last_order < 100) {
+        if (now - last_order >= 100) last_order = now;
+        return;
+    }
+    aim_lx = lx;
+    aim_ly = ly;
     if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
     last_order = now;
     in_probe = 1;
@@ -292,8 +458,9 @@ static void order(void) {
     dz = hit[2] - pos[2];
     len2 = dx * dx + dz * dz;
     if (len2 < 1e-6f) return;
-    len = len2; /* a square root without the CRT: a few Newton steps */
-    { int i; float g = len2 > 1 ? len2 / 2 : 1; for (i = 0; i < 12; i++) g = 0.5f * (g + len2 / g); len = g; }
+    len = root(len2); /* a square root without the CRT */
+    face_x = dx / len;
+    face_z = dz / len;
     ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * dx / len, pos[2] + 2.0f * dz / len);
 }
 
