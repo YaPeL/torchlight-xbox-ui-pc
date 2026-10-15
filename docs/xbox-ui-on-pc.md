@@ -126,7 +126,7 @@ hooks, or a proxy that patches code), which must be found again in Steam's build
 must forward the CEGUIBase exports by name (the two builds' export tables are not known to match
 by ordinal). **[inferred]** Steam is tried last, with section 4's precautions.
 
-### 5a. Plan for running GOG (needs the user's OK; nothing run yet)
+### 5a. Running GOG (approved by the user 2026-10-15)
 
 - **Prefix:** a new one, `~/torchlight-gog/prefix`, made by the wine of the user's Proton
   (`Proton - Experimental/files/bin/wine` with that prefix), never Steam's `compatdata/41500`.
@@ -135,4 +135,34 @@ by ordinal). **[inferred]** Steam is tried last, with section 4's precautions.
   no cloud: the offline installer has neither) copied to the prefix's `C:\GOG Games\Torchlight`.
 - **Saves:** inside the prefix, `drive_c/users/<user>/AppData/Roaming/Runic Games/Torchlight/`;
   nothing outside `~/torchlight-gog`. The Steam saves are not read or written.
-- **What runs:** `wineboot` once to create the prefix, then `Torchlight.exe` from the copy.
+- **What runs:** `wineboot` once to create the prefix, then `Torchlight.exe` from the copy, with
+  `WINEDLLOVERRIDES="winemenubuilder.exe=d;mscoree=d;mshtml=d"` (no shortcuts or file associations
+  on the desktop; no Mono or Gecko install prompts).
+- **Before and after:** SHA-256 of every file of Steam's `compatdata/41500` and
+  `userdata/<id>/41500` (758 files), and their tree, taken before the prefix was made and checked
+  after the runs: unchanged. Nothing in the Proton folder was modified (no file newer than the
+  start), no desktop entry was made.
+
+**What was seen (2026-10-15).**
+- The prefix's user is `steamuser` (Proton's wine), and the game writes to
+  `drive_c/users/steamuser/AppData/Roaming/Runic Games/Torchlight/`: `Ogre.log`, `settings.txt`,
+  `local_settings.txt`, `mods/`, `save/`, `torched/`. The game's own log says "Path for saving is
+  ... C:/users/steamuser/AppData/Roaming/Runic Games/Torchlight/SAVE". **[read: the run]**
+- Proton's wine run alone lacks what Proton's launcher puts in a prefix. First,
+  `RenderSystem_Direct3D9.dll` did not load because wined3d needs `libvkd3d-shader-1.dll` and
+  `libvkd3d-utils-1.dll`. Copied from Proton's `lib/vkd3d/` into the prefix (read only from Proton),
+  the render system loaded. Sound has no driver: the unix side of `winepulse` is not found, likely
+  Steam's runtime libraries.
+- Then the game starts its 800x600 window but computes a window size of 6352240 x 0
+  (`CreateViewports AspectRatio message - 6.35224e+006 x 0`) and stops. With wined3d it was a page
+  fault at 0x0152B6B8, after GL errors on a 0-sized texture. With DXVK's `d3d9.dll` (copied from
+  Proton into the prefix's `syswow64`, `d3d9=n`) it was "Failed to create Direct3D9 Device"
+  (DXVK: cannot create a 6352240x1 X8R8G8B8 texture). It did not reach the main menu. **[read: the
+  runs]**
+- Two hypotheses failed, so this stopped here. Next candidates, for the user to choose:
+  - run the copy through Proton's own launcher script with the separate prefix
+    (`STEAM_COMPAT_DATA_PATH` set to a folder of ours), which sets the runtime and the DLLs as for
+    Steam games, still without Steam;
+  - Wayland/XWayland's window size: try a virtual desktop
+    (`explorer /desktop=TL,1280x720`);
+  - `FULLSCREEN :1` in `local_settings.txt`.
