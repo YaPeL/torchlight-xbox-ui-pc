@@ -38,6 +38,7 @@ IMPORT HWND __stdcall GetActiveWindow(void);
 IMPORT BOOL __stdcall GetClientRect(HWND w, RECT *r);
 IMPORT BOOL __stdcall ClientToScreen(HWND w, POINT *p);
 IMPORT BOOL __stdcall ScreenToClient(HWND w, POINT *p);
+IMPORT BOOL __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
 #define IMPORT_SCREEN_TO_CLIENT(w, p) ((w) ? ScreenToClient((w), (p)) : 0)
 
 void x360_log(const char *s);
@@ -59,6 +60,16 @@ static unsigned buttons;       /* XInput mask: A 0x1000, B 0x2000, X 0x4000, Y 0
 static unsigned a_pressed_at;  /* GetTickCount of A's last press, for a short synthetic click */
 static unsigned last_poll;
 static int held;               /* the virtual left button, as last injected */
+static int edges_by_message;   /* 1: the edges are WM_LBUTTONDOWN/UP posted to the window; 0: CEGUI */
+
+/* A press or release of the left button at (x, y), client pixels. */
+static void edge(HWND w, int down, long x, long y) {
+    if (edges_by_message && w)
+        PostMessageW(w, down ? 0x0201 /* WM_LBUTTONDOWN */ : 0x0202 /* WM_LBUTTONUP */, down ? 1 /* MK_LBUTTON */ : 0,
+                     (long)((y & 0xffff) << 16 | (x & 0xffff)));
+    else
+        x360_inject_left(down, (float)x, (float)y);
+}
 
 #define DEAD_ZONE 240          /* of 1000: XInput's 7849 of 32767 */
 #define RADIUS_PERMILLE 140    /* of the window's height: the point ahead of the hero */
@@ -120,7 +131,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
             HWND w2 = GetActiveWindow();
             IMPORT_SCREEN_TO_CLIENT(w2, &c);
             held = 0;
-            x360_inject_left(0, (float)c.x, (float)c.y);
+            edge(w2, 0, c.x, c.y);
         }
         return r;
     }
@@ -146,7 +157,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
             int now_held = stick_active() || clicking();
             if (now_held != held) {
                 held = now_held;
-                x360_inject_left(held, (float)q.x, (float)q.y);
+                edge(w, held, q.x, q.y);
             }
         }
         ClientToScreen(w, &q);
@@ -197,7 +208,8 @@ static void *patch_import(const char *dll, const char *name, void *replacement) 
     return 0;
 }
 
-void x360_pad_start(const char *file) {
+void x360_pad_start(const char *file, int by_message) {
+    edges_by_message = by_message;
     if (file && file[0]) {
         unsigned n = 0;
         while (file[n] && n < sizeof pad_file - 1) { pad_file[n] = file[n]; n++; }
@@ -207,6 +219,7 @@ void x360_pad_start(const char *file) {
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
+    x360_log(edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
     if (pad_file[0]) { x360_log(pad_file); x360_log("\r\n"); }
 }
