@@ -399,8 +399,12 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
 static unsigned char *attack_level;
+static void swing_toward(unsigned char *hero, float x, float z);
+
+/* X on the candidate, as the 360 does (sub_8221BC80 and the button's action sub_82293548 never
+ * call setDestination: the hero faces the target and attacks where it stands). In range: PC's
+ * attack (stopPathing, setTarget, attack); out of range: an attack in place toward the target. */
 static void attack_candidate(unsigned char *hero) {
-    void **vt = *(void ***)hero;
     if (((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
     ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
     if (((bool_int_fn)GOG_IN_ATTACK_RANGE)(hero, 0, 0)) {
@@ -409,30 +413,33 @@ static void attack_candidate(unsigned char *hero) {
         ((void_fn)GOG_ATTACK)(hero, 0);
         x360_log("pad: X: in range, attack\r\n");
     } else {
-        ((void_fn)GOG_STOP_PATHING)(hero, 0);
-        ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
-        ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 4);
-        ((float_ptr_fn)vt[GOG_CHASE_SLOT])(hero, 0, 0.0f, attack_level);
-        x360_log("pad: X: out of range, chase\r\n");
+        float t[3];
+        ((get_position_fn)GOG_GET_POSITION)(candidate, 0, t, 1);
+        swing_toward(hero, t[0], t[2]);
+        x360_log("pad: X: out of range, attack in place toward it\r\n");
     }
 }
 
 /* X with no candidate: the 360 swings anyway, toward the stick or the hero's facing
  * (sub_8221BC80: a point ahead, setTargetDirection, the button's action). PC's equivalent is the
  * hold-position attack: setDestination with the hero's hold byte set attacks toward the point. */
+/* An attack in place toward (x, z): PC's hold-position attack (setDestination with the hold byte). */
+static void swing_toward(unsigned char *hero, float x, float z) {
+    unsigned char hold = hero[GOG_HOLD_POSITION];
+    hero[GOG_HOLD_POSITION] = 1;
+    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, attack_level, x, z);
+    hero[GOG_HOLD_POSITION] = hold;
+}
+
 static void swing(unsigned char *hero) {
     float m[16], dx, dz, len;
-    unsigned char hold;
     if (!attack_level || ((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
     hero_matrix(hero, m);
     if (stick_active()) { dx = face_x; dz = face_z; }
     else { dx = m[2]; dz = m[10]; }
     len = root(dx * dx + dz * dz);
     if (len < 1e-3f) return;
-    hold = hero[GOG_HOLD_POSITION];
-    hero[GOG_HOLD_POSITION] = 1;
-    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, attack_level, m[3] + 2.0f * dx / len, m[11] + 2.0f * dz / len);
-    hero[GOG_HOLD_POSITION] = hold;
+    swing_toward(hero, m[3] + 2.0f * dx / len, m[11] + 2.0f * dz / len);
     x360_log("pad: X: swing\r\n");
 }
 
