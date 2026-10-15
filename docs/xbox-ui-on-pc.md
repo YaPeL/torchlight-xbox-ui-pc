@@ -109,6 +109,10 @@ Run the tests with `python3 -m unittest discover -s tests -v`.
   `mode=scheme` adds the converted folder to Ogre and loads the 360 scheme after PC's. The game
   reaches its main menu with it, unchanged. No 360 layout is shown yet.
 
+**Paused (2026-10-15, the user's order):** stage 2 (the modal and the small screens) is paused
+where section 8 leaves it, on branch `stage2-modal`; the work now is gameplay with the pad
+(section 9).
+
 **Next, in order (section 3's stages):**
 1. **Stage 2, the small shared screens with the 360 look** (waypoints, quest dialog, modal,
    death, character load): in the proxy's `loadWindowLayout`, hand the game the converted 360
@@ -408,6 +412,9 @@ group. With a mod folder present the start took about 20 s longer (the mod scan)
 not changed. The probe was removed after the run.
 
 ## 8. Stage 2, first findings: what PC's code asks of its windows (2026-10-15)
+
+*Paused here (2026-10-15): the modal is not converted yet. Left open: how to see PC's modal in
+play (it is shown only from the death handler), and the mapping data files.*
 
 **The trace (`trace=1` in `x360_ui.ini`).** The proxy also intercepts, for calls from
 `Torchlight.exe` only (by return address), `Window::getChild(const String&)`,
