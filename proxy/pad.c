@@ -85,6 +85,9 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_ATTACK 0x00491bc0            /* CCharacter::attack() */
 #define GOG_SET_MODE_SLOT (0x174 / 4)    /* virtual, (int): clickLeft passes 4 before chasing */
 #define GOG_CHASE_SLOT (0x1ac / 4)       /* virtual, (float 0, CLevel*): clickLeft's next call */
+#define GOG_HOLD_POSITION 0x20a         /* byte: PC's hold-position key (Shift); with it set,
+                                            setDestination attacks toward the point instead of walking */
+#define GOG_SET_TARGET_DIRECTION 0x00486180 /* CCharacter::setTargetDirection(float x, float z) */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
                                             angle, float range) */
 
@@ -93,6 +96,7 @@ typedef float *(__fastcall *get_position_fn)(void *unit, void *edx, float *out, 
 typedef void(__fastcall *set_destination_fn)(void *hero, void *edx, void *level, float x, float z);
 typedef void(__fastcall *set_target_fn)(void *hero, void *edx, void *target);
 typedef void(__fastcall *void_fn)(void *hero, void *edx);
+typedef void(__fastcall *set_dir_fn)(void *hero, void *edx, float x, float z);
 typedef unsigned char(__fastcall *bool_fn)(void *hero, void *edx);
 typedef unsigned char(__fastcall *bool_int_fn)(void *hero, void *edx, int arg);
 typedef void(__fastcall *int_fn)(void *hero, void *edx, int arg);
@@ -358,7 +362,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     a = c ? c : ((find_character_fn)GOG_FIND_CHARACTER)(level, 0, m, ALIGN_ANY, TARGET_MIN, TARGET_HALF_ANGLE,
                                                         TARGET_RANGE_ANY, 1, hero, 0);
     it = ((find_item_fn)GOG_FIND_ITEM)(level, 0, m, ITEM_HALF_ANGLE, ITEM_RANGE);
-    if (c != candidate || GetTickCount() < log_until) {
+    if (GetTickCount() < log_until) {
         static int said_node;
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
         x360_log(" stick "); x360_log_num(lx); x360_log(" "); x360_log_num(ly);
@@ -374,7 +378,6 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking" : "");
         x360_log("\r\n");
         dest_calls = drop_calls = 0;
-        candidate = c;
         if (!said_node) {
             /* The class of the hero's +0x58 object (what getPosition asks): MSVC RTTI. */
             unsigned char *node = *(unsigned char **)(hero + 0x58);
@@ -389,12 +392,8 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         }
     }
     any_candidate = a;
-    if (it != item_candidate) {
-        x360_log("pad: item candidate ");
-        x360_log_num((long)it);
-        x360_log("\r\n");
-        item_candidate = it;
-    }
+    candidate = c;
+    item_candidate = it;
 }
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
@@ -415,6 +414,25 @@ static void attack_candidate(unsigned char *hero) {
         ((float_ptr_fn)vt[GOG_CHASE_SLOT])(hero, 0, 0.0f, attack_level);
         x360_log("pad: X: out of range, chase\r\n");
     }
+}
+
+/* X with no candidate: the 360 swings anyway, toward the stick or the hero's facing
+ * (sub_8221BC80: a point ahead, setTargetDirection, the button's action). PC's equivalent is the
+ * hold-position attack: setDestination with the hero's hold byte set attacks toward the point. */
+static void swing(unsigned char *hero) {
+    float m[16], dx, dz, len;
+    unsigned char hold;
+    if (!attack_level || ((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
+    hero_matrix(hero, m);
+    if (stick_active()) { dx = face_x; dz = face_z; }
+    else { dx = m[2]; dz = m[10]; }
+    len = root(dx * dx + dz * dz);
+    if (len < 1e-3f) return;
+    hold = hero[GOG_HOLD_POSITION];
+    hero[GOG_HOLD_POSITION] = 1;
+    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, attack_level, m[3] + 2.0f * dx / len, m[11] + 2.0f * dz / len);
+    hero[GOG_HOLD_POSITION] = hold;
+    x360_log("pad: X: swing\r\n");
 }
 
 /* Diagnostics for X with no candidate: the same search, wide and far, and the hero's facing. */
@@ -467,64 +485,159 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
         }
 }
 
+/* The 360's movement (section 9a): the hero faces the stick's point every frame
+ * (setTargetDirection) and walks toward it on a 0.1 s timer (setDestination); releasing the stick
+ * stops it. A change of the stick's direction probes the world at once, so the facing follows
+ * without waiting for the timer. pad_face=0 keeps the old behaviour (only setDestination), to compare. */
+static int face_each_frame = 1;
+static float world_x, world_z;              /* the stick's direction in the world, from the last probe */
+static int probed_lx, probed_ly, have_world;
+static unsigned turn_t0;                    /* a measured turn: since a direction change */
+static unsigned change_t0;                  /* when the stick's direction changed, before any probe */
+static float turn_x, turn_z;
+static float release_pos[3];
+static unsigned release_t0;
+
+static int direction_changed(void) {
+    /* More than about 5 degrees between the stick now and at the last probe. */
+    long dot = (long)lx * probed_lx + (long)ly * probed_ly;
+    long n1 = (long)lx * lx + (long)ly * ly, n2 = (long)probed_lx * probed_lx + (long)probed_ly * probed_ly;
+    float c;
+    if (!have_world || !n1 || !n2) return 1;
+    c = (float)dot / (root((float)n1) * root((float)n2));
+    return c < 0.996f;
+}
+
+static int probe(unsigned char *client, unsigned char *hero, const float *pos) {
+    float hit[3], dx, dz, len;
+    in_probe = 1;
+    if (!((find_world_fn)GOG_FIND_WORLD_LOCATION)(client, 0, hit, hero[GOG_HOLD_POSITION])) {
+        in_probe = 0;
+        note(2, "pad: findWorldLocation found nothing\r\n");
+        return 0;
+    }
+    in_probe = 0;
+    dx = hit[0] - pos[0];
+    dz = hit[2] - pos[2];
+    len = root(dx * dx + dz * dz);
+    if (len < 1e-3f) return 0;
+    world_x = dx / len;
+    world_z = dz / len;
+    face_x = world_x;
+    face_z = world_z;
+    probed_lx = lx;
+    probed_ly = ly;
+    have_world = 1;
+    return 1;
+}
+
+static void measure_turn(unsigned char *hero, unsigned now) {
+    float m[16], dot;
+    if (!turn_t0) return;
+    hero_matrix(hero, m);
+    dot = m[2] * turn_x + m[10] * turn_z;
+    if (dot > 0.94f) {
+        x360_log("pad: turn ms ");
+        x360_log_num((long)(now - turn_t0));
+        x360_log(face_each_frame ? " (facing every frame)\r\n" : " (setDestination only)\r\n");
+        turn_t0 = 0;
+    } else if (now - turn_t0 > 2000) {
+        x360_log("pad: turn not done in 2 s\r\n");
+        turn_t0 = 0;
+    }
+}
+
 static void order(void) {
     unsigned now = GetTickCount();
     unsigned char *app, *client, *hero, *level;
-    float hit[3], pos[3], dx, dz, len2, len;
+    float pos[3];
     static int was_active;
+    unsigned pressed;
     if (in_probe) return;
     app = *(unsigned char **)GOG_APP_GLOBAL;
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
-    if (hero && level) {
-        unsigned pressed = buttons & ~prev_buttons;
-        prev_buttons = buttons;
-        if (stick_active() && !was_active) {
+    if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
+    diag_level = level;
+    attack_level = level;
+    pressed = buttons & ~prev_buttons;
+    prev_buttons = buttons;
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    measure_turn(hero, now);
+    if (release_t0 && now - release_t0 >= 1000) {
+        /* How far the hero went after the stick was let go. */
+        float dx = pos[0] - release_pos[0], dz = pos[2] - release_pos[2];
+        x360_log("pad: after release x100 ");
+        x360_log_num((long)(root(dx * dx + dz * dz) * 100));
+        x360_log("\r\n");
+        release_t0 = 0;
+    }
+
+    if (stick_active()) {
+        if (!was_active) {
             /* Moving the stick drops the target, as on the 360. */
             ((set_target_fn)GOG_SET_TARGET)(hero, 0, 0);
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
             drop_calls++;
         }
-        was_active = stick_active();
-        diag_level = level;
-        attack_level = level;
-        if (pressed) buttons_pressed(hero, pressed);
-        if ((buttons & 0x4000) && candidate && now - last_order >= 100) {
-            /* X held: keep attacking the candidate, as holding PC's button repeats the click. */
-            attack_candidate(hero);
+        if (!(buttons & 0x4000)) {
+            int changed = direction_changed();
+            if (changed && !change_t0) change_t0 = now;
+            if ((changed && face_each_frame) || now - last_order >= 100) {
+                float old_x = world_x, old_z = world_z;
+                int had = have_world;
+                int ok = probe(client, hero, pos);
+                if (ok && changed &&
+                    (!had || old_x * world_x + old_z * world_z < 0.866f)) {
+                    turn_t0 = change_t0 ? change_t0 : now; /* a turn of more than 30 degrees: time it from the stick */
+                    turn_x = world_x;
+                    turn_z = world_z;
+                }
+                if (ok) change_t0 = 0;
+            }
+            if (have_world && face_each_frame)
+                ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
+            if (have_world && now - last_order >= 100) {
+                last_order = now;
+                aim_lx = lx;
+                aim_ly = ly;
+                ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * world_x,
+                                                          pos[2] + 2.0f * world_z);
+                dest_calls++;
+                note(3, "pad: setDestination called\r\n");
+            }
         }
-        if (now - last_order >= 100) choose_targets(hero, level);
+    } else if (was_active) {
+        /* Let go: stop where the hero is (the 360 sends a last destination on release). */
+        if (face_each_frame) {
+            ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0], pos[2]);
+            dest_calls++;
+        }
+        release_t0 = now;
+        change_t0 = 0;
+        release_pos[0] = pos[0]; release_pos[1] = pos[1]; release_pos[2] = pos[2];
+        have_world = 0;
     }
-    if (!stick_active() || (buttons & 0x4000) || now - last_order < 100) {
-        if (now - last_order >= 100) last_order = now;
-        return;
+    was_active = stick_active();
+
+    /* X and A search for their target when pressed (and X while held), not all the time. */
+    if (pressed & (0x4000 | 0x1000)) {
+        log_until = now + 3000;
+        choose_targets(hero, level);
     }
-    aim_lx = lx;
-    aim_ly = ly;
-    if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
-    last_order = now;
-    in_probe = 1;
-    if (!((find_world_fn)GOG_FIND_WORLD_LOCATION)(client, 0, hit, hero[0x20a])) {
-        in_probe = 0;
-        note(2, "pad: findWorldLocation found nothing\r\n");
-        return;
+    if (pressed) buttons_pressed(hero, pressed);
+    if ((buttons & 0x4000) && !(pressed & 0x4000) && now - last_order >= 100) {
+        /* X held: search again and keep attacking, as holding PC's button repeats the click. */
+        last_order = now;
+        choose_targets(hero, level);
+        if (candidate) attack_candidate(hero);
+        else swing(hero);
     }
-    in_probe = 0;
-    note(3, "pad: setDestination called\r\n");
-    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
-    dx = hit[0] - pos[0];
-    dz = hit[2] - pos[2];
-    len2 = dx * dx + dz * dz;
-    if (len2 < 1e-6f) return;
-    len = root(len2); /* a square root without the CRT */
-    face_x = dx / len;
-    face_z = dz / len;
-    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * dx / len, pos[2] + 2.0f * dz / len);
-    dest_calls++;
 }
 
-void x360_pad_start(const char *file, int by_message, int direct_mode) {
+void x360_pad_start(const char *file, int by_message, int direct_mode, int face) {
+    face_each_frame = face;
     edges_by_message = by_message;
     direct = direct_mode;
     if (file && file[0]) {

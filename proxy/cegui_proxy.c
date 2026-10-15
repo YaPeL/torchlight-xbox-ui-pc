@@ -23,6 +23,7 @@
  *   pad_file=Z:\path\pad.txt                    its input from a file instead of XInput (tests)
  *   pad_edges=message                           the virtual button's edges as window messages
  *   pad_mode=direct                             option b: the proxy calls setDestination (GOG only)
+ *   pad_face=0                                  the old movement, setDestination only (to compare)
  * In mode=scheme, OUT is added to Ogre's world resource group (a FileSystem location, recursive),
  * so the converted files' own paths (media/ui/x360/...) resolve, and then
  * media/ui/x360/ceguiWidgets.scheme is loaded once, inside __try: if it throws, the game's own
@@ -115,7 +116,7 @@ static void stamp(void) { put("["); put_dec(GetTickCount()); put("] "); }
 
 /* ---- the configuration ---- */
 
-static int mode_scheme, x360_done, trace, pad, pad_edges_msg, pad_direct;
+static int mode_scheme, x360_done, trace, pad, pad_edges_msg, pad_direct, pad_old_face;
 static char pad_file[400];
 static char out_dir[400];
 
@@ -144,6 +145,7 @@ static void read_config(void) {
         if (starts(line, "pad=1")) pad = 1;
         if (starts(line, "pad_edges=message")) pad_edges_msg = 1;
         if (starts(line, "pad_mode=direct")) pad_direct = 1;
+        if (starts(line, "pad_face=0")) pad_old_face = 1;
         if (starts(line, "pad_file=") && length(line + 9) < sizeof pad_file) memcpy(pad_file, line + 9, length(line + 9) + 1);
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
         line = end;
@@ -454,7 +456,7 @@ unsigned char __fastcall hook_char(void *self, void *edx, unsigned code) {
                     __builtin_return_address(0));
 }
 
-void x360_pad_start(const char *file, int by_message, int direct);
+void x360_pad_start(const char *file, int by_message, int direct, int face);
 
 /* For proxy/pad.c: a left button press or release at (x, y) in the window's pixels, injected into
  * CEGUI as the game injects real ones, so the game's own handlers (the click on the world) run. */
@@ -488,7 +490,7 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
         DisableThreadLibraryCalls(module);
         open_log();
         read_config();
-        if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct);
+        if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct, !pad_old_face);
     }
     return 1;
 }

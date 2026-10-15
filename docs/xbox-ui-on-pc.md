@@ -669,6 +669,35 @@ whether it is attacking. **[read: the runs]**
   `WM_KEYDOWN` did not reach the game in its one try, likely with the window unfocused); B, Y, LT,
   RT not tried. **[read: the runs]**
 
+**X with no target, and the weight of the movement (2026-10-15, after the user's session).**
+- **The 360 swings anyway.** With no candidate, its player controller (`sub_8221BC80`) takes the
+  point ahead (the stick's, or the facing's at rest: `sub_8221C838` with r5 = 1), faces it with
+  `setTargetDirection` and performs the button's action (`sub_82293548`). PC's equivalent is the
+  hold-position attack: `setDestination` *(OT)* with the hero's hold byte set (`+0x20A` in GOG,
+  the byte `moveToMouse` passes to `findWorldLocation`) stops, faces the point and calls
+  `attack()` (read in OT's decompilation of `setDestination`). X with no candidate now does that,
+  2 units ahead. **[read; not yet seen in a run]**
+- **The 360's movement, as read:** `setTargetDirection` toward the stick's point every frame
+  (`sub_821EBA48`), `setDestination` on a 0.1 s timer (`sub_8221C730`), and a last one when the
+  stick returns to rest. GOG's `setTargetDirection` is `0x486180` (it stores the point at
+  `+0x1CC` and the normalised direction at `+0x1D8`, as OT's and the 360's do; PC calls it in its
+  hold-position input). **[read]**
+- **Measured** (the mine save; the stick right, left, up, down, rest, twice; the time from the
+  stick's change to the hero's facing within 20 degrees of the new direction; and how far the hero
+  goes in the second after release): **[read: the runs]**
+
+| Movement | Turn (ms) | After release (units) |
+|---|---|---|
+| before: `setDestination` every 0.1 s only | 117-312, mean about 206 | 1.42 to 1.76 |
+| now: facing at once and on every call, `setDestination` every 0.1 s, a stop on release | 127-295, mean about 222 | 0.03 to 0.77 |
+
+  The turn did not get faster: it is the engine's own turning speed, not our 0.1 s. What was
+  heavy is likely the overshoot: on release the hero walked on to its last goal, up to 2 units;
+  now it stops. (That `setDestination` at its own position stops it is inferred; the numbers
+  agree.)
+- **Searches and the diagnosis log run only on a press** of X or A (and while X is held), no
+  longer every 0.1 s.
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.
