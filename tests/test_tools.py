@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
+import build_proxy  # noqa: E402
 import check_no_game_files  # noqa: E402
 import compare_installs  # noqa: E402
 import convert_x360_ui  # noqa: E402
@@ -90,6 +91,48 @@ class PETest(unittest.TestCase):
     def test_not_pe(self):
         with self.assertRaises(ValueError):
             PE(b"not a pe at all" * 10)
+
+
+class BuildProxyTest(unittest.TestCase):
+    def test_def(self):
+        hooked = list(build_proxy.HOOKS)
+        exports = [("??0Thing@CEGUI@@QAE@XZ", 1)] + [(h, i + 2) for i, h in enumerate(hooked)]
+        text = build_proxy.proxy_def(exports)
+        self.assertEqual(text.splitlines(), [
+            "LIBRARY CEGUIBase", "EXPORTS",
+            "    ??0Thing@CEGUI@@QAE@XZ=CEGUIBase_orig.??0Thing@CEGUI@@QAE@XZ @1"]
+            + [f"    {h}={build_proxy.HOOKS[h]} @{i + 2}" for i, h in enumerate(hooked)])
+
+    def test_def_needs_the_hooked_members(self):
+        with self.assertRaises(ValueError):
+            build_proxy.proxy_def([("??0Thing@CEGUI@@QAE@XZ", 1)])
+
+    def test_import_def(self):
+        self.assertEqual(build_proxy.import_def("k.dll", {"F": 4, "G": 0}), "LIBRARY k.dll\nEXPORTS\nF@4\nG@0\n")
+
+    def test_install_and_remove(self):
+        with tempfile.TemporaryDirectory() as game, tempfile.TemporaryDirectory() as built:
+            dll = os.path.join(game, "CEGUIBase.dll")
+            write(dll, b"MZ synthetic real")
+            proxy = os.path.join(built, "CEGUIBase.dll")
+            write(proxy, b"MZ synthetic proxy CEGUIBase_orig.x")
+            build_proxy.install(game, proxy)
+            self.assertTrue(build_proxy.is_proxy(dll))
+            self.assertEqual(Path(game, "CEGUIBase_orig.dll").read_bytes(), b"MZ synthetic real")
+            build_proxy.install(game, proxy)  # again: the real DLL is kept
+            self.assertEqual(Path(game, "CEGUIBase_orig.dll").read_bytes(), b"MZ synthetic real")
+            build_proxy.remove(game)
+            self.assertEqual(Path(dll).read_bytes(), b"MZ synthetic real")
+            self.assertFalse(os.path.exists(os.path.join(game, "CEGUIBase_orig.dll")))
+
+    def test_install_refuses_two_real_dlls(self):
+        with tempfile.TemporaryDirectory() as game:
+            write(os.path.join(game, "CEGUIBase.dll"), b"MZ synthetic real")
+            write(os.path.join(game, "CEGUIBase_orig.dll"), b"MZ synthetic real too")
+            with self.assertRaises(SystemExit):
+                build_proxy.install(game, os.path.join(game, "CEGUIBase.dll"))
+            with self.assertRaises(SystemExit):
+                build_proxy.remove(game)
 
 
 class CompareTest(unittest.TestCase):
