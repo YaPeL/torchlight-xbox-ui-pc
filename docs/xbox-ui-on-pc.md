@@ -90,3 +90,49 @@ Nothing in this study needed PC to run. Stage 1 onwards does. Before any run:
 4. **Steam Cloud off** for the game, so nothing the test writes is uploaded.
 5. **After each session:** the hash lists checked against the copies, the real prefix and
    `userdata/<id>/41500/` unchanged; anything changed is restored from the copy and reported.
+
+## 5. The GOG version, and what of it holds for Steam (2026-10-15)
+
+Work is done on the GOG version (offline installer `setup_torchlight_1.15(a)_(23675).exe`, game
+ID 1207659069), read with `innoextract` and compared with the Steam install by
+`tools/compare_installs.py` and the paks' file lists, without running either. **[read]**
+
+- **Two builds.** GOG is build 17870 (`BuildVer.txt`, 2010-08-30; `Torchlight.exe` linked again
+  in 2012), Steam is build 17685 (2010-01-26). The executables differ in code (`.text` 6.83 MB
+  against 6.66 MB) and Steam's has a `.reloc` section GOG's lacks. GOG's imports no
+  `steam_api.dll` at all (Steam's: `SteamAPI_Init`, `SteamAPI_RestartApp`, `SteamRemoteStorage`,
+  `SteamUserStats`, ...), so GOG cannot relaunch itself through Steam. Steam's imports
+  `CopyFileW`/`MoveFileW`/`SetFileTime`/`ShellExecuteW`; GOG's imports `CreateProcessW`.
+- **DLLs.** `CEGUIBase.dll`, `OgreMain.dll` and `ParticleUniverse.dll` are different builds too
+  (GOG's newer: CEGUIBase 2010-03 against 2009-11; GOG's CEGUIBase has a few more wide-string
+  imports). The rest (`CEGUIExpatParser`, `CEGUIFalagardWRBase`, `OgreGUIRenderer`, `OIS`,
+  `fmodex`, `cg`, the render systems and plugins, `ReferenceAppLayer`) differ only in the PE
+  header checksum and the Authenticode signature: the same code. `d3dx9_39`, `msvcp90` and
+  `msvcr90` are identical. Torchlight.exe's imports from `CEGUIBase.dll` differ by one function each
+  way (GOG: `String::assign(const char*)`; Steam: `UVector2(UDim, UDim)`).
+- **Data.** GOG's `Pak.zip` has 16 more files and 3611 that differ, nearly all unit data
+  (3466 under `media/units`, the balance changes of the later build). Of the UI only
+  `media/ui/charactercreate.layout` and the menu models' animations differ: every other layout,
+  imageset and scheme is the same file.
+- **Saves and mods.** Both keep them under `%APPDATA%\Runic Games\Torchlight\` (`save`, `Mods`,
+  `settings.txt`, `local_settings.txt`; the GOG script's save folder is
+  `{userappdata}/runic games/torchlight`).
+
+**What holds for Steam:** the approach (a proxy `CEGUIBase.dll`, the converted layouts, the
+scheme), since both executables load the same kind of CEGUI through the same imports, and every
+converted UI file but the character creation layout. **What does not carry over as it is:**
+anything bound to an address in `Torchlight.exe`, `CEGUIBase.dll` or `OgreMain.dll` (stage 5's
+hooks, or a proxy that patches code), which must be found again in Steam's build, and the proxy
+must forward the CEGUIBase exports by name (the two builds' export tables are not known to match
+by ordinal). **[inferred]** Steam is tried last, with section 4's precautions.
+
+### 5a. Plan for running GOG (needs the user's OK; nothing run yet)
+
+- **Prefix:** a new one, `~/torchlight-gog/prefix`, made by the wine of the user's Proton
+  (`Proton - Experimental/files/bin/wine` with that prefix), never Steam's `compatdata/41500`.
+  No Steam client, no Proton launcher: the wine binary alone.
+- **Install:** the game folder extracted by `innoextract` (no installer code run, no GOG Galaxy,
+  no cloud: the offline installer has neither) copied to the prefix's `C:\GOG Games\Torchlight`.
+- **Saves:** inside the prefix, `drive_c/users/<user>/AppData/Roaming/Runic Games/Torchlight/`;
+  nothing outside `~/torchlight-gog`. The Steam saves are not read or written.
+- **What runs:** `wineboot` once to create the prefix, then `Torchlight.exe` from the copy.
