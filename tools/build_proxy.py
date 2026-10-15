@@ -13,6 +13,7 @@ in HOOKS, which go to the proxy's thunks. Only use GAME_DIR on a copy of the gam
 prefix), never Steam's install.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,10 @@ HOOKS = {
 }
 # The kernel32 functions the proxy imports, with their stdcall argument bytes.
 KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "CreateFileA": 28,
-            "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4}
+            "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
+            "ReadFile": 20, "CloseHandle": 4}
+# msvcr90's SEH handler, which clang-cl's __try/__except on x86 registers (cdecl: no @bytes).
+MSVCR90 = ["_except_handler3"]
 
 
 def proxy_def(exports):
@@ -47,8 +51,34 @@ def proxy_def(exports):
     return "\n".join(lines) + "\n"
 
 
+def referenced_names(src):
+    """[(dll, mangled name)] the proxy's source resolves at run time: sym("dll", ...) and need(...)
+    (CEGUIBase_orig.dll), with the STD_STRING macro expanded."""
+    std = re.search(r'#define STD_STRING "([^"]*)"', src)
+    out = []
+    for m in re.finditer(r'(?:\bsym\("([^"]+)",|\bneed\()\s*((?:"[^"]*"\s*|STD_STRING\s*)+)\)', src):
+        parts = re.findall(r'"[^"]*"|STD_STRING', m.group(2))
+        name = "".join(std.group(1) if p == "STD_STRING" else p[1:-1] for p in parts)
+        out.append((m.group(1) or REAL + ".dll", name))
+    return out
+
+
+def check_names(src, game_dir, real_dll):
+    """The names of referenced_names() that the game folder's DLLs do not export."""
+    missing = []
+    for dll, name in referenced_names(src):
+        path = real_dll if dll == REAL + ".dll" else os.path.join(game_dir, dll)
+        with open(path, "rb") as f:
+            if name not in {n for n, _ in PE(f.read()).exports()}:
+                missing.append(f"{dll}: {name}")
+    return missing
+
+
 def import_def(dll, funcs):
-    return f"LIBRARY {dll}\nEXPORTS\n" + "".join(f"{f}@{n}\n" for f, n in funcs.items())
+    """An import library's .def: {stdcall name: argument bytes}, or [cdecl names]."""
+    if isinstance(funcs, dict):
+        return f"LIBRARY {dll}\nEXPORTS\n" + "".join(f"{f}@{n}\n" for f, n in funcs.items())
+    return f"LIBRARY {dll}\nEXPORTS\n" + "".join(f"{f}\n" for f in funcs)
 
 
 def is_proxy(path):
@@ -72,15 +102,22 @@ def build(real_dll, out):
         raise SystemExit(f"{real_dll} is the proxy, not the real DLL")
     os.makedirs(out, exist_ok=True)
     src = os.path.join(repo, "proxy", "cegui_proxy.c")
+    with open(src) as f:
+        missing = check_names(f.read(), os.path.dirname(os.path.abspath(real_dll)), real_dll)
+    if missing:
+        raise SystemExit("the proxy names functions these DLLs do not export:\n  " + "\n  ".join(missing))
     with open(os.path.join(out, "proxy.def"), "w") as f:
         f.write(proxy_def(pe.exports()))
     with open(os.path.join(out, "kernel32.def"), "w") as f:
         f.write(import_def("kernel32.dll", KERNEL32))
+    with open(os.path.join(out, "msvcr90.def"), "w") as f:
+        f.write(import_def("msvcr90.dll", MSVCR90))
     steps = [
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "kernel32.def", "-l", "kernel32.lib"],
+        [f"{LLVM}/llvm-dlltool", "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],
         ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Focegui_proxy.obj", src],
         ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
-         "/def:proxy.def", "cegui_proxy.obj", "kernel32.lib", "/out:CEGUIBase.dll"],
+         "/def:proxy.def", "cegui_proxy.obj", "kernel32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
     for step in steps:
         subprocess.run(step, cwd=out, check=True)

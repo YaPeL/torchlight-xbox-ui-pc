@@ -107,6 +107,28 @@ class BuildProxyTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_proxy.proxy_def([("??0Thing@CEGUI@@QAE@XZ", 1)])
 
+    def test_referenced_names(self):
+        src = ('#define STD_STRING "?$s@std@@"\n'
+               'f = sym("OgreMain.dll", "?get@RGM@@QBEABV" STD_STRING "XZ");\n'
+               'g = need("??0String@CEGUI@@QAE@PBD@Z");\n')
+        self.assertEqual(build_proxy.referenced_names(src), [
+            ("OgreMain.dll", "?get@RGM@@QBEABV?$s@std@@XZ"), ("CEGUIBase_orig.dll", "??0String@CEGUI@@QAE@PBD@Z")])
+
+    def test_check_names(self):
+        with tempfile.TemporaryDirectory() as game:
+            write(os.path.join(game, "Ogre.dll"), synthetic_pe({}, ["?a@@XZ"]))
+            write(os.path.join(game, "real.dll"), synthetic_pe({}, ["?b@@XZ"]))
+            src = 'sym("Ogre.dll", "?a@@XZ"); sym("Ogre.dll", "?typo@@XZ"); need("?b@@XZ");'
+            self.assertEqual(build_proxy.check_names(src, game, os.path.join(game, "real.dll")),
+                             ["Ogre.dll: ?typo@@XZ"])
+
+    def test_the_proxy_source_parses(self):
+        src = Path(os.path.dirname(os.path.abspath(__file__)), "..", "proxy", "cegui_proxy.c").read_text()
+        names = build_proxy.referenced_names(src)
+        self.assertIn(("OgreMain.dll", "?getWorldResourceGroupName@ResourceGroupManager@Ogre@@QBEABV"
+                       "?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ"), names)
+        self.assertGreaterEqual(len(names), 13)
+
     def test_import_def(self):
         self.assertEqual(build_proxy.import_def("k.dll", {"F": 4, "G": 0}), "LIBRARY k.dll\nEXPORTS\nF@4\nG@0\n")
 
