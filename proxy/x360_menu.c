@@ -258,15 +258,32 @@ static void move_by(void *w, float dx, float dy) {
     prop(w, "UnifiedAreaRect", value);
 }
 
+typedef struct { float w, h; } size2;
+
 /* ---- the 360's letter spacing ----
  * The 360 lays out and rasterises its fonts at 1280x720 and its frame is drawn 1.5 times larger at
  * 1080; PC rasterises at its own resolution, where FreeType's hinting rounds each advance
  * differently: PC's text came out 6-10% wider. Each 360 font (renamed X360_* by the converter, so
  * PC's own fonts are untouched) is laid out once at 1280x720 with CEGUI's own FreeType
- * (Font::notifyScreenResolution), its advances kept, then laid out again at the game's size,
- * which keeps the glyphs sharp, and every advance replaced by the 360's times height / 720. */
+ * (Font::notifyScreenResolution), its advances kept, then laid out again at the size it had (its
+ * own scaling, read from the object: CEGUI 0.6.2's Font keeps d_horzScaling, d_vertScaling just
+ * before d_nativeHorzRes 1024, d_nativeVertRes 768; the game's fonts are not laid out at the
+ * window's size), so its glyphs keep their size and sharpness, and every advance is replaced by
+ * the 360's times height / 720 (the frame's scale against the 360's 720 rows). */
 
-typedef struct { float w, h; } size2;
+/* The display size the font was laid out for: its scalings times its native resolution. */
+static int font_screen(void *font, size2 *out) {
+    float *f = (float *)font;
+    int i;
+    for (i = 2; i < 64; i++)
+        if (f[i] == 1024.0f && f[i + 1] == 768.0f && f[i - 2] > 0.1f && f[i - 2] < 10.0f && f[i - 1] > 0.1f && f[i - 1] < 10.0f) {
+            out->w = f[i - 2] * 1024.0f;
+            out->h = f[i - 1] * 768.0f;
+            return 1;
+        }
+    return 0;
+}
+
 typedef void (__fastcall *notify_fn)(void *font, void *edx, const size2 *size);
 typedef void *(__fastcall *glyph_fn)(void *font, void *edx, unsigned cp);
 typedef void *(__fastcall *get_font_fn)(const void *fm, void *edx, const void *name);
@@ -298,7 +315,8 @@ static void match_spacing(float width, float height) {
         g = (float *)glyph(font, 0, 'e');
         if (patched_e[f] && g && g[1] == patched_e[f]) continue;          /* still as patched */
         __try {
-            size2 s720 = {1280.0f, 720.0f}, real = {width, height};
+            size2 s720 = {1280.0f, 720.0f}, real;
+            if (!font_screen(font, &real)) { x360_log("x360 menu: a font's scaling not found\r\n"); continue; }
             if (!patched_e[f]) {
                 notify(font, 0, &s720);
                 for (cp = FIRST_CP; cp <= LAST_CP; cp++) {
@@ -315,7 +333,9 @@ static void match_spacing(float width, float height) {
             patched_e[f] = g ? g[1] : 0;
             x360_log("x360 menu: spacing of "); x360_log(x360_fonts[f]);
             x360_log(", 'e' x100 "); x360_log_num((long)(advance_720[f]['e' - FIRST_CP] * 100));
-            x360_log(" at 720, x100 "); x360_log_num((long)(patched_e[f] * 100)); x360_log(" now\r\n");
+            x360_log(" at 720, x100 "); x360_log_num((long)(patched_e[f] * 100));
+            x360_log(" now; laid out for "); x360_log_num((long)real.w); x360_log("x"); x360_log_num((long)real.h);
+            x360_log("\r\n");
         } __except (1) {
             x360_log("x360 menu: the spacing threw\r\n");
         }
@@ -380,7 +400,7 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_IDENTIFIED 0x2fc            /* CEquipment: identified (OT +0x348: getItemName, sellPrice) */
 #define GOG_STACK 0x1e4                  /* CEquipment: the stack's count (OT +0x238, getStackSizeOfEquipment) */
 #define GOG_SELL_PRICE 0x004b3a90        /* CEquipment::sellPrice() */
-#define GOG_DPS 0x004b8f10               /* CEquipment::DPS(), a float */
+#define GOG_DPS 0x004b8f10               /* CEquipment::DPS(), an int (fistp into eax) */
 #define INV_SLOTS 0x18                   /* CInventory: its number of slots */
 #define INV_PANE_STARTS 0x60             /* CInventory: the panes' first slots (a vector of int) */
 
@@ -556,9 +576,8 @@ static void fill_details(int row, unsigned char *item) {
     if (!identified) copy(buf, sizeof buf, "???", 0);
     else if (stack > 1) { buf[0] = 'x'; p = put_int(buf + 1, stack); *p = 0; }
     else if (isa(item, 8)) {
-        float dps = ((float_get_fn)GOG_DPS)(item, 0);
         copy(buf, sizeof buf, "DPS: ", 0);
-        p = put_int(buf + 5, (long)(dps + 0.5f));
+        p = put_int(buf + 5, ((int_get_fn)GOG_DPS)(item, 0));
         *p = 0;
     }
     row_name(name, "DamageArmor", row); text(win(name), buf); show(win(name), buf[0] != 0);
