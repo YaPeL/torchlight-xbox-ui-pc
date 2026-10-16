@@ -313,9 +313,15 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_ITEM_NAME 0x1b0              /* CEquipment: its name, a std::wstring (found by the probe) */
 #define GOG_GOLD 0x3c4                   /* CCharacter: gold (giveGold, GOG 0x487f20), on the last owner */
 #define GOG_OWNER 0x5b4                  /* CCharacter: the owner giveGold walks up to */
+#define GOG_IDENTIFIED 0x2fc            /* CEquipment: identified (OT +0x348: getItemName, sellPrice) */
+#define GOG_STACK 0x1e4                  /* CEquipment: the stack's count (OT +0x238, getStackSizeOfEquipment) */
+#define GOG_SELL_PRICE 0x004b3a90        /* CEquipment::sellPrice() */
+#define GOG_DPS 0x004b8f10               /* CEquipment::DPS(), a float */
 #define INV_SLOTS 0x18                   /* CInventory: its number of slots */
 #define INV_PANE_STARTS 0x60             /* CInventory: the panes' first slots (a vector of int) */
 
+typedef int (__fastcall *int_get_fn)(void *self, void *edx);
+typedef float (__fastcall *float_get_fn)(void *self, void *edx);
 typedef unsigned char (__fastcall *isa_fn)(void *unit, void *edx, int type);
 typedef unsigned char (__fastcall *item_bool_fn)(void *item, void *edx);
 typedef unsigned char (__fastcall *inv_item_fn)(void *inv, void *edx, void *item);
@@ -473,6 +479,33 @@ static void row_name(char *out, const char *base, int row) {
     copy(out, 48, base, n);
 }
 
+/* A row's details, as the 360's screenshots show them: the price with its coin (PC's sellPrice);
+ * "DPS: n" for an identified weapon, "xN" for a stack; an unidentified item's name in red, "???"
+ * and "Press A to identify" (the 360's strings). Hidden when empty, as sub_82368980 does. */
+static void fill_details(int row, unsigned char *item) {
+    char name[48], buf[64], *p;
+    int identified = item[GOG_IDENTIFIED] != 0, stack = *(int *)(item + GOG_STACK);
+    p = put_int(buf, ((int_get_fn)GOG_SELL_PRICE)(item, 0));
+    *p = 0;
+    row_name(name, "Gold", row); text(win(name), buf); show(win(name), 1);
+    buf[0] = 0;
+    if (!identified) copy(buf, sizeof buf, "???", 0);
+    else if (stack > 1) { buf[0] = 'x'; p = put_int(buf + 1, stack); *p = 0; }
+    else if (isa(item, 8)) {
+        float dps = ((float_get_fn)GOG_DPS)(item, 0);
+        copy(buf, sizeof buf, "DPS: ", 0);
+        p = put_int(buf + 5, (long)(dps + 0.5f));
+        *p = 0;
+    }
+    row_name(name, "DamageArmor", row); text(win(name), buf); show(win(name), buf[0] != 0);
+    row_name(name, "Requirment", row);
+    text(win(name), identified ? "" : "Press A to identify");
+    prop(win(name), "TextColour", "FFFF2A2A");
+    show(win(name), !identified);
+    row_name(name, "SlotText", row);
+    prop(win(name), "TextColour", identified ? "FFFFFFFF" : "FFFF2A2A");
+}
+
 static void refresh(void) {
     int row, i;
     char name[48], buf[200];
@@ -544,11 +577,9 @@ static void refresh(void) {
         /* Not filled yet (the 360's sub_82368980), so hidden as the 360 hides each when it has no
          * text: damage and armour, requirements, enchantments, quality, price, sockets, the
          * comparison arrow. */
-        row_name(name, "DamageArmor", row); show(win(name), 0);
-        row_name(name, "Requirment", row); show(win(name), 0);
+        fill_details(row, (unsigned char *)list[idx]);
         row_name(name, "Enchantments", row); show(win(name), 0);
         row_name(name, "Quality", row); show(win(name), 0);
-        row_name(name, "Gold", row); show(win(name), 0);
         row_name(name, "qualityarrow", row); show(win(name), 0);
         row_name(name, "socket0_", row); show(win(name), 0);
         row_name(name, "socket1_", row); show(win(name), 0);
@@ -556,7 +587,7 @@ static void refresh(void) {
     /* The gold icons of the rows have generated names (i_506, ...): hidden with their text's parent. */
     {
         static const char *const gold_icons[ROWS] = {"i_506", "i_552", "i_524", "i_548", "i_513"};
-        for (row = 0; row < ROWS; row++) show(win(gold_icons[row]), 0);
+        for (row = 0; row < ROWS; row++) show(win(gold_icons[row]), top[filter] + row < list_count);
     }
     /* The selection: moveframe framed around the selected row, its buttons under it. */
     {
@@ -701,6 +732,9 @@ static void dump(void) {
         x360_log("x360 inv:   slot "); x360_log_num(*(long *)(ref + REF_SLOT));
         x360_log(" cat "); x360_log_num(category(item));
         x360_log(" useable "); x360_log_num(((item_bool_fn)GOG_IS_USEABLE)(item, 0));
+        x360_log(" identified "); x360_log_num(item[GOG_IDENTIFIED]);
+        x360_log(" stack "); x360_log_num(*(long *)(item + GOG_STACK));
+        x360_log(" price "); x360_log_num(((int_get_fn)GOG_SELL_PRICE)(item, 0));
         item_icon(item, buf, sizeof buf);
         x360_log(" icon \""); x360_log(buf); x360_log("\"\r\n");
     }

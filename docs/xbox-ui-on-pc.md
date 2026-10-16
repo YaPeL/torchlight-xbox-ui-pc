@@ -1048,6 +1048,21 @@ Not working yet, so hidden: the LT/RT tabs, "pet commands", "item comparison".
   screenshots are Spanish: an English capture of the 360 would show how it fits); PC's bottom HUD
   shows under the frame's bottom edge.
 
+**The rows' details** (as the screenshots show them; the 360's strings `DPS:`, `???`, `Press A
+to identify`): the price with its coin from PC's `CEquipment::sellPrice` (GOG `0x4b3a90`); "DPS:
+n" for an identified weapon (`CEquipment::DPS`, `0x4b8f10`, a float); "xN" for a stack (`+0x1E4`);
+an unidentified item (`+0x2FC` zero, OT's `+0x348`) with its name in red (`FFFF2A2A`, the
+screenshots' red without the row's 0.6 alpha), "???" and "Press A to identify". The identified
+flag's sense is read from OT and is checked in the next run's log. **[read; not run yet]**
+- Still missing: armour values, the enchantments' line, the quality colour, sockets, the
+  comparison arrow; A on an unidentified item identifies it on the 360 (here it equips).
+
+**The letters' width.** On identical letters ("My Bag" against "Mi Bolsa") PC's text is 6-10%
+wider at the same height. The recomp's mods session: at render scale 1.5 the 360's CEGUI still
+lays out and rasterises its fonts at 720p and the font textures are sampled up 1.5x; PC rasterises
+at 1080 with its own rounding and hinting. Both stretch the glyphs the same way in 16:9 (CEGUI's
+AutoScaled fonts: width / 1024 across, height / 768 up). English captures of the 360 would settle it.
+
 **Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
 quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
 transmuter; the housing's tabs (LT/RT) and the frame; the identify scrolls' window; the pet's
