@@ -663,6 +663,43 @@ static int full_item_name(unsigned char *item, char *out, unsigned size) {
     return ok;
 }
 
+/* The name's colour, as PC's equipment tooltip picks it for the hero (GOG 0x5431a5-0x5438d9) and the
+ * 360's rows by the same rule (sub_822BBCA8): PC's colour table (the singleton 0x524d40, wstrings
+ * 0x1c apart) at +0x55c if 0x4818f0 says so; none (the default) unless the virtual +0x154 or
+ * isa 0xa0; else +0x540 if the item's "SET" (0x4b28f0) is not empty (operator!= against the empty
+ * string at 0xe5575c), +0x524 unique (isa 0x36), +0x508 rare (isa 0x37), +0x4ec otherwise.
+ * 0 if none (the row keeps the 360's grey). */
+#define GOG_COLOUR_TABLE 0x00524d40
+#define GOG_ITEM_FLAG_COLOUR 0x004818f0
+#define GOG_ITEM_SET 0x004b28f0
+#define GOG_EMPTY_WSTRING 0x00e5575c
+#define GOG_WSTRING_NE 0x00a85428      /* msvcp90's operator!= (two std::wstring), the import */
+#define GOG_WSTRING_DTOR 0x00a85390    /* msvcp90's ~basic_string<wchar_t>, the import */
+static int name_colour(unsigned char *item, char *out, unsigned size) {
+    typedef unsigned char *(*table_fn)(void);
+    typedef unsigned char (__fastcall *flag_fn)(void *self, void *edx);
+    typedef void *(__fastcall *set_fn)(void *self, void *edx, void *out);
+    typedef unsigned char (*ne_fn)(const void *a, const void *b);
+    typedef void (__fastcall *dtor_fn)(void *self, void *edx);
+    unsigned char *table, ws[32];
+    int off = 0;
+    out[0] = 0;
+    if (!item[GOG_IDENTIFIED]) return 0;
+    __try {
+        table = ((table_fn)GOG_COLOUR_TABLE)();
+        if (!table) return 0;
+        if (((flag_fn)GOG_ITEM_FLAG_COLOUR)(item, 0)) off = 0x55c;
+        else if (((flag_fn)(*(void ***)item)[0x154 / 4])(item, 0) || isa(item, 0xa0)) {
+            void *got = ((set_fn)GOG_ITEM_SET)(item, 0, ws);
+            unsigned char named = (*(ne_fn *)GOG_WSTRING_NE)(got, (const void *)GOG_EMPTY_WSTRING);
+            (*(dtor_fn *)GOG_WSTRING_DTOR)(ws, 0);
+            off = named ? 0x540 : isa(item, 0x36) ? 0x524 : isa(item, 0x37) ? 0x508 : 0x4ec;
+        }
+        if (!off || !wstring_utf8(table + off, out, size)) { out[0] = 0; return 0; }
+    } __except (1) { out[0] = 0; return 0; }
+    return 1;
+}
+
 static void item_name(unsigned char *item, char *out, unsigned size) {
     out[0] = 0;
     if (full_item_name(item, out, size)) return;
@@ -800,7 +837,12 @@ static void fill_details(int row, unsigned char *item) {
     prop(win(name), "TextColour", "FFFF2A2A");
     show(win(name), !identified);
     row_name(name, "SlotText", row);
-    prop(win(name), "TextColour", identified ? "FFCCCACF" : "FFFF2A2A");   /* the 360's grey (its image, near the tabs' names) */
+    {
+        char colour[32];
+        prop(win(name), "TextColour", !identified ? "FFFF2A2A"
+                                      : name_colour(item, colour, sizeof colour) ? colour
+                                      : "FFCCCACF");   /* the 360's grey (its image, near the tabs' names) */
+    }
 }
 
 static void refresh(void) {
@@ -1099,7 +1141,9 @@ static void show_info(void *item, float y, float list_left) {
         char name[128];
         item_name((unsigned char *)item, name, sizeof name);
         x360_log(first ? "x360 inv: info with comparison, " : "x360 inv: info, ");
-        x360_log(name); x360_log("\r\n");
+        x360_log(name);
+        if (name_colour((unsigned char *)item, name, sizeof name)) { x360_log(" colour "); x360_log(name); }
+        x360_log("\r\n");
     }
     info_item = item;
 }

@@ -1227,7 +1227,14 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   into its first argument, then 0; `ret 0x8`; called at `0x54289a`), used for identified
   equipment; its neighbour `0x4b4470`, `CEquipment::getFullItemName` *(OT)*, builds the line above
   ("rare sword", "unidentified trinket"). A long name is cut by the row, as on the 360 ("A
-  Mysterious Polear"). The name's colour (the 360 takes it from the item, `sub_822BBCA8`; "prefixed shoes" in green) is not done yet: the rows stay grey.
+  Mysterious Polear"). - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
+  else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
+  (GOG `0x5431a5`-`0x5438d9`, for the hero): its colour table (the singleton `0x524d40`, wstrings
+  `0x1c` apart) at `+0x55c` if `0x4818f0`; the default unless the virtual `+0x154` or isa `0xa0`;
+  else `+0x540` if the item's "SET" (`0x4b28f0`) is not empty, `+0x524` unique (isa `0x36`),
+  `+0x508` rare (isa `0x37`), `+0x4ec` otherwise. The rows call the same; the default keeps the
+  360's grey. A run (`t27-weap.png`, `t27-jewel.png`): the dagger with a suffix in PC's
+  rare blue (`FFC0C0FF`), the unique sword in gold, "prefixed ring" and "prefixed ring" in green.
 - **A on an unidentified item** reads "Identify (N)", N the identify scrolls in the bag (the 360's
   screenshot: "A Identify(11)"). The bar's buttons follow each other's text, as there: Y after
   A's text, X after Y's (`Font::getTextExtent`), 10 pixels apart at 768 rows.
