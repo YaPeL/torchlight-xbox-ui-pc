@@ -290,6 +290,10 @@ static int ends_with_nocase(const char *s, const char *tail) {
     return 1;
 }
 
+/* PC's stats menu's root (STATSMENU.LAYOUT, loaded at start): proxy/x360_menu.c reads the texts
+ * PC writes there for the 360's character column. */
+void *x360_pc_stats_root;
+
 /* ---- the thunks (exported under the members' mangled names by the .def) ---- */
 
 void *__fastcall hook_load_scheme(void *self, void *edx, const void *file, const void *group) {
@@ -311,6 +315,7 @@ void *__fastcall hook_load_layout2(void *self, void *edx, const void *file, int 
     stamp(); put_str("loadWindowLayout ", file); put(random_prefix & 0xff ? " random prefix\r\n" : "\r\n");
     r = real_load_layout2(self, 0, file, random_prefix);
     stamp(); put("loadWindowLayout -> "); put_hex((unsigned long)r); put("\r\n");
+    if (r && file && ends_with_nocase(real_c_str(file, 0), "STATSMENU.LAYOUT")) x360_pc_stats_root = r;
     return r;
 }
 

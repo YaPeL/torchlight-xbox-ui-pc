@@ -802,6 +802,41 @@ static void refresh(void) {
     }
 }
 
+/* ---- the character column (charactermenu_xenon, the frame's first column) ----
+ * PC's own stats menu (STATSMENU.LAYOUT, kept by cegui_proxy.c) has windows of the same names; the
+ * texts PC writes there are copied over: the same numbers PC shows. The 3D doll is not done. */
+#define CHR_PREFIX "x360chr_"
+extern void *x360_pc_stats_root;
+static void *character_root;
+typedef void *(__fastcall *child_search_fn)(const void *self, void *edx, const void *name);
+typedef const void *(__fastcall *get_text_fn)(const void *self, void *edx);
+
+static void fill_character(void) {
+    static const char *const pairs[][2] = {
+        {"characterName", "CharacterName"}, {"CharacterTitle", "CharacterTitle"}, {"Level", "Level"},
+        {"XP", "XP"}, {"FameLevel", "FameLevel"}, {"Fame", "Fame"}, {"HP", "HP"}, {"Mana", "Mana"},
+        {"strPts", "Strength"}, {"dexPts", "Dexterity"}, {"magicPts", "Magic"}, {"defPts", "Defense"}};
+    static int logged;
+    child_search_fn search = (child_search_fn)need("?recursiveChildSearch@Window@CEGUI@@QBEPAV12@ABVString@2@@Z");
+    get_text_fn get_text = (get_text_fn)need("?getText@Window@CEGUI@@QBEABVString@2@XZ");
+    unsigned i;
+    if (!character_root || !x360_pc_stats_root || !search || !get_text) return;
+    for (i = 0; i < sizeof pairs / sizeof pairs[0]; i++) {
+        object n;
+        void *pc = 0;
+        const char *t = "";
+        string_ctor(&n, 0, pairs[i][1]);
+        __try {
+            pc = search(x360_pc_stats_root, 0, &n);
+            if (pc) t = c_str(get_text(pc, 0), 0);
+        } __except (1) { pc = 0; t = ""; }
+        string_dtor(&n, 0);
+        text(win_of(CHR_PREFIX, pairs[i][0]), t);
+        if (!logged) { x360_log("x360 chr: "); x360_log(pairs[i][1]); x360_log(" = \""); x360_log(t); x360_log(pc ? "\"\r\n" : "\" (no window)\r\n"); }
+    }
+    logged = 1;
+}
+
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
  * layout's "Your pet has gone to town." when there is no pet. */
 static void refresh_all(void) {
@@ -814,6 +849,7 @@ static void refresh_all(void) {
     }
     select_panel(focus_panel);
     if (cur_owner) refresh();
+    fill_character();
 }
 
 /* A on the selected row: what PC's right click on an inventory slot does (GOG 0x55e156): a
@@ -982,6 +1018,7 @@ void x360_inventory_toggle(void) {
         panels[0].root = inventory_root;
         /* The pet's bag: the same layout again, in the frame's third column. */
         panels[1].root = inventory_root ? load("media/ui/x360/inventorymenu_xenon.layout", PET_PREFIX) : 0;
+        character_root = inventory_root ? load("media/ui/x360/charactermenu_xenon.layout", CHR_PREFIX) : 0;
         if (!inventory_root) inventory_failed = 1;
         else {
             RECT r;
@@ -996,6 +1033,7 @@ void x360_inventory_toggle(void) {
             scale_tree(master_root, k, 0);
             scale_tree(inventory_root, k, 0);
             if (panels[1].root) scale_tree(panels[1].root, k, 0);
+            if (character_root) scale_tree(character_root, k, 0);
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
              * ContainerFrame, three columns of 301: the character, the bag, the pet's bag. The bag
              * goes in the second (the screenshots: its frame at (747, 127) of 1080). */
@@ -1005,6 +1043,8 @@ void x360_inventory_toggle(void) {
                     add_child(container, 0, top);
                     move_by(top, 301.0f * k, 0);
                 }
+                top = character_root ? win_of(CHR_PREFIX, "TopFrame") : 0;
+                if (container && top) add_child(container, 0, top);
                 top = panels[1].root ? win_of(PET_PREFIX, "TopFrame") : 0;
                 if (container && top) {
                     add_child(container, 0, top);
@@ -1037,6 +1077,7 @@ void x360_inventory_toggle(void) {
     set_visible(master_root, 0, inventory_open);
     set_visible(inventory_root, 0, inventory_open);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
+    if (character_root) set_visible(character_root, 0, inventory_open);
     if (inventory_open) move_to_front(master_root, 0);
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
