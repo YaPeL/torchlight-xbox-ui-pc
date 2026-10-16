@@ -769,6 +769,22 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   keeps objects of class `CItem` and below (RTTI) and gives the bonus to `CItemGold`. In a run, A
   picked up a `CEquipment` next to two `CItemGold`. **[read; the run]**
 
+**A picks up; items are highlighted; the searches' cost (2026-10-15).** **[read; the runs]**
+- **The pick-up order was the breakables' one.** PC's click on an ordinary item (`clickLeft`,
+  GOG `0x4146f8`; OT's branch for items not of its kind 0x1d) is: `stopPathing`, `setTargetItem`,
+  the mode virtual `+0x174` with 7, `stopPathing`, and the virtual `+0x1B4` with `(0.0f, level)`.
+  A used the attack branch's mode 4 and virtual `+0x1AC` (the user: "no pude agarrar nada"). With
+  the item order, A walked to a `CEquipment` 1.5 away and picked it up (it left the item list).
+  GIF: `~/torchlight-gog/screens/pad-A-pickup.gif`.
+- **The 360 highlights the item A would pick up** (the user; its window with the item's name is
+  left for later, from the 360's layouts). GOG's `CItem::setHighlighted` is the same slot `+0x100`
+  (`0x4d11e0`: the text, then `CBaseUnit::setHighlighted`); the item candidate is searched every
+  0.1 s and highlighted like the enemy.
+- **The searches are cheap:** measured every 5 s on the game's thread, 1 to 50 microseconds on
+  average, at most about 100. The performance drops the user felt are not them; not found yet
+  (candidates: DXVK compiling shaders for new effects, the log written unbuffered). Gold is
+  usually picked up by walking over it, as in PC.
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.

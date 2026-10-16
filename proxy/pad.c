@@ -30,6 +30,8 @@ IMPORT HMODULE __stdcall LoadLibraryA(const char *name);
 IMPORT FARPROC __stdcall GetProcAddress(HMODULE module, const char *name);
 IMPORT BOOL __stdcall VirtualProtect(void *addr, DWORD size, DWORD prot, DWORD *old);
 IMPORT DWORD __stdcall GetTickCount(void);
+IMPORT BOOL __stdcall QueryPerformanceCounter(long long *v);
+IMPORT BOOL __stdcall QueryPerformanceFrequency(long long *v);
 IMPORT HANDLE __stdcall CreateFileA(const char *name, DWORD access, DWORD share, void *security,
                                     DWORD disposition, DWORD flags, HANDLE templ);
 IMPORT BOOL __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *overlapped);
@@ -85,6 +87,7 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_ATTACK 0x00491bc0            /* CCharacter::attack() */
 #define GOG_SET_MODE_SLOT (0x174 / 4)    /* virtual, (int): clickLeft passes 4 before chasing */
 #define GOG_CHASE_SLOT (0x1ac / 4)       /* virtual, (float 0, CLevel*): clickLeft's next call */
+#define GOG_PICKUP_SLOT (0x1b4 / 4)      /* virtual, (float 0, CLevel*): clickLeft on an item, after mode 7 */
 #define GOG_HOLD_POSITION 0x20a         /* byte: PC's hold-position key (Shift); with it set,
                                             setDestination attacks toward the point instead of walking */
 #define GOG_SET_TARGET_DIRECTION 0x00486180 /* CCharacter::setTargetDirection(float x, float z) */
@@ -362,8 +365,8 @@ static void hero_matrix(unsigned char *hero, float *m) {
 static void *any_candidate;                 /* anyone near, for A: talk, use */
 static void *highlighted;                   /* the unit we highlighted, as the 360 marks its candidate */
 
-static int in_level(unsigned char *level, void *unit) {
-    void **node = *(void ***)*(void **)(level + GOG_LEVEL_UNITS);
+static int in_list(unsigned char *level, int list, void *unit) {
+    void **node = *(void ***)*(void **)(level + list);
     int n = 0;
     for (; node && n < 100000; node = (void **)node[1], n++)
         if (node[0] == unit) return 1;
@@ -373,10 +376,21 @@ static int in_level(unsigned char *level, void *unit) {
 static void highlight(unsigned char *level, void *unit) {
     typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
     if (unit == highlighted) return;
-    if (highlighted && in_level(level, highlighted))
+    if (highlighted && in_list(level, GOG_LEVEL_UNITS, highlighted))
         ((set_bool_fn)(*(void ***)highlighted)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted, 0, 0);
     highlighted = unit;
     if (unit) ((set_bool_fn)(*(void ***)unit)[GOG_SET_HIGHLIGHTED_SLOT])(unit, 0, 1);
+}
+
+/* The 360 highlights the item A would pick up too (CItem::setHighlighted: the same slot +0x100). */
+static void *highlighted_item;
+static void highlight_item(unsigned char *level, void *item) {
+    typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
+    if (item == highlighted_item) return;
+    if (highlighted_item && in_list(level, GOG_LEVEL_ITEMS, highlighted_item))
+        ((set_bool_fn)(*(void ***)highlighted_item)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted_item, 0, 0);
+    highlighted_item = item;
+    if (item) ((set_bool_fn)(*(void ***)item)[GOG_SET_HIGHLIGHTED_SLOT])(item, 0, 1);
 }
 
 /* The 360's choice of target (sub_821B58C0, read in section 9e): every unit that passes PC's
@@ -521,14 +535,18 @@ static void list_near(unsigned char *hero, unsigned char *level, const float *m)
             x360_log(" x "); x360_log_num((long)(lx * 100));
             x360_log(" z "); x360_log_num((long)(lz * 100));
             if (list) {
-                x360_log(((bool_int_fn)GOG_ISA)(u, 0, 0x1d) ? " kind1d" : "");
-                x360_log(((bool_int_fn)GOG_ISA)(u, 0, 0x7a) ? " gold" : "");
+                x360_log(" shown19c "); x360_log_num(u[0x19c]);
+                x360_log(" v20 "); x360_log_num(((bool_fn)(*(void ***)u)[0x20 / 4])(u, 0));
+                x360_log(" citem "); x360_log_num(derives_from(u, ".?AVCItem@@"));
+                x360_log(" b19d "); x360_log_num(u[0x19d]);
+                x360_log(" b161 "); x360_log_num(u[0x161]);
             }
             x360_log("\r\n");
         }
     }
 }
 
+static int want_items;                       /* the item search runs only on a press of A */
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
     void *c, *a, *it;
@@ -633,12 +651,14 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     if ((pressed & 0x4000) && candidate) attack_candidate(hero);
     if (pressed & 0x1000) {
         if (item_candidate) {
-            /* PC's click on an item (clickLeft): stopPathing, setTargetItem, mode 4, chase. */
+            /* PC's click on an item (clickLeft, GOG 0x4146f8): stopPathing, setTargetItem, mode 7,
+             * stopPathing, the virtual +0x1b4 with (0, level): the hero walks to it and picks it up. */
             void **vt = *(void ***)hero;
             ((void_fn)GOG_STOP_PATHING)(hero, 0);
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
-            ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 4);
-            ((float_ptr_fn)vt[GOG_CHASE_SLOT])(hero, 0, 0.0f, attack_level);
+            ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 7);
+            ((void_fn)GOG_STOP_PATHING)(hero, 0);
+            ((float_ptr_fn)vt[GOG_PICKUP_SLOT])(hero, 0, 0.0f, attack_level);
             x360_log("pad: A: pick up ");
             x360_log(class_of(item_candidate));
             x360_log("\r\n");
@@ -825,8 +845,38 @@ static void order(void) {
         }
         if ((!candidate && (pressed & 0x4000)) || (pressed & 0x1000) || now - last_search >= 100) {
             last_search = now;
-            choose_targets(hero, level);
+            want_items = (pressed & 0x1000) != 0;
+            {
+                /* The searches' cost, every 5 s in the log: they run on the game's thread. */
+                static long long sum, worst, qpf;
+                static unsigned count, since;
+                long long t0, t1;
+                QueryPerformanceCounter(&t0);
+                choose_targets(hero, level);
+                QueryPerformanceCounter(&t1);
+                sum += t1 - t0;
+                if (t1 - t0 > worst) worst = t1 - t0;
+                count++;
+                if (now - since >= 5000) {
+                    if (!qpf) QueryPerformanceFrequency(&qpf);
+                    if (since && count && qpf) {
+                        /* In floating point: 64-bit division needs the CRT's __alldiv. */
+                        x360_log("pad: search us avg ");
+                        x360_log_num((long)((double)sum * 1e6 / (double)qpf / (double)count));
+                        x360_log(" max ");
+                        x360_log_num((long)((double)worst * 1e6 / (double)qpf));
+                        x360_log(" n ");
+                        x360_log_num((long)count);
+                        x360_log("\r\n");
+                    }
+                    since = now;
+                    sum = worst = 0;
+                    count = 0;
+                }
+            }
+            want_items = 0;
             highlight(level, candidate);
+            highlight_item(level, item_candidate);
         }
     }
     if (pressed) buttons_pressed(hero, pressed);

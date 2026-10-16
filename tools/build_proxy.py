@@ -41,7 +41,8 @@ HOOKS = {
 # The kernel32 functions the proxy imports, with their stdcall argument bytes.
 KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "CreateFileA": 28,
             "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
-            "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16}
+            "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16,
+            "QueryPerformanceCounter": 4, "QueryPerformanceFrequency": 4}
 # send_input.exe's imports (proxy/send_input.c, a test helper that runs in the game's prefix).
 KERNEL32_EXE = {"GetCommandLineA": 0, "Sleep": 4, "ExitProcess": 4, "GetStdHandle": 4}
 USER32 = {"EnumWindows": 8, "GetWindowTextA": 12, "IsWindowVisible": 4, "IsIconic": 4, "GetClientRect": 8, "ShowWindow": 8, "SetForegroundWindow": 4, "ClientToScreen": 8, "SetCursorPos": 8, "SendInput": 12,
