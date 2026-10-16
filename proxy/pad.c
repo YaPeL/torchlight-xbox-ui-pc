@@ -127,6 +127,7 @@ typedef void *(__fastcall *find_item_fn)(void *level, void *edx, const float *ma
 #define TARGET_MIN 0.5f
 #define TARGET_RANGE 7.0f
 #define TARGET_RANGE_ANY 3.5f
+#define BEHIND 1.5f           /* the 360's second pass: its origin 1.5 behind the hero */
 #define ITEM_HALF_ANGLE 60.0f
 #define ITEM_RANGE 3.0f
 #define ALIGN_ENEMY 5
@@ -152,6 +153,8 @@ static void edge(HWND w, int down, long x, long y) {
 #define DEAD_ZONE 240          /* of 1000: XInput's 7849 of 32767 */
 #define RADIUS_PERMILLE 140    /* of the window's height: the point ahead of the hero */
 #define CLICK_MS 120
+#define POLL_MS 4              /* below one frame at the game's 200 fps cap */
+#define SEARCH_MS 15           /* the candidates: about every frame at 60 fps, as the 360 */
 
 static int parse_int(const char **s) {
     int v = 0, neg = 0;
@@ -163,7 +166,8 @@ static int parse_int(const char **s) {
 
 static void poll(void) {
     unsigned now = GetTickCount(), old = buttons;
-    if (now - last_poll < 50 && last_poll) return;
+    /* The 360 reads the pad every frame; GetCursorPos comes several times a frame. */
+    if (now - last_poll < POLL_MS && last_poll) return;
     last_poll = now;
     if (pad_file[0]) {
         char text[64];
@@ -385,13 +389,34 @@ static void highlight(unsigned char *level, void *unit) {
 
 /* The 360 highlights the item A would pick up too (CItem::setHighlighted: the same slot +0x100). */
 static void *highlighted_item;
+static const char *class_of(void *object);
+static int derives_from(void *object, const char *name);
 static void highlight_item(unsigned char *level, void *item) {
     typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
     if (item == highlighted_item) return;
     if (highlighted_item && in_list(level, GOG_LEVEL_ITEMS, highlighted_item))
         ((set_bool_fn)(*(void ***)highlighted_item)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted_item, 0, 0);
     highlighted_item = item;
-    if (item) ((set_bool_fn)(*(void ***)item)[GOG_SET_HIGHLIGHTED_SLOT])(item, 0, 1);
+    if (item) {
+        ((set_bool_fn)(*(void ***)item)[GOG_SET_HIGHLIGHTED_SLOT])(item, 0, 1);
+        /* The user saw no highlight on barrels though X breaks them: what the byte says. */
+        if (derives_from(item, ".?AVCBreakable@@")) {
+            x360_log("pad: highlight barrel, +0x170 = ");
+            x360_log_num(((unsigned char *)item)[0x170]);
+            x360_log("\r\n");
+        }
+    }
+}
+
+/* Logs once if something switched the highlighted barrel off again (the byte +0x170). */
+static void check_item_highlight(unsigned char *level) {
+    static void *reported;
+    unsigned char *it = (unsigned char *)highlighted_item;
+    if (!it || it == reported || !in_list(level, GOG_LEVEL_ITEMS, it) || it[0x170]) return;
+    reported = it;
+    x360_log("pad: highlight of ");
+    x360_log(class_of(it));
+    x360_log(" switched off by the game\r\n");
 }
 
 /* The 360's choice of target (sub_821B58C0, read in section 9e): every unit that passes PC's
@@ -566,7 +591,18 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         long long t0, t1, t2;
         QueryPerformanceCounter(&t0);
         c = unit_in_view(hero, level, m, ALIGN_ENEMY, TARGET_RANGE);
-        if (!c) c = unit_in_view(hero, level, m, ALIGN_ANY, TARGET_RANGE_ANY);
+        if (!c) {
+            /* The second pass searches from 1.5 behind the hero (the 360 moves the matrix's origin
+             * by -1.5 times the hero's facing, its virtual +0x94, GOG's +0xa0: the third column),
+             * so a unit is a candidate only within about 2 ahead: NPCs light up almost touching. */
+            float b[16];
+            int k;
+            for (k = 0; k < 16; k++) b[k] = m[k];
+            b[3] -= BEHIND * m[2];
+            b[7] -= BEHIND * m[6];
+            b[11] -= BEHIND * m[10];
+            c = unit_in_view(hero, level, b, ALIGN_ANY, TARGET_RANGE_ANY);
+        }
         QueryPerformanceCounter(&t1);
         it = item_in_view(hero, level, m, 0);
         QueryPerformanceCounter(&t2);
@@ -575,7 +611,9 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         if (t2 - t1 > w_items) w_items = t2 - t1;
     }
     a = c;
-    if (verbose && GetTickCount() < log_until) {
+    static unsigned last_t_log;
+    if (verbose && GetTickCount() < log_until && GetTickCount() - last_t_log >= 100) {
+        last_t_log = GetTickCount();
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
         x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
         x360_log(" enemy "); x360_log_num((long)c);
@@ -593,7 +631,8 @@ static void swing_toward(unsigned char *hero, float x, float z);
 
 /* X on the candidate, as the 360 does (sub_8221BC80 and the button's action sub_82293548 never
  * call setDestination: the hero faces the target and attacks where it stands). In range: PC's
- * attack (stopPathing, setTarget, attack); out of range: an attack in place toward the target. */
+ * attack (stopPathing, setTarget, attack); out of range: an attack in place toward the target,
+ * with no target set (attack() with a target walks to it). */
 static void attack_candidate(unsigned char *hero) {
     if (((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
     ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
@@ -611,13 +650,19 @@ static void attack_candidate(unsigned char *hero) {
 }
 
 /* X with no candidate: the 360 swings anyway, toward the stick or the hero's facing
- * (sub_8221BC80: a point ahead, setTargetDirection, the button's action). PC's equivalent is the
- * hold-position attack: setDestination with the hero's hold byte set attacks toward the point. */
-/* An attack in place toward (x, z): PC's hold-position attack (setDestination with the hold byte). */
+ * (sub_8221BC80: a point ahead, setTargetDirection, the button's action). */
+/* An attack in place toward (x, z): what PC's hold-position branch of setDestination (GOG
+ * 0x49511b) does, called directly: setDestination drops the hold during a skill's chain (+0x2d0)
+ * and then walks to the point. No target (attack() chases one); the hold byte lets attack() swing
+ * with none (it checks +0x290, +0x298 and +0x20a). */
 static void swing_toward(unsigned char *hero, float x, float z) {
     unsigned char hold = hero[GOG_HOLD_POSITION];
+    ((set_target_fn)GOG_SET_TARGET)(hero, 0, 0);
+    ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
+    ((void_fn)GOG_STOP_PATHING)(hero, 0);
+    ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, x, z);
     hero[GOG_HOLD_POSITION] = 1;
-    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, attack_level, x, z);
+    ((void_fn)GOG_ATTACK)(hero, 0);
     hero[GOG_HOLD_POSITION] = hold;
 }
 
@@ -894,8 +939,8 @@ static void order(void) {
     }
     was_active = stick_active();
 
-    /* The 360 chooses its candidate every frame and highlights it; here every 0.1 s, and again at
-     * once on a press of X or A. */
+    /* The 360 chooses its candidate every frame and highlights it; here every SEARCH_MS, and
+     * again at once on a press of X or A. */
     {
         static unsigned last_search;
         if (pressed & (0x4000 | 0x1000)) log_until = now + 3000;
@@ -905,7 +950,7 @@ static void order(void) {
             x360_log(pressed & 0x4000 ? "pad: X pressed; near:\r\n" : "pad: A pressed; near:\r\n");
             list_near(hero, level, m);
         }
-        if ((!candidate && (pressed & 0x4000)) || (pressed & 0x1000) || now - last_search >= 100) {
+        if ((!candidate && (pressed & 0x4000)) || (pressed & 0x1000) || now - last_search >= SEARCH_MS) {
             last_search = now;
             want_items = (pressed & 0x1000) != 0;
             {
@@ -946,6 +991,7 @@ static void order(void) {
                 }
             }
             want_items = 0;
+            check_item_highlight(level);
             highlight(level, candidate);
             highlight_item(level, item_candidate);
         }

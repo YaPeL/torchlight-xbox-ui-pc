@@ -839,6 +839,36 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   if it is in the unit or item list.
 - The user asked to be told before every launch and to launch only with their OK.
 
+**Responsiveness, X walking, the highlights' distance (2026-10-15, after the user: "el de 360 se
+sigue sintiendo más responsive"; X sometimes walks before attacking; barrels not highlighted; the
+360 highlights NPCs almost touching, ours from far).** **[read; not run yet]**
+- **The settings:** GOG runs at 1920x1080, `MAX_RENDER_FPS 60` (the game's own cap, not the
+  driver's), `VSYNCH 0`, about 51 fps in `local_settings.txt`. The proxy read the pad only every
+  50 ms and chose the candidate every 0.1 s; the 360 does both every frame. Now 4 ms and 15 ms.
+- **X walked:** out of range, X set the enemy as the hero's target and then called
+  `setDestination` with the hold byte. Its hold branch (GOG `0x49511b`) puts the destination at
+  the hero, calls `attack()` and aims at the point; but `attack()` with a target set goes to it,
+  and `setDestination` drops the hold during a skill's chain (`+0x2d0`, its bytes `+0x3c`, `+0x40`,
+  `+0x20b`, `+0x2c0`) and walks to the enemy's position. The in-place attack now clears the
+  target and the item target, `stopPathing`, `setTargetDirection` toward the point, and `attack()`
+  with the hold byte set (it needs a target, an item target or the hold byte: `+0x290`, `+0x298`,
+  `+0x20a`).
+- **The highlight's distance:** the 360's second pass (`sub_821EB598`, 0x821EB8B8) copies the
+  hero's matrix and moves its origin by -1.5 times the hero's facing (virtual `+0x94`; in GOG the
+  same slot returns `+0xa0`, the third axis of the hero's orientation, the facing the cone uses),
+  then searches ±30 degrees within 3.5 from there: any unit is a candidate only within about 2
+  ahead of the hero (0.87 to each side at the hero). The proxy searched from the hero, so NPCs
+  lit up 3.5 away. Now from 1.5 behind. (Its first pass, enemies within 7, is from the hero; the
+  range becomes the weapon's +2 when larger, `+0x3ec`, not ported.)
+- **The 360 keeps its candidates in the client at `+0x1bc` (unit) and `+0x1c4` (item)**, and GOG's
+  client still has those fields: its hover code (`0x41b59d`) highlights them when the mouse is over
+  nothing, and its click (`0x4148d5`) takes them. The proxy still calls `setHighlighted` itself;
+  writing those fields (watched pointers, `0x5ff800`) is an option for later.
+- **Barrels:** the barrel is the item candidate (the log: "X: break in range") and
+  `CBreakable` uses `CItem`'s `setHighlighted` (`0x4d11e0`; the same `+0x104`, `+0x150` and
+  `0x4812a0`), so the call is made; why it does not show is not known. The log now says the byte
+  `+0x170` after the call, and whether the game turned it off afterwards.
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.
