@@ -768,7 +768,7 @@ void x360_inventory_toggle(void) {
             show(win_of(MASTER, "MenuRight"), 0);
             show(win_of(MASTER, "PetCommands"), 0);
             show(win_of(MASTER, "ToggleItemCompare"), 0);
-            text(win_of(MASTER, "MenuName"), "INVENTORY");
+            text(win_of(MASTER, "MenuName"), "Inventory");   /* the 360's string (its image, 0x820d17d0) */
             mf = win("moveframe");
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
             if (parse_rect(value, v)) moveframe_top = v[3];
