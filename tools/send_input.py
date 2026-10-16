@@ -57,11 +57,12 @@ def translate(steps):
         elif verb == "type" and i + 1 < len(steps):
             for ch in steps[i + 1]:
                 if ch == "_":
-                    out += ["down", "16", "key", "189", "up", "16"]
+                    out += ["down", "16", "wait", "60", "key", "189", "wait", "60", "up", "16"]
                 elif ch.isalnum() or ch in TYPED:
                     out += ["key", str(vk(TYPED.get(ch, ch)))]
                 else:
                     raise ValueError(f"cannot type {ch!r}")
+                out += ["wait", "40"]
             i += 2
         elif verb == "wait" and i + 1 < len(steps):
             out += ["wait", str(int(float(steps[i + 1]) * 1000))]

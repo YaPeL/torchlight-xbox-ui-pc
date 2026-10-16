@@ -139,6 +139,7 @@ static unsigned aim_until;                  /* the virtual cursor aims ahead of 
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
+void x360_run_console(void);
 int x360_inventory_open(void);
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
@@ -531,6 +532,42 @@ static void *item_in_view(unsigned char *hero, unsigned char *level, const float
 }
 
 /* On a press of X or A: what is near the hero, units and items, with their class (a diagnosis). */
+/* Test runs (console=...;X360PICKUP): the nearest item on the ground, not a barrel or a trigger,
+ * within 8, picked up with PC's click order (as A does), one every 1.2 s, at most 40 times. */
+int x360_auto_pickup;
+static void auto_pickup(unsigned char *hero, unsigned char *level) {
+    static unsigned last;
+    unsigned now = GetTickCount();
+    void **node;
+    unsigned char *best = 0;
+    float m[16], best_d = 8.0f;
+    int n = 0;
+    if (x360_auto_pickup <= 0 || now - last < 1200) return;
+    last = now;
+    x360_auto_pickup--;
+    hero_matrix(hero, m);
+    for (node = *(void ***)*(void **)(level + GOG_LEVEL_ITEMS); node && n < 100000; node = (void **)node[1], n++) {
+        unsigned char *it = (unsigned char *)node[0];
+        float p[3], dx, dz, d;
+        if (!it || !it[0x19c] || it[0x19d] || !derives_from(it, ".?AVCItem@@") ||
+            derives_from(it, ".?AVCBreakable@@") || derives_from(it, ".?AVCTriggerUnit@@")) continue;
+        ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
+        dx = p[0] - m[3]; dz = p[2] - m[11];
+        d = root(dx * dx + dz * dz);
+        if (d < best_d) { best_d = d; best = it; }
+    }
+    if (!best) { x360_auto_pickup = 0; x360_log("pad: auto pickup: nothing left\r\n"); return; }
+    {
+        void **vt = *(void ***)hero;
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, best);
+        ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 7);
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((float_ptr_fn)vt[GOG_PICKUP_SLOT])(hero, 0, 0.0f, level);
+        x360_log("pad: auto pickup: "); x360_log(class_of(best)); x360_log("\r\n");
+    }
+}
+
 static void list_near(unsigned char *hero, unsigned char *level, const float *m) {
     int list;
     for (list = 0; list < 2; list++) {
@@ -869,6 +906,7 @@ static void order(void) {
     }
     pressed = buttons & ~prev_buttons;
     prev_buttons = buttons;
+    auto_pickup(hero, level);
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     if (pressed & BUTTON_BACK) {

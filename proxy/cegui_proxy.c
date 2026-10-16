@@ -25,6 +25,7 @@
  *   pad_mode=direct                             option b: the proxy calls setDestination (GOG only)
  *   pad_face=0                                  the old movement, setDestination only (to compare)
  *   pad_log=1                                   the pad's detailed diagnosis in the log (costly)
+ *   console=ITEM <the identify scroll's name>,3;MONEY 100    game console commands run once in play (test runs)
  * In mode=scheme, OUT is added to Ogre's world resource group (a FileSystem location, recursive),
  * so the converted files' own paths (media/ui/x360/...) resolve, and then
  * media/ui/x360/ceguiWidgets.scheme is loaded once, inside __try: if it throws, the game's own
@@ -119,6 +120,8 @@ static void stamp(void) { put("["); put_dec(GetTickCount()); put("] "); }
 
 static int mode_scheme, x360_done, trace, pad, pad_edges_msg, pad_direct, pad_old_face, pad_log;
 static char pad_file[400];
+/* console=CMD;CMD...: game console commands run once in play (test runs only; proxy/x360_menu.c). */
+char x360_console_commands[400];
 static char out_dir[400];
 
 static int starts(const char *s, const char *prefix) {
@@ -150,6 +153,8 @@ static void read_config(void) {
         if (starts(line, "pad_log=1")) pad_log = 1;
         if (starts(line, "pad_file=") && length(line + 9) < sizeof pad_file) memcpy(pad_file, line + 9, length(line + 9) + 1);
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
+        if (starts(line, "console=") && length(line + 8) < sizeof x360_console_commands)
+            memcpy(x360_console_commands, line + 8, length(line + 8) + 1);
         line = end;
         while (*line == '\r' || *line == '\n') line++;
     }

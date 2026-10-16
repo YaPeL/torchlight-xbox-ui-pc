@@ -455,8 +455,9 @@ class PadPromptsTest(unittest.TestCase):
 class SendInputTypeTest(unittest.TestCase):
     def test_type_and_hold(self):
         import send_input
-        self.assertEqual(send_input.translate(["type", "a1,_"]),
-                         ["key", "65", "key", "49", "key", "188", "down", "16", "key", "189", "up", "16"])
+        self.assertEqual(send_input.translate(["type", "a_"]),
+                         ["key", "65", "wait", "40", "down", "16", "wait", "60", "key", "189", "wait", "60",
+                          "up", "16", "wait", "40"])
         self.assertEqual(send_input.translate(["down", "Shift", "key", "grave", "up", "Shift"]),
                          ["down", "16", "key", "192", "up", "16"])
         with self.assertRaises(ValueError):

@@ -1141,8 +1141,11 @@ static void clear_samples(void) {
 int x360_inventory_open(void) { return inventory_open; }
 
 /* The pad's Back: the 360's inventory on or off. */
+void x360_run_console(void);
+
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
+    x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
     {
         RECT r;
         HWND w = GetActiveWindow();
@@ -1283,4 +1286,55 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
     if (pressed & 0x1000) { act(); refresh_all(); }                    /* A */
     if (pressed & 0x8000) { drop(); refresh_all(); }                   /* Y */
     if (pressed & 0x4000) { swap_to_pet(); refresh_all(); }            /* X */
+}
+
+/* ---- test runs: the game's console commands ----
+ * console= in x360_ui.ini (test runs only): each command, split at ';', is given once, at the first
+ * opening of the inventory (run earlier, while the level loaded, the items never appeared), to
+ * CConsole::executeCommandLine (OT's name; GOG 0x56cd00, ret 0x1c: a std::wstring by value, which
+ * it destroys). The console is CGameUI's +0x13ec (created at 0x5636a9). Its commands include ITEM
+ * name,count, SPAWNCLASS name,count,level, MONEY count, LEVELUP (the game's HELP lists them). */
+extern char x360_console_commands[400];
+#define GOG_CONSOLE 0x13ec
+#define GOG_EXECUTE_COMMAND_LINE 0x0056cd00
+typedef struct { unsigned char bytes[28]; } wstring_by_value;   /* VC9 std::wstring */
+typedef void (__fastcall *execute_fn)(void *console, void *edx, wstring_by_value command);
+typedef void *(__fastcall *wctor_fn)(void *self, void *edx, const unsigned short *text);
+
+void x360_run_console(void) {
+    static int done;
+    static wctor_fn wctor;
+    unsigned short wide[200];
+    const char *c = x360_console_commands;
+    void *console;
+    if (done || !c[0] || !find_world() || !ui) return;
+    console = *(void **)(ui + GOG_CONSOLE);
+    if (!wctor) {
+        void *m = (void *)0;
+        __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *);
+        __declspec(dllimport) void *__stdcall GetProcAddress(void *, const char *);
+        m = GetModuleHandleA("msvcp90.dll");
+        wctor = m ? (wctor_fn)GetProcAddress(m, "??0?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@PB_W@Z") : 0;
+    }
+    done = 1;
+    if (!console || !wctor) { x360_log("x360 console: no console or no wstring constructor\r\n"); return; }
+    while (*c) {
+        unsigned n = 0;
+        wstring_by_value cmd;
+        while (*c && *c != ';' && n < 199) wide[n++] = (unsigned char)*c++;
+        wide[n] = 0;
+        if (*c == ';') c++;
+        if (!n) continue;
+        {
+            /* Our own: X360PICKUP picks up what lies around (proxy/pad.c auto_pickup). */
+            extern int x360_auto_pickup;
+            static const unsigned short pick[] = {'X', '3', '6', '0', 'P', 'I', 'C', 'K', 'U', 'P', 0};
+            unsigned q = 0;
+            while (pick[q] && wide[q] == pick[q]) q++;
+            if (!pick[q] && !wide[q]) { x360_auto_pickup = 40; continue; }
+        }
+        wctor(&cmd, 0, wide);
+        x360_log("x360 console: running a command\r\n");
+        __try { ((execute_fn)GOG_EXECUTE_COMMAND_LINE)(console, 0, cmd); } __except (1) { x360_log("x360 console: it threw\r\n"); }
+    }
 }

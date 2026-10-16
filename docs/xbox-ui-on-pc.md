@@ -1181,3 +1181,27 @@ here (no dependency between the repositories). **[read: the recomp's branch; the
   29x22 slots; the recomp may change them (a pill with an arrow). The fitting is an area filter,
   for shrinking only. Changes there are to be copied here.
 - **Not covered:** texts that name buttons ("Press A to identify", "item comparison: off").
+
+## 13. A varied test save, made with the game's console (2026-10-16)
+
+The user asked for a save with variety to check the rows (unidentified items, armour, qualities,
+something the hero cannot equip) and identifying with A. **[the runs]**
+
+- **The game's console:** GOG PC keeps Runic's developer console (`CConsole`, its `HELP` lists
+  ITEM, SPAWNCLASS, MONEY, LEVELUP, IDENTIFYALL, ...). Typed through `send_input` it lost keys, so
+  the proxy runs commands itself: `console=CMD;CMD...` in `x360_ui.ini` (test runs only) gives each
+  to `CConsole::executeCommandLine` *(OT)* (GOG `0x56cd00`, `ret 0x1c`: a VC9 `std::wstring` by
+  value, built with msvcp90's own constructor), the console being `CGameUI`'s `+0x13EC`, once, at
+  the first opening of the inventory (run while the level loaded, the items never appeared). The
+  proxy's own `X360PICKUP` then picks up what lies around (PC's click order, as A does, one item
+  every 1.2 s).
+- **The save:** `~/torchlight-gog/save-backups/variety/` (the mine save plus `SPAWNCLASS
+  NEWBIE_CHEST_WEAPON,2,1`, `NEWBIE_CHEST_ARMOR,2,1`, `SWORDS_MAGIC_SPAWN,2,1`, `ARMOR_MAGIC,2,1`,
+  `ITEM <a unique sword's name>,1` (unique, level 15), `ITEM <the identify scroll's name>,3`, `ITEM <the healing spell's name>,1`,
+  `MONEY 500`), written by "Exit to Title". Its bag: two "dagger" unidentified, the unique sword unidentified, a common blade and the second blade equipped, a rifle, boots, unidentified
+  shoulder armour and belt, the healing spell spell, identify scrolls, 600 gold.
+- **Checked in the run** (`~/torchlight-gog/screens/x360-gog-identify-compare.png`): unidentified
+  rows in red with "???" and "Press A to identify" and a red background; A identified a dagger (an identify scroll spent): DPS 35, price 600, a blue background (magic), the green up
+  arrow (35 against the equipped 33), its A now "Equip". "12/63" and the gold 600.
+- **Item names** the console takes are the units' `NAME` (`media/units/items/*/*.DAT` in PC's pak);
+  random items come from spawn classes (`media/spawnclasses/`, their `NAME`).
