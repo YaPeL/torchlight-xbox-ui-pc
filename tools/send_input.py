@@ -4,7 +4,10 @@
 send_input.py STEP...
   move X Y        the cursor to (X, Y) in the game window's client pixels
   click | rclick  the left or right mouse button, down and up
-  key NAME        a key down and up: Return, Escape, space, Tab, Up, Down, Left, Right, a letter or digit
+  key NAME        a key down and up: Return, Escape, space, Tab, Up, Down, Left, Right, a letter or digit,
+                  comma, period, minus, grave (the console's key)
+  down NAME, up NAME  a key held down, or let up (Shift for another key)
+  type TEXT       TEXT typed key by key: letters, digits, space, comma, period, minus, underscore
   wait S          sleep S seconds (a float)
   where           print the cursor's position in the window, and whether the window is in front
 
@@ -21,7 +24,9 @@ PREFIX = os.path.expanduser("~/torchlight-gog/compat/pfx")
 EXE = os.path.expanduser("~/torchlight-gog/build/proxy/send_input.exe")
 TITLE = "Torchlight"
 KEYS = {"Return": 13, "Escape": 27, "space": 32, "Tab": 9, "BackSpace": 8,
-        "Left": 37, "Up": 38, "Right": 39, "Down": 40}
+        "Left": 37, "Up": 38, "Right": 39, "Down": 40, "Shift": 16,
+        "comma": 188, "period": 190, "minus": 189, "grave": 192}
+TYPED = {" ": "space", ",": "comma", ".": "period", "-": "minus"}
 
 
 def vk(name):
@@ -45,6 +50,18 @@ def translate(steps):
             i += 1
         elif verb == "key" and i + 1 < len(steps):
             out += ["key", str(vk(steps[i + 1]))]
+            i += 2
+        elif verb in ("down", "up") and i + 1 < len(steps):
+            out += [verb, str(vk(steps[i + 1]))]
+            i += 2
+        elif verb == "type" and i + 1 < len(steps):
+            for ch in steps[i + 1]:
+                if ch == "_":
+                    out += ["down", "16", "key", "189", "up", "16"]
+                elif ch.isalnum() or ch in TYPED:
+                    out += ["key", str(vk(TYPED.get(ch, ch)))]
+                else:
+                    raise ValueError(f"cannot type {ch!r}")
             i += 2
         elif verb == "wait" and i + 1 < len(steps):
             out += ["wait", str(int(float(steps[i + 1]) * 1000))]

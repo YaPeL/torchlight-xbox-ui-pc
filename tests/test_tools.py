@@ -450,3 +450,14 @@ class PadPromptsTest(unittest.TestCase):
             self.assertEqual(len(icons), 10)
             for img in icons.values():
                 self.assertTrue(img.width and img.height and any(img.rgba[3::4]))
+
+
+class SendInputTypeTest(unittest.TestCase):
+    def test_type_and_hold(self):
+        import send_input
+        self.assertEqual(send_input.translate(["type", "a1,_"]),
+                         ["key", "65", "key", "49", "key", "188", "down", "16", "key", "189", "up", "16"])
+        self.assertEqual(send_input.translate(["down", "Shift", "key", "grave", "up", "Shift"]),
+                         ["down", "16", "key", "192", "up", "16"])
+        with self.assertRaises(ValueError):
+            send_input.translate(["type", "a;b"])
