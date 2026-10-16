@@ -1305,7 +1305,9 @@ here (no dependency between the repositories). **[read: the recomp's branch; the
   images, `widgets` 3, `widgets1` 12, `widgets2` 7. Contact sheets:
   `~/torchlight-gog/screens/prompts-x360ui-ps-sheet.png`, `prompts-x360ui-nin-sheet.png`. The
   style is chosen at conversion (one OUT folder per style: `x360ui-ps`, `x360ui-nin`; `out=` in
-  `x360_ui.ini` picks it).
+  `x360_ui.ini` picks it). In a run with `x360ui-ps` (`~/torchlight-gog/screens/t30-ps5.png`): ✕
+  Equip, △ Drop, □ Swap, R1 by the filters, the d-pad's left and right lit by item compare, ○
+  Close.
 - **Not covered:** texts that name buttons ("Press A to identify", "item comparison: off").
 
 ## 13. A varied test save, made with the game's console (2026-10-16)
