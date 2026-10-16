@@ -4,7 +4,8 @@
 convert_x360_ui.py PAK OUT [--prompts STYLE] [--swap-confirm-cancel]
                                writes OUT/media/ui/x360/ and OUT/x360_ui_report.json
 
---prompts playstation|nintendo draws the pad prompts (a_button, left_bumper, start_button...) with
+--prompts playstation3|playstation4|playstation5|playstation|nintendo draws the pad prompts (a_button,
+left_bumper, start_button, the sticks, the d-pad, the help screen's controller...) with
 that pad's icons (tools/pad_prompts.py, data/prompts/, Kenney's, CC0) into the converted widget
 textures; xbox (the default) keeps the 360's. --swap-confirm-cancel: Nintendo's A and B swapped.
 

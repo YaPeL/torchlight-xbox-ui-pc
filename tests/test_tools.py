@@ -384,12 +384,17 @@ def _png(width, height, rgba, filters=None):
 class PadPromptsTest(unittest.TestCase):
     def test_table(self):
         self.assertEqual(pad_prompts.prompt_icons("xbox"), [])
-        ps = dict(pad_prompts.prompt_icons("playstation"))
-        self.assertEqual((ps["a_button"], ps["b_button"], ps["start_button"]), ("cross", "circle", "options"))
-        self.assertEqual(len(ps), 10)
-        n = dict(pad_prompts.prompt_icons("nintendo"))
+        ps = {i: f for i, f, _ in pad_prompts.prompt_icons("playstation4")}
+        self.assertEqual((ps["a_button"], ps["b_button"], ps["start_button"], ps["back_button"]),
+                         ("cross", "circle", "start_ps4", "back_ps4"))
+        self.assertEqual((ps["controller"], ps["dpad_up"], ps["analog_button_left_down"]),
+                         ("controller_ps4", "dpad_up", "stick_r_press"))
+        self.assertEqual(len(ps), 24)
+        self.assertEqual({i: f for i, f, _ in pad_prompts.prompt_icons("playstation")}["start_button"], "start_ps5")
+        self.assertEqual({i: s for i, _, s in pad_prompts.prompt_icons("nintendo")}["controller"], 0.8)
+        n = {i: f for i, f, _ in pad_prompts.prompt_icons("nintendo")}
         self.assertEqual((n["a_button"], n["b_button"]), ("b", "a"), "by position")
-        n = dict(pad_prompts.prompt_icons("nintendo", True))
+        n = {i: f for i, f, _ in pad_prompts.prompt_icons("nintendo", True)}
         self.assertEqual((n["a_button"], n["b_button"]), ("a", "b"), "swapped")
 
     def test_png(self):
@@ -416,6 +421,7 @@ class PadPromptsTest(unittest.TestCase):
     def test_fit_and_patch(self):
         icon = pad_prompts.Image(4, 2, bytes([255, 0, 0, 255]) * 8)
         fitted = pad_prompts.fit_icon(icon, 4, 4)
+        # In the patch, the 4x4 region keeps a 1-texel border: the icon fits 2x1, at (3, 3).
         self.assertEqual(fitted.rgba[3], 0, "transparent above")
         self.assertEqual(bytes(fitted.rgba[16:20]), bytes([255, 0, 0, 255]), "centred: rows 1 and 2")
         texture = pad_prompts.encode_dds_argb(pad_prompts.Image(8, 8, bytes([0, 0, 255, 255]) * 64))
@@ -425,7 +431,8 @@ class PadPromptsTest(unittest.TestCase):
         data, count = pad_prompts.patch_texture(xml, texture, {"a_button": icon})
         img = pad_prompts.decode_dds(data)
         self.assertEqual(count, 1)
-        self.assertEqual(bytes(img.rgba[(3 * 8 + 2) * 4:(3 * 8 + 2) * 4 + 4]), bytes([255, 0, 0, 255]))
+        self.assertEqual(bytes(img.rgba[(3 * 8 + 3) * 4:(3 * 8 + 3) * 4 + 4]), bytes([255, 0, 0, 255]))
+        self.assertEqual(img.rgba[(3 * 8 + 2) * 4 + 3], 0, "the border cleared")
         self.assertEqual(img.rgba[(2 * 8 + 2) * 4 + 3], 0, "the region cleared around the icon")
         self.assertEqual(bytes(img.rgba[0:4]), bytes([0, 0, 255, 255]), "the rest as it was")
         with self.assertRaises(ValueError):
@@ -445,10 +452,10 @@ class PadPromptsTest(unittest.TestCase):
     def test_the_icons_in_the_repository(self):
         root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "prompts")
         self.assertIn("Kenney", open(os.path.join(root, "LICENSE.txt")).read())
-        for style in ("playstation", "nintendo"):
+        for style in ("playstation3", "playstation4", "playstation5", "nintendo"):
             icons = pad_prompts.load_icons(root, style)
-            self.assertEqual(len(icons), 10)
-            for img in icons.values():
+            self.assertEqual(len(icons), 24)
+            for img, _ in icons.values():
                 self.assertTrue(img.width and img.height and any(img.rgba[3::4]))
 
 

@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """The 360 interface's pad prompts drawn with PlayStation or Nintendo icons.
 
-The 360's button images live inside its widget imagesets (a_button, left_bumper, start_button...).
-Their textures are rewritten with each replaced image's region cleared and the icon scaled into
-it (aspect kept, centred), so every window that names an image keeps its size and place; the
-imagesets and layouts are not touched. The sticks and the d-pad look the same on every pad and
-stay the game's.
+The 360's button, stick and d-pad images live inside its widget imagesets (a_button, left_bumper,
+start_button, dpad_up, analog_button_left_lrud...). Their textures are rewritten with each
+replaced image's region cleared and the icon scaled into it (aspect kept, centred, inside a
+1-texel transparent border), so every window that names an image keeps its size and place; the
+imagesets and layouts are not touched. The help screen's controller picture becomes the style's
+controller, at 0.8 of its region. PlayStation's style follows a model (PS3, PS4, PS5): its
+controller, and start and back as that model draws them.
 
 A Python port of the recomp's src/mods/pad_prompts.cpp (PromptIcons, FitIcon, PatchPromptTexture,
-the mods session's work), so the two games show the same icons; no code is shared between the
-repositories. The icons are Kenney's "Input Prompts" (CC0), in data/prompts/<style>/ as PNG, cut to
-their visible pixels (data/prompts/LICENSE.txt).
+the mods session's work, its develop at b0cd91a), so the two games show the same icons; no code is
+shared between the repositories. The icons are Kenney's "Input Prompts" (CC0), in
+data/prompts/<folder>/ as PNG, the recomp's crop (data/prompts/LICENSE.txt).
 
 Used by convert_x360_ui.py (--prompts STYLE). Pure Python: no Pillow.
 """
@@ -18,7 +20,19 @@ import re
 import struct
 import zlib
 
-STYLES = ("xbox", "playstation", "nintendo")
+STYLES = ("xbox", "playstation3", "playstation4", "playstation5", "playstation", "nintendo")
+CONTROLLER_SCALE = 0.8        # the help screen's controller, of its region
+PROMPT_MARGIN = 1             # transparent texels kept around an icon inside its region
+
+
+def _style(style):
+    """The style itself: "playstation" alone is the PS5's (the recomp's choice with no pad)."""
+    return "playstation5" if style == "playstation" else style
+
+
+def icon_folder(style):
+    """The icons' folder below data/prompts/: "playstation" for the three models, "nintendo"."""
+    return "playstation" if _style(style).startswith("playstation") else "nintendo"
 
 
 def swaps_confirm_cancel(style, swap_setting):
@@ -27,21 +41,38 @@ def swaps_confirm_cancel(style, swap_setting):
 
 
 def prompt_icons(style, swap_confirm_cancel=False):
-    """[(the game's image name, our icon file without .png)] a style replaces; none for Xbox."""
-    if style == "playstation":
-        return [("a_button", "cross"), ("b_button", "circle"), ("button_x", "square"),
-                ("y_button", "triangle"), ("left_bumper", "l1"), ("right_bumper", "r1"),
-                ("left_trigger", "l2"), ("right_trigger", "r2"), ("start_button", "options"),
-                ("back_button", "create")]
-    if style == "nintendo":
+    """[(the game's image name, our icon file without .png, scale)] a style replaces; none for
+    Xbox."""
+    style = _style(style)
+    if style.startswith("playstation"):
+        model = "ps" + style[-1]
+        icons = [("a_button", "cross"), ("b_button", "circle"), ("button_x", "square"),
+                 ("y_button", "triangle"), ("left_bumper", "l1"), ("right_bumper", "r1"),
+                 ("left_trigger", "l2"), ("right_trigger", "r2"),
+                 # Start and back as the pad's model draws them, and its controller.
+                 ("start_button", "start_" + model), ("back_button", "back_" + model)]
+        icons = [(i, f, 1.0) for i, f in icons] + [("controller", "controller_" + model, CONTROLLER_SCALE)]
+    elif style == "nintendo":
         # By position the 360's A is the bottom button, B on a Nintendo pad; swapped, the game's A
         # is the right one, A.
         swap = swaps_confirm_cancel(style, swap_confirm_cancel)
-        return [("a_button", "a" if swap else "b"), ("b_button", "b" if swap else "a"), ("button_x", "y"),
-                ("y_button", "x"), ("left_bumper", "l"), ("right_bumper", "r"),
-                ("left_trigger", "zl"), ("right_trigger", "zr"), ("start_button", "plus"),
-                ("back_button", "minus")]
-    return []
+        icons = [("a_button", "a" if swap else "b"), ("b_button", "b" if swap else "a"), ("button_x", "y"),
+                 ("y_button", "x"), ("left_bumper", "l"), ("right_bumper", "r"),
+                 ("left_trigger", "zl"), ("right_trigger", "zr"), ("start_button", "plus"),
+                 ("back_button", "minus")]
+        icons = [(i, f, 1.0) for i, f in icons] + [("controller", "controller", CONTROLLER_SCALE)]
+    else:
+        return []
+    # The sticks and the d-pad, the same names in both folders. The 360's sticks pushed in any
+    # direction ("lrud") become the plain stick; analog_button_left_down's drawing is the right
+    # stick pressed.
+    sticks = [("analog_button_left_lrud", "stick_l"), ("analog_button_right_lrud", "stick_r"),
+              ("analog_button_left_lr", "stick_l_horizontal"), ("analog_button_right_lr", "stick_r_horizontal"),
+              ("analog_button_left_ud", "stick_l_vertical"), ("analog_button_right_ud", "stick_r_vertical"),
+              ("analog_button_left_down", "stick_r_press"), ("dpad_updown", "dpad_vertical"),
+              ("dpad_leftright", "dpad_horizontal"), ("dpad_up", "dpad_up"), ("dpad_down", "dpad_down"),
+              ("dpad_left", "dpad_left"), ("dpad_right", "dpad_right")]
+    return icons + [(i, f, 1.0) for i, f in sticks]
 
 
 class Image:
@@ -240,28 +271,38 @@ def image_regions(imageset_xml):
 
 def patch_texture(imageset_xml, texture, icons):
     """(the texture redrawn as an A8R8G8B8 DDS, how many images were replaced): every image of
-    `icons` ({image name: Image}) cleared and its icon fitted in; the other pixels as they were.
-    Raises ValueError if the texture does not decode or an image lies outside it."""
+    `icons` ({image name: Image, or (Image, scale)}) cleared and its icon fitted in, inside a
+    PROMPT_MARGIN border (the game's windows draw these images a little smaller than their
+    regions and clip the bottom; the 360's art leaves the same border), at scale of that room;
+    the other pixels as they were. Raises ValueError if the texture does not decode or an image
+    lies outside it."""
     img = decode_dds(texture)
     count = 0
     for name, (x, y, w, h) in image_regions(imageset_xml).items():
         if name not in icons:
             continue
+        icon, scale = icons[name] if isinstance(icons[name], tuple) else (icons[name], 1.0)
         if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > img.width or y + h > img.height:
             raise ValueError(f"image {name} lies outside its texture")
-        fitted = fit_icon(icons[name], w, h)
+        margin = PROMPT_MARGIN if w > 2 * PROMPT_MARGIN and h > 2 * PROMPT_MARGIN else 0
+        fitted = fit_icon(icon, max(1, int(round((w - 2 * margin) * scale))),
+                          max(1, int(round((h - 2 * margin) * scale))))
+        left, top = x + (w - fitted.width) // 2, y + (h - fitted.height) // 2
         for row in range(h):
             o = ((y + row) * img.width + x) * 4
-            img.rgba[o:o + w * 4] = fitted.rgba[row * w * 4:(row + 1) * w * 4]
+            img.rgba[o:o + w * 4] = bytes(w * 4)
+        for row in range(fitted.height):
+            o = ((top + row) * img.width + left) * 4
+            img.rgba[o:o + fitted.width * 4] = fitted.rgba[row * fitted.width * 4:(row + 1) * fitted.width * 4]
         count += 1
     return encode_dds_argb(img), count
 
 
 def load_icons(icons_dir, style, swap_confirm_cancel=False):
-    """{the game's image name: Image} for a style, from icons_dir/<style>/<file>.png."""
+    """{the game's image name: (Image, scale)} for a style, from icons_dir/<folder>/<file>.png."""
     import os
     icons = {}
-    for image, file in prompt_icons(style, swap_confirm_cancel):
-        with open(os.path.join(icons_dir, style, file + ".png"), "rb") as f:
-            icons[image] = read_png(f.read())
+    for image, file, scale in prompt_icons(style, swap_confirm_cancel):
+        with open(os.path.join(icons_dir, icon_folder(style), file + ".png"), "rb") as f:
+            icons[image] = (read_png(f.read()), scale)
     return icons

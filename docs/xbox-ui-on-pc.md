@@ -1279,28 +1279,33 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
 The user's order: the same PlayStation and Nintendo icons as the recomp, its code and icons copied
 here (no dependency between the repositories). **[read: the recomp's branch; the conversion]**
 
-- **The source:** the recomp's mods session, branch `feature/pad-prompt-styles` (not merged; its
-  in-game check and the user's 8BitDo test pending): `src/mods/pad_prompts.cpp` (`PromptIcons`,
-  `FitIcon`, `PatchPromptTexture`), `tools/pad_prompts/make_icons.py`, the icons in
-  `data/ui/prompts/<style>/` from Kenney's "Input Prompts" 1.5 (CC0).
+- **The source:** the recomp's mods session, merged into its develop (`b0cd91a`, "Merge
+  feature/pad-prompt-styles into develop"): `src/mods/pad_prompts.cpp` (`PromptIcons`, `FitIcon`,
+  `PatchPromptTexture`), `tools/pad_prompts/make_icons.py`, the icons in `data/ui/prompts/<style>/`
+  from Kenney's "Input Prompts" 1.5 (CC0).
 - **Here:** `tools/pad_prompts.py`, a Python port (pure Python: a PNG reader, a DXT1/3/5 and
-  A8R8G8B8 DDS decoder, the A8R8G8B8 encoder, the same table and fitting); the 20 icons in
-  `data/prompts/<style>/` as PNG (the pack's own format, the recomp's crop; this repository's CI
-  forbids `.dds`), with Kenney's license (`data/prompts/LICENSE.txt`).
-- **What it replaces:** the 10 images `a_button`, `b_button`, `button_x`, `y_button`,
+  A8R8G8B8 DDS decoder, the A8R8G8B8 encoder, the same table and fitting); the 54 icons in
+  `data/prompts/<folder>/` as PNG (the recomp's DDS decoded; this repository's CI forbids
+  `.dds`), with Kenney's license (`data/prompts/LICENSE.txt`).
+- **What it replaces** (24 images): `a_button`, `b_button`, `button_x`, `y_button`,
   `left_bumper`, `right_bumper`, `left_trigger`, `right_trigger`, `start_button`, `back_button`;
-  the d-pad and the sticks stay the 360's (the same on every pad). PlayStation: cross, circle,
-  square, triangle, L1, R1, L2, R2, Options, Create. Nintendo by position (the 360's A is the
-  bottom button, B), or with `--swap-confirm-cancel` the letters swapped (the input swap itself is
-  not done here).
-- **How:** `convert_x360_ui.py PAK OUT --prompts playstation|nintendo` rewrites the converted
+  the help screen's `controller` (the style's silhouette at 0.8 of its region); the sticks
+  (`analog_button_left_lrud` and the like: the plain stick, horizontal, vertical;
+  `analog_button_left_down` is drawn as the right stick pressed) and the d-pad (`dpad_up`...,
+  `dpad_updown`, `dpad_leftright`). PlayStation by model (`playstation3`, `playstation4`,
+  `playstation5`; `playstation` alone is the PS5's): cross, circle, square, triangle, L1, R1, L2,
+  R2, start and back as that model draws them (PS3 start/select, PS4 options/share, PS5
+  options/create), its controller. Nintendo by position (the 360's A is the bottom button, B), or
+  with `--swap-confirm-cancel` the letters swapped (the input swap itself is not done here).
+  Every icon keeps a 1-texel transparent border inside its region (the game's windows draw these
+  images a little smaller and clip the bottom row).
+- **How:** `convert_x360_ui.py PAK OUT --prompts playstation5|nintendo|...` rewrites the converted
   widget textures (each replaced image's region cleared, the icon fitted in, aspect kept; an
-  uncompressed A8R8G8B8 DDS); imagesets and layouts untouched. On the user's pak: `widgets` 1
-  image, `widgets1` 9. A contact sheet: `~/torchlight-gog/screens/prompts-playstation-sheet.png`.
-  The style is chosen at conversion (one OUT folder per style; `out=` in `x360_ui.ini` picks it).
-- **Known, from the mods session:** Options and Create are tall and narrow and look poor in the
-  29x22 slots; the recomp may change them (a pill with an arrow). The fitting is an area filter,
-  for shrinking only. Changes there are to be copied here.
+  uncompressed A8R8G8B8 DDS); imagesets and layouts untouched. On the user's pak: `ratings` 2
+  images, `widgets` 3, `widgets1` 12, `widgets2` 7. Contact sheets:
+  `~/torchlight-gog/screens/prompts-x360ui-ps-sheet.png`, `prompts-x360ui-nin-sheet.png`. The
+  style is chosen at conversion (one OUT folder per style: `x360ui-ps`, `x360ui-nin`; `out=` in
+  `x360_ui.ini` picks it).
 - **Not covered:** texts that name buttons ("Press A to identify", "item comparison: off").
 
 ## 13. A varied test save, made with the game's console (2026-10-16)
