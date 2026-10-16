@@ -1080,6 +1080,18 @@ does it again if CEGUI laid the font out anew. **[read: CEGUI 0.6.2's source]**
   360's screenshots. So the fonts are laid back out for PC's `Serif`'s own size, read from its
   object (its scalings before `NativeHorzRes` 1024 and `NativeVertRes` 768, within its first 1200
   bytes). **[the runs; the last change not run yet]**
+- **What it was:** the game lays its own fonts out with a native width of 1365, not the files'
+  1024 (PC's `Serif` in a run: scalings 1.406 and 1.406, native 1365x768), so PC's text is not
+  stretched across; the renamed `X360_` fonts kept the files' 1024 and came out 33% wider. Now
+  each `X360_` font gets the game's native size (1365x768, copied from PC's `Serif`), is laid out
+  at 1280x720 (scaling 0.9375 both ways, the 360's) to read the advances, then for PC's size
+  (1920x1080), and its advances are set to the 360's times height / 720. Side by side with the
+  360's English screenshots (`~/torchlight-gog/screens/side-en-*.png`): "town portal scroll",
+  "mana potion", "health potion" take the 360's width and "Miscellaneous" fits its box. **[the run]**
+- **A crash on the way:** CEGUI's `setProperty` faulted after the icon background's "can equip"
+  check: CEquipment's virtual `+0x164` (GOG `0x4b8660`) takes two arguments (`ret 8`: the
+  character and a flag; the 360 passes the hero and 1), and one was passed. The same call in A's
+  swap was fixed with it.
 - **The used potion** now stays in its row with its stack lowered (a run: health potion x2 → x1,
   its price 60 → 30). The weapons' DPS is an int (`fistp` into `eax`), not a float.
 

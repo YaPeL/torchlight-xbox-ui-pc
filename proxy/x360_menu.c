@@ -134,7 +134,9 @@ static void prop(void *w, const char *name, const char *value) {
     if (!w) return;
     string_ctor(&n, 0, name);
     string_utf8(&v, 0, value);
-    __try { set_property(w, 0, &n, &v); } __except (1) { x360_log("x360 menu: setProperty threw\r\n"); }
+    __try { set_property(w, 0, &n, &v); } __except (1) {
+        x360_log("x360 menu: setProperty threw: "); x360_log(name); x360_log(" = "); x360_log(value); x360_log("\r\n");
+    }
     string_dtor(&v, 0);
     string_dtor(&n, 0);
 }
@@ -273,16 +275,17 @@ typedef struct { float w, h; } size2;
  * creates is laid out for another size than the game's (a run: X360_Serif larger than PC's
  * Serif, from the same file), and PC's fonts were the ones the 360's screenshots matched. */
 
-/* The display size the font was laid out for: its scalings times its native resolution. */
-static int font_screen(void *font, size2 *out) {
+/* A font's scalings and native resolution: CEGUI 0.6.2's Font keeps d_horzScaling, d_vertScaling,
+ * d_nativeHorzRes, d_nativeVertRes in a row (after the PropertySet base and three CEGUI::String).
+ * The game sets its own fonts' native width to 1365 (a run: PC's Serif 1.406, 1.406, 1365x768,
+ * though its file says 1024): its text is not stretched across. Returns the four floats. */
+static float *font_scaling(void *font) {
     float *f = (float *)font;
     int i;
-    for (i = 2; i < 300; i++)    /* after the PropertySet base and three CEGUI::String (152 bytes each) */
-        if (f[i] == 1024.0f && f[i + 1] == 768.0f && f[i - 2] > 0.1f && f[i - 2] < 10.0f && f[i - 1] > 0.1f && f[i - 1] < 10.0f) {
-            out->w = f[i - 2] * 1024.0f;
-            out->h = f[i - 1] * 768.0f;
-            return 1;
-        }
+    for (i = 2; f && i < 300; i++)
+        if (f[i + 1] == 768.0f && f[i] >= 1000.0f && f[i] <= 2000.0f &&
+            f[i - 2] > 0.1f && f[i - 2] < 10.0f && f[i - 1] > 0.1f && f[i - 1] < 10.0f)
+            return f + i - 2;
     return 0;
 }
 
@@ -306,6 +309,7 @@ static void match_spacing(float width, float height) {
     void *fm = fm_get ? fm_get() : 0;
     unsigned f, cp;
     size2 pc;
+    float *pc_scaling;
     if (!fm || !get_font || !notify || !glyph || height <= 0) return;
     {
         object name;
@@ -313,7 +317,23 @@ static void match_spacing(float width, float height) {
         string_ctor(&name, 0, "Serif");
         __try { serif = get_font(fm, 0, &name); } __except (1) { serif = 0; }
         string_dtor(&name, 0);
-        if (!serif || !font_screen(serif, &pc)) { x360_log("x360 menu: PC's Serif's scaling not found\r\n"); return; }
+        pc_scaling = serif ? font_scaling(serif) : 0;
+        if (pc_scaling) { pc.w = pc_scaling[0] * pc_scaling[2]; pc.h = pc_scaling[1] * pc_scaling[3]; }
+        if (!pc_scaling) {
+            /* A diagnosis: the floats of the object that look like scalings or resolutions. */
+            unsigned i;
+            x360_log("x360 menu: PC's Serif's scaling not found; object ");
+            x360_log_num((long)serif);
+            x360_log(", floats:");
+            for (i = 0; serif && i < 400; i++) {
+                float v = ((float *)serif)[i];
+                if ((v > 0.2f && v < 8.0f) || (v > 300.0f && v < 5000.0f && v == (float)(long)v)) {
+                    x360_log(" ["); x360_log_num((long)i); x360_log("]="); x360_log_num((long)(v * 1000)); x360_log("e-3");
+                }
+            }
+            x360_log("\r\n");
+            return;
+        }
     }
     for (f = 0; f < FONTS; f++) {
         object name;
@@ -326,11 +346,12 @@ static void match_spacing(float width, float height) {
         g = (float *)glyph(font, 0, 'e');
         if (patched_e[f] && g && g[1] == patched_e[f]) continue;          /* still as patched */
         __try {
-            size2 s720 = {1280.0f, 720.0f}, real = pc, own;
-            if (!patched_e[f] && font_screen(font, &own)) {
-                x360_log("x360 menu: "); x360_log(x360_fonts[f]); x360_log(" was laid out for ");
-                x360_log_num((long)own.w); x360_log("x"); x360_log_num((long)own.h); x360_log("\r\n");
-            }
+            size2 s720 = {1280.0f, 720.0f}, real = pc;
+            float *own = font_scaling(font);
+            if (!own) { x360_log("x360 menu: a 360 font's scaling not found\r\n"); continue; }
+            /* The game's native width for its fonts (1365): the 360's text is not stretched either. */
+            own[2] = pc_scaling[2];
+            own[3] = pc_scaling[3];
             if (!patched_e[f]) {
                 notify(font, 0, &s720);
                 for (cp = FIRST_CP; cp <= LAST_CP; cp++) {
@@ -349,6 +370,7 @@ static void match_spacing(float width, float height) {
             x360_log(", 'e' x100 "); x360_log_num((long)(advance_720[f]['e' - FIRST_CP] * 100));
             x360_log(" at 720, x100 "); x360_log_num((long)(patched_e[f] * 100));
             x360_log(" now; laid out for "); x360_log_num((long)real.w); x360_log("x"); x360_log_num((long)real.h);
+            x360_log(", native "); x360_log_num((long)own[2]); x360_log("x"); x360_log_num((long)own[3]);
             x360_log("\r\n");
         } __except (1) {
             x360_log("x360 menu: the spacing threw\r\n");
@@ -426,7 +448,9 @@ typedef unsigned char (__fastcall *inv_item_fn)(void *inv, void *edx, void *item
 typedef void *(__fastcall *pickup_fn)(void *inv, void *edx, void *item, int flag);
 typedef void (__fastcall *comparison_fn)(void *inv, void *edx, void *item, void **a, void **b);
 typedef void (__fastcall *use_item_fn)(void *ui, void *edx, void *level, void *item);
-typedef unsigned char (__fastcall *can_equip_fn)(void *item, void *edx, void *character);
+/* CEquipment's virtual +0x164 (GOG 0x4b8660, ret 8): (CCharacter*, bool); the 360's +0x15C is
+ * called with (hero, 1). One argument short unbalanced the stack (a crash in a run). */
+typedef unsigned char (__fastcall *can_equip_fn)(void *item, void *edx, void *character, int flag);
 typedef void (__fastcall *int_fn)(void *self, void *edx, int v);
 typedef void (__fastcall *ptr_fn)(void *self, void *edx, void *p);
 typedef void (__fastcall *create_icon_fn)(void *item, void *edx, void *ui, int flag);
@@ -584,7 +608,7 @@ static void row_name(char *out, const char *base, int row) {
  * set items (another colour, by the set's name) are not done. */
 static const char *quality_image(unsigned char *item) {
     if ((isa(item, 8) || isa(item, 13) || isa(item, 39)) &&
-        !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, hero))
+        !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, hero, 1))
         return "set:X360_widgets2 image:traycolor_red";
     if (isa(item, 54)) return "set:X360_widgets2 image:traycolor_yellow";
     if (isa(item, 55)) return "set:X360_widgets2 image:traycolor_blue";
@@ -615,7 +639,7 @@ static void fill_details(int row, unsigned char *item) {
     prop(win(name), "TextColour", "FFFF2A2A");
     show(win(name), !identified);
     row_name(name, "SlotText", row);
-    prop(win(name), "TextColour", identified ? "FFFFFFFF" : "FFFF2A2A");
+    prop(win(name), "TextColour", identified ? "FFCCCACF" : "FFFF2A2A");   /* the 360's grey (its image, near the tabs' names) */
 }
 
 static void refresh(void) {
@@ -760,7 +784,7 @@ static void act(void) {
         x360_log("x360 inv: A: equipped\r\n");
         return;
     }
-    if (!((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, hero)) {
+    if (!((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, hero, 1)) {
         x360_log("x360 inv: A: cannot equip\r\n");
         return;
     }
