@@ -704,11 +704,19 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
              * (merchant, quest, ...), or drops the target if not. PC's click also sends a
              * destination, which walks the hero: left out. */
             void **vt = *(void ***)hero;
-            x360_log("pad: A: interact with ");
-            x360_log(class_of(any_candidate));
-            x360_log("\r\n");
-            ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
-            ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 9);
+            if (!((bool_int_fn)GOG_ISA)(any_candidate, 0, 0x83)) {
+                /* PC's click talks only to units of kind 0x83 (GOG 0x414608). */
+                x360_log("pad: A: unit is not one to talk to\r\n");
+            } else {
+                x360_log("pad: A: talk to ");
+                x360_log(class_of(any_candidate));
+                x360_log("\r\n");
+                /* approachAI measures to the target item first if one is set: clear it. */
+                ((void_fn)GOG_STOP_PATHING)(hero, 0);
+                ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
+                ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
+                ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 9);
+            }
         } else {
             float m[16];
             void *wide;
