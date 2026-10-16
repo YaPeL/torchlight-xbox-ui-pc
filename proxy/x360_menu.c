@@ -306,6 +306,11 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_PICKUP_EQUIPMENT 0x004e9a30  /* CInventory::pickupEquipment(CEquipment*, bool) */
 #define GOG_RENDER_BEHIND 0x004885b0     /* CCharacter::setRenderBehind(bool) */
 #define GOG_DROP_SOUND 0x004d2780        /* CEquipment::playDropSound(SceneNode*) */
+#define GOG_ITEM_NAME 0x1b0              /* CEquipment: its name, a std::wstring (found by the probe) */
+#define GOG_GOLD 0x3c4                   /* CCharacter: gold (giveGold, GOG 0x487f20), on the last owner */
+#define GOG_OWNER 0x5b4                  /* CCharacter: the owner giveGold walks up to */
+#define INV_SLOTS 0x18                   /* CInventory: its number of slots */
+#define INV_PANE_STARTS 0x60             /* CInventory: the panes' first slots (a vector of int) */
 
 typedef unsigned char (__fastcall *isa_fn)(void *unit, void *edx, int type);
 typedef unsigned char (__fastcall *item_bool_fn)(void *item, void *edx);
@@ -399,8 +404,8 @@ static int wstring_utf8(const unsigned char *p, char *out, unsigned size) {
     return 1;
 }
 
-/* Where the item's display name is: found by the probe below (0: not known yet). */
-static int name_offset;
+/* Where the item's display name is: found by the probe below (a run, 2026-10-16: "second blade"). */
+static int name_offset = GOG_ITEM_NAME;
 
 /* The probe: every std::wstring in the item's first 0x600 bytes, logged once, to find the name. */
 static void probe_strings(unsigned char *item) {
@@ -484,12 +489,31 @@ static void refresh(void) {
     text(win("characterName"), "|cFFF2680DMY BAG|u");
     show(win("transmutor"), 0);
     show(win("petintown"), 0);
-    show(win("playergoldwin"), 0);
+    /* The 360 writes the owner's gold and "items/capacity" over the layout's samples ("12423",
+     * "3/25"; sub_82367D38): PC's gold, and the bag's items and slots (the slots from the first
+     * pane on; the 360 counts every reference against its own 126). */
     {
+        unsigned char *owner = hero, *inv = (unsigned char *)inventory();
         char *p = buf;
-        p = put_int(p, list_count);
+        int n = 0;
+        while (*(unsigned char **)(owner + GOG_OWNER)) owner = *(unsigned char **)(owner + GOG_OWNER);
+        p = put_int(p, *(long *)(owner + GOG_GOLD));
         *p = 0;
-        text(win("inventorysize"), buf);
+        text(win("playergoldtext"), buf);
+        show(win("playergoldwin"), 1);
+        if (inv) {
+            void **refs = *(void ***)(inv + INV_REFS);
+            unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;
+            int *starts = *(int **)(inv + INV_PANE_STARTS);
+            int first = starts ? starts[0] : EQUIPPED_SLOTS;
+            for (j = 0; j < count; j++)
+                if (refs[j] && *(int *)((unsigned char *)refs[j] + REF_SLOT) >= first) n++;
+            p = put_int(buf, n);
+            *p++ = '/';
+            p = put_int(p, *(long *)(inv + INV_SLOTS) - first);
+            *p = 0;
+            text(win("inventorysize"), buf);
+        }
     }
     show(win("uparrow"), top[filter] > 0);
     show(win("downarrow"), top[filter] + ROWS < list_count);
@@ -505,9 +529,16 @@ static void refresh(void) {
         item_icon((unsigned char *)list[idx], buf, sizeof buf);
         row_name(name, "Slot", row); prop(win(name), "Image", buf);
         row_name(name, "QualityBk", row); prop(win(name), "Image", "set:X360_widgets2 image:traycolor_blank");
+        row_name(name, "SlotText", row); show(win(name), 1);
         row_name(name, "Equipped", row); show(win(name), list_slot[idx] < EQUIPPED_SLOTS);
-        /* Not filled yet (the 360's sub_82368980): damage and armour, requirements, enchantments,
-         * quality, price, sockets, the comparison arrow. */
+        /* The tray (sub_823652A0): item_tray, or item_tray_equipped for an equipped item; the
+         * selected row at alpha 1.0, the others at 0.9 if equipped, else 0.6. */
+        prop(tray, "Image", list_slot[idx] < EQUIPPED_SLOTS ? "set:X360_widgets1 image:item_tray_equipped"
+                                                            : "set:X360_widgets1 image:item_tray");
+        prop(tray, "Alpha", idx == selected[filter] ? "1.0" : list_slot[idx] < EQUIPPED_SLOTS ? "0.9" : "0.6");
+        /* Not filled yet (the 360's sub_82368980), so hidden as the 360 hides each when it has no
+         * text: damage and armour, requirements, enchantments, quality, price, sockets, the
+         * comparison arrow. */
         row_name(name, "DamageArmor", row); show(win(name), 0);
         row_name(name, "Requirment", row); show(win(name), 0);
         row_name(name, "Enchantments", row); show(win(name), 0);
@@ -618,13 +649,37 @@ static void dump(void) {
         unsigned char *ref = (unsigned char *)refs[i], *item;
         char buf[128];
         if (!ref || !(item = *(unsigned char **)(ref + REF_ITEM))) continue;
-        if (i == 0 || !name_offset) probe_strings(item);
+        if (i == 0) probe_strings(item);
         x360_log("x360 inv:   slot "); x360_log_num(*(long *)(ref + REF_SLOT));
         x360_log(" cat "); x360_log_num(category(item));
         x360_log(" useable "); x360_log_num(((item_bool_fn)GOG_IS_USEABLE)(item, 0));
         item_icon(item, buf, sizeof buf);
         x360_log(" icon \""); x360_log(buf); x360_log("\"\r\n");
     }
+}
+
+/* The layout's sample texts ("ggItemggNamegg", "99999", "3/25", "12423", "x12") never show: every
+ * row's texts start empty and hidden, and the windows the 360 shows only in a mode start hidden. */
+static void clear_samples(void) {
+    static const char *const texts[] = {"SlotText", "DamageArmor", "Requirment", "Enchantments", "Quality",
+                                        "Gold", "Equipped"};
+    char name[48];
+    unsigned row, i;
+    for (row = 0; row < ROWS; row++) {
+        for (i = 0; i < sizeof texts / sizeof texts[0]; i++) {
+            row_name(name, texts[i], row);
+            if (texts[i][0] != 'E' || texts[i][1] != 'q') text(win(name), "");   /* "Equipped" is a label */
+            show(win(name), 0);
+        }
+        row_name(name, "ItemTray", row);
+        show(win(name), 0);
+    }
+    text(win("playergoldtext"), "");
+    text(win("inventorysize"), "");
+    text(win("IDENTIFYTEXT"), "");
+    show(win("IDENTIFYWIN"), 0);
+    show(win("buyandsell"), 0);
+    show(win("moveframe"), 0);
 }
 
 int x360_inventory_open(void) { return inventory_open; }
@@ -648,6 +703,7 @@ void x360_inventory_toggle(void) {
             mf = win("moveframe");
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
             if (parse_rect(value, v)) moveframe_top = v[3];
+            clear_samples();
             x360_log("x360 menu: scaled by x1000 "); x360_log_num((long)(k * 1000)); x360_log("\r\n");
         }
     }

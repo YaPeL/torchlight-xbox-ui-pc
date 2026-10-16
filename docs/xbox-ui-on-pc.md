@@ -958,3 +958,68 @@ stack (a list filled from the model, an action through PC's own handler, the mod
 The enchanter would be smaller (one item, a few buttons) but tests less; the skills need the pad's
 skill bar first. Estimated 1-2 weeks for the slice, of the 2-3 for the whole inventory.
 **[inferred]**
+
+## 11. The inventory slice: the 360's inventory in PC (2026-10-16)
+
+Branch `inventory-x360` (from `main` after `gameplay-pad` was merged). Code: `proxy/x360_menu.c`;
+the pad's Back opens it (`proxy/pad.c`). Screenshots: `~/torchlight-gog/screens/x360-inventory-*.png`.
+
+**Hosting.** The converted `inventorymenu_xenon.layout` (stage 0, `media/ui/x360/`, from the
+user's pak) is loaded once with the real `WindowManager::loadWindowLayout` (prefix `x360inv_`),
+attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and shown or hidden
+(`setVisible`, `moveToFront`); PC's inventory is not opened. Its windows are found with
+`WindowManager::getWindow` by their prefixed names. It needs `mode=scheme` (the 360 scheme). **[the runs]**
+- **Assets:** it uses only the imagesets `widgets`, `widgets1`, `widgets2` and the fonts `Serif`,
+  `Serif14`, `SerifBig`, `SerifHuge`, `SerifSmall`, all taken by the converter; not `widgets3`-`6`
+  or `characters`. **[read]**
+- **Scale:** the 360 draws it for 720 rows in absolute pixels, and CEGUI 0.6 does not scale
+  them (the fonts do). On load every window's `UnifiedAreaRect` offsets are multiplied by the
+  game's height / 720 (1.5 at 1080). The 360's tabbed frame (`mastermenu_xenon`) places the panel;
+  here it is moved to the title-safe margin (64, 36 at 720). **[the runs]**
+
+**What the 360 does (read in the image):**
+- **Buttons** (`sub_8236FEF0`, `sub_8236A810`): d-pad left/right toggle the Info view; A acts
+  (`sub_8236AA48`); X sells (`sub_8236AD18`, in a shop); Y drops (`sub_82369E80`) or transmutes;
+  RB/LB the filter (`sub_8236A488`: 0 to 5, past the ends the housing's next screen); B closes.
+- **The list** (`sub_82369FE8`): the owner's inventory references, the equipped ones first, then
+  the others, both from the last to the first; an item is listed when its category equals the
+  filter or is 6. **The category** (`sub_82369C48`, unit types of `UNITTYPES.HIE`, the same 162
+  IDs in the 360's pak and PC's): POTION, SPELL, SCROLL, MAP, QUESTITEM → 3; WEAPON → 0; ARMOR → 1;
+  RING, NECKLACE → 2; SOCKETABLE → 4; FISH → 5; anything else 6 (every filter). The fifth tab's
+  image is `tab_gems`. **[read]**
+- **Five rows** (`ItemTray0-4`), the scroll and the selection kept per filter (menu `+0xF4`,
+  `+0xDC`). Each row's windows (`sub_823660E0`): tray, `Slot`, `SlotText`, `Requirment`, `Quality`,
+  `DamageArmor`, `Enchantments`, `Gold`, `QualityBk`, `Equipped`, `qualityarrow`, the sockets.
+  `sub_82368980` fills a row: all its children shown, then `Requirment` and `Gold` hidden when
+  their text is empty, `Enchantments` shown only for an identified, enchanted, non-consumable
+  item, `Equipped` by whether it is equipped; a row with no item is hidden. **[read]**
+- **The selection** (`sub_823652A0`): `moveframe` (the frame with the button bar under it) is
+  put at the selected tray's y minus 18 (scaled); the tray's image is `item_tray`, or
+  `item_tray_equipped` for an equipped item; the selected row's alpha is 1.0, the others' 0.9 if
+  equipped, else 0.6. **[read]**
+- **The header** (`sub_82367D38`): `playergoldtext` is the owner's gold; `inventorysize` is
+  "references/capacity" (the capacity 126 for the hero, 50 for the pet, 4 in the transmuter). The
+  layout's "12423" and "3/25" are samples. `IDENTIFYWIN` ("Scroll x12") is hidden on every rebuild.
+  **[read]**
+
+**PC's side (GOG, located and checked in runs):**
+- `CInventory` is the character's `+0x404`; its references at `+0x1C` (count `+0x20`); a
+  reference holds the item at `+0x8` and its slot at `+0xC`; slots 0-11 are equipped
+  (OT `isEquipmentEquipped`), the bag's panes start at 19, 40, 61 (`+0x60`), 82 slots (`+0x18`).
+  The item's name is the `std::wstring` at `+0x1B0` (found by a probe of the item's strings:
+  "second blade"); its icon window `+0x24C` (`createIcon`, `0x4b9b70`), whose `Image` is PC's own
+  atlas image (`set:itemicons8 image:hacker`, ...): the icons come from PC's atlases by PC's data,
+  so none is empty. Gold: `+0x3C4` of the last owner (`+0x5B4`; `giveGold`, `0x487f20`).
+- **A** does what PC's right click on an inventory slot does (`CGameUI::processIngameInput`
+  *(OT)*, GOG `0x55e156`): `isUseable` (`0x53ea10`) → `CGameUI::useItem` (`0x5501b0`; `CGameUI`
+  is the client's `+0x3C`, its hero at `+0x1C`); else `equipEquipmentIntoFirstFreeLocation`
+  (`0x4e9fe0`), else the swap (`getComparisonItems` `0x4e7b90`, `removeEquipment` `0x4e9ca0`,
+  equip, `pickupEquipment` `0x4e9a30` of the old one), with `setRenderBehind` and the drop sound.
+  An equipped item is taken off: `removeEquipment`, `pickupEquipment`, back on if the bag is full.
+- In a run: A took the second blade off (the hero empty-handed) and put it back; the potions'
+  filter listed the four consumables with PC's icons and names; "4/63" and the hero's 100 gold.
+
+**Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
+quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
+transmuter; the housing's tabs (LT/RT) and the frame; the identify scrolls' window; the pet's
+inventory; the 3D doll and the comparison panel are not part of this screen on the 360.
