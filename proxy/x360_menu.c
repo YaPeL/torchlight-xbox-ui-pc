@@ -125,7 +125,8 @@ static void *win_of(const char *prefix, const char *name) {
     return w;
 }
 
-static void *win(const char *name) { return win_of(PREFIX, name); }
+static const char *cur_prefix = PREFIX;     /* the bag being drawn or acted on (see panels) */
+static void *win(const char *name) { return win_of(cur_prefix, name); }
 
 #define MASTER "x360mm_"
 
@@ -483,7 +484,11 @@ static int category(void *item) {
     return isa(item, 124) ? 5 : 6;
 }
 
-static void *inventory(void) { return hero ? *(void **)(hero + GOG_INVENTORY) : 0; }
+static unsigned char *cur_owner;             /* the bag's owner: the hero, or the pet */
+static void *inventory(void) {
+    unsigned char *owner = cur_owner ? cur_owner : hero;
+    return owner ? *(void **)(owner + GOG_INVENTORY) : 0;
+}
 
 #define MAX_LIST 128
 static void *list[MAX_LIST];
@@ -588,6 +593,30 @@ static void *inventory_root, *master_root;
 static int inventory_failed, inventory_open;
 static int filter;
 static int selected[6], top[6];
+
+/* The 360's two bags (CMasterHousingXenon's +0x104 and +0x108, sub_823702E0): the hero's and the
+ * pet's, side by side; LB/RB past the first or the last filter moves the focus to the other bag
+ * (to its last or first filter). The drawing and the actions work on the globals above, which
+ * hold the bag selected by select_panel. */
+#define PET_PREFIX "x360pet_"
+#define GOG_GET_PET_FN 0x0040e720
+static struct { const char *prefix; int is_pet, filter, selected[6], top[6]; void *root; } panels[2] = {
+    {PREFIX, 0, 0, {0}, {0}, 0}, {PET_PREFIX, 1, 0, {0}, {0}, 0}};
+static int active_panel, focus_panel;
+static unsigned char *the_pet(void) {
+    typedef void *(__fastcall *pet_fn)(void *hero, void *edx, int index);
+    return hero ? (unsigned char *)((pet_fn)GOG_GET_PET_FN)(hero, 0, 0) : 0;
+}
+static void select_panel(int i) {
+    int j;
+    panels[active_panel].filter = filter;
+    for (j = 0; j < 6; j++) { panels[active_panel].selected[j] = selected[j]; panels[active_panel].top[j] = top[j]; }
+    active_panel = i;
+    filter = panels[i].filter;
+    for (j = 0; j < 6; j++) { selected[j] = panels[i].selected[j]; top[j] = panels[i].top[j]; }
+    cur_prefix = panels[i].prefix;
+    cur_owner = panels[i].is_pet ? the_pet() : hero;
+}
 #define ROWS 5
 #define ROW_PITCH 92.0f                     /* ItemTray0-4 are 92 pixels apart in the layout */
 
@@ -678,7 +707,7 @@ static void refresh(void) {
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
     text(win("filtername"), filter_name[filter]);
-    text(win("characterName"), "My Bag");
+    text(win("characterName"), panels[active_panel].is_pet ? "Pet Bag" : "My Bag");
     show(win("rightbumper"), 1);
     show(win("transmutor"), 0);
     show(win("petintown"), 0);
@@ -693,7 +722,7 @@ static void refresh(void) {
         p = put_int(p, *(long *)(owner + GOG_GOLD));
         *p = 0;
         text(win("playergoldtext"), buf);
-        show(win("playergoldwin"), 1);
+        show(win("playergoldwin"), !panels[active_panel].is_pet);
         if (inv) {
             void **refs = *(void ***)(inv + INV_REFS);
             unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;
@@ -728,7 +757,8 @@ static void refresh(void) {
          * selected row at alpha 1.0, the others at 0.9 if equipped, else 0.6. */
         prop(tray, "Image", list_slot[idx] < EQUIPPED_SLOTS ? "set:X360_widgets1 image:item_tray_equipped"
                                                             : "set:X360_widgets1 image:item_tray");
-        prop(tray, "Alpha", idx == selected[filter] ? "1.0" : list_slot[idx] < EQUIPPED_SLOTS ? "0.9" : "0.6");
+        prop(tray, "Alpha", idx == selected[filter] && active_panel == focus_panel ? "1.0"
+                            : list_slot[idx] < EQUIPPED_SLOTS ? "0.9" : "0.6");
         /* Not filled yet (the 360's sub_82368980), so hidden as the 360 hides each when it has no
          * text: damage and armour, requirements, enchantments, quality, price, sockets, the
          * comparison arrow. */
@@ -750,7 +780,7 @@ static void refresh(void) {
         char value[128];
         float v[8];
         int sel_row = selected[filter] - top[filter];
-        show(mf, list_count > 0);
+        show(mf, list_count > 0 && active_panel == focus_panel);
         read_prop(mf, "UnifiedAreaRect", value, sizeof value);
         if (parse_rect(value, v)) move_by(mf, 0, moveframe_top + (float)sel_row * ROW_PITCH * k - v[3]);
         show(win("IDENTIFYWIN"), 0);
@@ -772,6 +802,20 @@ static void refresh(void) {
     }
 }
 
+/* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
+ * layout's "Your pet has gone to town." when there is no pet. */
+static void refresh_all(void) {
+    int other = 1 - focus_panel;
+    if (panels[1].root) {
+        select_panel(other);
+        if (cur_owner) refresh();
+        show(win("petintown"), !cur_owner);
+        if (!cur_owner) { int r; char n[48]; for (r = 0; r < ROWS; r++) { row_name(n, "ItemTray", r); show(win(n), 0); } show(win("moveframe"), 0); }
+    }
+    select_panel(focus_panel);
+    if (cur_owner) refresh();
+}
+
 /* A on the selected row: what PC's right click on an inventory slot does (GOG 0x55e156): a
  * useable item is used (useItem); another is equipped into its first free place, or swapped
  * with what is there (getComparisonItems, removeEquipment, equip, the old one picked up into the
@@ -781,6 +825,7 @@ static void act(void) {
     void *inv = inventory();
     unsigned char *item;
     if (!inv || !list_count) return;
+    if (panels[active_panel].is_pet) { x360_log("x360 inv: A in the pet's bag: not done yet\r\n"); return; }
     item = (unsigned char *)list[selected[filter]];
     if (list_slot[selected[filter]] < EQUIPPED_SLOTS) {
         ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
@@ -853,7 +898,8 @@ static void swap_to_pet(void) {
     void *inv = inventory(), *pet, *pet_inv;
     unsigned char *item;
     if (!inv || !list_count) return;
-    pet = ((get_pet_fn)GOG_GET_PET)(hero, 0, 0);
+    /* From the hero's bag to the pet's, or back from the pet's. */
+    pet = panels[active_panel].is_pet ? (void *)hero : ((get_pet_fn)GOG_GET_PET)(hero, 0, 0);
     pet_inv = pet ? *(void **)((unsigned char *)pet + GOG_INVENTORY) : 0;
     if (!pet_inv) { x360_log("x360 inv: X: no pet\r\n"); return; }
     item = (unsigned char *)list[selected[filter]];
@@ -933,6 +979,9 @@ void x360_inventory_toggle(void) {
     if (!inventory_root && !inventory_failed) {
         master_root = load("media/ui/x360/mastermenu_xenon.layout", MASTER);
         inventory_root = master_root ? load("media/ui/x360/inventorymenu_xenon.layout", PREFIX) : 0;
+        panels[0].root = inventory_root;
+        /* The pet's bag: the same layout again, in the frame's third column. */
+        panels[1].root = inventory_root ? load("media/ui/x360/inventorymenu_xenon.layout", PET_PREFIX) : 0;
         if (!inventory_root) inventory_failed = 1;
         else {
             RECT r;
@@ -946,6 +995,7 @@ void x360_inventory_toggle(void) {
             k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
             scale_tree(master_root, k, 0);
             scale_tree(inventory_root, k, 0);
+            if (panels[1].root) scale_tree(panels[1].root, k, 0);
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
              * ContainerFrame, three columns of 301: the character, the bag, the pet's bag. The bag
              * goes in the second (the screenshots: its frame at (747, 127) of 1080). */
@@ -954,6 +1004,11 @@ void x360_inventory_toggle(void) {
                 if (container && top) {
                     add_child(container, 0, top);
                     move_by(top, 301.0f * k, 0);
+                }
+                top = panels[1].root ? win_of(PET_PREFIX, "TopFrame") : 0;
+                if (container && top) {
+                    add_child(container, 0, top);
+                    move_by(top, 602.0f * k, 0);
                 }
             }
             /* Not working yet, so not shown: the LT/RT tabs, pet commands, item comparison. */
@@ -968,17 +1023,20 @@ void x360_inventory_toggle(void) {
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
             if (parse_rect(value, v)) moveframe_top = v[3];
             clear_samples();
+            if (panels[1].root) { select_panel(1); clear_samples(); select_panel(0); }
             x360_log("x360 menu: scaled by x1000 "); x360_log_num((long)(k * 1000)); x360_log("\r\n");
         }
     }
     if (!inventory_root) return;
     inventory_open = !inventory_open;
     if (inventory_open) {
+        select_panel(0);
         dump();
-        refresh();
+        refresh_all();
     }
     set_visible(master_root, 0, inventory_open);
     set_visible(inventory_root, 0, inventory_open);
+    if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     if (inventory_open) move_to_front(master_root, 0);
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
@@ -986,8 +1044,7 @@ void x360_inventory_toggle(void) {
 /* A fingerprint of the inventory: its items, their slots and stacks. PC changes it outside our
  * buttons too (useItem takes a potion out while the hero drinks and puts the rest back; pickups),
  * and the 360's screen hears of every change (iInventoryListener): ours rebuilds when it moves. */
-static unsigned fingerprint(void) {
-    unsigned char *inv = (unsigned char *)inventory();
+static unsigned fingerprint_of(unsigned char *inv) {
     void **refs;
     unsigned n, i, h = 2166136261u;
     if (!inv) return 0;
@@ -1001,6 +1058,12 @@ static unsigned fingerprint(void) {
         h = (h ^ *(unsigned *)(item + GOG_STACK)) * 16777619u;
     }
     return h ^ n;
+}
+
+static unsigned fingerprint(void) {
+    unsigned char *pet = the_pet();
+    unsigned h = fingerprint_of(hero ? *(unsigned char **)(hero + GOG_INVENTORY) : 0);
+    return h * 31u + fingerprint_of(pet ? *(unsigned char **)(pet + GOG_INVENTORY) : 0);
 }
 
 /* The pad while the inventory is open: pressed, the buttons just pressed; ly, the stick (of 1000).
@@ -1017,7 +1080,7 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
         last_check = now;
-        if (print != last_print) { last_print = print; refresh(); }
+        if (print != last_print) { last_print = print; refresh_all(); }
     }
     if (buttons & 0x0001 || ly > 500) dir = -1;                      /* up */
     if (buttons & 0x0002 || ly < -500) dir = 1;                      /* down */
@@ -1026,11 +1089,20 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
         int s = selected[filter] + dir;
         if (s >= 0 && s < list_count) selected[filter] = s;
         next_repeat = now + (next_repeat ? 120 : 350);
-        refresh();
+        refresh_all();
     }
-    if (pressed & 0x0100 && filter > 0) { filter--; refresh(); }       /* LB */
-    if (pressed & 0x0200 && filter < 5) { filter++; refresh(); }       /* RB */
-    if (pressed & 0x1000) { act(); refresh(); }                        /* A */
-    if (pressed & 0x8000) { drop(); refresh(); }                       /* Y */
-    if (pressed & 0x4000) { swap_to_pet(); refresh(); }                /* X */
+    /* LB/RB: the filter; past the ends, the other bag (sub_8236A488, sub_823702E0). */
+    if (pressed & 0x0100) {                                            /* LB */
+        if (filter > 0) filter--;
+        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 5; }
+        refresh_all();
+    }
+    if (pressed & 0x0200) {                                            /* RB */
+        if (filter < 5) filter++;
+        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 0; }
+        refresh_all();
+    }
+    if (pressed & 0x1000) { act(); refresh_all(); }                    /* A */
+    if (pressed & 0x8000) { drop(); refresh_all(); }                   /* Y */
+    if (pressed & 0x4000) { swap_to_pet(); refresh_all(); }            /* X */
 }
