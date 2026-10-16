@@ -109,6 +109,15 @@ Run the tests with `python3 -m unittest discover -s tests -v`.
   `mode=scheme` adds the converted folder to Ogre and loads the 360 scheme after PC's. The game
   reaches its main menu with it, unchanged. No 360 layout is shown yet.
 
+**Gameplay with the pad, state (2026-10-15):** the user's verdict on the last run: "todo ok".
+Working with the real pad (section 9e): moving and stopping, X (the 360's target rule, the
+highlight, attacks in place, breaking barrels), A (picking up items, doors, chests, the shared
+stash, merchants, NPCs with "!" and "?", walking NPCs, portals), the hotbar keys (LB drank a
+potion). Open: the hero spinning in place when the stick spins fast (the 360 turns in place; the
+turn rate is the same, so it is when the hero starts walking), the 360's item name window on the
+highlighted item, the skills on B/Y/LT/RT not tried with assigned skills. Next: the inventory
+slice (section 10c).
+
 **Focus (2026-10-15, the user's order):** the core of the project is gameplay with the pad and the
 360's screens with logic of their own (inventory, character, skills, pet, merchant, enchanter);
 the `onClick` menus are the cheap part, done last or when a test needs them. Section 9 holds the
