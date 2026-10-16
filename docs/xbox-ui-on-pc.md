@@ -1063,6 +1063,23 @@ lays out and rasterises its fonts at 720p and the font textures are sampled up 1
 at 1080 with its own rounding and hinting. Both stretch the glyphs the same way in 16:9 (CEGUI's
 AutoScaled fonts: width / 1024 across, height / 768 up). English captures of the 360 would settle it.
 
+**Matching the 360's letter spacing, sharp** (the user's order, 2026-10-16). The converter now
+renames the 360's fonts `X360_<name>` (font files, scheme, layouts and looknfeel `Font`
+properties), so they are fonts of their own and PC's `Serif`, `SerifBig`, ... are untouched. The
+proxy, before loading the layouts, lays each `X360_` font out once at 1280x720 with CEGUI's own
+FreeType (`Font::notifyScreenResolution`, exported, virtual; CEGUI 0.6.2's `FreeTypeFont::
+updateFont` sizes a font by `NativeHorzRes`/`NativeVertRes` and keeps `horiAdvance` of each glyph,
+autohinted), keeps every advance (U+0020-U+024F; `Font::getGlyphData`, a `FontGlyph` {image,
+advance}), lays it out again at the game's size (the glyphs rasterised there, sharp) and replaces
+each advance by the 360's times height / 720. It checks the advance of "e" on every opening and
+does it again if CEGUI laid the font out anew. **[read: CEGUI 0.6.2's source; not run yet]**
+
+**A potion used from the list vanished until the next opening** (the user's run): PC's `useItem`
+takes the stack out while the hero drinks and puts the rest back, and the list was rebuilt only
+on our buttons. The screen now rebuilds whenever the inventory's fingerprint (items, slots,
+stacks) changes, checked every 0.1 s while it is open, as the 360's screen hears every change
+through `iInventoryListener`.
+
 **Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
 quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
 transmuter; the housing's tabs (LT/RT) and the frame; the identify scrolls' window; the pet's

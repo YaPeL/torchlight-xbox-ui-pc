@@ -8,8 +8,10 @@ the imagesets and fonts the scheme names with their textures and TTF files, and 
 written as `.layout`. Everything lands flat in `media/ui/x360/`, so no path of PC's own UI is
 replaced, and every imageset of the scheme is renamed `X360_<name>` (in the imagesets, the scheme,
 the looknfeel and the layouts), so none meets a PC imageset of the same name (both games have a
-`Loading`, on different textures). Font names are kept: PC has the same fonts from the same TTF
-files, and CEGUI keeps the first font of a name. The scheme is renamed `X360_<name>`.
+`Loading`, on different textures). Every font is renamed `X360_<name>` too (in the font files, the
+scheme, the looknfeel's and the layouts' `Font` properties): PC has fonts of the same names from
+the same TTF files, and the proxy adjusts the 360's fonts' letter spacing to the 360's (section 11),
+which must not touch PC's own. The scheme is renamed `X360_<name>`.
 
 A layout's reference to an imageset the scheme does not name is left as it is and listed in the
 report (some 360 layouts name `widgets3`-`widgets6` and `characters`, which the pak lacks).
@@ -78,10 +80,19 @@ def rename_sets(text, names):
     return text, sorted(unknown)
 
 
+def rename_fonts(text, fonts):
+    """text with the fonts of `fonts` ({old: new}) renamed where a `Font` property names them
+    (layouts: `<Property Name="Font" Value="..."`; looknfeel: `name="Font" value="..."`)."""
+    def prop(m):
+        return m.group(1) + fonts.get(m.group(2), m.group(2)) + m.group(3)
+    return re.sub(r'(\b[Nn]ame\s*=\s*"Font"\s+[Vv]alue\s*=\s*")([^"]*)(")', prop, text)
+
+
 def convert(files):
     """files: {lowercase pak path: bytes}. Returns ({output path: bytes}, report)."""
     out = {}
-    report = {"imagesets": {}, "fonts": [], "layouts": {}, "missing_files": []}
+    report = {"imagesets": {}, "fonts": [], "font_names": {}, "layouts": {}, "missing_files": []}
+    fonts = report["font_names"]
 
     def put(name, data):
         path = DEST + name
@@ -140,6 +151,8 @@ def convert(files):
             text, enc = decode(data)
 
             def fix(t):
+                fonts[attr(t, "Name")] = PREFIX + attr(t, "Name")
+                t = set_attr(t, "Name", PREFIX + attr(t, "Name"))
                 ttf = attr(t, "Filename")
                 if ttf.lower() not in written:
                     blob = take(ttf)
@@ -148,7 +161,8 @@ def convert(files):
 
             written[src.lower()] = put(basename(src), retag(text, "Font", fix).encode(enc))
             report["fonts"].append(basename(src))
-        return set_attr(tag, "Filename", written[src.lower()])
+        tag = set_attr(tag, "Filename", written[src.lower()])
+        return set_attr(tag, "Name", PREFIX + attr(tag, "Name")) if attr(tag, "Name") else tag
 
     def looknfeel(tag):
         src = attr(tag, "Filename")
@@ -157,6 +171,7 @@ def convert(files):
             return tag
         text, enc = decode(data)
         text, unknown = rename_sets(text, names)
+        text = rename_fonts(text, fonts)
         report["looknfeel_unknown_imagesets"] = unknown
         return set_attr(tag, "Filename", put(basename(src), text.encode(enc)))
 
@@ -170,6 +185,7 @@ def convert(files):
     for path in sorted(p for p in files if p.endswith(".uilayout")):
         text, enc = decode(files[path])
         text, unknown = rename_sets(text, names)
+        text = rename_fonts(text, fonts)
         name = basename(path)[: -len(".uilayout")] + ".layout"
         put(name, text.encode(enc))
         report["layouts"][name] = {"windows": len(re.findall(r"<Window\b", text)), "unknown_imagesets": unknown}

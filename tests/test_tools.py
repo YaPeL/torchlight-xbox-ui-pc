@@ -223,10 +223,12 @@ class ConvertX360Test(unittest.TestCase):
         "media/UI/brlnsdb.ttf": b"synthetic font",
         "media/UI/hud/schemes/ceguiWidgets.looknfeel":
             '<Falagard><Image imageset="widgets1" image="a" />'
-            '<Property Name="Image" Value="set:Loading image:loading" /></Falagard>',
+            '<Property Name="Image" Value="set:Loading image:loading" />'
+            '<Property name="Font" value="Serif" /></Falagard>',
         "media/UI/modalmenu.uilayout":
             '<GUILayout><Window Type="ceguiWidget/StaticImage" Name="Root">'
-            '<Property Name="Image" Value="set:widgets1 image:a" /></Window></GUILayout>',
+            '<Property Name="Image" Value="set:widgets1 image:a" /><Property Name="Font" Value="Serif" />'
+            '<Property Name="Font" Value="FrizQuadrataSmall" /></Window></GUILayout>',
         "media/ui/skills.uilayout":
             '<GUILayout><Window Type="DefaultWindow" Name="R"><Window Type="DefaultWindow" Name="S">'
             '<Property Name="Image" Value="set:widgets6 image:b" /></Window></Window></GUILayout>',
@@ -257,10 +259,17 @@ class ConvertX360Test(unittest.TestCase):
         self.assertIn('<Imageset Name= "X360_widgets1" Imagefile="media/ui/x360/widgets1.dds">',
                       text[d + "widgets1.imageset"])
         self.assertIn('Filename="media/ui/x360/BRLNSDB.TTF"', text[d + "Serif.font"])
-        self.assertIn('Name="Serif"', text[d + "Serif.font"], "font names are kept")
+        self.assertIn('Name="X360_Serif"', text[d + "Serif.font"], "fonts are renamed")
+        self.assertEqual(scheme.count('<Font Name="X360_Serif"'), 2)
+        self.assertIn('<Property Name="Font" Value="X360_Serif" />', text[d + "modalmenu.layout"])
+        self.assertIn('<Property name="Font" value="X360_Serif" />', text[d + "ceguiWidgets.looknfeel"])
+        self.assertIn('<Property Name="Font" Value="FrizQuadrataSmall" />', text[d + "modalmenu.layout"],
+                      "a font the scheme does not name is left")
+        self.assertEqual(report["font_names"], {"Serif": "X360_Serif"})
         self.assertEqual(text[d + "ceguiWidgets.looknfeel"],
                          '<Falagard><Image imageset="X360_widgets1" image="a" />'
-                         '<Property Name="Image" Value="set:X360_Loading image:loading" /></Falagard>')
+                         '<Property Name="Image" Value="set:X360_Loading image:loading" />'
+                         '<Property name="Font" value="X360_Serif" /></Falagard>')
         self.assertIn('Value="set:X360_widgets1 image:a"', text[d + "modalmenu.layout"])
         self.assertIn('Value="set:widgets6 image:b"', text[d + "skills.layout"], "unknown sets are left")
         self.assertEqual(out[d + "loading.dds"], b"DDS synthetic 2")

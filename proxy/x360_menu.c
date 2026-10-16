@@ -258,6 +258,70 @@ static void move_by(void *w, float dx, float dy) {
     prop(w, "UnifiedAreaRect", value);
 }
 
+/* ---- the 360's letter spacing ----
+ * The 360 lays out and rasterises its fonts at 1280x720 and its frame is drawn 1.5 times larger at
+ * 1080; PC rasterises at its own resolution, where FreeType's hinting rounds each advance
+ * differently: PC's text came out 6-10% wider. Each 360 font (renamed X360_* by the converter, so
+ * PC's own fonts are untouched) is laid out once at 1280x720 with CEGUI's own FreeType
+ * (Font::notifyScreenResolution), its advances kept, then laid out again at the game's size,
+ * which keeps the glyphs sharp, and every advance replaced by the 360's times height / 720. */
+
+typedef struct { float w, h; } size2;
+typedef void (__fastcall *notify_fn)(void *font, void *edx, const size2 *size);
+typedef void *(__fastcall *glyph_fn)(void *font, void *edx, unsigned cp);
+typedef void *(__fastcall *get_font_fn)(const void *fm, void *edx, const void *name);
+
+#define FIRST_CP 0x20
+#define LAST_CP 0x24f
+static const char *const x360_fonts[] = {"X360_Serif", "X360_Serif14", "X360_SerifBig", "X360_SerifHuge",
+                                         "X360_SerifSmall", "X360_FrizQuadrata", "X360_FrizQuadrataBig"};
+#define FONTS (sizeof x360_fonts / sizeof x360_fonts[0])
+static float advance_720[FONTS][LAST_CP - FIRST_CP + 1];
+static float patched_e[FONTS];               /* the advance of 'e' as patched: a re-layout resets it */
+
+static void match_spacing(float width, float height) {
+    singleton_fn fm_get = (singleton_fn)need("?getSingletonPtr@?$Singleton@VFontManager@CEGUI@@@CEGUI@@SAPAVFontManager@2@XZ");
+    get_font_fn get_font = (get_font_fn)need("?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z");
+    notify_fn notify = (notify_fn)need("?notifyScreenResolution@Font@CEGUI@@UAEXABVSize@2@@Z");
+    glyph_fn glyph = (glyph_fn)need("?getGlyphData@Font@CEGUI@@IAEPBVFontGlyph@2@I@Z");
+    void *fm = fm_get ? fm_get() : 0;
+    unsigned f, cp;
+    if (!fm || !get_font || !notify || !glyph || height <= 0) return;
+    for (f = 0; f < FONTS; f++) {
+        object name;
+        void *font = 0;
+        float *g;
+        string_ctor(&name, 0, x360_fonts[f]);
+        __try { font = get_font(fm, 0, &name); } __except (1) { font = 0; }
+        string_dtor(&name, 0);
+        if (!font) continue;
+        g = (float *)glyph(font, 0, 'e');
+        if (patched_e[f] && g && g[1] == patched_e[f]) continue;          /* still as patched */
+        __try {
+            size2 s720 = {1280.0f, 720.0f}, real = {width, height};
+            if (!patched_e[f]) {
+                notify(font, 0, &s720);
+                for (cp = FIRST_CP; cp <= LAST_CP; cp++) {
+                    g = (float *)glyph(font, 0, cp);     /* FontGlyph: the image, then the advance */
+                    advance_720[f][cp - FIRST_CP] = g ? g[1] : 0;
+                }
+            }
+            notify(font, 0, &real);
+            for (cp = FIRST_CP; cp <= LAST_CP; cp++) {
+                g = (float *)glyph(font, 0, cp);
+                if (g && advance_720[f][cp - FIRST_CP] > 0) g[1] = advance_720[f][cp - FIRST_CP] * height / 720.0f;
+            }
+            g = (float *)glyph(font, 0, 'e');
+            patched_e[f] = g ? g[1] : 0;
+            x360_log("x360 menu: spacing of "); x360_log(x360_fonts[f]);
+            x360_log(", 'e' x100 "); x360_log_num((long)(advance_720[f]['e' - FIRST_CP] * 100));
+            x360_log(" at 720, x100 "); x360_log_num((long)(patched_e[f] * 100)); x360_log(" now\r\n");
+        } __except (1) {
+            x360_log("x360 menu: the spacing threw\r\n");
+        }
+    }
+}
+
 /* ---- loading ---- */
 
 static float k;                              /* the layouts' scale: the game's height / 768 */
@@ -769,6 +833,12 @@ int x360_inventory_open(void) { return inventory_open; }
 /* The pad's Back: the 360's inventory on or off. */
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
+    {
+        RECT r;
+        HWND w = GetActiveWindow();
+        if (resolve() && w && GetClientRect(w, &r) && r.bottom > r.top)
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+    }
     if (!inventory_root && !inventory_failed) {
         master_root = load("media/ui/x360/mastermenu_xenon.layout", MASTER);
         inventory_root = master_root ? load("media/ui/x360/inventorymenu_xenon.layout", PREFIX) : 0;
@@ -822,6 +892,26 @@ void x360_inventory_toggle(void) {
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
 
+/* A fingerprint of the inventory: its items, their slots and stacks. PC changes it outside our
+ * buttons too (useItem takes a potion out while the hero drinks and puts the rest back; pickups),
+ * and the 360's screen hears of every change (iInventoryListener): ours rebuilds when it moves. */
+static unsigned fingerprint(void) {
+    unsigned char *inv = (unsigned char *)inventory();
+    void **refs;
+    unsigned n, i, h = 2166136261u;
+    if (!inv) return 0;
+    refs = *(void ***)(inv + INV_REFS);
+    n = *(unsigned *)(inv + INV_REFS + 4);
+    for (i = 0; i < n && i < 256; i++) {
+        unsigned char *ref = (unsigned char *)refs[i], *item;
+        if (!ref || !(item = *(unsigned char **)(ref + REF_ITEM))) continue;
+        h = (h ^ (unsigned)(unsigned long)item) * 16777619u;
+        h = (h ^ *(unsigned *)(ref + REF_SLOT)) * 16777619u;
+        h = (h ^ *(unsigned *)(item + GOG_STACK)) * 16777619u;
+    }
+    return h ^ n;
+}
+
 /* The pad while the inventory is open: pressed, the buttons just pressed; ly, the stick (of 1000).
  * Up and down (the stick or the d-pad) move the selection, repeating while held; LB and RB the
  * filter; A acts on the row; B or Back closes. */
@@ -830,8 +920,14 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
     static int held_dir;
     unsigned now = GetTickCount();
     int dir = 0;
+    static unsigned last_print, last_check;
     if (!inventory_open || !find_world()) return;
     if (pressed & 0x2000) { x360_inventory_toggle(); return; }       /* B */
+    if (now - last_check >= 100) {
+        unsigned print = fingerprint();
+        last_check = now;
+        if (print != last_print) { last_print = print; refresh(); }
+    }
     if (buttons & 0x0001 || ly > 500) dir = -1;                      /* up */
     if (buttons & 0x0002 || ly < -500) dir = 1;                      /* down */
     if (dir != held_dir) { held_dir = dir; next_repeat = 0; }
