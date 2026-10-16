@@ -263,6 +263,24 @@ static void move_by(void *w, float dx, float dy) {
     prop(w, "UnifiedAreaRect", value);
 }
 
+/* The width in pixels of text in window w's font (Font::getTextExtent), 0 if unknown. */
+static float text_width(void *w, const char *text) {
+    typedef void *(__fastcall *get_font_fn)(const void *self, void *edx, int use_default);
+    typedef float (__fastcall *extent_fn)(const void *font, void *edx, const object *text, float x_scale);
+    static get_font_fn get_font;
+    static extent_fn extent;
+    object t;
+    void *font;
+    float r = 0;
+    if (!get_font) get_font = (get_font_fn)need("?getFont@Window@CEGUI@@QBEPAVFont@2@_N@Z");
+    if (!extent) extent = (extent_fn)need("?getTextExtent@Font@CEGUI@@QAEMABVString@2@M@Z");
+    if (!w || !get_font || !extent || !(font = get_font(w, 0, 1))) return 0;
+    string_utf8(&t, 0, text);
+    __try { r = extent(font, 0, &t, 1.0f); } __except (1) { r = 0; }
+    string_dtor(&t, 0);
+    return r;
+}
+
 typedef struct { float w, h; } size2;
 
 /* ---- the 360's letter spacing ----
@@ -550,6 +568,8 @@ static int list_count;
 
 /* The 360's list (sub_82369FE8): the equipped items first, then the others, both read from the
  * last reference to the first; each in the filter's category or in any (6). */
+static unsigned char *identify_scrolls(int *count);
+
 static void build_list(int filter) {
     unsigned char *inv = (unsigned char *)inventory();
     void **refs;
@@ -616,8 +636,36 @@ static void probe_strings(unsigned char *item) {
     x360_log(" )\r\n");
 }
 
+/* The full name (prefix, name, suffix: "dagger with a suffix"), as the 360's rows write it
+ * (its screenshots: "prefixed shoes"): the function PC's equipment tooltip calls for its name
+ * line (GOG 0x4b3fe0 from 0x54289a: thiscall on the item, the std::wstring returned into its first
+ * argument, then 0; ret 0x8). Its neighbour 0x4b4470, CEquipment::getFullItemName *(OT)*, builds
+ * the line above it instead ("rare sword", "unidentified trinket"). */
+#define GOG_FULL_ITEM_NAME 0x004b3fe0
+typedef void *(__fastcall *full_name_fn)(void *item, void *edx, void *out, int flag);
+static int full_item_name(unsigned char *item, char *out, unsigned size) {
+    typedef void (__fastcall *wdtor_fn)(void *self, void *edx);
+    static wdtor_fn wdtor;
+    static int tried;
+    unsigned char ws[32];
+    int ok = 0;
+    if (!tried) {
+        void *m = GetModuleHandleA("msvcp90.dll");
+        tried = 1;
+        wdtor = m ? (wdtor_fn)GetProcAddress(m, "??1?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@XZ") : 0;
+    }
+    if (!wdtor || !item[GOG_IDENTIFIED] || !(isa(item, 8) || isa(item, 13) || isa(item, 39))) return 0;
+    __try {
+        ((full_name_fn)GOG_FULL_ITEM_NAME)(item, 0, ws, 0);
+        ok = wstring_utf8(ws, out, size);
+        wdtor(ws, 0);
+    } __except (1) { ok = 0; }
+    return ok;
+}
+
 static void item_name(unsigned char *item, char *out, unsigned size) {
     out[0] = 0;
+    if (full_item_name(item, out, size)) return;
     if (name_offset) {
         int ok = 0;
         __try { ok = wstring_utf8(item + name_offset, out, size); } __except (1) { ok = 0; }
@@ -862,7 +910,46 @@ static void refresh(void) {
             const char *a = list_slot[selected[filter]] < EQUIPPED_SLOTS ? "Unequip"
                             : isa(item, 129) ? "Learn"
                             : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "Use" : "Equip";
+            int scrolls = 0;
+            char label[32];
+            /* An unidentified item: the 360's "Identify (" + the scrolls + ")" (its screenshot,
+             * "Identify(11)"). */
+            if (!item[GOG_IDENTIFIED] && identify_scrolls(&scrolls) && scrolls > 0) {
+                const char *p = "Identify (";
+                char digits[12];
+                int n = 0, d = 0, v = scrolls;
+                while (*p && n < 20) label[n++] = *p++;
+                do { digits[d++] = (char)('0' + v % 10); v /= 10; } while (v && d < 11);
+                while (d && n < 30) label[n++] = digits[--d];
+                label[n++] = ')';
+                label[n] = 0;
+                a = label;
+            }
             text(win("buttonAtext"), a);
+            /* The 360's bar (its screenshot: "A Identify(11)  Y Drop  X Swap"): each button after
+             * the text of the one before it. The layout's gap after "Unequip" (A at -112, Y at -29,
+             * X at 26, the icons 15 wide, the texts 15 in) is kept after the measured texts. */
+            {
+                void *ba = win("buttonA"), *by = win("buttonY"), *bx = win("buttonX");
+                char value[128];
+                float va[8], vy[8], vx[8], wa = text_width(win("buttonAtext"), a), wy = text_width(win("buttonYtext"), "Drop");
+                if (ba && by && bx && wa > 0 && wy > 0) {
+                    read_prop(ba, "UnifiedAreaRect", value, sizeof value);
+                    if (parse_rect(value, va)) {
+                        float gap = 10.0f * k, icon = va[5] - va[1];
+                        read_prop(by, "UnifiedAreaRect", value, sizeof value);
+                        if (parse_rect(value, vy)) {
+                            vy[1] = va[1] + icon + wa + gap; vy[5] = vy[1] + icon;
+                            write_rect(value, vy); prop(by, "UnifiedAreaRect", value);
+                            read_prop(bx, "UnifiedAreaRect", value, sizeof value);
+                            if (parse_rect(value, vx)) {
+                                vx[1] = vy[1] + icon + wy + gap; vx[5] = vx[1] + icon;
+                                write_rect(value, vx); prop(bx, "UnifiedAreaRect", value);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1008,7 +1095,12 @@ static void show_info(void *item, float y, float list_left) {
     if (h1) { place_card(1, list_left - 16.0f * k - w, 0, y1); y1 += h1 + gap; }
     w = card_width(2);
     if (h2) place_card(2, list_left - 16.0f * k - w, 0, y1);
-    if (info_item != item) x360_log(first ? "x360 inv: info with comparison\r\n" : "x360 inv: info\r\n");
+    if (info_item != item) {
+        char name[128];
+        item_name((unsigned char *)item, name, sizeof name);
+        x360_log(first ? "x360 inv: info with comparison, " : "x360 inv: info, ");
+        x360_log(name); x360_log("\r\n");
+    }
     info_item = item;
 }
 
@@ -1201,24 +1293,35 @@ static void refresh_all(void) {
  * "identify scroll"); a stack loses one, the last one is taken out and destroyed as PC destroys an
  * item (removeEquipment, then the virtual destructor +0 with 1). */
 #define GOG_DESTROY_ITEM_TEXT 0x004d1cc0
-static int identify(unsigned char *item) {
+/* The hero's first identify scroll stack, and in *count the scrolls of every stack. */
+static unsigned char *identify_scrolls(int *count) {
     unsigned char *inv = (unsigned char *)(hero ? *(void **)(hero + GOG_INVENTORY) : 0), *scroll = 0;
     void **refs;
     unsigned n, i;
     char name[64];
+    if (count) *count = 0;
     if (!inv) return 0;
     refs = *(void ***)(inv + INV_REFS);
     n = *(unsigned *)(inv + INV_REFS + 4);
-    for (i = 0; i < n && !scroll; i++) {
+    for (i = 0; i < n; i++) {
         unsigned char *ref = (unsigned char *)refs[i], *it;
         if (!ref || !(it = *(unsigned char **)(ref + REF_ITEM))) continue;
         item_name(it, name, sizeof name);
         {
             const char *a = name, *b = "identify scroll";
             while (*a && *a == *b) a++, b++;
-            if (!*a && !*b) scroll = it;
+            if (*a || *b) continue;
         }
+        if (!scroll) scroll = it;
+        if (count) *count += *(int *)(it + GOG_STACK);
     }
+    return scroll;
+}
+
+static int identify(unsigned char *item) {
+    unsigned char *inv = (unsigned char *)(hero ? *(void **)(hero + GOG_INVENTORY) : 0);
+    unsigned char *scroll = identify_scrolls(0);
+    if (!inv) return 0;
     if (!scroll) { x360_log("x360 inv: A: no identify scroll\r\n"); return 0; }
     item[GOG_IDENTIFIED] = 1;
     ((void_fn)GOG_DESTROY_ITEM_TEXT)(item, 0);

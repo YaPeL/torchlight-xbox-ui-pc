@@ -1217,6 +1217,20 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
     equipped blades, "(equipped-right hand) <blade>" and "(equipped-left hand) <blade>";
     the spare shoes against "(equipped) <slot> <shoes>"; the mantle, with no
     shoulders equipped, with no comparison card.
+- **Other tabs' comparison** (a run with `SPAWNCLASS RINGS_SPAWN`, `SHIELDS_SPAWN` added to the varied
+  save; `t24-ring.png`, `t25-shield.png`): a ring against the equipped one, "(equipped-right hand)
+  trinket / prefixed ring / +2 Mana"; a shield against the left hand's common blade
+  (what PC's `getComparisonItems` gives). A spell has no comparison (A "Learn"). Necklaces did not
+  spawn from `NECKLACES_SPAWN`; not checked.
+- **The rows' full names.** The 360's rows write the full name ("prefixed shoes"): PC's
+  tooltip's name line comes from GOG `0x4b3fe0` (thiscall on the item, the `std::wstring` returned
+  into its first argument, then 0; `ret 0x8`; called at `0x54289a`), used for identified
+  equipment; its neighbour `0x4b4470`, `CEquipment::getFullItemName` *(OT)*, builds the line above
+  ("rare sword", "unidentified trinket"). A long name is cut by the row, as on the 360 ("A
+  Mysterious Polear"). The name's colour (the 360 takes it from the item, `sub_822BBCA8`; "prefixed shoes" in green) is not done yet: the rows stay grey.
+- **A on an unidentified item** reads "Identify (N)", N the identify scrolls in the bag (the 360's
+  screenshot: "A Identify(11)"). The bar's buttons follow each other's text, as there: Y after
+  A's text, X after Y's (`Font::getTextExtent`), 10 pixels apart at 768 rows.
 - **Armour on the rows.** The 360 (`sub_82368980`) writes its "armor" (the tooltip's word), a
   space and the value, and compares it as it compares DPS. PC's tooltip reads an ARMOR's (unit
   type 13) value from the item's `+0x2ec` itself (GOG `0x543d2f`; there is no getter). A run:
