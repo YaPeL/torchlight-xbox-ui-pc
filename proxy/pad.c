@@ -482,6 +482,7 @@ static void *item_in_view(unsigned char *hero, unsigned char *level, const float
             /* The 360 leaves out its unit kind 0x1d here; the kind numbers differ between the builds
              * (GOG's 0x7a is not gold), and GOG's list also holds trigger units: items only. */
             if (!derives_from(it, ".?AVCItem@@")) continue;
+            if (derives_from(it, ".?AVCTriggerUnit@@")) continue; /* GOG's triggers derive from CItem */
             if (it[0x19d] || !it[0x161]) continue;
             ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
             dx = p[0] - m[3];
@@ -546,18 +547,29 @@ static void list_near(unsigned char *hero, unsigned char *level, const float *m)
     }
 }
 
-static int want_items;                       /* the item search runs only on a press of A */
+static long long t_units, t_items, w_units, w_items;
+static int want_items;                      /* unused: the item search runs every 0.1 s for the highlight */
+static int verbose;                         /* pad_log=1: the per-search and near-list diagnosis */
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
     void *c, *a, *it;
     hero_matrix(hero, m);
     /* The 360 (sub_821EB598): an enemy in the cone within 7; else any unit in the cone within 3.5;
      * both become the candidate X acts on and A talks to. */
-    c = unit_in_view(hero, level, m, ALIGN_ENEMY, TARGET_RANGE);
-    if (!c) c = unit_in_view(hero, level, m, ALIGN_ANY, TARGET_RANGE_ANY);
+    {
+        long long t0, t1, t2;
+        QueryPerformanceCounter(&t0);
+        c = unit_in_view(hero, level, m, ALIGN_ENEMY, TARGET_RANGE);
+        if (!c) c = unit_in_view(hero, level, m, ALIGN_ANY, TARGET_RANGE_ANY);
+        QueryPerformanceCounter(&t1);
+        it = item_in_view(hero, level, m, 0);
+        QueryPerformanceCounter(&t2);
+        t_units += t1 - t0; t_items += t2 - t1;
+        if (t1 - t0 > w_units) w_units = t1 - t0;
+        if (t2 - t1 > w_items) w_items = t2 - t1;
+    }
     a = c;
-    it = item_in_view(hero, level, m, 0);
-    if (GetTickCount() < log_until) {
+    if (verbose && GetTickCount() < log_until) {
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
         x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
         x360_log(" enemy "); x360_log_num((long)c);
@@ -700,6 +712,15 @@ static float turn_x, turn_z;
 static float release_pos[3];
 static unsigned release_t0;
 
+/* The 360's lock on movement (sub_8219A258, OT's performingSkillLoose shape): while a skill is
+ * under way the stick sends no destination. GOG's fields are the 360's + 0xc: the skill at +0x2d0
+ * (360 +0x2c4), a flag at +0x20b (+0x1ff), its timer at +0x2c0 (+0x2b4), a flag at +0x2bd (+0x2b1). */
+static int skill_locks_movement(unsigned char *hero) {
+    if (!*(void **)(hero + 0x2d0)) return 0;
+    if (hero[0x20b]) return 1;
+    return *(float *)(hero + 0x2c0) > 0.0f && !hero[0x2bd];
+}
+
 static int direction_changed(void) {
     /* More than about 5 degrees between the stick now and at the last probe. */
     long dot = (long)lx * probed_lx + (long)ly * probed_ly;
@@ -810,7 +831,7 @@ static void order(void) {
             }
             if (have_world && face_each_frame)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
-            if (have_world && now - last_order >= 100) {
+            if (have_world && now - last_order >= 100 && !skill_locks_movement(hero)) {
                 last_order = now;
                 aim_lx = lx;
                 aim_ly = ly;
@@ -837,7 +858,7 @@ static void order(void) {
     {
         static unsigned last_search;
         if (pressed & (0x4000 | 0x1000)) log_until = now + 3000;
-        if (pressed & (0x4000 | 0x1000)) {
+        if (verbose && (pressed & (0x4000 | 0x1000))) {
             float m[16];
             hero_matrix(hero, m);
             x360_log(pressed & 0x4000 ? "pad: X pressed; near:\r\n" : "pad: A pressed; near:\r\n");
@@ -857,7 +878,7 @@ static void order(void) {
                 sum += t1 - t0;
                 if (t1 - t0 > worst) worst = t1 - t0;
                 count++;
-                if (now - since >= 5000) {
+                if (verbose && now - since >= 5000) {
                     if (!qpf) QueryPerformanceFrequency(&qpf);
                     if (since && count && qpf) {
                         /* In floating point: 64-bit division needs the CRT's __alldiv. */
@@ -867,9 +888,18 @@ static void order(void) {
                         x360_log_num((long)((double)worst * 1e6 / (double)qpf));
                         x360_log(" n ");
                         x360_log_num((long)count);
+                        x360_log(" | units max ");
+                        x360_log_num((long)((double)w_units * 1e6 / (double)qpf));
+                        x360_log(" items max ");
+                        x360_log_num((long)((double)w_items * 1e6 / (double)qpf));
+                        x360_log(" units avg ");
+                        x360_log_num((long)((double)t_units * 1e6 / (double)qpf / (double)count));
+                        x360_log(" items avg ");
+                        x360_log_num((long)((double)t_items * 1e6 / (double)qpf / (double)count));
                         x360_log("\r\n");
                     }
                     since = now;
+                    t_units = t_items = w_units = w_items = 0;
                     sum = worst = 0;
                     count = 0;
                 }
@@ -888,8 +918,9 @@ static void order(void) {
     }
 }
 
-void x360_pad_start(const char *file, int by_message, int direct_mode, int face) {
+void x360_pad_start(const char *file, int by_message, int direct_mode, int face, int log) {
     face_each_frame = face;
+    verbose = log;
     edges_by_message = by_message;
     direct = direct_mode;
     if (file && file[0]) {

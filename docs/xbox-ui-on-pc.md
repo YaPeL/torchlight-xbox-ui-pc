@@ -785,6 +785,21 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   (candidates: DXVK compiling shaders for new effects, the log written unbuffered). Gold is
   usually picked up by walking over it, as in PC.
 
+**Movement while attacking; triggers; the performance drops (2026-10-15).** **[read; the runs]**
+- **The 360 locks the stick's movement only during a skill.** Its move function
+  (`sub_8221B8E8`) returns without a destination while `sub_8219A258(hero)` is true: a skill under
+  way (`+0x2C4`), with its flag `+0x1FF` or its timer `+0x2B4` running and `+0x2B1` off (OT's
+  `performingSkillLoose` shape). A plain attack does not lock it; the facing toward the stick
+  goes on (it is set elsewhere, every frame). GOG's fields are the 360's + 0xC (`+0x2D0`,
+  `+0x20B`, `+0x2C0`, `+0x2BD`); the proxy sends no destination while that holds. (The user
+  asked whether the 360 blocks movement when attacking: only for skills.)
+- **A picked up trigger units** in the user's session (7 times): GOG's `CTriggerUnit` derives
+  from `CItem`; it is left out by class (the 360 leaves out its kind 0x1d there).
+- **The performance drops were the log.** In the user's session a search took up to 52 ms; the
+  searches themselves take at most tens of microseconds (measured apart: units and items); the
+  rest was the diagnosis lines written, through Wine, during the 3 s after each press of X or A.
+  That log is now off unless `pad_log=1` is in `x360_ui.ini`.
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.
