@@ -878,7 +878,11 @@ static void refresh(void) {
  * Item comparison: the 360's bar shows "enable item compare" / "disable item compare" by its flag
  * (sub_8236C8D0, the global's +0x14c4) beside the d-pad's left-right image, which turns it. On,
  * the item is shown with what it would replace: PC's comparison tooltips (CGameUI's +0x2b0 and
- * +0x2b4, filled from getComparisonItems as PC's hover does, GOG 0x55eb18), here under the card. */
+ * +0x2b4, filled from getComparisonItems as PC's hover does, GOG 0x55eb18). Where the 360 puts
+ * them (its screenshots, 1920x1080): the item's card to the right of the bag's list, over the pet's
+ * column, wider than it, its top at the selected row's; the equipped item's card to the left of the
+ * list, over the character's column, its right edge at the list's left edge and its top at the
+ * row's; neither is kept inside the frame (the chest armour's runs past its bottom). */
 #define GOG_SHOW_EQUIPMENT_TOOLTIP 0x00541e80
 #define GOG_TOOLTIP 0x2ac                /* then the comparison tooltips at +0x2b0 and +0x2b4 */
 typedef void (__fastcall *show_tooltip_fn)(void *ui, void *edx, void *character, void *item, void *tooltip, void *cmp1, void *cmp2);
@@ -960,12 +964,22 @@ static void place_card(int i, float x, float right, float y) {
     move_to_front(root, 0);
 }
 
-static void show_info(void *item, float y) {
+/* Card i's width in pixels, 0 if none. */
+static float card_width(int i) {
+    void *root = card_root(i);
+    char value[128];
+    float v[8];
+    if (!root) return 0;
+    read_prop(root, "UnifiedAreaRect", value, sizeof value);
+    return parse_rect(value, v) ? v[5] - v[1] : 0;
+}
+
+static void show_info(void *item, float y, float list_left) {
     typedef struct { float top, bottom, left, right; } rect6;   /* CEGUI 0.6's Rect */
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
     static pixel_rect_fn6 rect_of;
     void *pet_top = win_of(PET_PREFIX, "TopFrame"), *inv = inventory(), *first = 0, *second = 0;
-    float x = 0, right = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, total, bottom = 0;
+    float x = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, bottom = 0, w, y1;
     RECT cr;
     HWND hw = GetActiveWindow();
     if (!item) { hide_info(); return; }
@@ -974,9 +988,9 @@ static void show_info(void *item, float y) {
         rect6 r;
         fresh_rects(pet_top);
         rect_of(pet_top, 0, &r);
-        x = r.left + 8.0f * k; right = r.right - 8.0f * k; bottom = r.bottom - 40.0f * k;
+        x = r.left + 8.0f * k;
     }
-    if (!bottom && hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom - 80.0f * k;
+    if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom;
     if (compare_on && inv && list_slot[selected[filter]] >= EQUIPPED_SLOTS)
         ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
     if (first == item) first = 0;
@@ -985,12 +999,15 @@ static void show_info(void *item, float y) {
     if (!h0) return;
     if (first) h1 = fill_card(1, first, card(0), 0); else hide_card(1);
     if (second) h2 = fill_card(2, second, card(0), card(1)); else hide_card(2);
-    total = h0 + (h1 ? gap + h1 : 0) + (h2 ? gap + h2 : 0);
-    if (bottom > 0 && y + total > bottom) y = bottom - total;
-    place_card(0, x, right, y);
-    y += h0 + gap;
-    if (h1) { place_card(1, x, right, y); y += h1 + gap; }
-    if (h2) place_card(2, x, right, y);
+    /* only the screen's bottom keeps them up */
+    place_card(0, x, 0, bottom > 0 && y + h0 > bottom ? bottom - h0 : y);
+    y1 = y;
+    if (bottom > 0 && y1 + (h1 ? h1 : 0) + (h2 ? gap + h2 : 0) > bottom)
+        y1 = bottom - (h1 ? h1 : 0) - (h2 ? gap + h2 : 0);
+    w = card_width(1);
+    if (h1) { place_card(1, list_left - 16.0f * k - w, 0, y1); y1 += h1 + gap; }
+    w = card_width(2);
+    if (h2) place_card(2, list_left - 16.0f * k - w, 0, y1);
     if (info_item != item) x360_log(first ? "x360 inv: info with comparison\r\n" : "x360 inv: info\r\n");
     info_item = item;
 }
@@ -1158,7 +1175,7 @@ static void update_info(void) {
     if (!tray || !rect_of) return;
     fresh_rects(win("TopFrame"));
     rect_of(tray, 0, &r);
-    show_info(list[selected[filter]], r.top);
+    show_info(list[selected[filter]], r.top, r.left);
 }
 
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the

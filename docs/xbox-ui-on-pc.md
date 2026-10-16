@@ -1196,18 +1196,27 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   - The cache: PC rebuilds a card only when the item's GUID changes. The tooltip keeps it at
     `+0x8` and `+0xc` (GOG `0x54281f`), so the proxy clears it first. Without that, an item
     identified with A kept its "Unidentified" card.
-  - Placement: the card is moved onto the GUI sheet, in the frame's third column at the selected
-    row's height, kept inside the column.
+  - Placement: the card is moved onto the GUI sheet, to the right of the bag's list over the
+    third column, its top at the selected row's. As on the 360 it is not kept inside the column
+    (it may be wider) nor inside the frame; only the screen's bottom keeps it up.
   - An unidentified item shows PC's "Unidentified items cannot be used - use an identify scroll
     to reveal enchantments".
 - **Item compare** (the bar's `ToggleItemCompare`, beside the d-pad's left-right image). The 360
   writes "enable item compare" or "disable item compare" by a flag (`sub_8236C8D0`, the global's
   `+0x14c4`); the d-pad left or right turns it. (The d-pad does not toggle the Info card, as read
   first: the card is always there.) On, the item's card shows what it would replace:
-  `getComparisonItems`, then PC's comparison cards, as PC's hover fills them (GOG `0x55eb18`), here
-  under the card. A run: the dagger with a suffix against both equipped blades, "(equipped -
-  right hand) second blade" and "(equipped - left hand) common blade". Where the 360 puts its
-  comparison is **[inferred]**.
+  `getComparisonItems`, then PC's comparison cards, as PC's hover fills them (GOG `0x55eb18`).
+  - Where the 360 puts them **[seen]** (the recomp's screenshots, 1920x1080, taken by the mods
+    agent: `~/torchlight-gog/screens/ref/x360-ref-en-compare-{weapon,armor}[-off].png`): the
+    equipped item's card to the left of the list, over the character's column, its right edge at
+    the list's left edge (x 762 of 1920) and its top at the selected row's; the chest armour's,
+    on the last row, runs past the frame's bottom. Off, only the item's card is shown. The proxy
+    does the same; with two equipped items (both hands) the second goes under the first, a case
+    the screenshots do not show **[inferred]**.
+  - A run (`t23-compare.png`, `t23-armor.png`): the dagger with a suffix against both
+    equipped blades, "(equipped-right hand) <blade>" and "(equipped-left hand) <blade>";
+    the spare shoes against "(equipped) <slot> <shoes>"; the mantle, with no
+    shoulders equipped, with no comparison card.
 - **Armour on the rows.** The 360 (`sub_82368980`) writes its "armor" (the tooltip's word), a
   space and the value, and compares it as it compares DPS. PC's tooltip reads an ARMOR's (unit
   type 13) value from the item's `+0x2ec` itself (GOG `0x543d2f`; there is no getter). A run:
