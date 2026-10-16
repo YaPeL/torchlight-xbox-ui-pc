@@ -482,8 +482,9 @@ static void *item_in_view(unsigned char *hero, unsigned char *level, const float
             /* The 360 leaves out its unit kind 0x1d here; the kind numbers differ between the builds
              * (GOG's 0x7a is not gold), and GOG's list also holds trigger units: items only. */
             if (!derives_from(it, ".?AVCItem@@")) continue;
-            if (derives_from(it, ".?AVCTriggerUnit@@")) continue; /* GOG's triggers derive from CItem */
-            if (derives_from(it, ".?AVCBreakable@@")) continue;   /* barrels: the 360's kind 0x1d, not for A */
+            /* Barrels (CBreakable) are the 360's kind 0x1d, left out for A (PC attacks them). Trigger
+             * units (doors, levers) stay: A works them through PC's item order, as a click does. */
+            if (derives_from(it, ".?AVCBreakable@@")) continue;
             if (it[0x19d] || !it[0x161]) continue;
             ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
             dx = p[0] - m[3];

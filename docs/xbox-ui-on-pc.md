@@ -800,6 +800,17 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   rest was the diagnosis lines written, through Wine, during the 3 s after each press of X or A.
   That log is now off unless `pad_log=1` is in `x360_ui.ini`.
 
+**Doors and barrels (2026-10-15, two regressions the user found).** **[read; the logs]**
+- GOG keeps doors and levers as `CTriggerUnit` and barrels as `CBreakable` in the level's item
+  list; both derive from `CItem`. Leaving the trigger units out of A (above) stopped A from
+  opening doors: they are back in, and A works them with PC's item order (mode 7, `+0x1B4`), as a
+  click does. Barrels are what the 360 leaves out of A (its kind 0x1d; PC's `findItemWithinView`
+  keeps only that kind, and PC's click attacks it): A had walked to a barrel and broken it, which
+  the 360 does not do; they are out of A now.
+- **Open: X on barrels.** On the 360, X attacks a barrel in front of the hero. Its unit search does
+  not walk the item list and its item search leaves barrels out; the functions that test the kind
+  0x1d (`sub_821A72A0`, `sub_821A83C8`, `sub_821A6668`, ...) are no cone searches. Not found yet.
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.
