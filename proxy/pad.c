@@ -529,7 +529,9 @@ static void list_near(unsigned char *hero, unsigned char *level, const float *m)
             ((get_position_fn)GOG_GET_POSITION)(u, 0, p, 1);
             dx = p[0] - m[3]; dz = p[2] - m[11];
             d = root(dx * dx + dz * dz);
-            if (d > 4.0f) continue;
+            if (d > 4.0f && !(list && d <= 20.0f &&
+                              (derives_from(u, ".?AVCBreakable@@") || derives_from(u, ".?AVCTriggerUnit@@"))))
+                continue;
             lz = m[2] * dx + m[10] * dz;
             lx = m[10] * dx - m[2] * dz;
             x360_log(list ? "pad:   item " : "pad:   unit ");
