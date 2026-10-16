@@ -143,6 +143,7 @@ void x360_run_console(void);
 int x360_inventory_open(void);
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly);
 void x360_hud_tick(void);
+void x360_hud_attacked(void *unit);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
 #define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
 #define BUTTON_RT 0x20000u
@@ -661,6 +662,7 @@ static void swing_toward(unsigned char *hero, float x, float z);
 static void attack_candidate(unsigned char *hero) {
     if (((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
     ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+    x360_hud_attacked(candidate);           /* the 360's attack keeps its target for the HUD */
     if (((bool_int_fn)GOG_IN_ATTACK_RANGE)(hero, 0, 0)) {
         if (*(int *)(hero + 0x284) == 3 || ((bool_fn)GOG_PERFORMING_SKILL)(hero, 0)) return;
         ((void_fn)GOG_STOP_PATHING)(hero, 0);
@@ -893,7 +895,7 @@ static void order(void) {
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
-    if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
+    if (!hero || !level) { x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return; }
     diag_level = level;
     attack_level = level;
     {

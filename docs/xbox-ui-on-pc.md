@@ -1326,9 +1326,40 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
   (`SPAWNCLASS MINE_CHAMPIONS,1,1`, `~/torchlight-gog/screens/t45-target.png`): "Level 1 /
   Carnivorous Gel" over a nearly empty bar at the top, as the 360's, gone when it died.
   `TargetDescription` (PC's champion line, `0x4854a0`) is hidden: not done.
+- **The user's run (2026-10-16) and its fixes. [seen]**
+  - *The target's bar never came from the 360's HUD:* the hero's target and `performingAttackLoose`
+    were not both set at a 50 ms tick (four X attacks, no "target shown"); the bar seen was PC's
+    own, for the unit under the mouse, in PC's font. Now X's attack (`proxy/pad.c`) hands its
+    target to the HUD at once, as the 360's attack sets its +0x1c8; PC's `TargetHealth` is made
+    transparent; and the unit under the mouse (PC's `CGameUI` `+0x2c`) comes first, as the 360's
+    cursor unit does. A run: "Level 1 / Shadow Recluse" with its health.
+  - *The HUD stayed on the title screen after "Exit to Title":* without a hero the pad's poll
+    returned before the HUD's tick. Now the tick runs there too and hides the 360's HUD and pet
+    HUD while there is no hero or no PC `PlayerHealthRoot`; PC's windows are searched again on
+    the way back and made transparent again if new. The tick is guarded (`__try`): while a level
+    is left or loaded the level's automap pointer is not valid (logged five times at the minimap
+    before it got its own guard; one run closed the game on "Continue" before the guard). Runs:
+    the title with no HUD; back in play twice with the 360's HUD and PC's hidden.
+  - *The minimap:* PC's, top right; the 360's bottom right. The 360's `CAutomap::setVisible`
+    (`sub_822E6090`), out of its fullscreen mode, sets its viewport to a square of 200 (its
+    `+0x50`, from the constructor `sub_822E3A30`) times the screen's scale, 50 from the right
+    edge and 70 from the bottom (the constants at `0x820aa388`, `0x820aa570`); its captures:
+    187 x 187 at 1045, 466 in 1280 x 720 (scale 720/768). PC's (GOG `0x4ea6b0`, called on
+    toggling) keeps it at the level's `+0x160` (the viewport `+0x28`, shown `+0x3c`, fullscreen
+    `+0x65`); its corner viewport is set every tick to the 360's place with
+    `Viewport::setDimensions` (a run: bottom right, its frame with it).
+  - *Still open:* the potions' icons are PC's (a diagonal vial; the 360's is upright, its own
+    item icons, not converted); the menus' fonts the user saw stretched (the 360's fonts are
+    auto-scaled from 1024 x 768; the inventory's text matches the 360's screenshots in width);
+    the pet's column (below).
+- **The pet's bag shows the pet (the 360, read, not done).** On moving between the bags
+  (`sub_823702E0`) the 360 calls `sub_8235AA28` for its two character columns (`+0x10c` the
+  hero's, `+0x110` the pet's), active for the focused bag: the column's root (`+0x14`) shown, its
+  character's model (`+0x18`, its `+0x1b0`, the virtual `+0x24`) shown, the doll's viewport placed
+  on the column's `CharacterViewport` (`+0x8c`) and its camera's aspect set. So with the pet's bag
+  focused the left column is the pet's, with the pet in 3D.
 - **Not done:** the pet's stance buttons (the 360's three images, not PC's state);
-  `AvailableSkillsIcon`; the minimap is PC's (not CEGUI); the HUD's own position checked against
-  the 360's (by eye, the same).
+  `AvailableSkillsIcon`; the HUD's own position checked against the 360's (by eye, the same).
 
 ## 12. Pad prompts in other pads' style (2026-10-16)
 

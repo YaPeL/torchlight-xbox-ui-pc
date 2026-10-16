@@ -2062,6 +2062,7 @@ static void mirror_icon(const char *slot, const char *pc_slot) {
  * (PC's assignment, GOG 0x4944e0) so that it reads 0 once the unit is gone. */
 #define GOG_SAFE_ASSIGN 0x004944e0   /* TSafePointer assignment: thiscall (the pointer), the unit */
 #define GOG_HERO_TARGET 0x290        /* CCharacter: its target */
+#define GOG_UI_MOUSE_OVER 0x2c       /* CGameUI: the unit under the mouse (a safe pointer) */
 #define GOG_PERFORMING_ATTACK_LOOSE 0x004863b0
 #define GOG_UNIT_NAME 0x420          /* CCharacter: its shown name, a std::wstring (PC's 0x5589a5) */
 #define GOG_UNIT_LEVEL 0xf0          /* CCharacter: its level (PC's 0x5588e8) */
@@ -2070,26 +2071,35 @@ static void mirror_icon(const char *slot, const char *pc_slot) {
 typedef void *(__fastcall *safe_assign_fn)(void *pointer, void *edx, void *unit);
 typedef int (__fastcall *performing_fn)(void *unit, void *edx);
 
+static struct { void *unit; int handle; } attacked = {0, -1};
+static unsigned attacked_until;
+
+/* The 360's player virtual +0x1c8 (sub_822D7C08): the unit attacked, kept 3.0 seconds. */
+void x360_hud_attacked(void *unit) {
+    if (!unit) return;
+    if (attacked.unit != unit) {
+        ((safe_assign_fn)GOG_SAFE_ASSIGN)(&attacked, 0, unit);
+        x360_log("x360 hud: target shown\r\n");
+    }
+    attacked_until = GetTickCount() + 3000;
+}
+
 static void target_tick(void) {
-    static struct { void *unit; int handle; } last = {0, -1};
-    static unsigned until;
     static float bar[8];
     unsigned now = GetTickCount();
     unsigned char *unit;
-    void *x = win_of(HUD_PREFIX, "TargetHealth");
+    void *x = win_of(HUD_PREFIX, "TargetHealth"), *pc = pc_window("TargetHealth");
+    static void *pc_faded;
     char buf[128], *p;
     int max;
+    if (pc != pc_faded) { pc_faded = pc; if (pc) prop(pc, "Alpha", "0"); }   /* PC's own, for the mouse */
     if (!x || !hero) return;
     unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
-    if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) {
-        if (last.unit != unit) {
-            ((safe_assign_fn)GOG_SAFE_ASSIGN)(&last, 0, unit);
-            x360_log("x360 hud: target shown\r\n");
-        }
-        until = now + 3000;
-    }
-    if (last.unit && (int)(now - until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&last, 0, 0);
-    unit = (unsigned char *)last.unit;
+    if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) x360_hud_attacked(unit);
+    if (attacked.unit && (int)(now - attacked_until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&attacked, 0, 0);
+    /* The 360's order: the unit under the cursor, else the one attacked. */
+    unit = ui ? *(unsigned char **)(ui + GOG_UI_MOUSE_OVER) : 0;
+    if (!unit) unit = (unsigned char *)attacked.unit;
     show(x, unit != 0);
     if (!unit) return;
     if (!wstring_utf8(unit + GOG_UNIT_NAME, buf, sizeof buf)) buf[0] = 0;
@@ -2104,16 +2114,82 @@ static void target_tick(void) {
             max > 0 ? *(float *)(unit + GOG_UNIT_HEALTH) / (float)max : 0);
 }
 
+/* The minimap where the 360 draws it. The 360's CAutomap::setVisible (sub_822E6090) places its
+ * viewport, out of its fullscreen mode, in the bottom right corner: a square of 200 (its +0x50,
+ * from the constructor sub_822E3A30) times the screen's scale (height / 768, the scale the HUD's
+ * layouts get here; its captures: 187 x 187 at 1045, 466 in 1280 x 720), 50 from the right edge
+ * and 70 from the bottom (the constants at 0x820aa388 and 0x820aa570). PC's (CAutomap::setVisible
+ * *(OT)*, GOG 0x4ea6b0, called on toggling it) puts it top right; the level keeps it at +0x160
+ * (GOG 0x4fc062), its viewport at +0x28, shown +0x3c, fullscreen +0x65. Here the corner's viewport
+ * is placed again as the 360's, every tick (PC sizes it only when it is toggled). */
+#define GOG_LEVEL_AUTOMAP 0x160
+#define AUTOMAP_VIEWPORT 0x28
+#define AUTOMAP_SHOWN 0x3c
+#define AUTOMAP_FULLSCREEN 0x65
+
+static int class_is(void *object, const char *name) {
+    unsigned char *col = object ? *(unsigned char **)(*(unsigned char **)object - 4) : 0;
+    unsigned char *td = col ? *(unsigned char **)(col + 12) : 0;
+    const char *b = td ? (const char *)(td + 8) : "";
+    while (*b && *b == *name) b++, name++;
+    return !*b && !*name;
+}
+
+static void minimap_tick_body(void);
+
+/* While a level is left or loaded, its pointer (and the automap's) may not be valid yet: skipped. */
+static void minimap_tick(void) {
+    __try { minimap_tick_body(); } __except (1) {}
+}
+
+static void minimap_tick_body(void) {
+    unsigned char *map = level ? *(unsigned char **)(level + GOG_LEVEL_AUTOMAP) : 0;
+    void *vp;
+    HWND w = GetActiveWindow();
+    RECT r;
+    float W, H, s;
+    if (!map || !class_is(map, ".?AVCAutomap@@")) return;
+    vp = *(void **)(map + AUTOMAP_VIEWPORT);
+    if (!vp || !map[AUTOMAP_SHOWN] || map[AUTOMAP_FULLSCREEN]) return;
+    if (!w || !GetClientRect(w, &r) || r.right <= r.left || r.bottom <= r.top) return;
+    W = (float)(r.right - r.left);
+    H = (float)(r.bottom - r.top);
+    s = H / 768.0f;
+    (*(set_dims_fn *)IAT_VP_SET_DIMENSIONS)(vp, 0, 1.0f - (200.0f + 50.0f) * s / W, 1.0f - (200.0f + 70.0f) * s / H,
+                                            200.0f * s / W, 200.0f * s / H);
+}
+
 /* The 360's HUD in play: hud.layout on the GUI sheet, PC's bottom HUD hidden (still updated by
  * PC), the orbs and the experience bar filled as PC's, the level's name, the messages and the
  * target's health as PC shows them. Called with the pad's poll (the game's thread). */
+static void hud_tick(void);
+static const char *hud_stage = "";
+
+/* The HUD's tick, guarded: while a level loads, the pointers it reads may not be set yet. */
 void x360_hud_tick(void) {
+    static int logged;
+    __try { hud_tick(); }
+    __except (1) {
+        if (logged < 5) { x360_log("x360 hud: exception in the tick at "); x360_log(hud_stage); x360_log("\r\n"); logged++; }
+    }
+}
+
+static void hud_tick(void) {
     static unsigned last;
     static int failed;
     static float health[8], mana[8], xp[8];
+    static int faded;
     unsigned now = GetTickCount();
-    if (failed || now - last < 50 || !resolve()) return;
+    if (failed || now - last < 50) return;
     last = now;
+    /* Out of play (the main menu after "Exit to menu", a load) the 360's HUD is hidden; PC's
+     * windows are searched again on the way back, as PC may have made new ones. */
+    hud_stage = "resolve";
+    if (!resolve() || !pc_window("PlayerHealthRoot")) {
+        if (hud_root) show(hud_root, 0);
+        if (pet_hud_root) show(pet_hud_root, 0);
+        return;
+    }
     if (!hud_root) {
         HWND w = GetActiveWindow();
         RECT r;
@@ -2128,9 +2204,11 @@ void x360_hud_tick(void) {
     /* PC shows its bottom HUD again each frame, so it is made transparent instead (its children
      * inherit the alpha); PC still updates it, and its bars are read from it. */
     {
-        static int faded;
+        void *p = pc_window("PlayerHealthRoot");
+        if (p != pc_hud_root) { pc_hud_root = p; prop(pc_hud_root, "Alpha", "0"); }
         if (!faded) { prop(pc_hud_root, "Alpha", "0"); faded = 1; }
     }
+    hud_stage = "bars";
     show(hud_root, 1);
     mirror_bar("PlayerHealthBar", "PlayerHealthBarSub", 0, health);
     mirror_bar("PlayerManaBar", "PlayerManaBarSub", 0, mana);
@@ -2158,18 +2236,21 @@ void x360_hud_tick(void) {
         int j;
         for (j = 0; texts[j]; j++) prop(win_of(HUD_PREFIX, texts[j]), "Text", "");
     }
+    hud_stage = "pet";
     /* The pet's: the 360's pethud.layout, PC's made transparent, its bars and text as PC's. */
     {
         static void *pet_root, *pc_pet;
         static float pet_health[8], pet_mana[8];
         static is_visible_fn vis;
         if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
-        if (!pc_pet) pc_pet = pc_window("PetHud");
-        if (pc_pet && !pet_root) {
+        void *p = pc_window("PetHud");
+        if (p && !pet_root) {
             pet_root = load("media/ui/x360/pethud.layout", PETHUD_PREFIX);
-            if (pet_root) { scale_tree(pet_root, k, 0); prop(pc_pet, "Alpha", "0"); pet_hud_root = pet_root; }
+            if (pet_root) { scale_tree(pet_root, k, 0); pet_hud_root = pet_root; }
         }
-        if (pet_root && vis) {
+        if (p != pc_pet) { pc_pet = p; if (pc_pet) prop(pc_pet, "Alpha", "0"); }
+        if (!pc_pet && pet_root) show(pet_root, 0);
+        if (pet_root && vis && pc_pet) {
             show(pet_root, vis(pc_pet, 0, 0));
             mirror_bar_of(PETHUD_PREFIX, "PetHealthBar", "PetHealth", 1, pet_health);
             mirror_bar_of(PETHUD_PREFIX, "PetManaBar", "PetMana", 1, pet_mana);
@@ -2179,5 +2260,9 @@ void x360_hud_tick(void) {
     mirror_text("LevelName");
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
+    hud_stage = "target";
     target_tick();
+    hud_stage = "minimap";
+    minimap_tick();
+    hud_stage = "done";
 }
