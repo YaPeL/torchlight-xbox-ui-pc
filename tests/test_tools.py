@@ -358,3 +358,95 @@ class NoGameFilesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+import pad_prompts  # noqa: E402
+
+
+def _png(width, height, rgba, filters=None):
+    """A synthetic RGBA PNG; filters: per row (0 none, 1 sub), the data given unfiltered."""
+    raw = b""
+    for y in range(height):
+        f = (filters or [0] * height)[y]
+        row = bytearray(rgba[y * width * 4:(y + 1) * width * 4])
+        if f == 1:
+            row = bytearray(row[i] - (row[i - 4] if i >= 4 else 0) & 255 for i in range(len(row)))
+        raw += bytes([f]) + bytes(row)
+
+    def chunk(kind, body):
+        import zlib
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    import zlib
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+class PadPromptsTest(unittest.TestCase):
+    def test_table(self):
+        self.assertEqual(pad_prompts.prompt_icons("xbox"), [])
+        ps = dict(pad_prompts.prompt_icons("playstation"))
+        self.assertEqual((ps["a_button"], ps["b_button"], ps["start_button"]), ("cross", "circle", "options"))
+        self.assertEqual(len(ps), 10)
+        n = dict(pad_prompts.prompt_icons("nintendo"))
+        self.assertEqual((n["a_button"], n["b_button"]), ("b", "a"), "by position")
+        n = dict(pad_prompts.prompt_icons("nintendo", True))
+        self.assertEqual((n["a_button"], n["b_button"]), ("a", "b"), "swapped")
+
+    def test_png(self):
+        px = bytes([255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 10, 20, 30, 40])
+        img = pad_prompts.read_png(_png(2, 2, px, filters=[0, 1]))
+        self.assertEqual((img.width, img.height, bytes(img.rgba)), (2, 2, px))
+
+    def test_dds_argb_round_trip(self):
+        img = pad_prompts.Image(3, 2, bytes(range(24)))
+        back = pad_prompts.decode_dds(pad_prompts.encode_dds_argb(img))
+        self.assertEqual(bytes(back.rgba), bytes(range(24)))
+
+    def test_dxt3(self):
+        header = bytearray(128)
+        header[0:4] = b"DDS "
+        struct.pack_into("<II", header, 12, 4, 4)
+        struct.pack_into("<I4sI", header, 80, 0x4, b"DXT3", 0)
+        alpha = (0xF).to_bytes(1, "little") + bytes(7)          # texel 0 opaque, the rest clear
+        colour = struct.pack("<HHI", 0xF800, 0x001F, 0)          # every texel colour 0: red
+        img = pad_prompts.decode_dds(bytes(header) + alpha + colour)
+        self.assertEqual(bytes(img.rgba[0:4]), bytes([255, 0, 0, 255]))
+        self.assertEqual(img.rgba[7], 0)
+
+    def test_fit_and_patch(self):
+        icon = pad_prompts.Image(4, 2, bytes([255, 0, 0, 255]) * 8)
+        fitted = pad_prompts.fit_icon(icon, 4, 4)
+        self.assertEqual(fitted.rgba[3], 0, "transparent above")
+        self.assertEqual(bytes(fitted.rgba[16:20]), bytes([255, 0, 0, 255]), "centred: rows 1 and 2")
+        texture = pad_prompts.encode_dds_argb(pad_prompts.Image(8, 8, bytes([0, 0, 255, 255]) * 64))
+        xml = ('<Imageset Name="X360_widgets1" Imagefile="media/ui/x360/w.dds">'
+               '<Image Name="a_button" XPos="2" YPos="2" Width="4" Height="4" />'
+               '<Image Name="frame" XPos="0" YPos="0" Width="2" Height="2" /></Imageset>')
+        data, count = pad_prompts.patch_texture(xml, texture, {"a_button": icon})
+        img = pad_prompts.decode_dds(data)
+        self.assertEqual(count, 1)
+        self.assertEqual(bytes(img.rgba[(3 * 8 + 2) * 4:(3 * 8 + 2) * 4 + 4]), bytes([255, 0, 0, 255]))
+        self.assertEqual(img.rgba[(2 * 8 + 2) * 4 + 3], 0, "the region cleared around the icon")
+        self.assertEqual(bytes(img.rgba[0:4]), bytes([0, 0, 255, 255]), "the rest as it was")
+        with self.assertRaises(ValueError):
+            pad_prompts.patch_texture(xml.replace('XPos="2"', 'XPos="7"'), texture, {"a_button": icon})
+
+    def test_converter_applies_them(self):
+        texture = pad_prompts.encode_dds_argb(pad_prompts.Image(8, 8))
+        out = {"media/ui/x360/widgets1.imageset":
+               b'<Imageset Imagefile="media/ui/x360/widgets1.dds"><Image Name="b_button" XPos="0" YPos="0" Width="8" Height="8" /></Imageset>',
+               "media/ui/x360/widgets1.dds": texture}
+        report = {}
+        icon = pad_prompts.Image(2, 2, bytes([1, 2, 3, 255]) * 4)
+        out = convert_x360_ui.apply_prompts(out, report, {"b_button": icon})
+        self.assertEqual(report["prompts"], {"media/ui/x360/widgets1.imageset": 1})
+        self.assertNotEqual(out["media/ui/x360/widgets1.dds"], texture)
+
+    def test_the_icons_in_the_repository(self):
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "prompts")
+        self.assertIn("Kenney", open(os.path.join(root, "LICENSE.txt")).read())
+        for style in ("playstation", "nintendo"):
+            icons = pad_prompts.load_icons(root, style)
+            self.assertEqual(len(icons), 10)
+            for img in icons.values():
+                self.assertTrue(img.width and img.height and any(img.rgba[3::4]))

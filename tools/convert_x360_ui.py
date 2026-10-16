@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """The Xbox 360 interface's files, converted from the user's 360 `pak.zip` for the PC game.
 
-convert_x360_ui.py PAK OUT     writes OUT/media/ui/x360/ and OUT/x360_ui_report.json
+convert_x360_ui.py PAK OUT [--prompts STYLE] [--swap-confirm-cancel]
+                               writes OUT/media/ui/x360/ and OUT/x360_ui_report.json
+
+--prompts playstation|nintendo draws the pad prompts (a_button, left_bumper, start_button...) with
+that pad's icons (tools/pad_prompts.py, data/prompts/, Kenney's, CC0) into the converted widget
+textures; xbox (the default) keeps the 360's. --swap-confirm-cancel: Nintendo's A and B swapped.
 
 What it takes from PAK: the 360 scheme (`media/ui/hud/schemes/ceguiWidgets.scheme`), its looknfeel,
 the imagesets and fonts the scheme names with their textures and TTF files, and every `.uilayout`,
@@ -22,6 +27,8 @@ import os
 import re
 import sys
 import zipfile
+
+import pad_prompts
 
 SCHEME = "media/ui/hud/schemes/ceguiwidgets.scheme"
 DEST = "media/ui/x360/"
@@ -192,6 +199,30 @@ def convert(files):
     return out, report
 
 
+def apply_prompts(out, report, icons):
+    """The converted textures with the prompt icons drawn in ({image name: pad_prompts.Image});
+    every converted imageset naming one of them has its texture rewritten (A8R8G8B8 DDS)."""
+    report["prompts"] = {}
+    if not icons:
+        return out
+    for path in sorted(p for p in out if p.endswith(".imageset")):
+        xml, _ = decode(out[path])
+        regions = pad_prompts.image_regions(xml)
+        if not any(name in regions for name in icons):
+            continue
+        texture = re.search(r'Imagefile\s*=\s*"([^"]*)"', xml)
+        key = next((k for k in out if texture and k.lower() == texture.group(1).lower()), None)
+        if key is None:
+            report["prompts"][path] = "its texture is not among the converted files"
+            continue
+        try:
+            out[key], count = pad_prompts.patch_texture(xml, out[key], icons)
+            report["prompts"][path] = count
+        except ValueError as e:
+            report["prompts"][path] = str(e)
+    return out
+
+
 def read_pak(path):
     """{lowercase path: bytes} of the pak's files that the converter may need."""
     wanted = (".uilayout", ".scheme", ".looknfeel", ".imageset", ".font", ".dds", ".ttf", ".tga", ".png")
@@ -206,15 +237,26 @@ def inside(path, root):
 
 
 def main():
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    style, swap = "xbox", False
+    if "--swap-confirm-cancel" in args:
+        swap = True
+        args.remove("--swap-confirm-cancel")
+    if "--prompts" in args:
+        i = args.index("--prompts")
+        style = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
+    if len(args) != 2 or style not in pad_prompts.STYLES:
         print(__doc__)
         return 2
-    pak, dest = sys.argv[1:]
+    pak, dest = args
     repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     if inside(dest, repo):
         print(f"{dest} is inside this repository; write the game's files elsewhere.")
         return 2
     out, report = convert(read_pak(pak))
+    icons_dir = os.path.join(repo, "data", "prompts")
+    out = apply_prompts(out, report, pad_prompts.load_icons(icons_dir, style, swap))
     for rel, data in out.items():
         p = os.path.join(dest, rel)
         os.makedirs(os.path.dirname(p), exist_ok=True)
