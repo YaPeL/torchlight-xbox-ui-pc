@@ -577,6 +577,21 @@ static void row_name(char *out, const char *base, int row) {
     copy(out, 48, base, n);
 }
 
+/* The icon's background (sub_82368980, its table at 0x8339FB08): red for a weapon, armour or
+ * trinket the hero cannot equip (the item's virtual the right click checks, PC's +0x164); gold
+ * for UNIQUE (54), blue for MAGIC (55), green for the other enchanted (RANDOMMAGIC 135); else
+ * blank. The 360's gold is "traycolor_gold", which its imageset lacks; its yellow stands in. Its
+ * set items (another colour, by the set's name) are not done. */
+static const char *quality_image(unsigned char *item) {
+    if ((isa(item, 8) || isa(item, 13) || isa(item, 39)) &&
+        !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, hero))
+        return "set:X360_widgets2 image:traycolor_red";
+    if (isa(item, 54)) return "set:X360_widgets2 image:traycolor_yellow";
+    if (isa(item, 55)) return "set:X360_widgets2 image:traycolor_blue";
+    if (isa(item, 135)) return "set:X360_widgets2 image:traycolor_green";
+    return "set:X360_widgets2 image:traycolor_blank";
+}
+
 /* A row's details, as the 360's screenshots show them: the price with its coin (PC's sellPrice);
  * "DPS: n" for an identified weapon, "xN" for a stack; an unidentified item's name in red, "???"
  * and "Press A to identify" (the 360's strings). Hidden when empty, as sub_82368980 does. */
@@ -663,7 +678,7 @@ static void refresh(void) {
         row_name(name, "SlotText", row); text(win(name), buf);
         item_icon((unsigned char *)list[idx], buf, sizeof buf);
         row_name(name, "Slot", row); prop(win(name), "Image", buf);
-        row_name(name, "QualityBk", row); prop(win(name), "Image", "set:X360_widgets2 image:traycolor_blank");
+        row_name(name, "QualityBk", row); prop(win(name), "Image", quality_image((unsigned char *)list[idx]));
         row_name(name, "SlotText", row); show(win(name), 1);
         row_name(name, "Equipped", row); show(win(name), list_slot[idx] < EQUIPPED_SLOTS);
         /* The tray (sub_823652A0): item_tray, or item_tray_equipped for an equipped item; the
