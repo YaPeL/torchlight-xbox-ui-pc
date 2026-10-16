@@ -1101,6 +1101,29 @@ on our buttons. The screen now rebuilds whenever the inventory's fingerprint (it
 stacks) changes, checked every 0.1 s while it is open, as the 360's screen hears every change
 through `iInventoryListener`.
 
+**The frame's three columns** (2026-10-16, night). **[read; not run yet unless said]**
+- **The pet's bag**: the same layout loaded again (prefix `x360pet_`) in the third column (x = 602),
+  filled from the pet's `CInventory` (the hero's pet by `0x40e720(0)`, which returns 0 without a
+  pet; then the layout's "Your pet has gone to town."). The 360 (`sub_823702E0`, its bags at the
+  housing's `+0x104` and `+0x108`, the focus flag `+0x124`): LB/RB past the first or the last
+  filter moves the focus to the other bag, at its last or first filter. The unfocused bag shows no
+  selection frame and its rows dimmed. X moves the item to the other bag, both ways. A in the
+  pet's bag does nothing yet.
+- **The character column**: `charactermenu_xenon` (prefix `x360chr_`) in the first column. PC's
+  own stats menu (`STATSMENU.LAYOUT`) has windows of the same names (`CharacterName`,
+  `CharacterTitle`, `Level`, `XP`, `FameLevel`, `Fame`, `HP`, `Mana`, `Strength`, `Dexterity`,
+  `Magic`, `Defense`); the proxy keeps its root when the game loads it and copies their texts.
+  Whether PC writes them while its menu is closed is checked in the next run's log. The 3D doll
+  (`CharacterViewport`) is not done.
+- **The icon's background** (`sub_82368980`, its table at `0x8339FB08`): red for a weapon, armour
+  or trinket the hero cannot equip (CEquipment's virtual `+0x164`, `(character, 1)`), gold for
+  UNIQUE (the 360 names `traycolor_gold`, which its imageset lacks; yellow stands in), blue for
+  MAGIC, green for RANDOMMAGIC; set items not done.
+- **The comparison arrow**: the 360 compares the item's value with the one equipped in its place
+  (up, down, or none if equal); here weapons by PC's DPS against `getComparisonItems`' first item.
+  Armour's value is not located in GOG yet.
+- **Identified names** in the 360's grey (`FFCCCACF`, a string of its image next to the tabs').
+
 **Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
 quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
 transmuter; the housing's tabs (LT/RT) and the frame; the identify scrolls' window; the pet's
