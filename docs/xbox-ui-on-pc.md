@@ -814,9 +814,10 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
 **The user's session with doors, barrels, NPCs, portals (2026-10-15).** **[the user; the log]**
 - Dungeon chests and the town portal: work with A. Barrels: no highlight, not broken. NPCs:
   highlighted, but A did nothing. The shared stash (the town's chest): A did not open it.
-- **NPCs are `CMonster`** like the enemies; A only set the target. PC's click on a unit that is no
-  enemy (`clickLeft`, GOG `0x41461c`) does `setTarget`, the mode virtual `+0x174` with 9 and
-  `setDestination` to the unit (the hero walks there and talks): A does that now.
+- **NPCs are `CMonster`** like the enemies; A only set the target. The 360 does not walk to them:
+  A sets the target and the mode 9 (PC's click on a non-enemy, GOG `0x41461c`, without its
+  `setDestination`): the engine's `approachAI` *(OT)* opens the dialog by the NPC's kind if it is
+  in reach, or drops the target. The user: on the 360 the hero talks from where it stands.
 - **Barrels**, by the user's account of the 360 (highlighted; X breaks them; A does not touch
   them): they are back in the item candidate (so highlighted); A skips a `CBreakable`; X, with no
   enemy in the cone, breaks the item candidate if it is one: in range, `setTargetItem` and

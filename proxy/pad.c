@@ -699,17 +699,16 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             x360_log(class_of(item_candidate));
             x360_log("\r\n");
         } else if (any_candidate) {
-            /* PC's click on a unit that is no enemy (clickLeft, GOG 0x41461c): setTarget, the mode
-             * virtual with 9, setDestination to the unit: the hero walks to it and talks. */
+            /* The 360 talks from where the hero stands: setTarget and the mode virtual with 9; the
+             * engine's approachAI (OT) then opens the NPC's dialog if it is in reach, by its kind
+             * (merchant, quest, ...), or drops the target if not. PC's click also sends a
+             * destination, which walks the hero: left out. */
             void **vt = *(void ***)hero;
-            float t[3];
             x360_log("pad: A: interact with ");
             x360_log(class_of(any_candidate));
             x360_log("\r\n");
             ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
             ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 9);
-            ((get_position_fn)GOG_GET_POSITION)(any_candidate, 0, t, 1);
-            ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, attack_level, t[0], t[2]);
         } else {
             float m[16];
             void *wide;
