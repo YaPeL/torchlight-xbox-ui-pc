@@ -462,7 +462,7 @@ static int selected[6], top[6];
 static const char *const tab_window[6] = {"inventory_filter_weapons", "inventory_filter_armor",
     "inventory_filter_jewelry", "inventory_filter_potions", "inventory_filter_spells", "inventory_filter_fish"};
 static const char *const tab_image[6] = {"tab_weapons", "tab_armor", "tab_jewelry", "tab_potions", "tab_gems", "tab_fish"};
-static const char *const filter_name[6] = {"Weapons", "Armor", "Jewelry", "Potions", "Gems", "Fish"};
+static const char *const filter_name[6] = {"Weapons", "Armor", "Jewelry", "Miscellaneous", "Gems", "Fish"};
 
 static void row_name(char *out, const char *base, int row) {
     char n[2] = {(char)('0' + row), 0};
@@ -698,8 +698,9 @@ void x360_inventory_toggle(void) {
             float v[8];
             k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 720.0f : 1.0f;
             scale_tree(inventory_root, k, 0);
-            /* The 360's frame places the panel; here at the title-safe margin (64, 36 at 720p). */
-            move_by(win("TopFrame"), 64.0f * k, 36.0f * k);
+            /* The 360's tabbed frame (mastermenu_xenon) puts the bag in its middle column: at
+             * (752, 128) of 1920x1080 in the 360's own screenshots, (501, 85) at 720. */
+            move_by(win("TopFrame"), 501.0f * k, 85.0f * k);
             mf = win("moveframe");
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
             if (parse_rect(value, v)) moveframe_top = v[3];

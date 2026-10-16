@@ -975,7 +975,8 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
 - **Scale:** the 360 draws it for 720 rows in absolute pixels, and CEGUI 0.6 does not scale
   them (the fonts do). On load every window's `UnifiedAreaRect` offsets are multiplied by the
   game's height / 720 (1.5 at 1080). The 360's tabbed frame (`mastermenu_xenon`) places the panel;
-  here it is moved to the title-safe margin (64, 36 at 720). **[the runs]**
+  here it is moved to where the 360 shows the bag, the frame's middle column ((752, 128) at
+  1080 in the 360's screenshots, `~/torchlight-gog/screens/ref/`). **[the runs; the screenshots]**
 
 **What the 360 does (read in the image):**
 - **Buttons** (`sub_8236FEF0`, `sub_8236A810`): d-pad left/right toggle the Info view; A acts
@@ -998,7 +999,8 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
   `item_tray_equipped` for an equipped item; the selected row's alpha is 1.0, the others' 0.9 if
   equipped, else 0.6. **[read]**
 - **The header** (`sub_82367D38`): `playergoldtext` is the owner's gold; `inventorysize` is
-  "references/capacity" (the capacity 126 for the hero, 50 for the pet, 4 in the transmuter). The
+  "references/capacity" (4 in the transmuter, else 50 or 126 by the owner; the 360's screenshots
+  show 48/50 for the hero and 0/50 for the pet). The
   layout's "12423" and "3/25" are samples. `IDENTIFYWIN` ("Scroll x12") is hidden on every rebuild.
   **[read]**
 
@@ -1018,6 +1020,13 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
   An equipped item is taken off: `removeEquipment`, `pickupEquipment`, back on if the bag is full.
 - In a run: A took the second blade off (the hero empty-handed) and put it back; the potions'
   filter listed the four consumables with PC's icons and names; "4/63" and the hero's 100 gold.
+
+**The 360's screenshots** (`~/torchlight-gog/screens/ref/`, made by the recomp's mods session
+from replayed captures): the bag is the middle column of a three-column frame (the character and
+the doll on the left, the pet's bag and the selected item's Info card on the right, Quest and
+Stats tabs on LT/RT); filter 3 is "Miscellaneous"; a row shows the name, "DPS: n" or the stack
+"xN", the price with a coin, "Equipped"; an unidentified item's name in red with "???" and "Press A
+to identify"; the action bar outside a shop is A Take off / Use / Learn, Y Drop, X Swap.
 
 **Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
 quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
