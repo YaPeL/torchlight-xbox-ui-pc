@@ -1272,7 +1272,46 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
 - the enchantments' line (above), sockets, set items;
 - X (sell) in a shop, the transmuter;
 - the identify scrolls' window;
-- the 360's own HUD (its orbs and potions around the frame).
+- the 360's own HUD: done, section 11b.
+
+## 11b. The 360's HUD in play (2026-10-16)
+
+The user's order: the 360's interface, PC's hidden. The 360's references: the mods session's
+captures in play (`~/torchlight-gog/screens/ref/x360-ref-en-hud-still.png`, `-pet.png`; the mines floor 3): the orbs top left and right with a potion and its count over LB and RB, the
+level's name top right, the skill bar at the bottom (Y, LT, RT, B), the experience bar under it,
+the pet's portrait and bars bottom left. **[the screenshots; the runs]**
+
+- **The same windows as PC's.** The 360's `CGameUI` finds its HUD's windows by PC's names (its
+  init `sub_823392E8` names `PlayerHealthBar`, `POTIONCOUNT`, `ExperienceBar`, `TargetHealth`...).
+  Of the 360 `hud.layout`'s 41 named windows, 32 are in PC's `bottomhud.layout` (86): the bars, the
+  skill slots and texts, the target's, the messages, the level's name; the 360's own: `POTIONCOUNT`,
+  `MANACOUNT`, `SkillSet1`/`2`, `AvailableSkillsIcon`, `TargetInteractHover`.
+- **So PC keeps its HUD and the 360's shows its values.** The proxy loads the 360's `hud.layout`
+  and `pethud.layout` on the GUI sheet once PC's HUD exists, and makes PC's bottom HUD and pet HUD
+  transparent (`Alpha` 0 on `PlayerHealthRoot` and `PetHud`; PC shows them again every frame, so
+  hiding them does not last). Every 50 ms, on the pad's poll (the game's thread):
+  - **The bars** as PC leaves its own: PC shrinks a bar (a clipping window) from its top (from
+    its right for experience) and moves its image (`...Sub`) the other way so it stays put (a
+    run: `PlayerHealthBar {472.5, 23.5, 525.9, 130.8}`, its Sub `{0, -8.1, 53.4, 107.2}`, 0.93 of
+    the health). The fraction, the bar's height (width) over its image's, is given to the 360's
+    bar and image of the same name: health, mana, experience, the pet's health and mana, the
+    target's health.
+  - **The texts and their visibility** as PC's: `LevelName`, `LargeMessageText`,
+    `SmallMessageText`, `TargetName`, `TargetLevel`, `TargetDescription`, `TargetHealth`, the
+    pet's `FleeingText`; the pet's HUD shown when PC's is.
+  - **The pad's slots:** LB, RB, B, Y, LT, RT press PC's hotbar keys 1 to 6 (section 9), so the
+    360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
+    and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
+    RT (7) (a `StaticImage` of ours made in each with `WindowManager::createWindow`, given the
+    image of PC's icon). The 360's second set (`SkillSet2`) is hidden.
+  - Hidden as not done: `TargetInteractHover` (the 360's "A Interact"), the skill slots' texts.
+- **Runs** (`~/torchlight-gog/screens/t31-hud.png`, `t32-lb.png`, `t32-inv-hud.png`): the HUD
+  where the 360's is, the health and mana potions with "2" over LB and RB, LB drank one ("1"),
+  the experience bar at PC's fraction, "the mines' first floor" top right, the pet bottom left with
+  its bars and stances; with the inventory open, the orbs behind the frame as on the 360.
+- **Not done:** the target's health seen in a run (no enemy near the save's start); the pet's
+  stance buttons (the 360's three images, not PC's state); `AvailableSkillsIcon`; the minimap is
+  PC's (not CEGUI); the HUD's own position checked against the 360's (by eye, the same).
 
 ## 12. Pad prompts in other pads' style (2026-10-16)
 

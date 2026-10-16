@@ -142,6 +142,7 @@ void x360_inventory_toggle(void);
 void x360_run_console(void);
 int x360_inventory_open(void);
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly);
+void x360_hud_tick(void);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
 #define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
 #define BUTTON_RT 0x20000u
@@ -907,6 +908,7 @@ static void order(void) {
     pressed = buttons & ~prev_buttons;
     prev_buttons = buttons;
     auto_pickup(hero, level);
+    x360_hud_tick();
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     if (pressed & BUTTON_BACK) {

@@ -1663,8 +1663,9 @@ static void show_doll(int on) {
     }
 }
 
+static void *hud_root, *pet_hud_root;
 static int is_ours(void *w) {
-    return w && (w == master_root || w == inventory_root || w == panels[1].root || w == character_root ||
+    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == character_root ||
                  w == card_root(0) || w == card_root(1) || w == card_root(2));   /* the Info cards, PC's tooltips */
 }
 
@@ -1868,5 +1869,232 @@ void x360_run_console(void) {
         wctor(&cmd, 0, wide);
         x360_log("x360 console: running a command\r\n");
         __try { ((execute_fn)GOG_EXECUTE_COMMAND_LINE)(console, 0, cmd); } __except (1) { x360_log("x360 console: it threw\r\n"); }
+    }
+}
+
+/* ---- the 360's HUD (hud.layout) ---- */
+
+/* PC's window whose name is `name` or ends in "_" + name (the layouts' prefixes), under the GUI
+ * sheet (0 if none). */
+static void *pc_window(const char *name) {
+    typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+    static name_fn gn;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *stack[256];
+    int depth[256], sp = 0;
+    unsigned nl = length(name);
+    if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!sheet || !gn) return 0;
+    stack[sp] = sheet; depth[sp++] = 0;
+    while (sp > 0) {
+        void *w = stack[--sp];
+        int d = depth[sp];
+        const char *wn = c_str(gn(w, 0), 0);
+        unsigned wl = length(wn), c, n;
+        if (is_ours(w)) continue;                       /* not into our own layouts */
+        if (wl >= nl) {
+            const char *a = wn + wl - nl, *b = name;
+            while (*b && *a == *b) a++, b++;
+            if (!*b && (wl == nl || wn[wl - nl - 1] == '_')) return w;
+        }
+        n = child_count(w, 0);
+        for (c = 0; c < n && d < 12 && sp < 255; c++) { stack[sp] = child_at(w, 0, c); depth[sp++] = d + 1; }
+    }
+    return 0;
+}
+
+#define HUD_PREFIX "x360hud_"
+#define PETHUD_PREFIX "x360pethud_"
+static void *pc_hud_root;
+
+/* A bar of the 360's HUD filled as PC's own of the same name: PC shrinks the bar (a clipping
+ * window) from its top, or for experience from its right, and moves its image ("...Sub") the
+ * other way so the image stays put (a run: PlayerHealthBar {472.5, 23.5, 525.9, 130.8} and its
+ * Sub {0, -8.1, 53.4, 107.2} at 0.93 of the hero's health). The fraction is the bar's height (or
+ * width) over its image's; the 360's bar and image of the same names are set to it, from their
+ * layout's full rects (full[8], scaled). */
+static void mirror_bar_of(const char *prefix, const char *bar, const char *sub, int horizontal, float full[8]) {
+    void *pb = pc_window(bar), *ps = pc_window(sub), *xb = win_of(prefix, bar), *xs = win_of(prefix, sub);
+    char value[128];
+    float b[8], i[8], f, v[8], size;
+    int j;
+    if (!pb || !ps || !xb) return;
+    read_prop(pb, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, b)) return;
+    read_prop(ps, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, i)) return;
+    if (!full[0] && !full[1] && !full[5] && !full[7]) {          /* the 360 bar's full rect, once */
+        read_prop(xb, "UnifiedAreaRect", value, sizeof value);
+        if (!parse_rect(value, full)) return;
+    }
+    size = horizontal ? i[5] - i[1] : i[7] - i[3];
+    f = size > 0 ? (horizontal ? b[5] - b[1] : b[7] - b[3]) / size : 0;
+    if (f < 0) f = 0;
+    if (f > 1) f = 1;
+    for (j = 0; j < 8; j++) v[j] = full[j];
+    if (horizontal) v[5] = v[1] + (full[5] - full[1]) * f;
+    else v[3] = v[7] - (full[7] - full[3]) * f;
+    write_rect(value, v); prop(xb, "UnifiedAreaRect", value);
+    if (!xs) return;                                  /* the 360's experience bar is its own image */
+    read_prop(xs, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, v)) return;
+    if (horizontal) { float w = v[5] - v[1]; v[1] = 0; v[5] = w; }
+    else { float h = v[7] - v[3]; v[3] = -(full[7] - full[3]) * (1 - f); v[7] = v[3] + h; }
+    write_rect(value, v); prop(xs, "UnifiedAreaRect", value);
+}
+
+static void mirror_bar(const char *bar, const char *sub, int horizontal, float full[8]) {
+    mirror_bar_of(HUD_PREFIX, bar, sub, horizontal, full);
+}
+
+/* A window of the 360's HUD shown as PC's of the same name, with its text. */
+static void mirror_text_of(const char *prefix, const char *name) {
+    void *p = pc_window(name), *x = win_of(prefix, name);
+    char value[256];
+    static is_visible_fn vis;
+    if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!x) return;
+    if (!p || !vis) { show(x, 0); return; }
+    read_prop(p, "Text", value, sizeof value);
+    prop(x, "Text", value);
+    show(x, vis(p, 0, 0));
+}
+
+static void mirror_text(const char *name) { mirror_text_of(HUD_PREFIX, name); }
+
+/* A text of the 360's HUD set to the text of PC's window `from` (another name), shown as it. */
+static void copy_text(const char *to, const char *from) {
+    void *p = pc_window(from), *x = win_of(HUD_PREFIX, to);
+    char value[64];
+    if (!x) return;
+    value[0] = 0;
+    if (p) read_prop(p, "Text", value, sizeof value);
+    prop(x, "Text", value);
+}
+
+/* The icon PC shows in its hotbar slot `pc_slot` ("SkillSlot3"), shown in the 360 HUD's slot
+ * `slot` (a DefaultWindow the 360's code fills): a StaticImage of ours made in it once
+ * (WindowManager::createWindow), given the image of the first window under PC's slot that has
+ * one; hidden if none. */
+static void mirror_icon(const char *slot, const char *pc_slot) {
+    typedef void *(__fastcall *create_fn)(void *wm, void *edx, const object *type, const object *name, const object *prefix);
+    static create_fn create;
+    void *x = win_of(HUD_PREFIX, slot), *p = pc_window(pc_slot), *icon, *stack[16];
+    char name[64], image[128];
+    int sp = 0;
+    if (!x) return;
+    copy(name, sizeof name, "icon_", slot);
+    icon = win_of(HUD_PREFIX, name);
+    if (!icon) {
+        object t, n, pre;
+        void *wm = window_manager();
+        if (!create) create = (create_fn)need("?createWindow@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00@Z");
+        if (!create || !wm) return;
+        string_ctor(&t, 0, "ceguiWidget/StaticImage");
+        string_ctor(&n, 0, name);
+        string_ctor(&pre, 0, HUD_PREFIX);
+        __try { icon = create(wm, 0, &t, &n, &pre); } __except (1) { icon = 0; }
+        string_dtor(&pre, 0); string_dtor(&n, 0); string_dtor(&t, 0);
+        if (!icon) { x360_log("x360 hud: createWindow failed\r\n"); return; }
+        prop(icon, "UnifiedAreaRect", "{{0,0},{0,0},{1,0},{1,0}}");
+        prop(icon, "FrameEnabled", "False");
+        prop(icon, "BackgroundEnabled", "False");
+        add_child(x, 0, icon);
+    }
+    image[0] = 0;
+    if (p) stack[sp++] = p;
+    while (sp > 0 && !image[0]) {
+        void *w = stack[--sp];
+        unsigned c, nc = child_count(w, 0);
+        if (w != p) read_prop(w, "Image", image, sizeof image);
+        for (c = 0; c < nc && sp < 16; c++) stack[sp++] = child_at(w, 0, c);
+    }
+    if (image[0]) prop(icon, "Image", image);
+    show(icon, image[0] != 0);
+}
+
+/* The 360's HUD in play: hud.layout on the GUI sheet, PC's bottom HUD hidden (still updated by
+ * PC), the orbs and the experience bar filled as PC's, the level's name, the messages and the
+ * target's health as PC shows them. Called with the pad's poll (the game's thread). */
+void x360_hud_tick(void) {
+    static unsigned last;
+    static int failed;
+    static float health[8], mana[8], xp[8], target[8];
+    unsigned now = GetTickCount();
+    if (failed || now - last < 50 || !resolve()) return;
+    last = now;
+    if (!hud_root) {
+        HWND w = GetActiveWindow();
+        RECT r;
+        pc_hud_root = pc_window("PlayerHealthRoot");
+        if (!pc_hud_root) return;                       /* PC's HUD not loaded yet */
+        hud_root = load("media/ui/x360/hud.layout", HUD_PREFIX);
+        if (!hud_root) { failed = 1; return; }
+        if (!k) k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(hud_root, k, 0);
+        x360_log("x360 hud: shown, PC's bottom HUD transparent\r\n");
+    }
+    /* PC shows its bottom HUD again each frame, so it is made transparent instead (its children
+     * inherit the alpha); PC still updates it, and its bars are read from it. */
+    {
+        static int faded;
+        if (!faded) { prop(pc_hud_root, "Alpha", "0"); faded = 1; }
+    }
+    show(hud_root, 1);
+    mirror_bar("PlayerHealthBar", "PlayerHealthBarSub", 0, health);
+    mirror_bar("PlayerManaBar", "PlayerManaBarSub", 0, mana);
+    mirror_bar("ExperienceBar", "ExperienceBarSub", 1, xp);
+    /* The potions' counts: LB and RB press PC's hotbar keys 1 and 2 (proxy/pad.c), so the counts
+     * are those PC writes on those slots (SkillText1, SkillText2). */
+    copy_text("POTIONCOUNT", "SkillText1");
+    copy_text("MANACOUNT", "SkillText2");
+    /* Not done yet: the interact prompt and the skills on the pad's buttons (the layout's
+     * samples hidden). */
+    show(win_of(HUD_PREFIX, "TargetInteractHover"), 0);
+    /* The icons on the pad's buttons, from the hotbar keys proxy/pad.c presses for them: LB 1,
+     * RB 2, B 3, Y 4, LT 5, RT 6. The 360's first set (SkillSet1: Y SkillSlot4, B 5, LT 6, RT 7);
+     * its second set (SkillSet2, the same places) hidden. */
+    mirror_icon("SkillSlot1", "SkillSlot1");
+    mirror_icon("SkillSlot2", "SkillSlot2");
+    mirror_icon("SkillSlot5", "SkillSlot3");
+    mirror_icon("SkillSlot4", "SkillSlot4");
+    mirror_icon("SkillSlot6", "SkillSlot5");
+    mirror_icon("SkillSlot7", "SkillSlot6");
+    show(win_of(HUD_PREFIX, "SkillSet2"), 0);
+    {
+        static const char *const texts[] = {"SkillText3", "SkillText4", "SkillText5", "SkillText6", "SkillText7",
+                                            "SkillText8", "SkillText9", "SkillText10", 0};
+        int j;
+        for (j = 0; texts[j]; j++) prop(win_of(HUD_PREFIX, texts[j]), "Text", "");
+    }
+    /* The pet's: the 360's pethud.layout, PC's made transparent, its bars and text as PC's. */
+    {
+        static void *pet_root, *pc_pet;
+        static float pet_health[8], pet_mana[8];
+        static is_visible_fn vis;
+        if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        if (!pc_pet) pc_pet = pc_window("PetHud");
+        if (pc_pet && !pet_root) {
+            pet_root = load("media/ui/x360/pethud.layout", PETHUD_PREFIX);
+            if (pet_root) { scale_tree(pet_root, k, 0); prop(pc_pet, "Alpha", "0"); pet_hud_root = pet_root; }
+        }
+        if (pet_root && vis) {
+            show(pet_root, vis(pc_pet, 0, 0));
+            mirror_bar_of(PETHUD_PREFIX, "PetHealthBar", "PetHealth", 1, pet_health);
+            mirror_bar_of(PETHUD_PREFIX, "PetManaBar", "PetMana", 1, pet_mana);
+            mirror_text_of(PETHUD_PREFIX, "FleeingText");
+        }
+    }
+    mirror_text("LevelName");
+    mirror_text("LargeMessageText");
+    mirror_text("SmallMessageText");
+    mirror_text("TargetName");
+    mirror_text("TargetLevel");
+    mirror_text("TargetDescription");
+    {
+        void *p = pc_window("TargetHealth"), *x = win_of(HUD_PREFIX, "TargetHealth");
+        static is_visible_fn vis;
+        if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        if (x) show(x, p && vis && vis(p, 0, 0));
+        mirror_bar("TargetHealthBar", "TargetHealthBarSub", 1, target);
     }
 }
