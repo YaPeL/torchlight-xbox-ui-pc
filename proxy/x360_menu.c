@@ -616,6 +616,25 @@ static const char *quality_image(unsigned char *item) {
     return "set:X360_widgets2 image:traycolor_blank";
 }
 
+/* The comparison arrow (sub_82368980): the item's value against the one equipped in its place, up
+ * if better, down if worse, none if equal or nothing to compare. Weapons by DPS (PC's DPS, the
+ * equipped one from getComparisonItems); armour's value is not located yet, so no arrow there. */
+static void compare_arrow(int row, unsigned char *item, int equipped) {
+    char name[48];
+    void *inv = inventory(), *first = 0, *second = 0;
+    int mine, theirs;
+    row_name(name, "qualityarrow", row);
+    if (equipped || !inv || !isa(item, 8) || !item[GOG_IDENTIFIED]) { show(win(name), 0); return; }
+    ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
+    if (!first || first == item) { show(win(name), 0); return; }
+    mine = ((int_get_fn)GOG_DPS)(item, 0);
+    theirs = ((int_get_fn)GOG_DPS)(first, 0);
+    if (mine == theirs) { show(win(name), 0); return; }
+    prop(win(name), "Image", mine > theirs ? "set:X360_widgets1 image:comparrison_arrow_up"
+                                           : "set:X360_widgets1 image:comparrison_arrow_down");
+    show(win(name), 1);
+}
+
 /* A row's details, as the 360's screenshots show them: the price with its coin (PC's sellPrice);
  * "DPS: n" for an identified weapon, "xN" for a stack; an unidentified item's name in red, "???"
  * and "Press A to identify" (the 360's strings). Hidden when empty, as sub_82368980 does. */
@@ -716,7 +735,7 @@ static void refresh(void) {
         fill_details(row, (unsigned char *)list[idx]);
         row_name(name, "Enchantments", row); show(win(name), 0);
         row_name(name, "Quality", row); show(win(name), 0);
-        row_name(name, "qualityarrow", row); show(win(name), 0);
+        compare_arrow(row, (unsigned char *)list[idx], list_slot[idx] < EQUIPPED_SLOTS);
         row_name(name, "socket0_", row); show(win(name), 0);
         row_name(name, "socket1_", row); show(win(name), 0);
     }
