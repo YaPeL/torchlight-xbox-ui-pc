@@ -818,32 +818,6 @@ typedef const void *(__fastcall *get_text_fn)(const void *self, void *edx);
 
 typedef const void *(__fastcall *get_name_fn)(const void *self, void *edx);
 
-/* A window under root whose name, without the layout's random prefix ("NN_"), is name. */
-static void *find_by_name(void *root, const char *name, int depth) {
-    static get_name_fn get_name;
-    const char *n;
-    unsigned i, count;
-    if (!get_name) get_name = (get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
-    if (!root || !get_name || depth > 12) return 0;
-    n = c_str(get_name(root, 0), 0);
-    if (n) {
-        const char *u = n;
-        while (*u >= '0' && *u <= '9') u++;
-        if (*u == '_' && u != n) u++; else u = n;
-        {
-            const char *a = u, *b = name;
-            while (*a && *a == *b) a++, b++;
-            if (!*a && !*b) return root;
-        }
-    }
-    count = child_count(root, 0);
-    for (i = 0; i < count; i++) {
-        void *w = find_by_name(child_at(root, 0, i), name, depth + 1);
-        if (w) return w;
-    }
-    return 0;
-}
-
 /* PC's CStatsMenu (vtable 0xab87c4, GOG) writes its texts only in its update (the virtual +0x24,
  * CSubMenu::update(float), GOG 0x5b0d90); with its menu closed they keep the layout's samples
  * ("Name", "XP:0-0"). The instance is one of CGameUI's fields; its update is called before the
@@ -863,64 +837,67 @@ static void *pc_stats_menu(void) {
     return found;
 }
 
+/* The character column's numbers, read as PC's own stats menu reads them (CStatsMenu's update,
+ * GOG 0x5b0d90, its owner at +0x40): the getters PC calls (OT's names: CCharacter::strength
+ * 0x487ec0, dexterity 0x487e60, magic 0x487d70, defense 0x487d00; the maximum HP 0x4901e0 and
+ * mana 0x490330, base +0x398 and +0x3bc plus effects), and the fields it reads itself, there being
+ * no getters for them: the level +0xf0, the experience +0x3c8, the fame +0x3cc and its level
+ * +0x3d0, the name (a wstring) +0x420. The next level's experience and fame: the experience
+ * table's singleton (0x5281d0) asked by level (0x528130) and fame level (0x528180). The fame
+ * title is not done. */
+#define GOG_STRENGTH 0x00487ec0
+#define GOG_DEXTERITY 0x00487e60
+#define GOG_MAGIC 0x00487d70
+#define GOG_DEFENSE 0x00487d00
+#define GOG_MAX_HP 0x004901e0
+#define GOG_MAX_MANA 0x00490330
+#define GOG_XP_TABLE 0x005281d0
+#define GOG_XP_FOR_LEVEL 0x00528130
+#define GOG_FAME_FOR_LEVEL 0x00528180
+typedef void *(__cdecl *table_fn)(void);
+typedef int (__fastcall *int_arg_fn)(void *self, void *edx, int v);
+
 static void fill_character(void) {
-    static const char *const pairs[][2] = {
-        {"characterName", "CharacterName"}, {"CharacterTitle", "CharacterTitle"}, {"Level", "Level"},
-        {"XP", "XP"}, {"FameLevel", "FameLevel"}, {"Fame", "Fame"}, {"HP", "HP"}, {"Mana", "Mana"},
-        {"strPts", "Strength"}, {"dexPts", "Dexterity"}, {"magicPts", "Magic"}, {"defPts", "Defense"}};
     static int logged;
-    child_search_fn search = (child_search_fn)need("?recursiveChildSearch@Window@CEGUI@@QBEPAV12@ABVString@2@@Z");
-    get_text_fn get_text = (get_text_fn)need("?getText@Window@CEGUI@@QBEABVString@2@XZ");
-    unsigned i;
-    if (!character_root || !x360_pc_stats_root || !search || !get_text) return;
-    /* Not used (2026-10-16): PC fills these texts only in its stats menu's update, and finding and
-     * calling it (pc_stats_menu) crashed the game in two runs before the search ended; until the
-     * hero's own fields are read, the column shows its labels and no numbers. */
+    char buf[96], *p;
+    int level, xp, xp_next = 0, fame_level, fame, fame_next = 0;
+    void *table;
+    if (!character_root || !hero) return;
     (void)pc_stats_menu;
-    for (i = 0; i < sizeof pairs / sizeof pairs[0]; i++) text(win_of(CHR_PREFIX, pairs[i][0]), "");
-    return;
+    __try {
+        level = *(int *)(hero + 0xf0);
+        xp = *(int *)(hero + 0x3c8);
+        fame = *(int *)(hero + 0x3cc);
+        fame_level = *(int *)(hero + 0x3d0);
+        table = ((table_fn)GOG_XP_TABLE)();
+        if (table) {
+            xp_next = ((int_arg_fn)GOG_XP_FOR_LEVEL)(table, 0, level);
+            fame_next = ((int_arg_fn)GOG_FAME_FOR_LEVEL)(table, 0, fame_level);
+        }
+    } __except (1) {
+        x360_log("x360 chr: reading the hero threw\r\n");
+        return;
+    }
+    if (wstring_utf8(hero + 0x420, buf, sizeof buf)) text(win_of(CHR_PREFIX, "characterName"), buf);
+    text(win_of(CHR_PREFIX, "CharacterTitle"), "");
+    p = put_int(buf, level); *p = 0; text(win_of(CHR_PREFIX, "Level"), buf);
+    p = put_int(buf, fame_level); *p = 0; text(win_of(CHR_PREFIX, "FameLevel"), buf);
+    copy(buf, sizeof buf, "XP: ", 0); p = put_int(buf + 4, xp); *p++ = '/'; p = put_int(p, xp_next); *p = 0;
+    text(win_of(CHR_PREFIX, "XP"), buf);
+    copy(buf, sizeof buf, "Fame: ", 0); p = put_int(buf + 6, fame); *p++ = '/'; p = put_int(p, fame_next); *p = 0;
+    text(win_of(CHR_PREFIX, "Fame"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAX_HP)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "HP"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAX_MANA)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "Mana"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_STRENGTH)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "strPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_DEXTERITY)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "dexPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAGIC)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "magicPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_DEFENSE)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "defPts"), buf);
     if (!logged) {
-        /* A diagnosis: the stats menu's first two levels of names. */
-        get_name_fn get_name = (get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
-        unsigned a, b, na;
-        __try {
-            x360_log("x360 chr: root "); x360_log(c_str(get_name(x360_pc_stats_root, 0), 0));
-            na = child_count(x360_pc_stats_root, 0);
-            x360_log(", children "); x360_log_num((long)na); x360_log(":");
-            for (a = 0; a < na && a < 12; a++) {
-                void *c = child_at(x360_pc_stats_root, 0, a);
-                unsigned nb = child_count(c, 0);
-                x360_log(" "); x360_log(c_str(get_name(c, 0), 0)); x360_log("(");
-                for (b = 0; b < nb && b < 40; b++) { x360_log(c_str(get_name(child_at(c, 0, b), 0), 0)); x360_log(","); }
-                x360_log(")");
-            }
-            x360_log("\r\n");
-        } __except (1) { x360_log("x360 chr: the dump threw\r\n"); }
+        logged = 1;
+        x360_log("x360 chr: level "); x360_log_num(level); x360_log(" xp "); x360_log_num(xp);
+        x360_log("/"); x360_log_num(xp_next); x360_log(" fame "); x360_log_num(fame_level); x360_log(" ");
+        x360_log_num(fame); x360_log("/"); x360_log_num(fame_next); x360_log("\r\n");
     }
-    for (i = 0; i < sizeof pairs / sizeof pairs[0]; i++) {
-        object n;
-        void *pc = 0;
-        const char *t = "";
-        string_ctor(&n, 0, pairs[i][1]);
-        __try {
-            /* PC moves its stats menu's windows out from under the root it loaded (a run: "11_Master",
-             * no children); they keep the layout's prefix, so they are found by their full name. */
-            char full[96], pre[16];
-            const char *rn = c_str(((get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ"))(x360_pc_stats_root, 0), 0);
-            unsigned q = 0;
-            (void)search;
-            while (rn && rn[q] && rn[q] != '_' && q < sizeof pre - 2) { pre[q] = rn[q]; q++; }
-            pre[q] = '_'; pre[q + 1] = 0;
-            copy(full, sizeof full, pre, 0);
-            pc = win_of(full, pairs[i][1]);
-            if (!pc) pc = find_by_name(x360_pc_stats_root, pairs[i][1], 0);
-            if (pc) t = c_str(get_text(pc, 0), 0);
-        } __except (1) { pc = 0; t = ""; }
-        string_dtor(&n, 0);
-        text(win_of(CHR_PREFIX, pairs[i][0]), t);
-        if (!logged) { x360_log("x360 chr: "); x360_log(pairs[i][1]); x360_log(" = \""); x360_log(t); x360_log(pc ? "\"\r\n" : "\" (no window)\r\n"); }
-    }
-    logged = 1;
 }
 
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
