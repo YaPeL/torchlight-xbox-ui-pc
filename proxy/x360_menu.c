@@ -1387,9 +1387,9 @@ static int identify(unsigned char *item) {
  * if the bag is full, it goes back. */
 static void act(void) {
     void *inv = inventory();
-    unsigned char *item;
+    unsigned char *item, *owner = (unsigned char *)cur_owner;   /* the 360's A acts for the bag's owner (+0x174) */
+    int is_pet = panels[active_panel].is_pet;
     if (!inv || !list_count) return;
-    if (panels[active_panel].is_pet) { x360_log("x360 inv: A in the pet's bag: not done yet\r\n"); return; }
     item = (unsigned char *)list[selected[filter]];
     if (!item[GOG_IDENTIFIED]) { identify(item); return; }
     if (list_slot[selected[filter]] < EQUIPPED_SLOTS) {
@@ -1402,18 +1402,23 @@ static void act(void) {
         }
         return;
     }
+    if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
+        /* The pet uses nothing and wears only what fits it (PC's canEquip for the pet). */
+        x360_log("x360 inv: A in the pet's bag: the pet cannot wear it\r\n");
+        return;
+    }
     if (((item_bool_fn)GOG_IS_USEABLE)(item, 0)) {
         if (ui) ((use_item_fn)GOG_USE_ITEM)(ui, 0, level, item);
         x360_log(ui ? "x360 inv: A: used\r\n" : "x360 inv: A: no CGameUI, not used\r\n");
         return;
     }
     if (((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item)) {
-        ((int_fn)GOG_RENDER_BEHIND)(hero, 0, 1);
-        ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(hero + 0x58));
+        ((int_fn)GOG_RENDER_BEHIND)(owner, 0, 1);
+        ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(owner + 0x58));
         x360_log("x360 inv: A: equipped\r\n");
         return;
     }
-    if (!((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, hero, 1)) {
+    if (!((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
         x360_log("x360 inv: A: cannot equip\r\n");
         return;
     }
@@ -1424,8 +1429,8 @@ static void act(void) {
         if (first) {
             ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, first);
             if (((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item)) {
-                ((int_fn)GOG_RENDER_BEHIND)(hero, 0, 1);
-                ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(hero + 0x58));
+                ((int_fn)GOG_RENDER_BEHIND)(owner, 0, 1);
+                ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(owner + 0x58));
             }
             if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, first, 1)) x360_log("x360 inv: A: the old item did not fit\r\n");
         }

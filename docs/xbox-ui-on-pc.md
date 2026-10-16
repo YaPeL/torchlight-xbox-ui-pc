@@ -1227,7 +1227,13 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   into its first argument, then 0; `ret 0x8`; called at `0x54289a`), used for identified
   equipment; its neighbour `0x4b4470`, `CEquipment::getFullItemName` *(OT)*, builds the line above
   ("rare sword", "unidentified trinket"). A long name is cut by the row, as on the 360 ("A
-  Mysterious Polear"). - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
+  Mysterious Polear"). - **A in the pet's bag.** The 360's A (`sub_8236AA48`) acts for the bag's owner (the menu's
+  `+0x174`): identify, use, equip or take off. Here the same functions as the hero's, for the pet:
+  equip into the pet's first free place, take off into its bag, only what PC's `canEquip` lets the
+  pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
+  A: "prefixed ring", Equipped, its A "Unequip"; A again took it off. Something the pet cannot
+  wear was not tried.
+- **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
   (GOG `0x5431a5`-`0x5438d9`, for the hero): its colour table (the singleton `0x524d40`, wstrings
   `0x1c` apart) at `+0x55c` if `0x4818f0`; the default unless the virtual `+0x154` or isa `0xa0`;
@@ -1251,7 +1257,6 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
 - the housing's LT/RT tabs (Quest, Stats);
 - "pet commands";
 - the enchantments' line, sockets, set items;
-- A in the pet's bag;
 - X (sell) in a shop, the transmuter;
 - the identify scrolls' window;
 - the 360's own HUD (its orbs and potions around the frame).
