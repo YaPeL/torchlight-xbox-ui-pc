@@ -483,6 +483,7 @@ static void *item_in_view(unsigned char *hero, unsigned char *level, const float
              * (GOG's 0x7a is not gold), and GOG's list also holds trigger units: items only. */
             if (!derives_from(it, ".?AVCItem@@")) continue;
             if (derives_from(it, ".?AVCTriggerUnit@@")) continue; /* GOG's triggers derive from CItem */
+            if (derives_from(it, ".?AVCBreakable@@")) continue;   /* barrels: the 360's kind 0x1d, not for A */
             if (it[0x19d] || !it[0x161]) continue;
             ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
             dx = p[0] - m[3];
