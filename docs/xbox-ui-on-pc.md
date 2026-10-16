@@ -1227,7 +1227,8 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   into its first argument, then 0; `ret 0x8`; called at `0x54289a`), used for identified
   equipment; its neighbour `0x4b4470`, `CEquipment::getFullItemName` *(OT)*, builds the line above
   ("rare sword", "unidentified trinket"). A long name is cut by the row, as on the 360 ("A
-  Mysterious Polear"). - **A in the pet's bag.** The 360's A (`sub_8236AA48`) acts for the bag's owner (the menu's
+  Mysterious Polear").
+- **A in the pet's bag.** The 360's A (`sub_8236AA48`) acts for the bag's owner (the menu's
   `+0x174`): identify, use, equip or take off. Here the same functions as the hero's, for the pet:
   equip into the pet's first free place, take off into its bag, only what PC's `canEquip` lets the
   pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
