@@ -113,17 +113,21 @@ static void copy(char *out, unsigned size, const char *a, const char *b) {
 
 #define PREFIX "x360inv_"
 
-/* A window of the layout by its name in the layout (0 if absent). */
-static void *win(const char *name) {
+/* A window of a layout by its prefix and its name in the layout (0 if absent). */
+static void *win_of(const char *prefix, const char *name) {
     char full[96];
     object s;
     void *w = 0, *wm = window_manager();
-    copy(full, sizeof full, PREFIX, name);
+    copy(full, sizeof full, prefix, name);
     string_ctor(&s, 0, full);
     if (wm && is_present(wm, 0, &s)) w = get_window(wm, 0, &s);
     string_dtor(&s, 0);
     return w;
 }
+
+static void *win(const char *name) { return win_of(PREFIX, name); }
+
+#define MASTER "x360mm_"
 
 static void prop(void *w, const char *name, const char *value) {
     object n, v;
@@ -256,7 +260,7 @@ static void move_by(void *w, float dx, float dy) {
 
 /* ---- loading ---- */
 
-static float k;                              /* the layout's scale: the game's height / 720 */
+static float k;                              /* the layouts' scale: the game's height / 768 */
 static float moveframe_top;                  /* moveframe's top in the layout, scaled */
 
 static void *load(const char *file, const char *prefix) {
@@ -452,7 +456,7 @@ static void item_icon(unsigned char *item, char *out, unsigned size) {
 
 /* ---- the screen ---- */
 
-static void *inventory_root;
+static void *inventory_root, *master_root;
 static int inventory_failed, inventory_open;
 static int filter;
 static int selected[6], top[6];
@@ -462,7 +466,7 @@ static int selected[6], top[6];
 static const char *const tab_window[6] = {"inventory_filter_weapons", "inventory_filter_armor",
     "inventory_filter_jewelry", "inventory_filter_potions", "inventory_filter_spells", "inventory_filter_fish"};
 static const char *const tab_image[6] = {"tab_weapons", "tab_armor", "tab_jewelry", "tab_potions", "tab_gems", "tab_fish"};
-static const char *const filter_name[6] = {"Weapons", "Armor", "Jewelry", "Miscellaneous", "Gems", "Fish"};
+static const char *const filter_name[6] = {"Weapons", "Armor", "Jewelry", "Miscellaneous", "Socketables", "Fish"};
 
 static void row_name(char *out, const char *base, int row) {
     char n[2] = {(char)('0' + row), 0};
@@ -486,7 +490,8 @@ static void refresh(void) {
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
     text(win("filtername"), filter_name[filter]);
-    text(win("characterName"), "|cFFF2680DMY BAG|u");
+    text(win("characterName"), "My Bag");
+    show(win("rightbumper"), 1);
     show(win("transmutor"), 0);
     show(win("petintown"), 0);
     /* The 360 writes the owner's gold and "items/capacity" over the layout's samples ("12423",
@@ -564,12 +569,17 @@ static void refresh(void) {
         if (parse_rect(value, v)) move_by(mf, 0, moveframe_top + (float)sel_row * ROW_PITCH * k - v[3]);
         show(win("IDENTIFYWIN"), 0);
         show(win("buyandsell"), 0);
-        show(win("buttonX"), 0);
+        /* The bar as in the 360's screenshots: A by the item (Unequip, Equip, Use, Learn for a
+         * spell), Y Drop, X Swap (to the pet's bag); no Info. */
         show(win("buttonB"), 0);
-        show(win("buttonY"), 0);
+        show(win("buttonY"), 1);
+        show(win("buttonX"), 1);
+        text(win("buttonYtext"), "Drop");
+        text(win("buttonXtext"), "Swap");
         if (list_count) {
             unsigned char *item = (unsigned char *)list[selected[filter]];
             const char *a = list_slot[selected[filter]] < EQUIPPED_SLOTS ? "Unequip"
+                            : isa(item, 129) ? "Learn"
                             : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "Use" : "Equip";
             text(win("buttonAtext"), a);
         }
@@ -627,6 +637,44 @@ static void act(void) {
             x360_log("x360 inv: A: the old second item did not fit\r\n");
         x360_log("x360 inv: A: swapped\r\n");
     }
+}
+
+#define GOG_GET_POSITION 0x00510eb0   /* CPositionableObject::getPosition(Vector3* out, bool) */
+#define GOG_LEVEL_ADD_ITEM 0x004f5960 /* CLevel::addItem(CItem*, Vector3 const*, bool) */
+#define GOG_ITEM_DROPPED_SLOT (0x198 / 4) /* CItem's virtual after addItem, as PC's drop does */
+#define GOG_GET_PET 0x0040e720        /* the hero's pet by index (thiscall, int) */
+typedef void *(__fastcall *get_position_fn)(void *self, void *edx, float *out, int flag);
+typedef void (__fastcall *add_item_fn)(void *level, void *edx, void *item, const float *pos, int flag);
+typedef void *(__fastcall *get_pet_fn)(void *hero, void *edx, int index);
+
+/* Y: the item to the ground at the hero's feet, as PC drops an item that does not fit (GOG
+ * 0x55e28a): removeEquipment, CLevel::addItem at the hero's position, the item's virtual +0x198. */
+static void drop(void) {
+    void *inv = inventory();
+    unsigned char *item;
+    float pos[3];
+    if (!inv || !list_count) return;
+    item = (unsigned char *)list[selected[filter]];
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
+    ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
+    x360_log("x360 inv: Y: dropped\r\n");
+}
+
+/* X: the item to the pet's bag (the 360's "Swap" with the pet's column); back if it does not fit. */
+static void swap_to_pet(void) {
+    void *inv = inventory(), *pet, *pet_inv;
+    unsigned char *item;
+    if (!inv || !list_count) return;
+    pet = ((get_pet_fn)GOG_GET_PET)(hero, 0, 0);
+    pet_inv = pet ? *(void **)((unsigned char *)pet + GOG_INVENTORY) : 0;
+    if (!pet_inv) { x360_log("x360 inv: X: no pet\r\n"); return; }
+    item = (unsigned char *)list[selected[filter]];
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+    if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(pet_inv, 0, item, 1)) { x360_log("x360 inv: X: to the pet\r\n"); return; }
+    ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1);
+    x360_log("x360 inv: X: the pet's bag is full\r\n");
 }
 
 /* The inventory, logged once per opening: the panes and every reference (a diagnosis). */
@@ -688,7 +736,8 @@ int x360_inventory_open(void) { return inventory_open; }
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
     if (!inventory_root && !inventory_failed) {
-        inventory_root = load("media/ui/x360/inventorymenu_xenon.layout", PREFIX);
+        master_root = load("media/ui/x360/mastermenu_xenon.layout", MASTER);
+        inventory_root = master_root ? load("media/ui/x360/inventorymenu_xenon.layout", PREFIX) : 0;
         if (!inventory_root) inventory_failed = 1;
         else {
             RECT r;
@@ -696,11 +745,30 @@ void x360_inventory_toggle(void) {
             void *mf;
             char value[128];
             float v[8];
-            k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 720.0f : 1.0f;
+            /* One factor, by height: the 360's fonts and imagesets are AutoScaled from 1024x768
+             * (as PC's), so the fonts grow by height / 768; the layouts' pixel offsets with them
+             * (the 360's screenshots: its 919-pixel frame is 1290 wide at 1080). */
+            k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+            scale_tree(master_root, k, 0);
             scale_tree(inventory_root, k, 0);
-            /* The 360's tabbed frame (mastermenu_xenon) puts the bag in its middle column: at
-             * (752, 128) of 1920x1080 in the 360's own screenshots, (501, 85) at 720. */
-            move_by(win("TopFrame"), 501.0f * k, 85.0f * k);
+            /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
+             * ContainerFrame, three columns of 301: the character, the bag, the pet's bag. The bag
+             * goes in the second (the screenshots: its frame at (747, 127) of 1080). */
+            {
+                void *container = win_of(MASTER, "ContainerFrame"), *top = win("TopFrame");
+                if (container && top) {
+                    add_child(container, 0, top);
+                    move_by(top, 301.0f * k, 0);
+                }
+            }
+            /* Not working yet, so not shown: the LT/RT tabs, pet commands, item comparison. */
+            show(win_of(MASTER, "lefttrigger"), 0);
+            show(win_of(MASTER, "righttrigger"), 0);
+            show(win_of(MASTER, "MenuLeft"), 0);
+            show(win_of(MASTER, "MenuRight"), 0);
+            show(win_of(MASTER, "PetCommands"), 0);
+            show(win_of(MASTER, "ToggleItemCompare"), 0);
+            text(win_of(MASTER, "MenuName"), "INVENTORY");
             mf = win("moveframe");
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
             if (parse_rect(value, v)) moveframe_top = v[3];
@@ -714,8 +782,9 @@ void x360_inventory_toggle(void) {
         dump();
         refresh();
     }
+    set_visible(master_root, 0, inventory_open);
     set_visible(inventory_root, 0, inventory_open);
-    if (inventory_open) move_to_front(inventory_root, 0);
+    if (inventory_open) move_to_front(master_root, 0);
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
 
@@ -741,4 +810,6 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
     if (pressed & 0x0100 && filter > 0) { filter--; refresh(); }       /* LB */
     if (pressed & 0x0200 && filter < 5) { filter++; refresh(); }       /* RB */
     if (pressed & 0x1000) { act(); refresh(); }                        /* A */
+    if (pressed & 0x8000) { drop(); refresh(); }                       /* Y */
+    if (pressed & 0x4000) { swap_to_pet(); refresh(); }                /* X */
 }

@@ -972,9 +972,16 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
 - **Assets:** it uses only the imagesets `widgets`, `widgets1`, `widgets2` and the fonts `Serif`,
   `Serif14`, `SerifBig`, `SerifHuge`, `SerifSmall`, all taken by the converter; not `widgets3`-`6`
   or `characters`. **[read]**
-- **Scale:** the 360 draws it for 720 rows in absolute pixels, and CEGUI 0.6 does not scale
-  them (the fonts do). On load every window's `UnifiedAreaRect` offsets are multiplied by the
-  game's height / 720 (1.5 at 1080). The 360's tabbed frame (`mastermenu_xenon`) places the panel;
+- **Scale: one factor, by height, height / 768.** The 360's fonts are PC's (the same TTFs and
+  sizes, `NativeHorzRes 1024`, `NativeVertRes 768`, `AutoScaled`), so they grow by height / 768;
+  the layouts' pixel offsets are scaled by the same factor on load (CEGUI 0.6 does not scale
+  them). The 360's screenshots agree: its 919x690 frame is 1290x967 at 1080 (1.40). (Height / 720,
+  the first try, made the frames 7% larger than the fonts.)
+- **Position: the 360's frame.** `mastermenu_xenon` (919x690, centred; LT/RT tabs, the title, the
+  bottom bar) is loaded too; its `ContainerFrame` (902x630, centred, +19) holds the screens in
+  three columns of 301 (the character, the bag, the pet's bag); the bag's `TopFrame` is moved into
+  it at x = 301. Side by side with the 360's screenshots the frame and the bag fall on the same
+  pixels ((315, 55) and (747, 127) at 1080): `~/torchlight-gog/screens/side-*.png`. The 360's tabbed frame (`mastermenu_xenon`) places the panel;
   here it is moved to where the 360 shows the bag, the frame's middle column ((752, 128) at
   1080 in the 360's screenshots, `~/torchlight-gog/screens/ref/`). **[the runs; the screenshots]**
 
@@ -1027,6 +1034,19 @@ the doll on the left, the pet's bag and the selected item's Info card on the rig
 Stats tabs on LT/RT); filter 3 is "Miscellaneous"; a row shows the name, "DPS: n" or the stack
 "xN", the price with a coin, "Equipped"; an unidentified item's name in red with "???" and "Press A
 to identify"; the action bar outside a shop is A Take off / Use / Learn, Y Drop, X Swap.
+
+**Labels and the action bar** (the 360's English strings, its image: `My Bag`, `Pet Bag`, the
+filters `Weapons`, `Jewelry`, `Miscellaneous`, `Socketables`, `Fish` (Armor is not in that
+table), the actions `Use`, `Equip`, `Unequip`, `Drop`, `Swap`, `Buy`, `Sell`, `DPS:`): the bar
+in the screenshots is A by the item (Unequip on an equipped one, Equip, Use, Learn on a spell),
+Y Drop, X Swap, for every item outside a shop. Y drops the item at the hero's feet (PC's drop
+of an item that does not fit: `removeEquipment`, `CLevel::addItem` `0x4f5960`, the item's
+virtual `+0x198`); X moves it to the pet's bag (the pet's `CInventory`, its `+0x404`; "Swap" as
+the pet's column is **[inferred]**). "Learn" is the Spanish "Aprender" in English **[inferred]**.
+Not working yet, so hidden: the LT/RT tabs, "pet commands", "item comparison".
+- **Open after the side by side:** "Miscellaneous" is clipped in the filter's box (the
+  screenshots are Spanish: an English capture of the 360 would show how it fits); PC's bottom HUD
+  shows under the frame's bottom edge.
 
 **Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
 quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
