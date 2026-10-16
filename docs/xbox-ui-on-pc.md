@@ -1254,22 +1254,24 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   closing (a run: back as before). The minimap is not CEGUI and stays; the 360 shows its own
   minimap there too.
 
-- **The "Effects:" line: stopped after two tries.** The 360's row writes "Effects:" and a count
-  (`sub_82368980`, the string at `0x820d0ef0`; its screenshot: "prefixed shoes / armor 2 /
-  Effects:2"), shown for an identified item with any, not of unit type 1. The count
-  (`sub_822AFA10`): the item's elemental damage bonuses above 0 (a vector of types at `+0x320`,
-  their values at `+0x330`), plus the sizes of the effect manager's three lists (`+0x17c`, then
-  `+0x1c`, `+0x2c`, `+0x3c`), plus the same for each socketed item (`+0x398`). GOG keeps the effect
-  manager at `+0x17c` too (`CEquipment::hasEffects` *(OT)*, GOG `0x4b3c20`; a run: the dagger with a suffix's lists 0 1 0 0, a ring's 2 2 0 0, the unique sword's 0 2 6 1). The
-  bonuses and the sockets are not found: (1) the 360's offsets 0x20 lower, as the identified flag
-  is, read garbage; (2) no two same-sized `std::vector`s 0x10 apart between `+0x1c0` and `+0x420`.
-  Next: the functions that fill them in GOG (`createElementalDamages`, `addSockets` *(OT)*). The
-  line stays hidden.
+- **The "Effects:" line (2026-10-16). [read; seen]** The 360's row writes "Effects:" and a count
+  (`sub_82368980`, the string at `0x820d0ef0`, in the row's `Enchantments` window; its screenshot:
+  "prefixed shoes / armor 2 / Effects:2") for an identified item with any, not a CONSUMABLE
+  (1), and not at a GAMBLER (127). The count (`sub_822AFA10`, recursive): the item's elemental
+  damage bonuses above 0, plus the sizes of the effect manager's three lists (`+0x17c`, then
+  `+0x1c`, `+0x2c`, `+0x3c`), plus the same count for each socketed item. In GOG the fields are
+  where `CEquipment::getDamageBonus` *(OT)* (GOG `0x4b84d0`: the effect types 0x34 and 0xa of the
+  socketed items' managers) reads them: the damage types a `std::vector` at `+0x30c` (begin,
+  end), their bonuses at `+0x324`, the socketed items a list at `+0x3a0` (data, size); the effect
+  manager at `+0x17c` (`hasEffects`, `0x4b3c20`). (Two earlier tries, the 360's offsets moved
+  0x20 and a search for two vectors 0x10 apart, failed: GOG's vectors are 0x18 apart.) A run
+  (`~/torchlight-gog/screens/t40-effects.png`): "Effects:1" in the 360's cyan on the dagger with a suffix (one affix); counted 9 on the unique sword, 6 on the mantle, 3 on the
+  belt (unidentified, so not shown), 0 on plain items.
 
 **Not done yet** (noted for later):
 - the housing's LT/RT tabs (Quest, Stats);
 - "pet commands";
-- the enchantments' line (above), sockets, set items;
+- the sockets' images (`socket0_`, `socket1_`), set items;
 - X (sell) in a shop, the transmuter;
 - the identify scrolls' window;
 - the 360's own HUD: done, section 11b.
@@ -1294,11 +1296,9 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
     its right for experience) and moves its image (`...Sub`) the other way so it stays put (a
     run: `PlayerHealthBar {472.5, 23.5, 525.9, 130.8}`, its Sub `{0, -8.1, 53.4, 107.2}`, 0.93 of
     the health). The fraction, the bar's height (width) over its image's, is given to the 360's
-    bar and image of the same name: health, mana, experience, the pet's health and mana, the
-    target's health.
+    bar and image of the same name: health, mana, experience, the pet's health and mana.
   - **The texts and their visibility** as PC's: `LevelName`, `LargeMessageText`,
-    `SmallMessageText`, `TargetName`, `TargetLevel`, `TargetDescription`, `TargetHealth`, the
-    pet's `FleeingText`; the pet's HUD shown when PC's is.
+    `SmallMessageText`, the pet's `FleeingText`; the pet's HUD shown when PC's is.
   - **The pad's slots:** LB, RB, B, Y, LT, RT press PC's hotbar keys 1 to 6 (section 9), so the
     360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
     and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
@@ -1309,11 +1309,26 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
   where the 360's is, the health and mana potions with "2" over LB and RB, LB drank one ("1"),
   the experience bar at PC's fraction, "the mines' first floor" top right, the pet bottom left with
   its bars and stances; with the inventory open, the orbs behind the frame as on the 360.
-- **Not done:** the target's health: mirrored, but PC shows its `TargetHealth` for the unit under
-  the mouse, and the pad leaves none there (a run, `t33-target.png`: a goblin fighting the hero,
-  no bar); the 360 shows it for its own target (to read: where its `CGameUI` fills it); the pet's
-  stance buttons (the 360's three images, not PC's state); `AvailableSkillsIcon`; the minimap is
-  PC's (not CEGUI); the HUD's own position checked against the 360's (by eye, the same).
+- **The target's health, the 360's rule (2026-10-16). [read; seen]** The 360's HUD update
+  (`sub_821A83C8`) takes, as PC's (GOG `0x558750`) does: the hero's target (`+0x284`; PC's `+0x290`)
+  while an attack button is held, else the unit under the cursor (its `CGameUI`'s `+0x48`; PC's
+  `+0x2c`), and then, which PC does not have, the player's virtual `+0x1cc` (`0x82200C78`: its
+  `+0x9f8`), the unit its attack (`sub_822919A8`) sets through the virtual `+0x1c8`
+  (`sub_822D7C08`) for 3.0 seconds (the timer at `+0xa00`, run down in `sub_821DC980`). So the 360
+  shows the unit the hero attacks, not X's candidate. Two tries:
+  (1) the unit put in PC's mouse-over pointer (`CGameUI`'s `+0x2c`, a safe pointer, with PC's
+  assignment `0x4944e0`) so that PC draws its bar: PC clears it every frame (logged 0 on every
+  tick after the write), no bar; (2) the 360's HUD filled from the unit, as PC fills its own: the
+  name (the unit's `std::wstring` at `+0x420`, PC's `0x5589a5`), "Level" and the level (`+0xf0`,
+  PC's `0x5588e8`), the bar at the health (`+0x394`, a float; PC's `0x487e00`) over the maximum
+  (`0x4901e0`); the unit kept 3 s from the hero's last attack on it (the hero's target while
+  `performingAttackLoose`), in a safe pointer of ours, so that it goes when the unit dies. A run
+  (`SPAWNCLASS MINE_CHAMPIONS,1,1`, `~/torchlight-gog/screens/t45-target.png`): "Level 1 /
+  Carnivorous Gel" over a nearly empty bar at the top, as the 360's, gone when it died.
+  `TargetDescription` (PC's champion line, `0x4854a0`) is hidden: not done.
+- **Not done:** the pet's stance buttons (the 360's three images, not PC's state);
+  `AvailableSkillsIcon`; the minimap is PC's (not CEGUI); the HUD's own position checked against
+  the 360's (by eye, the same).
 
 ## 12. Pad prompts in other pads' style (2026-10-16)
 

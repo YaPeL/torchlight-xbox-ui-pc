@@ -508,6 +508,13 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_STACK 0x1e4                  /* CEquipment: the stack's count (OT +0x238, getStackSizeOfEquipment) */
 #define GOG_SELL_PRICE 0x004b3a90        /* CEquipment::sellPrice() */
 #define GOG_DPS 0x004b8f10               /* CEquipment::DPS(), an int (fistp into eax) */
+/* CEquipment's elemental damages and sockets, as getDamageBonus (OT) reads them (GOG 0x4b84d0):
+ * the damage types (a std::vector's begin and end), their bonuses (begin), the socketed items (a
+ * TArrayList: data, size). */
+#define GOG_DAMAGE_TYPES 0x30c
+#define GOG_DAMAGE_BONUSES 0x324
+#define GOG_SOCKETED 0x3a0
+#define GOG_EFFECT_MANAGER 0x17c         /* CEquipment: its CEffectManager (hasEffects, GOG 0x4b3c20) */
 #define GOG_ARMOR 0x2ec                  /* CEquipment: its armour, read by PC's tooltip for an ARMOR (13), GOG 0x543d2f */
 #define INV_SLOTS 0x18                   /* CInventory: its number of slots */
 #define INV_PANE_STARTS 0x60             /* CInventory: the panes' first slots (a vector of int) */
@@ -812,6 +819,19 @@ static void compare_arrow(int row, unsigned char *item, int equipped) {
 /* A row's details, as the 360's screenshots show them: the price with its coin (PC's sellPrice);
  * "DPS: n" for an identified weapon, "xN" for a stack; an unidentified item's name in red, "???"
  * and "Press A to identify" (the 360's strings). Hidden when empty, as sub_82368980 does. */
+/* The count after "Effects:" (sub_822AFA10): the elemental damage bonuses above 0, the sizes of the
+ * effect manager's three lists, and the same for each socketed item. */
+static int effects_count(unsigned char *item) {
+    int **types = (int **)(item + GOG_DAMAGE_TYPES), *bonus = *(int **)(item + GOG_DAMAGE_BONUSES);
+    unsigned char *manager = *(unsigned char **)(item + GOG_EFFECT_MANAGER);
+    unsigned char **sockets = *(unsigned char ***)(item + GOG_SOCKETED);
+    int n = 0, i, count = (int)(types[1] - types[0]), socketed = *(int *)(item + GOG_SOCKETED + 4);
+    for (i = 0; i < count; i++) if (bonus[i] > 0) n++;
+    if (manager) n += *(int *)(manager + 0x1c) + *(int *)(manager + 0x2c) + *(int *)(manager + 0x3c);
+    for (i = 0; i < socketed; i++) if (sockets[i]) n += effects_count(sockets[i]);
+    return n;
+}
+
 static void fill_details(int row, unsigned char *item) {
     char name[48], buf[64], *p;
     int identified = item[GOG_IDENTIFIED] != 0, stack = *(int *)(item + GOG_STACK);
@@ -836,6 +856,15 @@ static void fill_details(int row, unsigned char *item) {
     text(win(name), identified ? "" : "Press A to identify");
     prop(win(name), "TextColour", "FFFF2A2A");
     show(win(name), !identified);
+    /* "Effects:" and the count (sub_82368980, the string at 0x820d0ef0) for an identified item
+     * with any, not a CONSUMABLE (1); the 360 also hides it at a GAMBLER (127). */
+    {
+        int effects = identified && !isa(item, 1) ? effects_count(item) : 0;
+        p = buf;
+        if (effects) { copy(buf, sizeof buf, "Effects:", 0); p = put_int(buf + 8, effects); }
+        *p = 0;
+        row_name(name, "Enchantments", row); text(win(name), buf); show(win(name), effects != 0);
+    }
     row_name(name, "SlotText", row);
     {
         char colour[32];
@@ -914,11 +943,9 @@ static void refresh(void) {
                                                             : "set:X360_widgets1 image:item_tray");
         prop(tray, "Alpha", idx == selected[filter] && active_panel == focus_panel ? "1.0"
                             : list_slot[idx] < EQUIPPED_SLOTS ? "0.9" : "0.6");
-        /* Not filled yet (the 360's sub_82368980), so hidden as the 360 hides each when it has no
-         * text: damage and armour, requirements, enchantments, quality, price, sockets, the
-         * comparison arrow. */
+        /* The details (sub_82368980); the quality and the sockets are not filled yet, so hidden as
+         * the 360 hides each when it has no text. */
         fill_details(row, (unsigned char *)list[idx]);
-        row_name(name, "Enchantments", row); show(win(name), 0);
         row_name(name, "Quality", row); show(win(name), 0);
         compare_arrow(row, (unsigned char *)list[idx], list_slot[idx] < EQUIPPED_SLOTS);
         row_name(name, "socket0_", row); show(win(name), 0);
@@ -1143,6 +1170,8 @@ static void show_info(void *item, float y, float list_left) {
         x360_log(first ? "x360 inv: info with comparison, " : "x360 inv: info, ");
         x360_log(name);
         if (name_colour((unsigned char *)item, name, sizeof name)) { x360_log(" colour "); x360_log(name); }
+        *put_int(name, effects_count((unsigned char *)item)) = 0;
+        x360_log(" effects "); x360_log(name);
         x360_log("\r\n");
     }
     info_item = item;
@@ -1912,22 +1941,32 @@ static void *pc_hud_root;
  * Sub {0, -8.1, 53.4, 107.2} at 0.93 of the hero's health). The fraction is the bar's height (or
  * width) over its image's; the 360's bar and image of the same names are set to it, from their
  * layout's full rects (full[8], scaled). */
+static void set_bar(const char *prefix, const char *bar, const char *sub, int horizontal, float full[8], float f);
+
 static void mirror_bar_of(const char *prefix, const char *bar, const char *sub, int horizontal, float full[8]) {
-    void *pb = pc_window(bar), *ps = pc_window(sub), *xb = win_of(prefix, bar), *xs = win_of(prefix, sub);
+    void *pb = pc_window(bar), *ps = pc_window(sub);
     char value[128];
-    float b[8], i[8], f, v[8], size;
-    int j;
-    if (!pb || !ps || !xb) return;
+    float b[8], i[8], size;
+    if (!pb || !ps) return;
     read_prop(pb, "UnifiedAreaRect", value, sizeof value);
     if (!parse_rect(value, b)) return;
     read_prop(ps, "UnifiedAreaRect", value, sizeof value);
     if (!parse_rect(value, i)) return;
+    size = horizontal ? i[5] - i[1] : i[7] - i[3];
+    set_bar(prefix, bar, sub, horizontal, full, size > 0 ? (horizontal ? b[5] - b[1] : b[7] - b[3]) / size : 0);
+}
+
+/* The 360 bar `bar` of `prefix` filled to the fraction f; `full`, its full rect, read once. */
+static void set_bar(const char *prefix, const char *bar, const char *sub, int horizontal, float full[8], float f) {
+    void *xb = win_of(prefix, bar), *xs = win_of(prefix, sub);
+    char value[128];
+    float v[8];
+    int j;
+    if (!xb) return;
     if (!full[0] && !full[1] && !full[5] && !full[7]) {          /* the 360 bar's full rect, once */
         read_prop(xb, "UnifiedAreaRect", value, sizeof value);
         if (!parse_rect(value, full)) return;
     }
-    size = horizontal ? i[5] - i[1] : i[7] - i[3];
-    f = size > 0 ? (horizontal ? b[5] - b[1] : b[7] - b[3]) / size : 0;
     if (f < 0) f = 0;
     if (f > 1) f = 1;
     for (j = 0; j < 8; j++) v[j] = full[j];
@@ -2012,13 +2051,66 @@ static void mirror_icon(const char *slot, const char *pc_slot) {
     show(icon, image[0] != 0);
 }
 
+/* The target's health. The 360's HUD update (sub_821A83C8) shows the hero's target while an
+ * attack button is held, else the unit under the cursor (its +0x48), else the unit the hero last
+ * attacked: the player's virtual +0x1cc, which its attack (sub_822919A8) sets through +0x1c8 for
+ * 3.0 seconds (sub_822D7C08, the timer at +0xa00). PC's update (GOG 0x558750) does the first two
+ * with the mouse, and with the pad there is nothing under it; PC clears its pointer every frame
+ * (CGameUI's +0x2c: a unit put there was gone by the next tick), so the 360's HUD is filled here as
+ * PC fills its own: the name (the unit's std::wstring at +0x420), "Level" and the level (+0xf0),
+ * the health (+0x394, a float) over the maximum (GOG 0x4901e0). The unit is kept in a safe pointer
+ * (PC's assignment, GOG 0x4944e0) so that it reads 0 once the unit is gone. */
+#define GOG_SAFE_ASSIGN 0x004944e0   /* TSafePointer assignment: thiscall (the pointer), the unit */
+#define GOG_HERO_TARGET 0x290        /* CCharacter: its target */
+#define GOG_PERFORMING_ATTACK_LOOSE 0x004863b0
+#define GOG_UNIT_NAME 0x420          /* CCharacter: its shown name, a std::wstring (PC's 0x5589a5) */
+#define GOG_UNIT_LEVEL 0xf0          /* CCharacter: its level (PC's 0x5588e8) */
+#define GOG_UNIT_HEALTH 0x394        /* CCharacter: its health, a float (GOG 0x487e00) */
+#define GOG_MAX_HEALTH 0x004901e0
+typedef void *(__fastcall *safe_assign_fn)(void *pointer, void *edx, void *unit);
+typedef int (__fastcall *performing_fn)(void *unit, void *edx);
+
+static void target_tick(void) {
+    static struct { void *unit; int handle; } last = {0, -1};
+    static unsigned until;
+    static float bar[8];
+    unsigned now = GetTickCount();
+    unsigned char *unit;
+    void *x = win_of(HUD_PREFIX, "TargetHealth");
+    char buf[128], *p;
+    int max;
+    if (!x || !hero) return;
+    unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
+    if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) {
+        if (last.unit != unit) {
+            ((safe_assign_fn)GOG_SAFE_ASSIGN)(&last, 0, unit);
+            x360_log("x360 hud: target shown\r\n");
+        }
+        until = now + 3000;
+    }
+    if (last.unit && (int)(now - until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&last, 0, 0);
+    unit = (unsigned char *)last.unit;
+    show(x, unit != 0);
+    if (!unit) return;
+    if (!wstring_utf8(unit + GOG_UNIT_NAME, buf, sizeof buf)) buf[0] = 0;
+    text(win_of(HUD_PREFIX, "TargetName"), buf); show(win_of(HUD_PREFIX, "TargetName"), 1);
+    copy(buf, sizeof buf, "Level ", 0);
+    p = put_int(buf + 6, *(int *)(unit + GOG_UNIT_LEVEL));
+    *p = 0;
+    text(win_of(HUD_PREFIX, "TargetLevel"), buf); show(win_of(HUD_PREFIX, "TargetLevel"), 1);
+    show(win_of(HUD_PREFIX, "TargetDescription"), 0);
+    max = ((int_get_fn)GOG_MAX_HEALTH)(unit, 0);
+    set_bar(HUD_PREFIX, "TargetHealthBar", "TargetHealthBarSub", 1, bar,
+            max > 0 ? *(float *)(unit + GOG_UNIT_HEALTH) / (float)max : 0);
+}
+
 /* The 360's HUD in play: hud.layout on the GUI sheet, PC's bottom HUD hidden (still updated by
  * PC), the orbs and the experience bar filled as PC's, the level's name, the messages and the
  * target's health as PC shows them. Called with the pad's poll (the game's thread). */
 void x360_hud_tick(void) {
     static unsigned last;
     static int failed;
-    static float health[8], mana[8], xp[8], target[8];
+    static float health[8], mana[8], xp[8];
     unsigned now = GetTickCount();
     if (failed || now - last < 50 || !resolve()) return;
     last = now;
@@ -2087,14 +2179,5 @@ void x360_hud_tick(void) {
     mirror_text("LevelName");
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
-    mirror_text("TargetName");
-    mirror_text("TargetLevel");
-    mirror_text("TargetDescription");
-    {
-        void *p = pc_window("TargetHealth"), *x = win_of(HUD_PREFIX, "TargetHealth");
-        static is_visible_fn vis;
-        if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
-        if (x) show(x, p && vis && vis(p, 0, 0));
-        mirror_bar("TargetHealthBar", "TargetHealthBarSub", 1, target);
-    }
+    target_tick();
 }
