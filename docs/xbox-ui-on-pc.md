@@ -1254,10 +1254,22 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   closing (a run: back as before). The minimap is not CEGUI and stays; the 360 shows its own
   minimap there too.
 
+- **The "Effects:" line: stopped after two tries.** The 360's row writes "Effects:" and a count
+  (`sub_82368980`, the string at `0x820d0ef0`; its screenshot: "prefixed shoes / armor 2 /
+  Effects:2"), shown for an identified item with any, not of unit type 1. The count
+  (`sub_822AFA10`): the item's elemental damage bonuses above 0 (a vector of types at `+0x320`,
+  their values at `+0x330`), plus the sizes of the effect manager's three lists (`+0x17c`, then
+  `+0x1c`, `+0x2c`, `+0x3c`), plus the same for each socketed item (`+0x398`). GOG keeps the effect
+  manager at `+0x17c` too (`CEquipment::hasEffects` *(OT)*, GOG `0x4b3c20`; a run: the dagger with a suffix's lists 0 1 0 0, a ring's 2 2 0 0, the unique sword's 0 2 6 1). The
+  bonuses and the sockets are not found: (1) the 360's offsets 0x20 lower, as the identified flag
+  is, read garbage; (2) no two same-sized `std::vector`s 0x10 apart between `+0x1c0` and `+0x420`.
+  Next: the functions that fill them in GOG (`createElementalDamages`, `addSockets` *(OT)*). The
+  line stays hidden.
+
 **Not done yet** (noted for later):
 - the housing's LT/RT tabs (Quest, Stats);
 - "pet commands";
-- the enchantments' line, sockets, set items;
+- the enchantments' line (above), sockets, set items;
 - X (sell) in a shop, the transmuter;
 - the identify scrolls' window;
 - the 360's own HUD (its orbs and potions around the frame).
