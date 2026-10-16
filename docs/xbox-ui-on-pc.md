@@ -756,9 +756,11 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
 - **The second pass of the target search.** The 360 (`sub_821EB598`): if no enemy is in the cone
   within 7, any unit (alignment 3) in the cone within 3.5 becomes the candidate. Done, with
   GOG's own filters; the 360 leaves out the hero's pet there (the first of its list at `+0x5AC`)
-  and a unit `sub_82198E48` returns; GOG's version leaves out the units on the player's side
-  instead (the alignment test with 1). Breakables: not seen near the hero yet; the log lists the
-  class of every unit and item within 4 units on each press of X or A, to see where they are.
+  and a unit `sub_82198E48` returns. GOG's version first left out every unit on the player's
+  side instead (the alignment test with 1); that also hid the quest givers ("!") and the town's
+  walking NPCs (the user: never highlighted, even when touching). It now leaves out only the pet:
+  GOG's `0x40e720(index)` returns the hero's pets (its vector at `+0x5C4`, the 360's `+0x5AC`), as
+  PC's `clickLeft` uses it (`0x4146c2`).
 - **A, the 360's item rule** (`sub_821A4470`, read in full): the level's item list (GOG
   `[[level+0x68]]`), shown (`+0x19C`), the virtual `+0x20`, `+0x161`; first pass: within ±60
   degrees and 3, or within 0.5, gold counting 0.8 nearer, out of sight counting 10 farther; second

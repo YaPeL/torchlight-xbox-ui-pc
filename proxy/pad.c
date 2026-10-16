@@ -97,6 +97,7 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_ALIGNMENT_MATCHES 0x004eec80 /* cdecl (alignment, unit): findCharacterWithinView's filter */
 #define GOG_UNIT_OK 0x0040e6e0           /* thiscall bool: findCharacterWithinView's last filter */
 #define GOG_SIGHT_UNOBSTRUCTED 0x004fdd60 /* CLevel::sightUnobstructed(Vector3 const*, Vector3 const*, bool) */
+#define GOG_GET_PET 0x0040e720           /* the hero's pet by index (thiscall, int) */
 #define GOG_ISA 0x00480760               /* CBaseUnit::ISA(type), thiscall */
 #define GOG_LEVEL_ITEMS 0x68             /* the level's item list: [[level+0x68]] the first node {item, next} */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
@@ -398,6 +399,7 @@ static void highlight_item(unsigned char *level, void *item) {
  * 30 degrees of the hero's facing and 7 units, with a clear line of sight beyond 0.5; the nearest.
  * (The 360 also prefers units of a kind sub_822A48D0 tells, not read yet.) */
 typedef unsigned char(__cdecl *align_fn)(int alignment, void *unit);
+typedef void *(__fastcall *get_pet_fn)(void *hero, void *edx, int index);
 typedef unsigned char(__fastcall *sight_fn)(void *level, void *edx, const float *from, const float *to, int flag);
 
 static void *unit_in_view(unsigned char *hero, unsigned char *level, const float *m, int alignment, float range) {
@@ -413,8 +415,9 @@ static void *unit_in_view(unsigned char *hero, unsigned char *level, const float
         if (!((bool_fn)(*(void ***)u)[0x20 / 4])(u, 0)) continue;
         if (!u[0x6d] || !u[0x161]) continue;
         if (!((align_fn)GOG_ALIGNMENT_MATCHES)(alignment, u)) continue;
-        /* The 360 leaves out the hero's pet in this search; GOG: units on the player's side. */
-        if (alignment == ALIGN_ANY && ((align_fn)GOG_ALIGNMENT_MATCHES)(1, u)) continue;
+        /* The 360 leaves out the hero's first pet (its list at +0x5ac); GOG's getter of the hero's
+         * pets is 0x40e720(index), as PC's clickLeft uses it (0x4146c2). */
+        if (u == ((get_pet_fn)GOG_GET_PET)(hero, 0, 0)) continue;
         if (!((bool_fn)GOG_UNIT_OK)(u, 0)) continue;
         ((get_position_fn)GOG_GET_POSITION)(u, 0, p, 1);
         dx = p[0] - m[3];
