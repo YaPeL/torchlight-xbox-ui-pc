@@ -1309,7 +1309,9 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
   where the 360's is, the health and mana potions with "2" over LB and RB, LB drank one ("1"),
   the experience bar at PC's fraction, "the mines' first floor" top right, the pet bottom left with
   its bars and stances; with the inventory open, the orbs behind the frame as on the 360.
-- **Not done:** the target's health seen in a run (no enemy near the save's start); the pet's
+- **Not done:** the target's health: mirrored, but PC shows its `TargetHealth` for the unit under
+  the mouse, and the pad leaves none there (a run, `t33-target.png`: a goblin fighting the hero,
+  no bar); the 360 shows it for its own target (to read: where its `CGameUI` fills it); the pet's
   stance buttons (the 360's three images, not PC's state); `AvailableSkillsIcon`; the minimap is
   PC's (not CEGUI); the HUD's own position checked against the 360's (by eye, the same).
 
