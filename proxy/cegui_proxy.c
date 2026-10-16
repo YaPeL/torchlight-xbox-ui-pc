@@ -178,6 +178,9 @@ static FARPROC need(const char *name) {
     return f;
 }
 
+/* For proxy/x360_menu.c: a member of the real DLL by its mangled name. */
+FARPROC x360_need(const char *name) { return need(name); }
+
 static void resolve(void) {
     if (real_load_scheme) return;
     real_c_str = (c_str_fn)need("?c_str@String@CEGUI@@QBEPBDXZ");

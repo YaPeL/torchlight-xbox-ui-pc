@@ -116,8 +116,11 @@ def build(real_dll, out):
         raise SystemExit(f"{real_dll} is the proxy, not the real DLL")
     os.makedirs(out, exist_ok=True)
     src = os.path.join(repo, "proxy", "cegui_proxy.c")
-    with open(src) as f:
-        missing = check_names(f.read(), os.path.dirname(os.path.abspath(real_dll)), real_dll)
+    menu = os.path.join(repo, "proxy", "x360_menu.c")
+    missing = []
+    for path in (src, menu):
+        with open(path) as f:
+            missing += check_names(f.read(), os.path.dirname(os.path.abspath(real_dll)), real_dll)
     if missing:
         raise SystemExit("the proxy names functions these DLLs do not export:\n  " + "\n  ".join(missing))
     with open(os.path.join(out, "proxy.def"), "w") as f:
@@ -135,8 +138,10 @@ def build(real_dll, out):
         ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Focegui_proxy.obj", src],
         ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fopad.obj",
          os.path.join(repo, "proxy", "pad.c")],
+        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fox360_menu.obj",
+         menu],
         ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
-         "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
+         "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "x360_menu.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
     helper = os.path.join(repo, "proxy", "send_input.c")
     steps += [

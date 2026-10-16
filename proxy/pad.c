@@ -138,6 +138,9 @@ static void *candidate, *item_candidate;    /* the 360's +0x1BC and +0x1C4 */
 static unsigned aim_until;                  /* the virtual cursor aims ahead of the hero until then */
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static unsigned prev_buttons;
+void x360_inventory_toggle(void);
+int x360_inventory_open(void);
+#define BUTTON_BACK 0x0020u                 /* XInput's Back */
 #define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
 #define BUTTON_RT 0x20000u
 
@@ -865,6 +868,13 @@ static void order(void) {
     }
     pressed = buttons & ~prev_buttons;
     prev_buttons = buttons;
+    /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
+     * does not move or act in the world. */
+    if (pressed & BUTTON_BACK) {
+        x360_inventory_toggle();
+        if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
+    }
+    if (x360_inventory_open()) return;
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {
