@@ -140,6 +140,7 @@ static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on sc
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
 int x360_inventory_open(void);
+void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
 #define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
 #define BUTTON_RT 0x20000u
@@ -874,7 +875,7 @@ static void order(void) {
         x360_inventory_toggle();
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
-    if (x360_inventory_open()) return;
+    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, ly); return; }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {
