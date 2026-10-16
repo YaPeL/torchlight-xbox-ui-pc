@@ -1101,7 +1101,9 @@ on our buttons. The screen now rebuilds whenever the inventory's fingerprint (it
 stacks) changes, checked every 0.1 s while it is open, as the 360's screen hears every change
 through `iInventoryListener`.
 
-**The frame's three columns** (2026-10-16, night). **[read; not run yet unless said]**
+**The frame's three columns** (2026-10-16, night). **[the runs: `x360-gog-frame-3columns.png`,
+`x360-gog-swap-to-pet.png`]** The pet's bag, the focus moving to it with RB and X moving an
+identify scroll to it (3/63 and 1/63) were seen in runs.
 - **The pet's bag**: the same layout loaded again (prefix `x360pet_`) in the third column (x = 602),
   filled from the pet's `CInventory` (the hero's pet by `0x40e720(0)`, which returns 0 without a
   pet; then the layout's "Your pet has gone to town."). The 360 (`sub_823702E0`, its bags at the
@@ -1113,8 +1115,17 @@ through `iInventoryListener`.
   own stats menu (`STATSMENU.LAYOUT`) has windows of the same names (`CharacterName`,
   `CharacterTitle`, `Level`, `XP`, `FameLevel`, `Fame`, `HP`, `Mana`, `Strength`, `Dexterity`,
   `Magic`, `Defense`); the proxy keeps its root when the game loads it and copies their texts.
-  Whether PC writes them while its menu is closed is checked in the next run's log. The 3D doll
-  (`CharacterViewport`) is not done.
+  The 3D doll (`CharacterViewport`) is not done.
+  - **Stopped after two hypotheses (2026-10-16).** PC moves its stats menu's windows away from the
+    root it loaded (`11_Master`, no children after start); they are found by their full names
+    (the root's prefix plus the name), but PC writes their texts only in its `CStatsMenu`'s update
+    (vtable `0xab87c4`, the virtual `+0x24`, `CSubMenu::update(float)`, GOG `0x5b0d90`, 3000
+    instructions: the level from the hero's `+0x3C8`, the fame level `+0x3D0`, ...), so closed
+    they hold the layout's samples ("Name", "XP:0-0", "HP:100"). Finding the instance among
+    `CGameUI`'s fields to call that update crashed the game before the search ended, twice (first
+    with a `break` out of a `__try`, then with the reads inside it). The column now shows its
+    frame and labels with no numbers. Next: read the hero's fields as that update does, without
+    calling it. **[the runs]**
 - **The icon's background** (`sub_82368980`, its table at `0x8339FB08`): red for a weapon, armour
   or trinket the hero cannot equip (CEquipment's virtual `+0x164`, `(character, 1)`), gold for
   UNIQUE (the 360 names `traycolor_gold`, which its imageset lacks; yellow stands in), blue for

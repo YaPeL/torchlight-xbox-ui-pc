@@ -346,10 +346,13 @@ static void match_spacing(float width, float height) {
         if (!font) continue;
         g = (float *)glyph(font, 0, 'e');
         if (patched_e[f] && g && g[1] == patched_e[f]) continue;          /* still as patched */
+        {
+            float *own = font_scaling(font);
+            if (!own) { x360_log("x360 menu: a 360 font's scaling not found\r\n"); continue; }
+        }
         __try {
             size2 s720 = {1280.0f, 720.0f}, real = pc;
             float *own = font_scaling(font);
-            if (!own) { x360_log("x360 menu: a 360 font's scaling not found\r\n"); continue; }
             /* The game's native width for its fonts (1365): the 360's text is not stretched either. */
             own[2] = pc_scaling[2];
             own[3] = pc_scaling[3];
@@ -566,7 +569,9 @@ static void probe_strings(unsigned char *item) {
 static void item_name(unsigned char *item, char *out, unsigned size) {
     out[0] = 0;
     if (name_offset) {
-        __try { if (wstring_utf8(item + name_offset, out, size)) return; } __except (1) {}
+        int ok = 0;
+        __try { ok = wstring_utf8(item + name_offset, out, size); } __except (1) { ok = 0; }
+        if (ok) return;
     }
     copy(out, size, "?", 0);
 }
@@ -811,6 +816,53 @@ static void *character_root;
 typedef void *(__fastcall *child_search_fn)(const void *self, void *edx, const void *name);
 typedef const void *(__fastcall *get_text_fn)(const void *self, void *edx);
 
+typedef const void *(__fastcall *get_name_fn)(const void *self, void *edx);
+
+/* A window under root whose name, without the layout's random prefix ("NN_"), is name. */
+static void *find_by_name(void *root, const char *name, int depth) {
+    static get_name_fn get_name;
+    const char *n;
+    unsigned i, count;
+    if (!get_name) get_name = (get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!root || !get_name || depth > 12) return 0;
+    n = c_str(get_name(root, 0), 0);
+    if (n) {
+        const char *u = n;
+        while (*u >= '0' && *u <= '9') u++;
+        if (*u == '_' && u != n) u++; else u = n;
+        {
+            const char *a = u, *b = name;
+            while (*a && *a == *b) a++, b++;
+            if (!*a && !*b) return root;
+        }
+    }
+    count = child_count(root, 0);
+    for (i = 0; i < count; i++) {
+        void *w = find_by_name(child_at(root, 0, i), name, depth + 1);
+        if (w) return w;
+    }
+    return 0;
+}
+
+/* PC's CStatsMenu (vtable 0xab87c4, GOG) writes its texts only in its update (the virtual +0x24,
+ * CSubMenu::update(float), GOG 0x5b0d90); with its menu closed they keep the layout's samples
+ * ("Name", "XP:0-0"). The instance is one of CGameUI's fields; its update is called before the
+ * texts are copied. */
+#define GOG_STATS_MENU_VTABLE 0x00ab87c4
+static void *pc_stats_menu(void) {
+    static void *found;
+    unsigned i;
+    if (found || !ui) return found;
+    for (i = 0; i < 0x1000 / 4 && !found; i++) {
+        void *p = 0;
+        unsigned vt = 0;
+        __try { p = ((void **)ui)[i]; vt = p ? *(unsigned *)p : 0; } __except (1) { vt = 0; }   /* no jump out of a __try */
+        if (vt == GOG_STATS_MENU_VTABLE) found = p;
+    }
+    x360_log(found ? "x360 chr: PC's stats menu found\r\n" : "x360 chr: PC's stats menu not found\r\n");
+    return found;
+}
+
 static void fill_character(void) {
     static const char *const pairs[][2] = {
         {"characterName", "CharacterName"}, {"CharacterTitle", "CharacterTitle"}, {"Level", "Level"},
@@ -821,13 +873,47 @@ static void fill_character(void) {
     get_text_fn get_text = (get_text_fn)need("?getText@Window@CEGUI@@QBEABVString@2@XZ");
     unsigned i;
     if (!character_root || !x360_pc_stats_root || !search || !get_text) return;
+    /* Not used (2026-10-16): PC fills these texts only in its stats menu's update, and finding and
+     * calling it (pc_stats_menu) crashed the game in two runs before the search ended; until the
+     * hero's own fields are read, the column shows its labels and no numbers. */
+    (void)pc_stats_menu;
+    for (i = 0; i < sizeof pairs / sizeof pairs[0]; i++) text(win_of(CHR_PREFIX, pairs[i][0]), "");
+    return;
+    if (!logged) {
+        /* A diagnosis: the stats menu's first two levels of names. */
+        get_name_fn get_name = (get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        unsigned a, b, na;
+        __try {
+            x360_log("x360 chr: root "); x360_log(c_str(get_name(x360_pc_stats_root, 0), 0));
+            na = child_count(x360_pc_stats_root, 0);
+            x360_log(", children "); x360_log_num((long)na); x360_log(":");
+            for (a = 0; a < na && a < 12; a++) {
+                void *c = child_at(x360_pc_stats_root, 0, a);
+                unsigned nb = child_count(c, 0);
+                x360_log(" "); x360_log(c_str(get_name(c, 0), 0)); x360_log("(");
+                for (b = 0; b < nb && b < 40; b++) { x360_log(c_str(get_name(child_at(c, 0, b), 0), 0)); x360_log(","); }
+                x360_log(")");
+            }
+            x360_log("\r\n");
+        } __except (1) { x360_log("x360 chr: the dump threw\r\n"); }
+    }
     for (i = 0; i < sizeof pairs / sizeof pairs[0]; i++) {
         object n;
         void *pc = 0;
         const char *t = "";
         string_ctor(&n, 0, pairs[i][1]);
         __try {
-            pc = search(x360_pc_stats_root, 0, &n);
+            /* PC moves its stats menu's windows out from under the root it loaded (a run: "11_Master",
+             * no children); they keep the layout's prefix, so they are found by their full name. */
+            char full[96], pre[16];
+            const char *rn = c_str(((get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ"))(x360_pc_stats_root, 0), 0);
+            unsigned q = 0;
+            (void)search;
+            while (rn && rn[q] && rn[q] != '_' && q < sizeof pre - 2) { pre[q] = rn[q]; q++; }
+            pre[q] = '_'; pre[q + 1] = 0;
+            copy(full, sizeof full, pre, 0);
+            pc = win_of(full, pairs[i][1]);
+            if (!pc) pc = find_by_name(x360_pc_stats_root, pairs[i][1], 0);
             if (pc) t = c_str(get_text(pc, 0), 0);
         } __except (1) { pc = 0; t = ""; }
         string_dtor(&n, 0);
