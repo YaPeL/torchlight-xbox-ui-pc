@@ -1116,6 +1116,19 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   `CharacterTitle`, `Level`, `XP`, `FameLevel`, `Fame`, `HP`, `Mana`, `Strength`, `Dexterity`,
   `Magic`, `Defense`); the proxy keeps its root when the game loads it and copies their texts.
   The 3D doll (`CharacterViewport`) is not done.
+  - **The numbers, read through PC's own functions (the user's order, 2026-10-16):** CStatsMenu's
+    update (GOG `0x5b0d90`) reads them so: the getters OT names `CCharacter::strength`,
+    `dexterity`, `magic`, `defense` (GOG `0x487ec0`, `0x487e60`, `0x487d70`, `0x487d00`: the base
+    `+0x3AC`.. plus effects), the maximum HP `0x4901e0` and mana `0x490330`; no getters for the
+    level (`+0xF0`), the experience (`+0x3C8`), the fame (`+0x3CC`) and its level (`+0x3D0`): PC's
+    menu reads those fields itself, and so does the proxy; the next level's experience and fame
+    from the experience table (`0x5281d0`, then `0x528130` by level, `0x528180` by fame level);
+    the name a wstring at `+0x420`. A run read them right (level 1, XP 130/4000, fame 0/1600, HP
+    300, "<the character's name>"). The fame title is not done.
+  - **But they do not show (stopped after two hypotheses).** The windows are found, visible,
+    scaled, and hold the texts (read back: "300", "1", "<the character's name>"), yet nothing is drawn; the
+    layout's own "MP" label is not drawn either, while "HP", "Level" and "Stats" are. Neither
+    taking `AlwaysOnTop` off nor setting `TextColour` white changed it. Open.
   - **Stopped after two hypotheses (2026-10-16).** PC moves its stats menu's windows away from the
     root it loaded (`11_Master`, no children after start); they are found by their full names
     (the root's prefix plus the name), but PC writes their texts only in its `CStatsMenu`'s update

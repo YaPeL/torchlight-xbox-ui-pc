@@ -893,6 +893,41 @@ static void fill_character(void) {
     p = put_int(buf, ((int_get_fn)GOG_MAGIC)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "magicPts"), buf);
     p = put_int(buf, ((int_get_fn)GOG_DEFENSE)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "defPts"), buf);
     if (!logged) {
+        /* A diagnosis: the numbers did not show in a run though they were read. */
+        typedef unsigned char (__fastcall *visible_fn)(const void *self, void *edx, int local_only);
+        visible_fn visible = (visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        static const char *const probe[] = {"HP", "Level", "characterName"};
+        unsigned q;
+        for (q = 0; q < 3; q++) {
+            void *w = win_of(CHR_PREFIX, probe[q]);
+            char v[160];
+            x360_log("x360 chr: window "); x360_log(probe[q]); x360_log(w ? " found" : " missing");
+            if (w) {
+                read_prop(w, "Text", v, sizeof v); x360_log(", text \""); x360_log(v); x360_log("\"");
+                x360_log(visible && visible(w, 0, 0) ? ", visible" : ", hidden");
+                read_prop(w, "UnifiedAreaRect", v, sizeof v); x360_log(", rect "); x360_log(v);
+                read_prop(w, "Font", v, sizeof v); x360_log(", font "); x360_log(v);
+                read_prop(w, "TextColours", v, sizeof v); x360_log(", colours "); x360_log(v);
+            }
+            x360_log("\r\n");
+        }
+        {
+            /* The column's tree: names and rects, three levels down from its root. */
+            get_name_fn gn = (get_name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+            void *stack[64];
+            int depth[64], sp = 0;
+            stack[sp] = win_of(CHR_PREFIX, "TopFrame"); depth[sp++] = 0;
+            while (sp > 0) {
+                void *w = stack[--sp];
+                int d = depth[sp];
+                char v[128];
+                unsigned c, nc = child_count(w, 0);
+                read_prop(w, "UnifiedAreaRect", v, sizeof v);
+                x360_log("x360 chr: tree "); x360_log_num(d); x360_log(" "); x360_log(c_str(gn(w, 0), 0));
+                x360_log(" children "); x360_log_num((long)nc); x360_log(" "); x360_log(v); x360_log("\r\n");
+                for (c = 0; c < nc && d < 4 && sp < 63; c++) { stack[sp] = child_at(w, 0, c); depth[sp++] = d + 1; }
+            }
+        }
         logged = 1;
         x360_log("x360 chr: level "); x360_log_num(level); x360_log(" xp "); x360_log_num(xp);
         x360_log("/"); x360_log_num(xp_next); x360_log(" fame "); x360_log_num(fame_level); x360_log(" ");
@@ -915,6 +950,44 @@ static void refresh_all(void) {
     fill_character();
 }
 
+/* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
+ * bag is spent and the item identified as PC does it (the identify effect's handler, GOG 0x4b388b:
+ * +0x2fc set, CItem::destroyItemText 0x4d1cc0). The scroll is found by its name (GOG's English
+ * "identify scroll"); a stack loses one, the last one is taken out and destroyed as PC destroys an
+ * item (removeEquipment, then the virtual destructor +0 with 1). */
+#define GOG_DESTROY_ITEM_TEXT 0x004d1cc0
+static int identify(unsigned char *item) {
+    unsigned char *inv = (unsigned char *)(hero ? *(void **)(hero + GOG_INVENTORY) : 0), *scroll = 0;
+    void **refs;
+    unsigned n, i;
+    char name[64];
+    if (!inv) return 0;
+    refs = *(void ***)(inv + INV_REFS);
+    n = *(unsigned *)(inv + INV_REFS + 4);
+    for (i = 0; i < n && !scroll; i++) {
+        unsigned char *ref = (unsigned char *)refs[i], *it;
+        if (!ref || !(it = *(unsigned char **)(ref + REF_ITEM))) continue;
+        item_name(it, name, sizeof name);
+        {
+            const char *a = name, *b = "identify scroll";
+            while (*a && *a == *b) a++, b++;
+            if (!*a && !*b) scroll = it;
+        }
+    }
+    if (!scroll) { x360_log("x360 inv: A: no identify scroll\r\n"); return 0; }
+    item[GOG_IDENTIFIED] = 1;
+    ((void_fn)GOG_DESTROY_ITEM_TEXT)(item, 0);
+    if (*(int *)(scroll + GOG_STACK) > 1) {
+        (*(int *)(scroll + GOG_STACK))--;
+    } else {
+        typedef void (__fastcall *destroy_fn)(void *self, void *edx, int flags);
+        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, scroll);
+        ((destroy_fn)(*(void ***)scroll)[0])(scroll, 0, 1);
+    }
+    x360_log("x360 inv: A: identified\r\n");
+    return 1;
+}
+
 /* A on the selected row: what PC's right click on an inventory slot does (GOG 0x55e156): a
  * useable item is used (useItem); another is equipped into its first free place, or swapped
  * with what is there (getComparisonItems, removeEquipment, equip, the old one picked up into the
@@ -926,6 +999,7 @@ static void act(void) {
     if (!inv || !list_count) return;
     if (panels[active_panel].is_pet) { x360_log("x360 inv: A in the pet's bag: not done yet\r\n"); return; }
     item = (unsigned char *)list[selected[filter]];
+    if (!item[GOG_IDENTIFIED]) { identify(item); return; }
     if (list_slot[selected[filter]] < EQUIPPED_SLOTS) {
         ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
         if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1)) {
