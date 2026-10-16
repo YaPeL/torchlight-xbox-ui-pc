@@ -841,7 +841,7 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
 
 **Responsiveness, X walking, the highlights' distance (2026-10-15, after the user: "el de 360 se
 sigue sintiendo más responsive"; X sometimes walks before attacking; barrels not highlighted; the
-360 highlights NPCs almost touching, ours from far).** **[read; not run yet]**
+360 highlights NPCs almost touching, ours from far).** **[read; the user's run]**
 - **The settings:** GOG runs at 1920x1080, `MAX_RENDER_FPS 60` (the game's own cap, not the
   driver's), `VSYNCH 0`, about 51 fps in `local_settings.txt`. The proxy read the pad only every
   50 ms and chose the candidate every 0.1 s; the 360 does both every frame. Now 4 ms and 15 ms.
@@ -864,10 +864,11 @@ sigue sintiendo más responsive"; X sometimes walks before attacking; barrels no
   client still has those fields: its hover code (`0x41b59d`) highlights them when the mouse is over
   nothing, and its click (`0x4148d5`) takes them. The proxy still calls `setHighlighted` itself;
   writing those fields (watched pointers, `0x5ff800`) is an option for later.
-- **Barrels:** the barrel is the item candidate (the log: "X: break in range") and
-  `CBreakable` uses `CItem`'s `setHighlighted` (`0x4d11e0`; the same `+0x104`, `+0x150` and
-  `0x4812a0`), so the call is made; why it does not show is not known. The log now says the byte
-  `+0x170` after the call, and whether the game turned it off afterwards.
+- **Barrels:** the highlight did show (the log: `+0x170` = 1 on all 7, none switched off); the
+  user then said the 360 does not highlight barrels. They stay the item candidate, so X still
+  breaks them, but the proxy no longer highlights them.
+- **The user's run:** "salió todo ok" (X: 82 attacks in range, 24 in place out of range, 29
+  swings). Steam UNCHANGED. **[the user; the log]**
 
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it

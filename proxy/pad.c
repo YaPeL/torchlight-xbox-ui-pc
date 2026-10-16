@@ -397,26 +397,9 @@ static void highlight_item(unsigned char *level, void *item) {
     if (highlighted_item && in_list(level, GOG_LEVEL_ITEMS, highlighted_item))
         ((set_bool_fn)(*(void ***)highlighted_item)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted_item, 0, 0);
     highlighted_item = item;
-    if (item) {
+    /* Barrels stay the item candidate (X breaks them) but the 360 does not highlight them. */
+    if (item && !derives_from(item, ".?AVCBreakable@@"))
         ((set_bool_fn)(*(void ***)item)[GOG_SET_HIGHLIGHTED_SLOT])(item, 0, 1);
-        /* The user saw no highlight on barrels though X breaks them: what the byte says. */
-        if (derives_from(item, ".?AVCBreakable@@")) {
-            x360_log("pad: highlight barrel, +0x170 = ");
-            x360_log_num(((unsigned char *)item)[0x170]);
-            x360_log("\r\n");
-        }
-    }
-}
-
-/* Logs once if something switched the highlighted barrel off again (the byte +0x170). */
-static void check_item_highlight(unsigned char *level) {
-    static void *reported;
-    unsigned char *it = (unsigned char *)highlighted_item;
-    if (!it || it == reported || !in_list(level, GOG_LEVEL_ITEMS, it) || it[0x170]) return;
-    reported = it;
-    x360_log("pad: highlight of ");
-    x360_log(class_of(it));
-    x360_log(" switched off by the game\r\n");
 }
 
 /* The 360's choice of target (sub_821B58C0, read in section 9e): every unit that passes PC's
@@ -991,7 +974,6 @@ static void order(void) {
                 }
             }
             want_items = 0;
-            check_item_highlight(level);
             highlight(level, candidate);
             highlight_item(level, item_candidate);
         }
