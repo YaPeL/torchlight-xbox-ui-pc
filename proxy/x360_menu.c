@@ -29,6 +29,8 @@ FARPROC x360_need(const char *name);
 __declspec(dllimport) HWND __stdcall GetActiveWindow(void);
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
 __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
+__declspec(dllimport) void *__stdcall GetModuleHandleA(const char *name);
+__declspec(dllimport) void *__stdcall GetProcAddress(void *module, const char *name);
 
 /* Resolved in CEGUIBase_orig.dll; the build checks every name against the user's DLL. */
 static FARPROC need(const char *name) { return x360_need(name); }
@@ -384,6 +386,53 @@ static void match_spacing(float width, float height) {
 
 /* ---- loading ---- */
 
+/* Every window under w drawn whole, not clipped to its parent (the character column: its windows
+ * clipped by their parents were not drawn at all, those the layout marks ClippedByParent False
+ * were). */
+static void unclip_tree(void *w, int depth) {
+    unsigned i, n;
+    prop(w, "ClippedByParent", "False");
+    if (depth > 12) return;
+    n = child_count(w, 0);
+    for (i = 0; i < n; i++) unclip_tree(child_at(w, 0, i), depth + 1);
+}
+
+/* PC's own interface (the GUI sheet's other children: the HUD, the portrait, the skill bar) is
+ * hidden while the 360's screen is open, and what was visible is shown again on closing. The 360
+ * keeps its own HUD (the orbs, the potions, the minimap) around its frame; PC's is another. */
+typedef unsigned char (__fastcall *is_visible_fn)(const void *self, void *edx, int local_only);
+#define MAX_HIDDEN 64
+static void *hidden_pc[MAX_HIDDEN];
+static int hidden_count;
+static int is_ours(void *w);
+
+static void hide_pc_ui(int hide) {
+    static is_visible_fn is_visible;
+    static int logged;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
+    unsigned i, n;
+    if (!is_visible) is_visible = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!hide) {
+        while (hidden_count > 0) set_visible(hidden_pc[--hidden_count], 0, 1);
+        return;
+    }
+    if (!sheet || !is_visible) return;
+    n = child_count(sheet, 0);
+    for (i = 0; i < n && hidden_count < MAX_HIDDEN; i++) {
+        void *w = child_at(sheet, 0, i);
+        if (is_ours(w) || !is_visible(w, 0, 1)) continue;
+        if (!logged) {
+            typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+            static name_fn gn;
+            if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+            x360_log("x360 menu: hiding PC's "); x360_log(c_str(gn(w, 0), 0)); x360_log("\r\n");
+        }
+        set_visible(w, 0, 0);
+        hidden_pc[hidden_count++] = w;
+    }
+    logged = 1;
+}
+
 static float k;                              /* the layouts' scale: the game's height / 768 */
 static float moveframe_top;                  /* moveframe's top in the layout, scaled */
 
@@ -441,6 +490,7 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_STACK 0x1e4                  /* CEquipment: the stack's count (OT +0x238, getStackSizeOfEquipment) */
 #define GOG_SELL_PRICE 0x004b3a90        /* CEquipment::sellPrice() */
 #define GOG_DPS 0x004b8f10               /* CEquipment::DPS(), an int (fistp into eax) */
+#define GOG_ARMOR 0x2ec                  /* CEquipment: its armour, read by PC's tooltip for an ARMOR (13), GOG 0x543d2f */
 #define INV_SLOTS 0x18                   /* CInventory: its number of slots */
 #define INV_PANE_STARTS 0x60             /* CInventory: the panes' first slots (a vector of int) */
 
@@ -658,11 +708,16 @@ static void compare_arrow(int row, unsigned char *item, int equipped) {
     void *inv = inventory(), *first = 0, *second = 0;
     int mine, theirs;
     row_name(name, "qualityarrow", row);
-    if (equipped || !inv || !isa(item, 8) || !item[GOG_IDENTIFIED]) { show(win(name), 0); return; }
+    if (equipped || !inv || !(isa(item, 8) || isa(item, 13)) || !item[GOG_IDENTIFIED]) { show(win(name), 0); return; }
     ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
     if (!first || first == item) { show(win(name), 0); return; }
-    mine = ((int_get_fn)GOG_DPS)(item, 0);
-    theirs = ((int_get_fn)GOG_DPS)(first, 0);
+    if (isa(item, 8)) {
+        mine = ((int_get_fn)GOG_DPS)(item, 0);
+        theirs = ((int_get_fn)GOG_DPS)(first, 0);
+    } else {
+        mine = *(int *)(item + GOG_ARMOR);
+        theirs = *(int *)((unsigned char *)first + GOG_ARMOR);
+    }
     if (mine == theirs) { show(win(name), 0); return; }
     prop(win(name), "Image", mine > theirs ? "set:X360_widgets1 image:comparrison_arrow_up"
                                            : "set:X360_widgets1 image:comparrison_arrow_down");
@@ -684,6 +739,11 @@ static void fill_details(int row, unsigned char *item) {
     else if (isa(item, 8)) {
         copy(buf, sizeof buf, "DPS: ", 0);
         p = put_int(buf + 5, ((int_get_fn)GOG_DPS)(item, 0));
+        *p = 0;
+    } else if (isa(item, 13)) {
+        /* The 360 (sub_82368980): its "armor" (the tooltip's word), a space, the value. */
+        copy(buf, sizeof buf, "armor ", 0);
+        p = put_int(buf + 6, *(int *)(item + GOG_ARMOR));
         *p = 0;
     }
     row_name(name, "DamageArmor", row); text(win(name), buf); show(win(name), buf[0] != 0);
@@ -807,6 +867,134 @@ static void refresh(void) {
     }
 }
 
+/* ---- the Info card ----
+ * The 360's card (its screenshots: the item's type, name, "28 damage per second", "(2-handed)",
+ * "Physical Damage: 11-22", over the pet's column at the selected row) is PC's equipment tooltip:
+ * CGameUI::showEquipmentTooltip *(OT)* (GOG 0x541e80, ret 0x14: the character, the item, the
+ * tooltip, the two panels it is compared with), the tooltip CGameUI's +0x2ac, its root window
+ * +0x14 attached to +0x10 (PC detaches it with removeChildWindow when nothing is hovered, GOG
+ * 0x55eb8e). It is filled by PC, then moved onto the GUI sheet, in the frame's third column at the
+ * selected row's height.
+ * Item comparison: the 360's bar shows "enable item compare" / "disable item compare" by its flag
+ * (sub_8236C8D0, the global's +0x14c4) beside the d-pad's left-right image, which turns it. On,
+ * the item is shown with what it would replace: PC's comparison tooltips (CGameUI's +0x2b0 and
+ * +0x2b4, filled from getComparisonItems as PC's hover does, GOG 0x55eb18), here under the card. */
+#define GOG_SHOW_EQUIPMENT_TOOLTIP 0x00541e80
+#define GOG_TOOLTIP 0x2ac                /* then the comparison tooltips at +0x2b0 and +0x2b4 */
+typedef void (__fastcall *show_tooltip_fn)(void *ui, void *edx, void *character, void *item, void *tooltip, void *cmp1, void *cmp2);
+static int compare_on;
+static void *info_item;
+
+/* CEGUI caches each window's screen rect and does not drop the children's when a frame is moved
+ * under another parent (addChildWindow): their pixel rects came back as at the layout's load.
+ * Window::notifyScreenAreaChanged drops them, recursively. */
+static void fresh_rects(void *w) {
+    static void_fn notify;
+    if (!notify) notify = (void_fn)need("?notifyScreenAreaChanged@Window@CEGUI@@QAEXXZ");
+    if (w && notify) notify(w, 0);
+}
+
+static void *parent_of(void *w) {
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    static parent_fn get_parent;
+    if (!get_parent) get_parent = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    return w && get_parent ? get_parent(w, 0) : 0;
+}
+
+static unsigned char *card(int i) { return ui ? *(unsigned char **)(ui + GOG_TOOLTIP + 4 * i) : 0; }
+static void *card_root(int i) { unsigned char *t = card(i); return t ? *(void **)(t + 0x14) : 0; }
+
+static void hide_card(int i) {
+    typedef void (__fastcall *remove_child_fn)(void *self, void *edx, void *child);
+    static remove_child_fn remove_child;
+    void *root = card_root(i), *parent;
+    if (!remove_child) remove_child = (remove_child_fn)need("?removeChildWindow@Window@CEGUI@@QAEXPAV12@@Z");
+    if (!root || !remove_child) return;
+    parent = parent_of(root);
+    if (parent) remove_child(parent, 0, root);
+}
+
+static void hide_info(void) { hide_card(0); hide_card(1); hide_card(2); info_item = 0; }
+
+/* Card i (0 the item's, 1 and 2 the comparison's) filled by PC for item, compared against cards
+ * cmp1 and cmp2, moved onto the sheet; its height in pixels, 0 if none. */
+static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
+    void *root, *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
+    unsigned char *t = card(i);
+    char value[128];
+    float v[8];
+    if (!t || !sheet || !item) { hide_card(i); return 0; }
+    /* PC rebuilds a card only when the item's GUID (its +0x8, kept at the tooltip's +0x8)
+     * changes (GOG 0x54281f); the screen calls it on its own changes (an item identified, a stack
+     * used), so the kept GUID is cleared first. */
+    *(unsigned *)(t + 0x8) = 0xffffffffu;
+    *(unsigned *)(t + 0xc) = 0xffffffffu;
+    __try {
+        ((show_tooltip_fn)GOG_SHOW_EQUIPMENT_TOOLTIP)(ui, 0, hero, item, t, cmp1, cmp2);
+    } __except (1) {
+        x360_log("x360 inv: showEquipmentTooltip threw\r\n");
+        return 0;
+    }
+    root = card_root(i);
+    if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
+    add_child(sheet, 0, root);
+    set_visible(root, 0, 1);
+    read_prop(root, "UnifiedAreaRect", value, sizeof value);
+    return parse_rect(value, v) ? v[7] - v[3] : 0;
+}
+
+/* Card i put at (x, y), kept inside [x, right]. */
+static void place_card(int i, float x, float right, float y) {
+    void *root = card_root(i);
+    char value[128];
+    float v[8], w, h;
+    if (!root) return;
+    read_prop(root, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, v)) return;
+    w = v[5] - v[1]; h = v[7] - v[3];
+    if (right > 0 && x + w > right) x = right - w;   /* a wide card kept inside the column */
+    v[0] = v[2] = v[4] = v[6] = 0;
+    v[1] = x; v[3] = y; v[5] = x + w; v[7] = y + h;
+    write_rect(value, v);
+    prop(root, "UnifiedAreaRect", value);
+    move_to_front(root, 0);
+}
+
+static void show_info(void *item, float y) {
+    typedef struct { float top, bottom, left, right; } rect6;   /* CEGUI 0.6's Rect */
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    static pixel_rect_fn6 rect_of;
+    void *pet_top = win_of(PET_PREFIX, "TopFrame"), *inv = inventory(), *first = 0, *second = 0;
+    float x = 0, right = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, total, bottom = 0;
+    RECT cr;
+    HWND hw = GetActiveWindow();
+    if (!item) { hide_info(); return; }
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (pet_top && rect_of) {
+        rect6 r;
+        fresh_rects(pet_top);
+        rect_of(pet_top, 0, &r);
+        x = r.left + 8.0f * k; right = r.right - 8.0f * k; bottom = r.bottom - 40.0f * k;
+    }
+    if (!bottom && hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom - 80.0f * k;
+    if (compare_on && inv && list_slot[selected[filter]] >= EQUIPPED_SLOTS)
+        ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
+    if (first == item) first = 0;
+    if (second == item) second = 0;
+    h0 = fill_card(0, item, 0, 0);
+    if (!h0) return;
+    if (first) h1 = fill_card(1, first, card(0), 0); else hide_card(1);
+    if (second) h2 = fill_card(2, second, card(0), card(1)); else hide_card(2);
+    total = h0 + (h1 ? gap + h1 : 0) + (h2 ? gap + h2 : 0);
+    if (bottom > 0 && y + total > bottom) y = bottom - total;
+    place_card(0, x, right, y);
+    y += h0 + gap;
+    if (h1) { place_card(1, x, right, y); y += h1 + gap; }
+    if (h2) place_card(2, x, right, y);
+    if (info_item != item) x360_log(first ? "x360 inv: info with comparison\r\n" : "x360 inv: info\r\n");
+    info_item = item;
+}
+
 /* ---- the character column (charactermenu_xenon, the frame's first column) ----
  * PC's own stats menu (STATSMENU.LAYOUT, kept by cegui_proxy.c) has windows of the same names; the
  * texts PC writes there are copied over: the same numbers PC shows. The 3D doll is not done. */
@@ -854,6 +1042,7 @@ static void *pc_stats_menu(void) {
 #define GOG_XP_TABLE 0x005281d0
 #define GOG_XP_FOR_LEVEL 0x00528130
 #define GOG_FAME_FOR_LEVEL 0x00528180
+#define GOG_GAME_DATA 0x00524d40
 typedef void *(__cdecl *table_fn)(void);
 typedef int (__fastcall *int_arg_fn)(void *self, void *edx, int v);
 
@@ -879,7 +1068,26 @@ static void fill_character(void) {
         return;
     }
     if (wstring_utf8(hero + 0x420, buf, sizeof buf)) text(win_of(CHR_PREFIX, "characterName"), buf);
-    text(win_of(CHR_PREFIX, "CharacterTitle"), "");
+    /* The fame title, as PC's stats menu picks it (GOG 0x5b146e): the game data's singleton
+     * (0x524d40) holds the titles, VC9 wstrings of 28 bytes from +0xc8, their count +0xcc, a bound
+     * +0xd0; the title is the fame level's minus one, at most the last. */
+    {
+        char title[96];
+        title[0] = 0;
+        __try {
+            unsigned char *data = ((table_fn)GOG_GAME_DATA)();
+            if (data && fame_level > 0) {
+                unsigned idx = (unsigned)(fame_level - 1), last = *(unsigned *)(data + 0xcc) - 1;
+                unsigned char *titles = *(unsigned char **)(data + 0xc8);
+                if (idx > last) idx = last;
+                if (titles && idx < *(unsigned *)(data + 0xd0)) wstring_utf8(titles + 28 * idx, title, sizeof title);
+            }
+        } __except (1) {
+            title[0] = 0;
+            x360_log("x360 chr: reading the fame title threw\r\n");
+        }
+        text(win_of(CHR_PREFIX, "CharacterTitle"), title);
+    }
     p = put_int(buf, level); *p = 0; text(win_of(CHR_PREFIX, "Level"), buf);
     p = put_int(buf, fame_level); *p = 0; text(win_of(CHR_PREFIX, "FameLevel"), buf);
     copy(buf, sizeof buf, "XP: ", 0); p = put_int(buf + 4, xp); *p++ = '/'; p = put_int(p, xp_next); *p = 0;
@@ -935,6 +1143,24 @@ static void fill_character(void) {
     }
 }
 
+/* The Info card for the hero's selected item, at its row's height. */
+static void update_info(void) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    static pixel_rect_fn6 rect_of;
+    char name[48];
+    void *tray;
+    rect6 r;
+    if (!inventory_open || panels[focus_panel].is_pet || !list_count) { hide_info(); return; }
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    row_name(name, "ItemTray", selected[filter] - top[filter]);
+    tray = win(name);
+    if (!tray || !rect_of) return;
+    fresh_rects(win("TopFrame"));
+    rect_of(tray, 0, &r);
+    show_info(list[selected[filter]], r.top);
+}
+
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
  * layout's "Your pet has gone to town." when there is no pet. */
 static void refresh_all(void) {
@@ -948,6 +1174,8 @@ static void refresh_all(void) {
     select_panel(focus_panel);
     if (cur_owner) refresh();
     fill_character();
+    text(win_of(MASTER, "itemcomparetext"), compare_on ? "disable item compare" : "enable item compare");
+    update_info();
 }
 
 /* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
@@ -1138,6 +1366,139 @@ static void clear_samples(void) {
     show(win("moveframe"), 0);
 }
 
+/* ---- the 3D doll (the 360's CharacterViewport) ----
+ * PC's own inventory shows the hero in 3D: CInventoryMenu (CGameUI's +0x2cc, vtable 0xab73e0) keeps
+ * the wardrobe's scene (+0x7b04) and camera ("WardrobeCam", +0x7b08), and on showing (its virtual
+ * +0x1c, GOG 0x57da90) adds a viewport to the render window (+0x7b0c; RenderTarget's virtual +0x20,
+ * addViewport(camera, Z 3, 0, 0, 1, 1)), kept at +0x7b10, sized with Viewport::setDimensions,
+ * cleared black every frame, the camera's aspect set to the viewport's; on hiding it removes it
+ * (the virtual +0x2c, removeViewport(3)) and zeroes +0x7b10 (its update, 0x580f80). The 360 does the
+ * same with its own camera ("WardrobeCamXenon", sub_8233C534) and the CharacterViewport window's
+ * rect (sub_8235AA28). Here PC's viewport is made and placed on the 360's window; the game draws
+ * CEGUI after every viewport, so the column's texts and frames show over the doll, as on the 360. */
+#define GOG_INVENTORY_MENU 0x2cc
+#define GOG_INVENTORY_MENU_VTABLE 0x00ab73e0
+#define INVMENU_CAMERA 0x7b08
+#define INVMENU_TARGET 0x7b0c
+#define INVMENU_VIEWPORT 0x7b10
+#define IAT_VP_SET_DIMENSIONS 0x00a85fc4
+#define IAT_VP_SET_BACKGROUND 0x00a85fd4
+#define IAT_VP_SET_CLEAR 0x00a85fd8
+#define IAT_VP_ACTUAL_WIDTH 0x00a85fe0
+#define IAT_VP_ACTUAL_HEIGHT 0x00a85fdc
+#define IAT_VP_SET_CAMERA 0x00a85f64
+typedef struct { float top, bottom, left, right; } frect;   /* CEGUI 0.6's Rect */
+typedef frect *(__fastcall *pixel_rect_fn)(const void *self, void *edx, frect *out);
+typedef void *(__fastcall *add_viewport_fn)(void *target, void *edx, void *camera, int z, float l, float t, float w, float h);
+typedef void (__fastcall *remove_viewport_fn)(void *target, void *edx, int z);
+typedef void (__fastcall *set_dims_fn)(void *vp, void *edx, float l, float t, float w, float h);
+typedef void (__fastcall *set_colour_fn)(void *vp, void *edx, const float *rgba);
+typedef void (__fastcall *set_clear_fn)(void *vp, void *edx, int on, unsigned buffers);
+typedef void (__fastcall *set_aspect_fn)(void *camera, void *edx, float ratio);
+
+static unsigned char *pc_inventory_menu(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_INVENTORY_MENU) : 0;
+    return m && *(unsigned *)m == GOG_INVENTORY_MENU_VTABLE ? m : 0;
+}
+
+#define DOLL_ZOOM_OUT 1.6f
+
+/* tan and atan without a C library (the proxy links none), for angles under a right angle. */
+static float tangent(float x) {
+    float x2 = x * x, s = x, c = 1, t = x, u = 1;
+    int i;
+    for (i = 1; i < 8; i++) {
+        t *= -x2 / ((2 * i) * (2 * i + 1)); s += t;
+        u *= -x2 / ((2 * i - 1) * (2 * i)); c += u;
+    }
+    return s / c;
+}
+
+static float arctan(float x) {
+    /* atan(x) = 2 atan(x / (1 + sqrt(1 + x^2))), halved until small, then its series. */
+    float r = x, sum, t, r2;
+    int i, halvings = 0;
+    while ((r > 0.2f || r < -0.2f) && halvings < 8) {
+        float q = 1 + r * r, root = q;
+        for (i = 0; i < 12; i++) root = 0.5f * (root + q / root);
+        r = r / (1 + root);
+        halvings++;
+    }
+    r2 = r * r; sum = r; t = r;
+    for (i = 1; i < 10; i++) { t *= -r2; sum += t / (2 * i + 1); }
+    while (halvings-- > 0) sum *= 2;
+    return sum;
+}
+typedef const float *(__fastcall *get_fovy_fn)(const void *frustum, void *edx);
+typedef void (__fastcall *set_fovy_fn)(void *frustum, void *edx, const float *radian);
+static float fovy_saved;
+
+static void show_doll(int on) {
+    static pixel_rect_fn rect_of;
+    static get_fovy_fn fovy;
+    static set_fovy_fn set_fovy;
+    if (!fovy) {
+        void *ogre = GetModuleHandleA("OgreMain.dll");
+        fovy = ogre ? (get_fovy_fn)GetProcAddress(ogre, "?getFOVy@Frustum@Ogre@@UBEABVRadian@2@XZ") : 0;
+        set_fovy = ogre ? (set_fovy_fn)GetProcAddress(ogre, "?setFOVy@Frustum@Ogre@@UAEXABVRadian@2@@Z") : 0;
+    }
+    unsigned char *m = pc_inventory_menu();
+    void *target, *camera, *vp;
+    if (!m) { x360_log("x360 chr: no CInventoryMenu, no doll\r\n"); return; }
+    target = *(void **)(m + INVMENU_TARGET);
+    camera = *(void **)(m + INVMENU_CAMERA);
+    vp = *(void **)(m + INVMENU_VIEWPORT);
+    if (!target || !camera) return;
+    if (!on) {
+        if (vp) { ((remove_viewport_fn)(*(void ***)target)[0x2c / 4])(target, 0, 3); *(void **)(m + INVMENU_VIEWPORT) = 0; }
+        if (fovy_saved && set_fovy) { set_fovy(camera, 0, &fovy_saved); fovy_saved = 0; }
+        return;
+    }
+    if (!rect_of) rect_of = (pixel_rect_fn)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    {
+        void *view = win_of(CHR_PREFIX, "CharacterViewport");
+        RECT r;
+        HWND w = GetActiveWindow();
+        frect a;
+        float W, H, rgba[4] = {0, 0, 0, 1};
+        if (!view || !rect_of || !w || !GetClientRect(w, &r) || r.right <= r.left || r.bottom <= r.top) return;
+        W = (float)(r.right - r.left);
+        H = (float)(r.bottom - r.top);
+        fresh_rects(win_of(CHR_PREFIX, "TopFrame"));
+        rect_of(view, 0, &a);
+        if (!vp) {
+            vp = ((add_viewport_fn)(*(void ***)target)[0x20 / 4])(target, 0, camera, 3, 0, 0, 1, 1);
+            *(void **)(m + INVMENU_VIEWPORT) = vp;
+        }
+        if (!vp) return;
+        (*(set_dims_fn *)IAT_VP_SET_DIMENSIONS)(vp, 0, a.left / W, a.top / H, (a.right - a.left) / W, (a.bottom - a.top) / H);
+        (*(set_colour_fn *)IAT_VP_SET_BACKGROUND)(vp, 0, rgba);
+        (*(set_clear_fn *)IAT_VP_SET_CLEAR)(vp, 0, 1, 3);
+        {
+            int vw = (*(int_get_fn *)IAT_VP_ACTUAL_WIDTH)(vp, 0), vh = (*(int_get_fn *)IAT_VP_ACTUAL_HEIGHT)(vp, 0);
+            if (vh > 0) ((set_aspect_fn)(*(void ***)camera)[0x138 / 4])(camera, 0, (float)vw / (float)vh);
+        }
+        (*(ptr_fn *)IAT_VP_SET_CAMERA)(vp, 0, camera);
+        /* PC frames the doll for its own 166x192 viewport; in the 360's taller window it would fill
+         * the height and lose its sides, so the camera's field of view is widened (tan of half
+         * the angle times DOLL_ZOOM_OUT) while the screen is open, and given back on closing. */
+        if (fovy && set_fovy && !fovy_saved) {
+            fovy_saved = *fovy(camera, 0);
+            {
+                float wide = 2.0f * arctan(DOLL_ZOOM_OUT * tangent(fovy_saved / 2.0f));
+                set_fovy(camera, 0, &wide);
+            }
+        }
+        x360_log("x360 chr: doll viewport at "); x360_log_num((long)a.left); x360_log(","); x360_log_num((long)a.top);
+        x360_log(" "); x360_log_num((long)(a.right - a.left)); x360_log("x"); x360_log_num((long)(a.bottom - a.top)); x360_log("\r\n");
+    }
+}
+
+static int is_ours(void *w) {
+    return w && (w == master_root || w == inventory_root || w == panels[1].root || w == character_root ||
+                 w == card_root(0) || w == card_root(1) || w == card_root(2));   /* the Info cards, PC's tooltips */
+}
+
 int x360_inventory_open(void) { return inventory_open; }
 
 /* The pad's Back: the 360's inventory on or off. */
@@ -1174,6 +1535,7 @@ void x360_inventory_toggle(void) {
             scale_tree(inventory_root, k, 0);
             if (panels[1].root) scale_tree(panels[1].root, k, 0);
             if (character_root) scale_tree(character_root, k, 0);
+            if (character_root) unclip_tree(character_root, 0);
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
              * ContainerFrame, three columns of 301: the character, the bag, the pet's bag. The bag
              * goes in the second (the screenshots: its frame at (747, 127) of 1080). */
@@ -1191,13 +1553,12 @@ void x360_inventory_toggle(void) {
                     move_by(top, 602.0f * k, 0);
                 }
             }
-            /* Not working yet, so not shown: the LT/RT tabs, pet commands, item comparison. */
+            /* Not working yet, so not shown: the LT/RT tabs, pet commands. */
             show(win_of(MASTER, "lefttrigger"), 0);
             show(win_of(MASTER, "righttrigger"), 0);
             show(win_of(MASTER, "MenuLeft"), 0);
             show(win_of(MASTER, "MenuRight"), 0);
             show(win_of(MASTER, "PetCommands"), 0);
-            show(win_of(MASTER, "ToggleItemCompare"), 0);
             text(win_of(MASTER, "MenuName"), "Inventory");   /* the 360's string (its image, 0x820d17d0) */
             mf = win("moveframe");
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
@@ -1219,6 +1580,9 @@ void x360_inventory_toggle(void) {
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     if (character_root) set_visible(character_root, 0, inventory_open);
     if (inventory_open) move_to_front(master_root, 0);
+    hide_pc_ui(inventory_open);
+    if (character_root) show_doll(inventory_open);
+    if (!inventory_open) hide_info();
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
 
@@ -1283,6 +1647,7 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
         else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 0; }
         refresh_all();
     }
+    if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
     if (pressed & 0x1000) { act(); refresh_all(); }                    /* A */
     if (pressed & 0x8000) { drop(); refresh_all(); }                   /* Y */
     if (pressed & 0x4000) { swap_to_pet(); refresh_all(); }            /* X */
@@ -1311,8 +1676,6 @@ void x360_run_console(void) {
     console = *(void **)(ui + GOG_CONSOLE);
     if (!wctor) {
         void *m = (void *)0;
-        __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *);
-        __declspec(dllimport) void *__stdcall GetProcAddress(void *, const char *);
         m = GetModuleHandleA("msvcp90.dll");
         wctor = m ? (wctor_fn)GetProcAddress(m, "??0?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@PB_W@Z") : 0;
     }
