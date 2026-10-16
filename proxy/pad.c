@@ -482,9 +482,8 @@ static void *item_in_view(unsigned char *hero, unsigned char *level, const float
             /* The 360 leaves out its unit kind 0x1d here; the kind numbers differ between the builds
              * (GOG's 0x7a is not gold), and GOG's list also holds trigger units: items only. */
             if (!derives_from(it, ".?AVCItem@@")) continue;
-            /* Barrels (CBreakable) are the 360's kind 0x1d, left out for A (PC attacks them). Trigger
-             * units (doors, levers) stay: A works them through PC's item order, as a click does. */
-            if (derives_from(it, ".?AVCBreakable@@")) continue;
+            /* Barrels (CBreakable) stay in: the 360 highlights them and X breaks them; A leaves them
+             * (buttons_pressed). Trigger units (doors, levers, chests) are worked by A. */
             if (it[0x19d] || !it[0x161]) continue;
             ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
             dx = p[0] - m[3];
@@ -619,6 +618,23 @@ static void swing_toward(unsigned char *hero, float x, float z) {
     hero[GOG_HOLD_POSITION] = hold;
 }
 
+/* X on a barrel: PC's click on a breakable (clickLeft, its kind 0x1d branch): in range, setTargetItem
+ * and attack(); out of range the 360's X does not walk: an attack in place toward it. */
+static void break_item(unsigned char *hero) {
+    if (((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
+    ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
+    if (((bool_int_fn)GOG_IN_ATTACK_RANGE)(hero, 0, 0)) {
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((void_fn)GOG_ATTACK)(hero, 0);
+        x360_log("pad: X: break in range\r\n");
+    } else {
+        float t[3];
+        ((get_position_fn)GOG_GET_POSITION)(item_candidate, 0, t, 1);
+        swing_toward(hero, t[0], t[2]);
+        x360_log("pad: X: toward the barrel\r\n");
+    }
+}
+
 static void swing(unsigned char *hero) {
     float m[16], dx, dz, len;
     if (!attack_level || ((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
@@ -664,9 +680,13 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     unsigned i;
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
     if (pressed & 0x4000) log_until = GetTickCount() + 3000;
-    if ((pressed & 0x4000) && candidate) attack_candidate(hero);
+    if (pressed & 0x4000) {
+        if (candidate) attack_candidate(hero);
+        else if (item_candidate && derives_from(item_candidate, ".?AVCBreakable@@")) break_item(hero);
+        else swing(hero);
+    }
     if (pressed & 0x1000) {
-        if (item_candidate) {
+        if (item_candidate && !derives_from(item_candidate, ".?AVCBreakable@@")) {
             /* PC's click on an item (clickLeft, GOG 0x4146f8): stopPathing, setTargetItem, mode 7,
              * stopPathing, the virtual +0x1b4 with (0, level): the hero walks to it and picks it up. */
             void **vt = *(void ***)hero;
@@ -679,10 +699,17 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             x360_log(class_of(item_candidate));
             x360_log("\r\n");
         } else if (any_candidate) {
+            /* PC's click on a unit that is no enemy (clickLeft, GOG 0x41461c): setTarget, the mode
+             * virtual with 9, setDestination to the unit: the hero walks to it and talks. */
+            void **vt = *(void ***)hero;
+            float t[3];
             x360_log("pad: A: interact with ");
             x360_log(class_of(any_candidate));
             x360_log("\r\n");
             ((set_target_fn)GOG_SET_TARGET)(hero, 0, any_candidate);
+            ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 9);
+            ((get_position_fn)GOG_GET_POSITION)(any_candidate, 0, t, 1);
+            ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, attack_level, t[0], t[2]);
         } else {
             float m[16];
             void *wide;
@@ -918,6 +945,7 @@ static void order(void) {
         /* X held: search again and keep attacking, as holding PC's button repeats the click. */
         last_order = now;
         if (candidate) attack_candidate(hero);
+        else if (item_candidate && derives_from(item_candidate, ".?AVCBreakable@@")) break_item(hero);
         else swing(hero);
     }
 }

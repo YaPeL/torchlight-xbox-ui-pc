@@ -811,6 +811,22 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   not walk the item list and its item search leaves barrels out; the functions that test the kind
   0x1d (`sub_821A72A0`, `sub_821A83C8`, `sub_821A6668`, ...) are no cone searches. Not found yet.
 
+**The user's session with doors, barrels, NPCs, portals (2026-10-15).** **[the user; the log]**
+- Dungeon chests and the town portal: work with A. Barrels: no highlight, not broken. NPCs:
+  highlighted, but A did nothing. The shared stash (the town's chest): A did not open it.
+- **NPCs are `CMonster`** like the enemies; A only set the target. PC's click on a unit that is no
+  enemy (`clickLeft`, GOG `0x41461c`) does `setTarget`, the mode virtual `+0x174` with 9 and
+  `setDestination` to the unit (the hero walks there and talks): A does that now.
+- **Barrels**, by the user's account of the 360 (highlighted; X breaks them; A does not touch
+  them): they are back in the item candidate (so highlighted); A skips a `CBreakable`; X, with no
+  enemy in the cone, breaks the item candidate if it is one: in range, `setTargetItem` and
+  `attack()` (PC's click on a kind 0x1d item); out of range, the attack in place toward it (X
+  never walks). Where the 360's own code does this is still not found (its item search reads as
+  leaving kind 0x1d out; so 0x1d may not be the barrels' kind).
+- **The shared stash:** class unknown yet; with `pad_log=1` the near list on each press shows it
+  if it is in the unit or item list.
+- The user asked to be told before every launch and to launch only with their OK.
+
 **A save to test from:** `~/torchlight-gog/save-backups/mine-level1/` (the GOG prefix's `save/`
 at the entrance of the mines' first floor, with its settings: the same map every time). Restore it
 with the game closed into the prefix's `runic games/torchlight/save/`.
