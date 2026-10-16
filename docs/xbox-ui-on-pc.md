@@ -986,7 +986,7 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
   1080 in the 360's screenshots, `~/torchlight-gog/screens/ref/`). **[the runs; the screenshots]**
 
 **What the 360 does (read in the image):**
-- **Buttons** (`sub_8236FEF0`, `sub_8236A810`): d-pad left/right toggle the Info view; A acts
+- **Buttons** (`sub_8236FEF0`, `sub_8236A810`): d-pad left/right toggle item compare (below); A acts
   (`sub_8236AA48`); X sells (`sub_8236AD18`, in a shop); Y drops (`sub_82369E80`) or transmutes;
   RB/LB the filter (`sub_8236A488`: 0 to 5, past the ends the housing's next screen); B closes.
 - **The list** (`sub_82369FE8`): the owner's inventory references, the equipped ones first, then
@@ -1115,7 +1115,7 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   own stats menu (`STATSMENU.LAYOUT`) has windows of the same names (`CharacterName`,
   `CharacterTitle`, `Level`, `XP`, `FameLevel`, `Fame`, `HP`, `Mana`, `Strength`, `Dexterity`,
   `Magic`, `Defense`); the proxy keeps its root when the game loads it and copies their texts.
-  The 3D doll (`CharacterViewport`) is not done.
+  The 3D doll: below (2026-10-16, the doll, the Info card, PC's HUD).
   - **The numbers, read through PC's own functions (the user's order, 2026-10-16):** CStatsMenu's
     update (GOG `0x5b0d90`) reads them so: the getters OT names `CCharacter::strength`,
     `dexterity`, `magic`, `defense` (GOG `0x487ec0`, `0x487e60`, `0x487d70`, `0x487d00`: the base
@@ -1124,8 +1124,8 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
     menu reads those fields itself, and so does the proxy; the next level's experience and fame
     from the experience table (`0x5281d0`, then `0x528130` by level, `0x528180` by fame level);
     the name a wstring at `+0x420`. A run read them right (level 1, XP 130/4000, fame 0/1600, HP
-    300, "<the character's name>"). The fame title is not done.
-  - **But they do not show (stopped after two hypotheses).** The windows are found, visible,
+    300, "<the character's name>"). The fame title: below.
+  - **They did not show at first (stopped after two hypotheses; solved below).** The windows are found, visible,
     scaled, and hold the texts (read back: "300", "1", "<the character's name>"), yet nothing is drawn; the
     layout's own "MP" label is not drawn either, while "HP", "Level" and "Stats" are. Neither
     taking `AlwaysOnTop` off nor setting `TextColour` white changed it. Open.
@@ -1144,14 +1144,87 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   UNIQUE (the 360 names `traycolor_gold`, which its imageset lacks; yellow stands in), blue for
   MAGIC, green for RANDOMMAGIC; set items not done.
 - **The comparison arrow**: the 360 compares the item's value with the one equipped in its place
-  (up, down, or none if equal); here weapons by PC's DPS against `getComparisonItems`' first item.
-  Armour's value is not located in GOG yet.
+  (up, down, or none if equal); here weapons by PC's DPS and armour by its value (below) against
+  `getComparisonItems`' first item.
 - **Identified names** in the 360's grey (`FFCCCACF`, a string of its image next to the tabs').
 
-**Not done yet** (noted for later): the rows' damage and armour, requirements, enchantments,
-quality colour, price, sockets and comparison arrow; the Info view; X (sell) and Y (drop); the
-transmuter; the housing's tabs (LT/RT) and the frame; the identify scrolls' window; the pet's
-inventory; the 3D doll and the comparison panel are not part of this screen on the 360.
+**The doll, the Info card, PC's HUD (2026-10-16, the user's "metele").** **[the runs:
+`~/torchlight-gog/screens/t14-unclip.png`, `t20.png`, `t21.png`, `t21-armor.png`,
+`t22-compare.png`]**
+- **The character column's numbers now show.** The windows that drew were those the layout marks
+  `ClippedByParent False`; the others were clipped away. Every window of the column is now
+  unclipped, and they all draw. A likely cause, seen later: CEGUI keeps each window's screen rect
+  and does not drop the children's when a frame is moved under another parent
+  (`addChildWindow`); their pixel rects came back as at the layout's load (the column's
+  `CharacterViewport` at (22, 236) while its `TopFrame` was at (325, 123)).
+  `Window::notifyScreenAreaChanged` (exported, recursive) drops them; the proxy calls it before
+  reading a rect.
+- **The fame title**, as PC's stats menu picks it (GOG `0x5b146e`): the game data's singleton
+  (`0x524d40`) holds the titles (VC9 wstrings of 28 bytes from `+0xc8`, their count `+0xcc`, a
+  bound `+0xd0`), the fame level minus one, at most the last ("Unrecognized" at fame level 1).
+  The name is PC's `+0x420` ("the test character": PC's own name for a character the console was
+  used on).
+- **The 3D doll.** PC's own inventory shows the hero in 3D. `CInventoryMenu` (CGameUI's `+0x2cc`,
+  vtable `0xab73e0`) keeps:
+  - the wardrobe's scene manager (`+0x7b04`) and its camera, "WardrobeCam" (`+0x7b08`);
+  - the render window (`+0x7b0c`).
+
+  On showing (its virtual `+0x1c`, GOG `0x57da90`) PC:
+  - adds a viewport (RenderTarget's virtual `+0x20`, `addViewport(camera, Z 3, 0, 0, 1, 1)`) and
+    keeps it at `+0x7b10`;
+  - sizes it with `Viewport::setDimensions` (166x192 scaled);
+  - clears it black every frame and sets the camera's aspect to the viewport's.
+
+  On hiding (its update, `0x580f80`) it removes the viewport (virtual `+0x2c`,
+  `removeViewport(3)`) and zeroes `+0x7b10`.
+
+  The 360 does the same with its own camera ("WardrobeCamXenon", `sub_8233C534`) on its
+  `CharacterViewport` window's rect (`sub_8235AA28`: the viewport's relative rect from the window,
+  cleared black, the aspect set, `setCamera`).
+
+  Here PC's viewport is made the same way and placed on the 360's window. The game draws CEGUI
+  after every viewport, so the column's texts and frames show over the doll, as on the 360. PC's
+  camera frames the doll for its small viewport, so its vertical field of view is widened while
+  the screen is open (`Frustum::setFOVy`, the tangent of half the angle times 1.6) and given back
+  on closing. The doll follows the equipment (the dagger equipped with A showed in its hand).
+- **The Info card** is PC's equipment tooltip: the 360's card in its screenshots ("Rifle / Small
+  Cannon / 28 damage per second / (2-handed) / Physical Damage") is the same as PC's.
+  - The call: `CGameUI::showEquipmentTooltip` *(OT)* (GOG `0x541e80`, `ret 0x14`) takes the
+    character, the item, the tooltip, and the two cards it is compared with.
+  - The tooltips: CGameUI's `+0x2ac` (then `+0x2b0` and `+0x2b4` for the comparison). The root
+    window is the tooltip's `+0x14`.
+  - The cache: PC rebuilds a card only when the item's GUID changes. The tooltip keeps it at
+    `+0x8` and `+0xc` (GOG `0x54281f`), so the proxy clears it first. Without that, an item
+    identified with A kept its "Unidentified" card.
+  - Placement: the card is moved onto the GUI sheet, in the frame's third column at the selected
+    row's height, kept inside the column.
+  - An unidentified item shows PC's "Unidentified items cannot be used - use an identify scroll
+    to reveal enchantments".
+- **Item compare** (the bar's `ToggleItemCompare`, beside the d-pad's left-right image). The 360
+  writes "enable item compare" or "disable item compare" by a flag (`sub_8236C8D0`, the global's
+  `+0x14c4`); the d-pad left or right turns it. (The d-pad does not toggle the Info card, as read
+  first: the card is always there.) On, the item's card shows what it would replace:
+  `getComparisonItems`, then PC's comparison cards, as PC's hover fills them (GOG `0x55eb18`), here
+  under the card. A run: the dagger with a suffix against both equipped blades, "(equipped -
+  right hand) second blade" and "(equipped - left hand) common blade". Where the 360 puts its
+  comparison is **[inferred]**.
+- **Armour on the rows.** The 360 (`sub_82368980`) writes its "armor" (the tooltip's word), a
+  space and the value, and compares it as it compares DPS. PC's tooltip reads an ARMOR's (unit
+  type 13) value from the item's `+0x2ec` itself (GOG `0x543d2f`; there is no getter). A run:
+  "armor 2" on shoes and the belt.
+- **PC's interface hidden while the screen is open.** The GUI sheet's other children ("Ingame UI
+  Sheet", "Top UI Sheet": the portrait, the skill bar, the orbs) are hidden, and shown again on
+  closing (a run: back as before). The minimap is not CEGUI and stays; the 360 shows its own
+  minimap there too.
+
+**Not done yet** (noted for later):
+- the housing's LT/RT tabs (Quest, Stats);
+- "pet commands";
+- the enchantments' line, sockets, set items;
+- A in the pet's bag;
+- X (sell) in a shop, the transmuter;
+- the identify scrolls' window;
+- the 360's own HUD (its orbs and potions around the frame).
 
 ## 12. Pad prompts in other pads' style (2026-10-16)
 
