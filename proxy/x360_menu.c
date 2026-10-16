@@ -267,15 +267,17 @@ typedef struct { float w, h; } size2;
  * PC's own fonts are untouched) is laid out once at 1280x720 with CEGUI's own FreeType
  * (Font::notifyScreenResolution), its advances kept, then laid out again at the size it had (its
  * own scaling, read from the object: CEGUI 0.6.2's Font keeps d_horzScaling, d_vertScaling just
- * before d_nativeHorzRes 1024, d_nativeVertRes 768; the game's fonts are not laid out at the
- * window's size), so its glyphs keep their size and sharpness, and every advance is replaced by
- * the 360's times height / 720 (the frame's scale against the 360's 720 rows). */
+ * before d_nativeHorzRes 1024, d_nativeVertRes 768), so its glyphs keep their size and sharpness,
+ * and every advance is replaced by the 360's times height / 720 (the frame's scale against the
+ * 360's 720 rows). The size it is laid out again for is PC's own Serif's: a font the scheme
+ * creates is laid out for another size than the game's (a run: X360_Serif larger than PC's
+ * Serif, from the same file), and PC's fonts were the ones the 360's screenshots matched. */
 
 /* The display size the font was laid out for: its scalings times its native resolution. */
 static int font_screen(void *font, size2 *out) {
     float *f = (float *)font;
     int i;
-    for (i = 2; i < 64; i++)
+    for (i = 2; i < 300; i++)    /* after the PropertySet base and three CEGUI::String (152 bytes each) */
         if (f[i] == 1024.0f && f[i + 1] == 768.0f && f[i - 2] > 0.1f && f[i - 2] < 10.0f && f[i - 1] > 0.1f && f[i - 1] < 10.0f) {
             out->w = f[i - 2] * 1024.0f;
             out->h = f[i - 1] * 768.0f;
@@ -303,7 +305,16 @@ static void match_spacing(float width, float height) {
     glyph_fn glyph = (glyph_fn)need("?getGlyphData@Font@CEGUI@@IAEPBVFontGlyph@2@I@Z");
     void *fm = fm_get ? fm_get() : 0;
     unsigned f, cp;
+    size2 pc;
     if (!fm || !get_font || !notify || !glyph || height <= 0) return;
+    {
+        object name;
+        void *serif = 0;
+        string_ctor(&name, 0, "Serif");
+        __try { serif = get_font(fm, 0, &name); } __except (1) { serif = 0; }
+        string_dtor(&name, 0);
+        if (!serif || !font_screen(serif, &pc)) { x360_log("x360 menu: PC's Serif's scaling not found\r\n"); return; }
+    }
     for (f = 0; f < FONTS; f++) {
         object name;
         void *font = 0;
@@ -315,8 +326,11 @@ static void match_spacing(float width, float height) {
         g = (float *)glyph(font, 0, 'e');
         if (patched_e[f] && g && g[1] == patched_e[f]) continue;          /* still as patched */
         __try {
-            size2 s720 = {1280.0f, 720.0f}, real;
-            if (!font_screen(font, &real)) { x360_log("x360 menu: a font's scaling not found\r\n"); continue; }
+            size2 s720 = {1280.0f, 720.0f}, real = pc, own;
+            if (!patched_e[f] && font_screen(font, &own)) {
+                x360_log("x360 menu: "); x360_log(x360_fonts[f]); x360_log(" was laid out for ");
+                x360_log_num((long)own.w); x360_log("x"); x360_log_num((long)own.h); x360_log("\r\n");
+            }
             if (!patched_e[f]) {
                 notify(font, 0, &s720);
                 for (cp = FIRST_CP; cp <= LAST_CP; cp++) {

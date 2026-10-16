@@ -1072,7 +1072,16 @@ updateFont` sizes a font by `NativeHorzRes`/`NativeVertRes` and keeps `horiAdvan
 autohinted), keeps every advance (U+0020-U+024F; `Font::getGlyphData`, a `FontGlyph` {image,
 advance}), lays it out again at the game's size (the glyphs rasterised there, sharp) and replaces
 each advance by the 360's times height / 720. It checks the advance of "e" on every opening and
-does it again if CEGUI laid the font out anew. **[read: CEGUI 0.6.2's source; not run yet]**
+does it again if CEGUI laid the font out anew. **[read: CEGUI 0.6.2's source]**
+- **Runs:** laid back out at the window's size (1920x1080) the fonts came out larger than before
+  ("Unequip" ran into "Drop"): the game's fonts are not laid out for the window's size. Unpatched,
+  the renamed `X360_` fonts are also larger than PC's `Serif` from the same file (a font the
+  scheme creates gets another size than the game's), and PC's were the ones that matched the
+  360's screenshots. So the fonts are laid back out for PC's `Serif`'s own size, read from its
+  object (its scalings before `NativeHorzRes` 1024 and `NativeVertRes` 768, within its first 1200
+  bytes). **[the runs; the last change not run yet]**
+- **The used potion** now stays in its row with its stack lowered (a run: health potion x2 → x1,
+  its price 60 → 30). The weapons' DPS is an int (`fistp` into `eax`), not a float.
 
 **A potion used from the list vanished until the next opening** (the user's run): PC's `useItem`
 takes the stack out while the hero drinks and puts the rest back, and the list was rebuilt only
