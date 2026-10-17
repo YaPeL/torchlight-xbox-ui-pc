@@ -1880,7 +1880,8 @@ health). **Open:**
 
 ## 15. The final list (2026-10-17)
 
-What the night's port left as it is, and why. The screens done are in section 14.
+Every screen of the catalog in scope is ported and compared against the 360's; what follows is
+what they still lack. The screens done are in section 14.
 
 **The user's decisions (left PC's on purpose):**
 - The front end: the title, main menu, options, new and load character.
@@ -1900,11 +1901,13 @@ What the night's port left as it is, and why. The screens done are in section 14
    target is not read.
 6. **The merchant's screen sides** keep PC's panels (PC narrows the world's viewport; stopped
    after two tries), and PC's first-time Tips show after closing a shop.
-7. **Fishing:** PC's ripples under the 360's ring, and PC's result window. A real catch and B
-   (cancel) are for the user to play: they take reflexes.
+7. **Fishing:** PC's ripples under the 360's ring, and PC's result window. A (catch) is tested:
+   PC's catch command, `fishing-catch.png`. B (cancel) is untested. A catch timed to a bite is for
+   the user to play: it takes reflexes.
 8. **Smaller:**
    - the quest NPC's "?" seen through the dialog's panel.
-   - The Fast Scroll factor (`dialog_fast_scroll`, 4, not measured).
+   - The Fast Scroll factor: `dialog_fast_scroll`, 4, chosen here and not measured. The 360's
+     factor is `[r29+268]`, a value of the running game.
    - The gold hidden at the gem pages is not seen in a run.
    - The identify scroll's card text is PC's mouse text (the item's data, unchanged).
    - The card's price at the merchant is 3 pixels off (town/07).
