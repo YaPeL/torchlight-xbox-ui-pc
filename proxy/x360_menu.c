@@ -1350,17 +1350,28 @@ static void hide_info(void) { hide_card(0); hide_card(1); hide_card(2); info_ite
 
 /* Card i (0 the item's, 1 and 2 the comparison's) filled by PC for item, compared against cards
  * cmp1 and cmp2, moved onto the sheet; its height in pixels, 0 if none. */
+#define GOG_MERCHANT_MENU_UI 0x2d8         /* CGameUI's CMerchantMenu (the shop's section below) */
 static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     void *root, *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
     unsigned char *t = card(i);
     char value[128];
     float v[8];
+    int saved31 = -1;
     if (!t || !sheet || !item) { hide_card(i); return 0; }
     /* PC rebuilds a card only when the item's GUID (its +0x8, kept at the tooltip's +0x8)
      * changes (GOG 0x54281f); the screen calls it on its own changes (an item identified, a stack
      * used), so the kept GUID is cleared first. */
     *(unsigned *)(t + 0x8) = 0xffffffffu;
     *(unsigned *)(t + 0xc) = 0xffffffffu;
+    /* The 360's transmuter is its merchant menu in mode 5, so its card has the sell price
+     * (sub_8233FE48: CGameUI's +920 virtual +0xc, the item not of type 103; town/05). PC's
+     * tooltip asks its merchant menu the same (0x5471bc: the virtual +0xc, 0x58dcd0: open, or
+     * +0x31 clear): at the transmuter +0x31 is cleared for the call and put back. */
+    if (at_transmute && ui && *(unsigned char **)(ui + GOG_MERCHANT_MENU_UI)) {
+        unsigned char *mm = *(unsigned char **)(ui + GOG_MERCHANT_MENU_UI);
+        saved31 = mm[0x31];
+        mm[0x31] = 0;
+    }
     __try {
         /* The card's character is the item's owner: for a merchant's item PC writes the price it
          * asks (its tooltip, GOG 0x546c9f: a character other than the hero, of type 41), as the
@@ -1369,8 +1380,10 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
                                                       item, t, cmp1, cmp2);
     } __except (1) {
         x360_log("x360 inv: showEquipmentTooltip threw\r\n");
+        if (saved31 >= 0) (*(unsigned char **)(ui + GOG_MERCHANT_MENU_UI))[0x31] = (unsigned char)saved31;
         return 0;
     }
+    if (saved31 >= 0) (*(unsigned char **)(ui + GOG_MERCHANT_MENU_UI))[0x31] = (unsigned char)saved31;
     root = card_root(i);
     if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
     add_child(sheet, 0, root);
@@ -1423,7 +1436,10 @@ static void show_info(void *item, float y, float list_left) {
         rect6 r;
         fresh_rects(pet_top);
         rect_of(pet_top, 0, &r);
-        x = r.left + 8.0f * k;
+        /* 22 pixels at 1080 into the column (the catalog: 103Base at 1194.6 over the pet's
+         * TopFrame at 1172.7 in menus/08, 1196.1 over 1174.1 in town/05; town/07's merchant card is
+         * 3 more, not explained) */
+        x = r.left + 15.6f * k;
     }
     if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom;
     if (compare_on && inv && list_slot[selected[filter]] >= EQUIPPED_SLOTS)
@@ -1628,7 +1644,6 @@ static void update_info(void) {
  * layout's "Your pet has gone to town." when there is no pet. */
 static void refresh_all(void) {
     int c;
-    if (shop) x360_log("x360 shop: refresh in\r\n");   /* the shared stash's hang, once (docs 14) */
     for (c = 0; c < columns(); c++) {
         int p = column_panel(c);
         if (p == focus_panel || !panels[p].root) continue;
@@ -1642,7 +1657,6 @@ static void refresh_all(void) {
     fill_character();
     text(win_of(MASTER, "itemcomparetext"), x360_text(compare_on ? "compare.disable" : "compare.enable"));
     update_info();
-    if (shop) x360_log("x360 shop: refresh out\r\n");
 }
 
 /* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
@@ -2339,16 +2353,23 @@ void x360_inventory_toggle(void) {
     if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
     if (quest_root) set_visible(quest_root, 0, inventory_open && page == 3);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
-    /* A stash's columns are 303 and 606 apart (sub_823832B8, its constants at 0x820aa8bc), not the
-     * inventory's 299 and 602 (the catalog's town/21: 752 and 1178 at 1080). */
+    /* The columns' places by the menu: the inventory's 299 and 602; a stash's 0, 303 and 606
+     * (sub_823832B8, its constants at 0x820aa8bc; the catalog's town/21: 752 and 1178 at 1080); the
+     * merchant's and the transmuter's -1, 300 and 603 (sub_823788D8: 0x820aa334, 0x820aa5d4,
+     * 0x820aa87c; town/05 and 07: 748 and 1174). */
     {
-        static int shifted;
-        int want = inventory_open && at_stash;
+        static float shifted, shop_shifted;
+        float want = !inventory_open || !shop ? 0.0f : at_stash ? 4.0f : 1.0f;
+        float want_shop = inventory_open && shop && !at_stash ? -1.0f : 0.0f;
         if (want != shifted) {
-            float dx = (want ? 4.0f : -4.0f) * k;
+            float dx = (want - shifted) * k;
             move_by(win_of(PREFIX, "TopFrame"), dx, 0);
             if (panels[1].root) move_by(win_of(PET_PREFIX, "TopFrame"), dx, 0);
             shifted = want;
+        }
+        if (want_shop != shop_shifted && panels[2].root) {
+            move_by(win_of(SHOP_PREFIX, "TopFrame"), (want_shop - shop_shifted) * k, 0);
+            shop_shifted = want_shop;
         }
     }
     if (panels[2].root) set_visible(panels[2].root, 0, inventory_open && shop);

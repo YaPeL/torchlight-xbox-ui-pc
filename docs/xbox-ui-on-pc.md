@@ -1666,11 +1666,11 @@ no pet commands; the merchant's column focused at the start.
   - Fourth run (after the alpha and mode corrections): the rows' alpha (the bag's selected row
     at 1 beside the focused stash), the plain bar in the bag (A by the item, Y, X) and Y and X in
     the stash's column (`screens/gog/stash-1`, `stash-bag-1`, `stash-item-1`,
-    `shared-stash-1`). **Open: a hang.** In the shared stash, after X stored the sword, the
-    game stopped while LB walked the stash's column from Fish back toward Weapons. The frame
-    froze at Miscellaneous, the main thread used all of a core, and the log stopped at an LB
-    press. The game was closed. Run 1 did the same steps without hanging. Not reproduced or
-    explained yet.
+    `shared-stash-1`). A "hang" there (the frame frozen, the log stopped, a core busy) was not
+    one: run 6 saw it again at the merchant while the user had switched windows. Without focus
+    PC stops drawing and reading the pad; its main thread waits in Ogre's loop (a backtrace:
+    `0x40723f` in the top loop, `0x5fdc3b`, `0x606c8d`), and it went on when the window came
+    back.
 
 **The transmuter** (`town/05`; the 360's mode 5, type 134): Duran the Transmuter, a townsman west
 of the gem goblins (`MERCHANT_COMBINER`, unit type `COMBINER`). His frame is the merchant's.
@@ -1694,7 +1694,19 @@ of the gem goblins (`MERCHANT_COMBINER`, unit type `COMBINER`). His frame is the
   - X in the transmuter's column takes the item back as from a stash.
   - Y in any column calls PC's transmute.
 - **Tested** (GOG, run 5): the frame opened at Duran. X placed the sword in a place (1/4) and
-  took it back, and B closed both menus. Y with that one item made nothing (no recipe); a real
-  recipe is untested. PC's card has no sell price here (the 360's shows one, `town/05`).
-  Captures: `screens/gog/transmuter-1`, `transmuter-item-1`, `transmuter-after-1`,
-  `transmuter-back-1`.
+  took it back, and B closed both menus. Y with that one item made nothing (no recipe).
+  Run 6: three health potions bought at the merchant (no console) and put in as one stack of 3
+  in a single place; Y made a larger health potion (PC's recipe `HEALTHPOTION_UPGRADE1` counts a
+  stack), and X took it back. Captures: `screens/gog/transmuter-1`,
+  `transmuter-recipe-before`, `transmuter-recipe-after`.
+- **The columns' places** (`sub_823788D8`, the merchant's menu, the transmuter's too): -1, 300 and
+  603 (constants at `0x820aa334`, `0x820aa5d4`, `0x820aa87c`), not the inventory's 0, 299 and
+  602; the review of run 5 found the bags 1.9 pixels left at the transmuter, and the merchant's
+  column was 1.4 off.
+- **The card's sell price.** The 360's card shows it while its merchant menu (CGameUI's `+920`,
+  the transmuter's too) answers its virtual `+0xc`, for an item not of type 103 (`sub_8233FE48`).
+  PC's tooltip asks its own merchant menu the same (`0x5471bc` → `0x58dcd0`: open, or its `+0x31`
+  clear). The transmuter is another menu in PC, so at the transmuter `+0x31` is cleared for the
+  tooltip's call and put back after it, on the error path too.
+- **The card's place**: 22 pixels at 1080 into the column right of the focused one (the catalog:
+  menus/08 and town/05); it was 11. Open: town/07's merchant card is 25.1 in, not explained.
