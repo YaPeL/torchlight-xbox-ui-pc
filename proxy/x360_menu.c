@@ -1847,6 +1847,10 @@ void x360_run_console(void);
 
 static int petcmd_open;
 static void petcmd_show(int on);
+static void triggers_reset(void);
+static void stats_load(void);
+static void stats_commit(void);
+static void *stats_root, *journal_root;
 static void hide_info(void);
 static void update_info(void);
 
@@ -1858,8 +1862,10 @@ static void page_titles(void) {
     text(win_of(MASTER, "MenuName"), page_name[page]);
     text(win_of(MASTER, "MenuLeft"), page_name[(page + 3) % 4]);
     text(win_of(MASTER, "MenuRight"), page_name[(page + 1) % 4]);
-    /* "pet commands" (Start) on the inventory's page only (the catalog: menus/08 against 10). */
+    /* "pet commands" (Start) and the item compare's toggle on the inventory's page only (the
+     * catalog: menus/08 against 10). */
     show(win_of(MASTER, "PetCommands"), page == 0);
+    show(win_of(MASTER, "ToggleItemCompare"), page == 0);
 }
 
 void x360_inventory_toggle(void) {
@@ -1925,14 +1931,18 @@ void x360_inventory_toggle(void) {
         }
     }
     if (!inventory_root) return;
+    stats_load();
     inventory_open = !inventory_open;
     if (inventory_open) {
         select_panel(0);
         dump();
         refresh_all();
-    }
+        triggers_reset();
+    } else if (page == 1) stats_commit();
     set_visible(master_root, 0, inventory_open);
     set_visible(inventory_root, 0, inventory_open);
+    if (stats_root) set_visible(stats_root, 0, inventory_open && page == 1);
+    if (journal_root) set_visible(journal_root, 0, inventory_open && page == 1);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     if (character_root) set_visible(character_root, 0, inventory_open);
     if (inventory_open) move_to_front(master_root, 0);
@@ -1940,6 +1950,276 @@ void x360_inventory_toggle(void) {
     if (character_root) show_doll(inventory_open);
     if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); }
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
+}
+
+/* ---- the Stats page (RT from the inventory: the catalog's menus/10) ----
+ * The 360's CStatsMenuXenon (vtable 0x8200145c) shows, beside the character's column,
+ * statsmenu_xenon at 299 and journalmenu_xenon at 602 (sub_82385738, its constants at
+ * 0x820aa5e0). Its windows are found through the table at 0x833fa020 (sub_82384338) and filled by
+ * sub_82384738, with the points not yet spent added for the reading (sub_82383ff8) and taken off
+ * again after it (sub_82384118):
+ * - strPts .. defPts: the stat (GOG's getters 0x487ec0, 0x487e60, 0x487d70, 0x487d00); its colour
+ *   by the stat against its base (+0x3ac, +0x3a8, +0x3b4, +0x3b0): FFc0c0ff above, FFFF0000
+ *   below, FFFFFFFF even (sub_82384238);
+ * - strDMG, dexDMG: "min-max" of the damage (GOG 0x499e10 and 0x492f60 with (1,0,0), (0,0,0); the
+ *   colour by the maximum against (.., 1)); magicDMG: the lower non-zero minimum and the higher
+ *   maximum of (0,1,0) and (1,1,0), against (0,1,1), (1,1,1);
+ * - defArmor: "half-armor" (GOG 0x4901b0, 0x4900d0), against the base armor (0x490150);
+ * - ptsToSpend: the points left; the resistances (GOG 0x48ffe0: poison 5, fire 2, ice 3,
+ *   electric 4); strPtsAdded ..: "+" and the points added, shown when any;
+ * - addPoint at 1 while points are left, else 0.25; removePoint at 1 while the stat has points
+ *   added; spendPoints and the stat's help shown while either.
+ * Its input (sub_82385E48): up and down the stat (0 to 3, sub_82385CC0: the window's
+ * statwindow_base_rollover, pieceToMove kept at its offset from it, sub_823845C8); A adds a point
+ * when one is left, Y takes one added back (sub_82385BF0). The points are spent when the page is
+ * left (sub_82385738: sub_82383ff8, here PC's own +1 functions: GOG 0x488450, 0x488470, 0x4884b0,
+ * 0x488490; their -1 at 0x4884d0, 0x4884f0, 0x488530, 0x488510). */
+#define STATS_PREFIX "x360st_"
+#define JOURNAL_PREFIX "x360jr_"
+#define GOG_STAT_POINTS 0x3dc
+typedef int (__fastcall *int_arg3_fn)(void *self, void *edx, int a, int b, int c);
+typedef int (__fastcall *int_arg1_fn)(void *self, void *edx, int a);
+typedef void (__fastcall *unit_void_fn)(void *self, void *edx);
+static const unsigned stat_get[4] = {0x487ec0, 0x487e60, 0x487d70, 0x487d00};
+static const unsigned stat_base[4] = {0x3ac, 0x3a8, 0x3b4, 0x3b0};
+static const unsigned stat_inc[4] = {0x488450, 0x488470, 0x4884b0, 0x488490};
+static const unsigned stat_dec[4] = {0x4884d0, 0x4884f0, 0x488530, 0x488510};
+static const char *const stat_window[4] = {"strength", "dexterity", "magic", "defense"};
+static const char *const stat_pts[4] = {"strPts", "dexPts", "magicPts", "defPts"};
+static const char *const stat_added_window[4] = {"strPtsAdded", "dexPtsAdded", "magicPtsAdded", "defPtsAdded"};
+static const char *const stat_help[4] = {"StrHelp", "DexHelp", "MagicHelp", "DefHelp"};
+static int stat_sel, stat_added[4];
+static float piece_dx, piece_dy;
+
+static void stat_text(const char *name, int value, int diff) {
+    char buf[16], *p = put_int(buf, value);
+    *p = 0;
+    text(win_of(STATS_PREFIX, name), buf);
+    prop(win_of(STATS_PREFIX, name), "TextColour", diff > 0 ? "FFc0c0ff" : diff < 0 ? "FFFF0000" : "FFFFFFFF");
+}
+
+static void range_text(const char *name, int low, int high, int diff) {
+    char buf[32], *p = put_int(buf, low);
+    *p++ = '-';
+    p = put_int(p, high);
+    *p = 0;
+    text(win_of(STATS_PREFIX, name), buf);
+    prop(win_of(STATS_PREFIX, name), "TextColour", diff > 0 ? "FFc0c0ff" : diff < 0 ? "FFFF0000" : "FFFFFFFF");
+}
+
+static void stats_fill(void) {
+    static const int resist_type[4] = {5, 2, 3, 4};
+    static const char *const resist_window[4] = {"poisonRes", "fireRes", "iceRes", "eletricRes"};
+    int i, n, remaining, can_add, can_remove, a, b, low, high, base_high;
+    char buf[16], *p;
+    if (!hero || !stats_root) return;
+    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_inc[i])(hero, 0);
+    for (i = 0; i < 4; i++) {
+        int v = ((int_get_fn)stat_get[i])(hero, 0);
+        stat_text(stat_pts[i], v, v - *(int *)(hero + stat_base[i]));
+    }
+    for (i = 0; i < 2; i++) {
+        int melee = i == 0;   /* strength: (1,0,x); dexterity: (0,0,x) */
+        low = ((int_arg3_fn)0x499e10)(hero, 0, melee, 0, 0);
+        high = ((int_arg3_fn)0x492f60)(hero, 0, melee, 0, 0);
+        base_high = ((int_arg3_fn)0x492f60)(hero, 0, melee, 0, 1);
+        range_text(i == 0 ? "strDMG" : "dexDMG", low, high, high - base_high);
+    }
+    a = ((int_arg3_fn)0x499e10)(hero, 0, 0, 1, 0);
+    b = ((int_arg3_fn)0x499e10)(hero, 0, 1, 1, 0);
+    low = !a ? b : !b ? a : a < b ? a : b;
+    a = ((int_arg3_fn)0x492f60)(hero, 0, 0, 1, 0);
+    b = ((int_arg3_fn)0x492f60)(hero, 0, 1, 1, 0);
+    high = a > b ? a : b;
+    a = ((int_arg3_fn)0x492f60)(hero, 0, 0, 1, 1);
+    b = ((int_arg3_fn)0x492f60)(hero, 0, 1, 1, 1);
+    base_high = a > b ? a : b;
+    range_text("magicDMG", low, high, high - base_high);
+    high = ((int_get_fn)0x4900d0)(hero, 0);
+    range_text("defArmor", ((int_get_fn)0x4901b0)(hero, 0), high, high - ((int_get_fn)0x490150)(hero, 0));
+    remaining = *(int *)(hero + GOG_STAT_POINTS);
+    stat_text("ptsToSpend", remaining, 0);
+    for (i = 0; i < 4; i++) stat_text(resist_window[i], ((int_arg1_fn)0x48ffe0)(hero, 0, resist_type[i]), 0);
+    for (i = 0; i < 4; i++) {
+        buf[0] = '+';
+        p = put_int(buf + 1, stat_added[i]);
+        *p = 0;
+        text(win_of(STATS_PREFIX, stat_added_window[i]), buf);
+        prop(win_of(STATS_PREFIX, stat_added_window[i]), "TextColour", "FFFFFFFF");
+        show(win_of(STATS_PREFIX, stat_added_window[i]), stat_added[i] > 0);
+    }
+    can_add = remaining > 0;
+    can_remove = stat_added[stat_sel] != 0;
+    prop(win_of(STATS_PREFIX, "addPoint"), "Alpha", can_add ? "1" : "0.25");
+    prop(win_of(STATS_PREFIX, "removePoint"), "Alpha", can_remove ? "1" : "0.25");
+    show(win_of(STATS_PREFIX, "spendPoints"), can_add || can_remove);
+    for (i = 0; i < 4; i++) show(win_of(STATS_PREFIX, stat_help[i]), i == stat_sel && (can_add || can_remove));
+    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_dec[i])(hero, 0);
+}
+
+/* ---- the journal (the Stats page's third column) ----
+ * The 360's CJournalXenon (vtable 0x820d11a4; its fill sub_82370628) makes two StaticTexts a line
+ * in journalwindow, both 270 x 23 at 24 a line (768 rows; the catalog: {{0,0},{0,22.5 i},
+ * {0,253.125},{0,22.5 i + 21.5625}} at 720), the label LeftAligned in FFFFFFFF and the value
+ * RightAligned in FFFFE03D, both texts in "|cFFC8C8C8 .. |u" (so both drawn C8C8C8), AlwaysOnTop,
+ * TopAligned: the
+ * player's statistics (the 360's unit +0x720 + 4 i; GOG's +0x740, PC's own journal at
+ * 0x586c00 reads them in the same order with the same labels), the first the time played as
+ * "0hrs 44mins 34secs" (PC's: the float at +0x2c8, its seconds). */
+#define GOG_STATISTICS 0x740
+#define GOG_TIME_PLAYED 0x2c8
+static const char *const journal_label[18] = {
+    "Time Played:", "Gold Gathered:", "Levels Explored:", "Steps Taken:", "Quests Completed:", "Deaths:",
+    "Monsters Defeated:", "Champions Defeated:", "Skills/Spells Cast:", "Chests Opened:", "Traps Sprung:",
+    "Barrels Broken:", "Potions Used:", "Portals Used:", "Fish Caught:", "Times Gambled:", "Items Transmuted:",
+    "Items Enchanted:"};
+
+static void *create_static(const char *prefix, const char *name) {
+    typedef void *(__fastcall *create_fn)(void *wm, void *edx, const object *type, const object *name, const object *prefix);
+    static create_fn create;
+    object t, n, pre;
+    void *w = 0, *wm = window_manager();
+    if (!create) create = (create_fn)need("?createWindow@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00@Z");
+    if (!create || !wm) return 0;
+    string_ctor(&t, 0, "ceguiWidget/StaticText");
+    string_ctor(&n, 0, name);
+    string_ctor(&pre, 0, prefix);
+    __try { w = create(wm, 0, &t, &n, &pre); } __except (1) { w = 0; }
+    string_dtor(&pre, 0); string_dtor(&n, 0); string_dtor(&t, 0);
+    return w;
+}
+
+static void journal_fill(void) {
+    void *box = win_of(JOURNAL_PREFIX, "journalwindow");
+    char name[32], value[160], *p;
+    int i;
+    if (!box || !hero) return;
+    for (i = 0; i < 18; i++) {
+        void *label, *val;
+        copy(name, sizeof name, "jl_", 0); p = put_int(name + 3, i); *p = 0;
+        label = win_of(JOURNAL_PREFIX, name);
+        if (!label && (label = create_static(JOURNAL_PREFIX, name)) != 0) {
+            add_child(box, 0, label);
+            set_size(label, 0, 24.0f * k * (float)i, 270.0f * k, 23.0f * k);
+            prop(label, "Font", "X360_Serif");
+            prop(label, "AlwaysOnTop", "True");
+            prop(label, "VertFormatting", "TopAligned");
+            prop(label, "HorzTextFormatting", "LeftAligned");
+            prop(label, "TextColour", "FFC8C8C8");
+        }
+        name[1] = 'v';
+        val = win_of(JOURNAL_PREFIX, name);
+        if (!val && (val = create_static(JOURNAL_PREFIX, name)) != 0) {
+            add_child(box, 0, val);
+            set_size(val, 0, 24.0f * k * (float)i, 270.0f * k, 23.0f * k);
+            prop(val, "Font", "X360_Serif");
+            prop(val, "AlwaysOnTop", "True");
+            prop(val, "VertFormatting", "TopAligned");
+            prop(val, "HorzTextFormatting", "RightAligned");
+            prop(val, "TextColour", "FFC8C8C8");
+        }
+        /* The 360's texts are "|cFFC8C8C8" .. "|u", its CEGUI's colour markup, which PC's CEGUI
+         * writes as it is: the text plain and the colour as the TextColour instead. */
+        text(label, journal_label[i]);
+        value[0] = 0;
+        p = value;
+        if (i == 0) {
+            long t = (long)*(float *)(hero + GOG_TIME_PLAYED);
+            p = put_int(p, t / 3600); copy(p, 8, "hrs ", 0); p += 4;
+            p = put_int(p, t / 60 % 60); copy(p, 8, "mins ", 0); p += 5;
+            p = put_int(p, t % 60); copy(p, 8, "secs", 0); p += 4;
+        } else {
+            p = put_int(p, *(int *)(hero + GOG_STATISTICS + 4 * i));
+        }
+        *p = 0;
+        text(val, value);
+    }
+}
+
+/* The selected stat: its window's rollover image, pieceToMove at its offset from it. */
+static void stats_select(void) {
+    int i;
+    char value[128];
+    float v[8];
+    for (i = 0; i < 4; i++)
+        prop(win_of(STATS_PREFIX, stat_window[i]), "Image", i == stat_sel ? "set:X360_widgets1 image:statwindow_base_rollover"
+                                                                           : "set:X360_widgets1 image:statwindow_base");
+    read_prop(win_of(STATS_PREFIX, stat_window[stat_sel]), "UnifiedAreaRect", value, sizeof value);
+    if (parse_rect(value, v)) {
+        float p[8];
+        void *piece = win_of(STATS_PREFIX, "pieceToMove");
+        read_prop(piece, "UnifiedAreaRect", value, sizeof value);
+        if (parse_rect(value, p)) move_by(piece, v[1] + piece_dx - p[1], v[3] + piece_dy - p[3]);
+    }
+    stats_fill();
+}
+
+/* The points added are spent when the page is left. */
+static void stats_commit(void) {
+    int i, n;
+    if (!hero) return;
+    for (i = 0; i < 4; i++) {
+        for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_inc[i])(hero, 0);
+        stat_added[i] = 0;
+    }
+}
+
+static void stats_load(void) {
+    void *container = win_of(MASTER, "ContainerFrame");
+    char value[128];
+    float s[8], p[8];
+    if (stats_root || !container) return;
+    stats_root = load("media/ui/x360/statsmenu_xenon.layout", STATS_PREFIX);
+    journal_root = stats_root ? load("media/ui/x360/journalmenu_xenon.layout", JOURNAL_PREFIX) : 0;
+    if (!stats_root) return;
+    scale_tree(stats_root, k, 0);
+    add_child(container, 0, stats_root);
+    move_by(stats_root, 299.0f * k, 0);
+    if (journal_root) {
+        scale_tree(journal_root, k, 0);
+        add_child(container, 0, journal_root);
+        move_by(journal_root, 602.0f * k, 0);
+        /* The stats' column over the journal's: its point box and help reach over it (the
+         * catalog's menus/10). */
+        move_to_front(stats_root, 0);
+    }
+    read_prop(win_of(STATS_PREFIX, "strength"), "UnifiedAreaRect", value, sizeof value);
+    if (parse_rect(value, s)) {
+        read_prop(win_of(STATS_PREFIX, "pieceToMove"), "UnifiedAreaRect", value, sizeof value);
+        if (parse_rect(value, p)) { piece_dx = p[1] - s[1]; piece_dy = p[3] - s[3]; }
+    }
+}
+
+static void stats_pad(unsigned pressed, int ly) {
+    static int held;
+    int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
+    held = ly > 500 || ly < -500;
+    if (dir) {
+        int s = stat_sel + dir;
+        if (s < 0) s = 0;
+        if (s > 3) s = 3;
+        if (s != stat_sel) { stat_sel = s; stats_select(); }
+    }
+    if (pressed & 0x1000) {                                              /* A */
+        int i, pending = 0;
+        for (i = 0; i < 4; i++) pending += stat_added[i];
+        if (hero && *(int *)(hero + GOG_STAT_POINTS) - pending > 0) { stat_added[stat_sel]++; stats_fill(); }
+    }
+    if (pressed & 0x8000 && stat_added[stat_sel] > 0) { stat_added[stat_sel]--; stats_fill(); }   /* Y */
+}
+
+/* The page shown: the inventory's bags, or the Stats page's two columns; the character's column
+ * stays. */
+static void set_page(int p) {
+    if (page == 1 && p != 1) stats_commit();
+    page = p;
+    if (panels[0].root) show(win_of(PREFIX, "TopFrame"), page == 0);
+    if (panels[1].root) show(win_of(PET_PREFIX, "TopFrame"), page == 0);
+    if (stats_root) set_visible(stats_root, 0, page == 1);
+    if (journal_root) set_visible(journal_root, 0, page == 1);
+    page_titles();
+    if (page == 1) { hide_info(); stat_sel = 0; stats_select(); journal_fill(); }
+    else update_info();
 }
 
 /* ---- the pet's commands (Start in the inventory: the catalog's menus/09) ----
@@ -2033,6 +2313,57 @@ static void petcmd_pad(unsigned pressed, int lx) {
     }
 }
 
+/* The triggers' buttons sway (the catalog's 08 to 12: righttriggerbutton at 1432.6 to 1439.2):
+ * the 360 registers lefttriggerbutton and righttriggerbutton (sub_82376728) with speeds 1 and -1
+ * in its animated windows (sub_82344BF0: its scale 20, its limit 5) and every frame
+ * (sub_821A41A0) moves t by the speed times the frame's seconds, puts the window's x at its
+ * place plus 20 t (pixels at 720 rows) and, past |t| = 5 / 20, sets t to the speed times that
+ * and turns the speed round; opening the menu puts them back (sub_82376A20). */
+static float trigger_t[2], trigger_v[2], trigger_base[2][8];
+static unsigned trigger_last;
+static int trigger_ready;
+
+static void triggers_reset(void) {
+    static const char *const name[2] = {"lefttriggerbutton", "righttriggerbutton"};
+    char value[128];
+    int i;
+    for (i = 0; i < 2; i++) {
+        if (!trigger_ready) {
+            read_prop(win_of(MASTER, name[i]), "UnifiedAreaRect", value, sizeof value);
+            if (!parse_rect(value, trigger_base[i])) return;
+        }
+        trigger_t[i] = 0;
+        trigger_v[i] = i == 0 ? 1.0f : -1.0f;
+        write_rect(value, trigger_base[i]);
+        prop(win_of(MASTER, name[i]), "UnifiedAreaRect", value);
+    }
+    trigger_ready = 1;
+    trigger_last = GetTickCount();
+}
+
+static void triggers_tick(void) {
+    static const char *const name[2] = {"lefttriggerbutton", "righttriggerbutton"};
+    unsigned now = GetTickCount();
+    float dt = (float)(now - trigger_last) / 1000.0f, v[8], s = k * 768.0f / 720.0f;
+    char value[128];
+    int i, j;
+    if (!trigger_ready || dt <= 0) return;
+    if (dt > 0.1f) dt = 0.1f;
+    trigger_last = now;
+    for (i = 0; i < 2; i++) {
+        trigger_t[i] += trigger_v[i] * dt;
+        for (j = 0; j < 8; j++) v[j] = trigger_base[i][j];
+        v[1] += trigger_t[i] * 20.0f * s;
+        v[5] += trigger_t[i] * 20.0f * s;
+        write_rect(value, v);
+        prop(win_of(MASTER, name[i]), "UnifiedAreaRect", value);
+        if (trigger_t[i] > 0.25f || trigger_t[i] < -0.25f) {
+            trigger_t[i] = trigger_v[i] * 0.25f;
+            trigger_v[i] = -trigger_v[i];
+        }
+    }
+}
+
 /* A fingerprint of the inventory: its items, their slots and stacks. PC changes it outside our
  * buttons too (useItem takes a potion out while the hero drinks and puts the rest back; pickups),
  * and the 360's screen hears of every change (iInventoryListener): ours rebuilds when it moves. */
@@ -2068,9 +2399,19 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     int dir = 0;
     static unsigned last_print, last_check;
     if (!inventory_open || !find_world()) return;
+    triggers_tick();
     if (petcmd_open) { petcmd_pad(pressed, lx); return; }
-    if (pressed & 0x0010 && page == 0) { petcmd_show(1); return; }   /* Start: the pet's commands */
     if (pressed & 0x2000) { x360_inventory_toggle(); return; }       /* B */
+    /* LT and RT: the page before and after (sub_82377990, sub_82377928); the pages not made yet
+     * (Skills, Quest) are passed over. */
+    if (pressed & (0x10000 | 0x20000)) {
+        int step = pressed & 0x10000 ? 3 : 1, p = (page + step) % 4;
+        while (p != 0 && p != 1) p = (p + step) % 4;
+        set_page(p);
+        return;
+    }
+    if (page == 1) { stats_pad(pressed, ly); return; }
+    if (pressed & 0x0010) { petcmd_show(1); return; }                /* Start: the pet's commands */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
         last_check = now;
@@ -2429,8 +2770,18 @@ static void target_tick(void) {
     unit_description(unit, buf, sizeof buf);
     text(win_of(HUD_PREFIX, "TargetDescription"), buf); show(win_of(HUD_PREFIX, "TargetDescription"), 1);
     max = ((int_get_fn)GOG_MAX_HEALTH)(unit, 0);
-    set_bar(HUD_PREFIX, "TargetHealthBar", "TargetHealthBarSub", 1, bar,
-            max > 0 ? *(float *)(unit + GOG_UNIT_HEALTH) / (float)max : 0);
+    /* The bar's size as the 360's update sets it (sub_821A83C8, 0x821A95E4): the health over the
+     * maximum, at most 1, times the full width (220 at 768 rows, rounded in the 360's 720-row
+     * pixels), 84 high; at (1, 1) in its parent (i_780), which clips it (the catalog: in-game/01
+     * to 03, {{0,0.9375},{0,0.9375},{0,1+w},{0,79.6875}} at 720). */
+    {
+        float f = max > 0 ? *(float *)(unit + GOG_UNIT_HEALTH) / (float)max : 0, w720;
+        if (f > 1) f = 1;
+        if (f < 0) f = 0;
+        w720 = (float)(long)(220.0f * 0.9375f * f + 0.5f);
+        set_size(win_of(HUD_PREFIX, "TargetHealthBar"), k, k, w720 * k / 0.9375f, 84.0f * k);
+    }
+    (void)bar;
 }
 
 /* The minimap where the 360 draws it. The 360's CAutomap::setVisible (sub_822E6090) places its
@@ -2577,6 +2928,17 @@ static void hud_tick(void) {
             mirror_bar_of(PETHUD_PREFIX, "PetHealthBar", "PetHealth", 1, pet_health);
             mirror_bar_of(PETHUD_PREFIX, "PetManaBar", "PetMana", 1, pet_mana);
             mirror_text_of(PETHUD_PREFIX, "FleeingText");
+            /* The stance: only the current one's button shown, the others left to pethud_base's
+             * grey ones (the catalog's menus/07: PetDefensive shown, PetAggressive and PetPassive
+             * not; PC's update does the same with its own, GOG 0x5598c5: the pet's +0x65c,
+             * 0 passive, 1 aggressive, 2 defensive). */
+            {
+                unsigned char *pet = the_pet();
+                int stance = pet ? *(int *)(pet + GOG_PET_STANCE) : -1;
+                show(win_of(PETHUD_PREFIX, "PetPassive"), stance == 0);
+                show(win_of(PETHUD_PREFIX, "PetAggressive"), stance == 1);
+                show(win_of(PETHUD_PREFIX, "PetDefensive"), stance == 2);
+            }
         }
     }
     mirror_text("LevelName");

@@ -1459,3 +1459,49 @@ animation (type `0xA7`). PC's update (GOG `0x558750`) has the same pieces: the c
 360's), the description by `0x4854a0` (thiscall on the unit, a `std::wstring` out: the data at
 `+0x178`, the key at `0xd5d9a4`), the mimic test (`0x480760` with `0xA7`, then `0x482740` with
 "MIMICIDLE"). The proxy now fills the 360's three lines with those.
+
+**The inventory against the catalog** (`menus/08`, `09`; the recomp agent's review: "muy cerca,
+OK"):
+- **Icons** (the "stretched" potions the user saw): the 360 sizes an icon window from its image
+  (CEGUI's `Image::getWidth`/`getHeight`). A row (`sub_82368980`, `0x82368D14`): the image's W x H
+  times `min(frame height / W, frame width / H)` (the frame: the row's `QualityBk`, 54 x 80), halved
+  for a unit of type `0x78`, centred. The hotbar (`sub_821F42A8`, `0x821F4A5C`): as tall as the
+  slot (36), as wide as the image's proportions give, centred across (a potion 24 x 36).
+- **Columns**: the bag at 299 and the pet's at 602 (`sub_823788D8`'s constants 300 and 603 place
+  the column roots; the catalog's frames give 299 and 602). Only the focused column has its
+  `_rollover` images (frame, border, its filter's tab) and RB. A column that is not the
+  player's (the 360's ISA 134 test) dims to 0.25 the tabs of the filters it has nothing in, but
+  the focused column's own (`sub_823654B8`, `0x82365948`).
+- **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
+  gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
+  `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).
+- **The page tabs**: "Inventory", "Stats", "Skills", "Quest" round, LT to the left and RT to the
+  right (`sub_82377990`, `sub_82377928`). The trigger buttons sway: `sub_82376728` registers
+  `lefttriggerbutton` and `righttriggerbutton` (speeds 1 and -1) as animated windows
+  (`sub_82344BF0`: scale 20, limit 5), `sub_821A41A0` moves t by speed x seconds, x = place +
+  20 t (720-row pixels), and past |t| = 0.25 sets t = speed x 0.25 and turns the speed round.
+- **The pet's commands** (Start; `CMessagePetCommandsXenon` in `messagehousing_xenon`): the stance
+  (GOG `+0x65c`: 0 passive, 1 aggressive, 2 defensive) turned right 0 -> 1 -> 2 -> 0 and left
+  back by the stick or d-pad (`sub_8237B080`), then GOG `0x4949d0` (PC's own stance buttons,
+  `0x54ddfb`); Y: PC's departure test (the level's `+0x15c` `+0x89`, else "Your pet cannot depart
+  from here!") and `CCharacter::sendToTown` *(OT)* (GOG `0x49a390`). The HUD shows only the
+  current stance's button (the others are `pethud_base`'s grey ones).
+
+**The target's bar size** (`sub_821A83C8`, `0x821A95E4`): `TargetHealthBar` at (1, 1) in `i_780`,
+the health fraction (at most 1) times 220 (rounded in 720-row pixels) wide, 84 high, clipped by
+its parent.
+
+**The Stats page** (RT; `CStatsMenuXenon`, `menus/10`): `statsmenu_xenon` at 299 and
+`journalmenu_xenon` at 602 beside the character's column (`sub_82385738`, its constants 299 and
+602). Its windows by the table at `0x833fa020`; the fill `sub_82384738` with the GOG getters:
+strength `0x487ec0` (base `+0x3ac`), dexterity `0x487e60` (`+0x3a8`), magic `0x487d70` (`+0x3b4`),
+defence `0x487d00` (`+0x3b0`); damage minimum `0x499e10` and maximum `0x492f60` with the same
+arguments as the 360's (`(1,0,x)` melee, `(0,0,x)` ranged, `(0,1,x)`/`(1,1,x)` magic); armour
+`0x4900d0`, its half `0x4901b0`, its base `0x490150`; resistances `0x48ffe0` (poison 5, fire 2,
+ice 3, electric 4); the points `+0x3dc`. The colours FFc0c0ff / FFFF0000 / FFFFFFFF by the value
+against the base (`sub_82384238`). Up/down choose the stat (0 to 3, no wrap), A adds a pending
+point, Y takes one back; the pending points are spent when the page is left (PC's own +1
+functions `0x488450`, `0x488470`, `0x4884b0`, `0x488490`; the -1 ones `0x4884d0`.. are used to
+read the values with them added, as the 360's `sub_82383ff8`/`sub_82384118`). The journal: PC's
+statistics at `+0x740` (PC's own journal `0x586c00`, the same 18 labels), the time played the float
+at `+0x2c8`, as 36 StaticTexts of the 360's sizes and colours.
