@@ -3158,13 +3158,16 @@ void x360_pause_pad(unsigned pressed, int ly) {
     int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
     held = ly > 500 || ly < -500;
     if (!resolve()) return;
-    if (howto_open) { if (pressed & 0x2000) howto_show(0); return; }
+    if (howto_open) {   /* the pause menu hidden under it (the catalog's menus/14), back after */
+        if (pressed & 0x2000) { howto_show(0); if (pause_root) set_visible(pause_root, 0, 1); }
+        return;
+    }
     if (!pause_open) { if (pressed & 0x0010) pause_show(1); return; }
     if (pressed & (0x2000 | 0x0010)) { pause_show(0); return; }      /* B, Start */
     if (dir) { pause_focus = (pause_focus + (dir > 0 ? 1 : 4)) % 5; pause_draw(); }
     if (pressed & 0x1000) {                                            /* A */
         x360_log("x360 menu: pause A on "); x360_log_num(pause_focus); x360_log("\r\n");
-        if (pause_focus == 1) howto_show(1);
+        if (pause_focus == 1) { howto_show(1); if (howto_open) set_visible(pause_root, 0, 0); }
         /* Exit to Title: not done (two tries failed, see the doc's section 14). */
     }
 }
