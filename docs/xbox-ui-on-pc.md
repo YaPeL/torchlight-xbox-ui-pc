@@ -1595,6 +1595,10 @@ no pet commands; the merchant's column focused at the start.
   `0x5366f0`) at the hero (`+0x58`), the voices on the hero's emitter (`+0x230`, `0x5368d0`); PC
   uses the same numbers (`0x54ef26`, `0x54e7d7`). Y also refuses to drop type 103 now
   (`sub_82369E80`).
+- **The card** is PC's tooltip with the item's owner as its character: for the merchant's items
+  the merchant, so PC writes the asked price with its own label (`0x546c9f`: a character other than
+  the hero, of type 41), as the 360's card; for the bags the hero, and PC writes the paid one
+  (`0x5471bc`, the merchant's menu open).
 - **Tested** (GOG, the mine save taken up to town with the mouse, the blacksmith): the screen
   opens with PC's menu, X bought a staff (100 -> 34 gold, the staff in the bag at 17) and sold it
   back (34 -> 51), RB moved through the columns, B closed both menus.

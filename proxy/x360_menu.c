@@ -1294,7 +1294,11 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     *(unsigned *)(t + 0x8) = 0xffffffffu;
     *(unsigned *)(t + 0xc) = 0xffffffffu;
     __try {
-        ((show_tooltip_fn)GOG_SHOW_EQUIPMENT_TOOLTIP)(ui, 0, hero, item, t, cmp1, cmp2);
+        /* The card's character is the item's owner: for a merchant's item PC writes the price it
+         * asks (its tooltip, GOG 0x546c9f: a character other than the hero, of type 41), as the
+         * 360's card; for the bags' what it pays (0x5471bc, with the merchant's menu open). */
+        ((show_tooltip_fn)GOG_SHOW_EQUIPMENT_TOOLTIP)(ui, 0, i == 0 && panels[focus_panel].is_shop && shop ? shop : hero,
+                                                      item, t, cmp1, cmp2);
     } __except (1) {
         x360_log("x360 inv: showEquipmentTooltip threw\r\n");
         return 0;
