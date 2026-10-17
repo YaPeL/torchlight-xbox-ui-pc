@@ -677,6 +677,39 @@ static int wstring_utf8(const unsigned char *p, char *out, unsigned size) {
     return 1;
 }
 
+/* The same for a long text (a description: lines kept, up to 1000 characters). */
+static int wstring_utf8_long(const unsigned char *p, char *out, unsigned size) {
+    unsigned len = *(const unsigned *)(p + 0x14), res = *(const unsigned *)(p + 0x18), i, n = 0;
+    const unsigned short *s;
+    if (len == 0 || len > 1000 || res < len || res > 8192) return 0;
+    s = res < 8 ? (const unsigned short *)(p + 4) : *(const unsigned short *const *)(p + 4);
+    if (!s) return 0;
+    for (i = 0; i < len; i++) {
+        unsigned c = s[i];
+        if (c < 0x80) { if (n + 1 >= size) break; out[n++] = (char)c; }
+        else if (c < 0x800) { if (n + 2 >= size) break; out[n++] = (char)(0xc0 | c >> 6); out[n++] = (char)(0x80 | (c & 0x3f)); }
+        else { if (n + 3 >= size) break; out[n++] = (char)(0xe0 | c >> 12); out[n++] = (char)(0x80 | (c >> 6 & 0x3f)); out[n++] = (char)(0x80 | (c & 0x3f)); }
+    }
+    out[n] = 0;
+    return 1;
+}
+
+typedef void *(__fastcall *wstr_ctor_fn)(void *self, void *edx, const unsigned short *text);
+typedef void (__fastcall *wstr_dtor_fn)(void *self, void *edx);
+/* msvcp90's std::wstring constructor (from a wide C string) and destructor. */
+static int wstring_functions(wstr_ctor_fn *ctor, wstr_dtor_fn *dtor) {
+    static wstr_ctor_fn c;
+    static wstr_dtor_fn d;
+    if (!c || !d) {
+        void *m = GetModuleHandleA("msvcp90.dll");
+        c = m ? (wstr_ctor_fn)GetProcAddress(m, "??0?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@PB_W@Z") : 0;
+        d = m ? (wstr_dtor_fn)GetProcAddress(m, "??1?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@XZ") : 0;
+    }
+    *ctor = c;
+    *dtor = d;
+    return c && d;
+}
+
 /* Where the item's display name is: found by the probe below (a run, 2026-10-16: "second blade"). */
 static int name_offset = GOG_ITEM_NAME;
 
@@ -1850,6 +1883,8 @@ static void petcmd_show(int on);
 static void triggers_reset(void);
 static void stats_load(void);
 static void stats_commit(void);
+static void skills_load(void);
+static void *skills_root;
 static void *stats_root, *journal_root;
 static void hide_info(void);
 static void update_info(void);
@@ -1932,6 +1967,7 @@ void x360_inventory_toggle(void) {
     }
     if (!inventory_root) return;
     stats_load();
+    skills_load();
     inventory_open = !inventory_open;
     if (inventory_open) {
         select_panel(0);
@@ -1943,6 +1979,7 @@ void x360_inventory_toggle(void) {
     set_visible(inventory_root, 0, inventory_open);
     if (stats_root) set_visible(stats_root, 0, inventory_open && page == 1);
     if (journal_root) set_visible(journal_root, 0, inventory_open && page == 1);
+    if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     if (character_root) set_visible(character_root, 0, inventory_open);
     if (inventory_open) move_to_front(master_root, 0);
@@ -2074,14 +2111,17 @@ static const char *const journal_label[18] = {
     "Barrels Broken:", "Potions Used:", "Portals Used:", "Fish Caught:", "Times Gambled:", "Items Transmuted:",
     "Items Enchanted:"};
 
-static void *create_static(const char *prefix, const char *name) {
+static void *create_window(const char *prefix, const char *name, const char *type);
+static void *create_static(const char *prefix, const char *name) { return create_window(prefix, name, "ceguiWidget/StaticText"); }
+
+static void *create_window(const char *prefix, const char *name, const char *type) {
     typedef void *(__fastcall *create_fn)(void *wm, void *edx, const object *type, const object *name, const object *prefix);
     static create_fn create;
     object t, n, pre;
     void *w = 0, *wm = window_manager();
     if (!create) create = (create_fn)need("?createWindow@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00@Z");
     if (!create || !wm) return 0;
-    string_ctor(&t, 0, "ceguiWidget/StaticText");
+    string_ctor(&t, 0, type);
     string_ctor(&n, 0, name);
     string_ctor(&pre, 0, prefix);
     __try { w = create(wm, 0, &t, &n, &pre); } __except (1) { w = 0; }
@@ -2208,6 +2248,407 @@ static void stats_pad(unsigned pressed, int ly) {
     if (pressed & 0x8000 && stat_added[stat_sel] > 0) { stat_added[stat_sel]--; stats_fill(); }   /* Y */
 }
 
+/* The 360's CEGUI draws "|cAARRGGBB" .. "|u" in a text in that colour; PC's writes the marks as
+ * they are. A layout text in that form (the Skills page's level tabs, "|cFFEAAA1520|u") is given
+ * as its plain text and the colour as its TextColour. */
+static void plain_markup(void *w, int depth) {
+    char value[160], colour[12];
+    unsigned i, n, len;
+    typedef const void *(__fastcall *get_text_fn)(const void *self, void *edx);
+    static get_text_fn get_text;
+    if (!w || depth > 40) return;
+    if (!get_text) get_text = (get_text_fn)need("?getText@Window@CEGUI@@QBEABVString@2@XZ");
+    if (get_text) {
+        const char *t = c_str(get_text(w, 0), 0);
+        if (t && t[0] == '|' && t[1] == 'c' && length(t) > 12) {
+            for (i = 0; i < 8; i++) colour[i] = t[2 + i];
+            colour[8] = 0;
+            copy(value, sizeof value, t + 10, 0);
+            len = length(value);
+            if (len >= 2 && value[len - 2] == '|' && value[len - 1] == 'u') value[len - 2] = 0;
+            text(w, value);
+            prop(w, "TextColour", colour);
+        }
+    }
+    n = child_count(w, 0);
+    for (i = 0; i < n; i++) plain_markup(child_at(w, 0, i), depth + 1);
+}
+
+/* ---- the Skills page (the catalog's menus/11) ----
+ * The 360's CSkillMenuXenon: skillsmenu_xenon in the frame. Its fill (sub_8235BE88) for each skill
+ * of the player's skill manager (the player's +0x184; its list +0x2c on the 360, GOG's +0x3c and
+ * count +0x40): the cell skillbg{tab}_{row}_{column} (the skill's +0xdc, +0xd8, +0xd4, the same
+ * in GOG's CSkill), skills_window_passive for a passive (+0x38 == 4) else skills_window_active,
+ * their _rollover for the selected cell; skillicon at 0.35 while the skill has no rank (+0xa4),
+ * else 1; when the level it requires (GOG 0x5d5c00) is above the player's (+0xf0) and it has no
+ * effective rank (+0xa8, GOG 0x5d7d40 computes it), the inactive icon (GOG 0x5d5950) and no
+ * skilllvl; else the icon (GOG 0x5d5930) and skilllvl the effective rank. PanelName0..2: the
+ * player's tab names (GOG 0x4a2220, 1 to 3); skillPointsValue the player's skill points (+0x3e0).
+ * The selected skill (sub_8235D558): its icon, Rank "effective/maximum" (+0x188, else +0x68,
+ * else 1), its name (GOG 0x5d59b0), its kind's text (GOG 0x5d68e0), "Always Enabled" for a passive,
+ * its description at its rank (CSkill::getSkillLevelDescription *(OT)*, GOG 0x5d88f0: out, the unit,
+ * the rank or -1 for the effective one, as the 360's sub_823B07C8). The help box (sub_82381D18): centred under the
+ * selected cell, 7 (720 rows) up into it; skill points; for a spell (+0x34 != 0) upgrade at 0.3
+ * and map; with no rank: hidden without points, "Requires Level N" when the level is short, else
+ * learn and map at 0.3; with a rank: upgrade (0.3 without points) and map (at 1 for a +0x38 == 3).
+ * Input (sub_823827F8): the d-pad or stick moves over the cells (sub_8235E3A0 .. E6D0: columns and
+ * tabs round, empty cells passed over), A learns (sub_8235E9D0's test: the level, the prerequisite
+ * at +0x84 with a rank (GOG 0x5dd660 finds it), points, below the maximum; then PC's own: GOG
+ * 0x488430 takes the point, 0x5de550 sets the rank, as PC's button at 0x5a58b0). */
+#define SKILLS_PREFIX "x360sk_"
+#define HUD_PREFIX_SK "x360hud_"
+#define GOG_SKILL_MANAGER 0x184
+#define GOG_SKILL_POINTS 0x3e0
+#define GOG_HERO_LEVEL 0xf0
+typedef const void *(__fastcall *skill_str_fn)(void *skill, void *edx);
+typedef int (__fastcall *skill_int_fn)(void *skill, void *edx);
+typedef void *(__fastcall *skill_out_fn)(void *skill, void *edx, void *out);
+typedef void *(__fastcall *skill_desc_fn)(void *skill, void *edx, void *out, void *unit, int level);
+typedef void *(__fastcall *tab_name_fn)(void *unit, void *edx, void *out, int tab);
+typedef void *(__fastcall *find_skill_fn)(void *manager, void *edx, const void *name);
+typedef void (__fastcall *set_skill_level_fn)(void *manager, void *edx, void *skill, int level);
+typedef unsigned char (__fastcall *use_point_fn)(void *unit, void *edx);
+static int sk_tab, sk_row, sk_col, sk_spells;
+static float help_width;
+
+static void **skill_list(unsigned *count) {
+    unsigned char *mgr = hero ? *(unsigned char **)(hero + GOG_SKILL_MANAGER) : 0;
+    *count = mgr ? *(unsigned *)(mgr + 0x40) : 0;
+    return mgr ? *(void ***)(mgr + 0x3c) : 0;
+}
+
+/* The image of an icon name: the first itemicons imageset that defines it (the 360's image lookup,
+ * sub_8233DDE0, over its imagesets). */
+static int icon_image(const char *icon, char *out, unsigned size) {
+    typedef unsigned char (__fastcall *present_fn)(const void *self, void *edx, const void *name);
+    typedef void *(__fastcall *get_set_fn)(const void *mgr, void *edx, const void *name);
+    static singleton_fn manager;
+    static present_fn set_present, image_defined;
+    static get_set_fn get_set;
+    char name[32], *p;
+    int i, found = 0;
+    object a, b;
+    if (!manager) {
+        manager = (singleton_fn)need("?getSingletonPtr@?$Singleton@VImagesetManager@CEGUI@@@CEGUI@@SAPAVImagesetManager@2@XZ");
+        set_present = (present_fn)need("?isImagesetPresent@ImagesetManager@CEGUI@@QBE_NABVString@2@@Z");
+        image_defined = (present_fn)need("?isImageDefined@Imageset@CEGUI@@QBE_NABVString@2@@Z");
+        get_set = (get_set_fn)need("?getImageset@ImagesetManager@CEGUI@@QBEPAVImageset@2@ABVString@2@@Z");
+    }
+    if (!manager || !set_present || !image_defined || !get_set || !icon[0]) return 0;
+    string_ctor(&b, 0, icon);
+    for (i = 1; i <= 40 && !found; i++) {
+        copy(name, sizeof name, "itemicons", 0);
+        p = put_int(name + 9, i);
+        *p = 0;
+        string_ctor(&a, 0, name);
+        __try {
+            if (set_present(manager(), 0, &a) && image_defined(get_set(manager(), 0, &a), 0, &b)) {
+                copy(out, size, "set:", name);
+                copy(out + length(out), size - length(out), " image:", icon);
+                found = 1;
+            }
+        } __except (1) {}
+        string_dtor(&a, 0);
+    }
+    string_dtor(&b, 0);
+    return found;
+}
+
+static void skill_icon(void *skill, unsigned fn, char *out, unsigned size) {
+    char icon[96];
+    out[0] = 0;
+    if (wstring_utf8((const unsigned char *)((skill_str_fn)fn)(skill, 0), icon, sizeof icon)) icon_image(icon, out, size);
+}
+
+static void *selected_skill(void) {
+    unsigned n, i;
+    void **list = skill_list(&n);
+    for (i = 0; list && i < n; i++) {
+        unsigned char *sk = (unsigned char *)list[i];
+        if (!sk) continue;
+        if (sk_spells) continue;   /* the spells' row: not made yet */
+        if (*(int *)(sk + 0xdc) == sk_tab && *(int *)(sk + 0xd8) == sk_row && *(int *)(sk + 0xd4) == sk_col) return sk;
+    }
+    return 0;
+}
+
+static int skill_max(unsigned char *sk) {
+    int m = *(int *)(sk + 0x188);
+    if (!m) m = *(int *)(sk + 0x68);
+    return m ? m : 1;
+}
+
+static int skill_learnable(unsigned char *sk) {
+    unsigned char *mgr = *(unsigned char **)(hero + GOG_SKILL_MANAGER);
+    int ok = ((skill_int_fn)0x5d5c00)(sk, 0) <= *(int *)(hero + GOG_HERO_LEVEL);
+    if (*(unsigned *)(sk + 0x84 + 0x14)) {    /* a prerequisite's name (a std::wstring) */
+        unsigned char *pre = (unsigned char *)((find_skill_fn)0x5dd660)(mgr, 0, sk + 0x84);
+        if (pre && *(int *)(pre + 0xa4) < 1) ok = 0;
+    }
+    if (*(int *)(hero + GOG_SKILL_POINTS) <= 0 || !ok) return 0;
+    ((skill_int_fn)0x5d7d40)(sk, 0);
+    return *(int *)(sk + 0xa8) < skill_max(sk);
+}
+
+static void skills_fill(void) {
+    unsigned n, i;
+    void **list = skill_list(&n);
+    char name[48], buf[160], *p;
+    int t, r, c;
+    unsigned char *sel;
+    void *cell = 0;
+    wstr_ctor_fn wctor;
+    wstr_dtor_fn wdtor;
+    unsigned char ws[32];
+    static const unsigned short empty[] = {0};
+    if (!skills_root || !hero || !wstring_functions(&wctor, &wdtor)) return;
+    /* Every cell hidden; the skills' shown. */
+    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 2; c++) {
+        copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
+        p = put_int(p, c); *p = 0;
+        show(win_of(SKILLS_PREFIX, name), 0);
+    }
+    for (t = 0; t < 3; t++) {
+        wctor(ws, 0, empty);
+        ((tab_name_fn)0x4a2220)(hero, 0, ws, t + 1);
+        if (!wstring_utf8(ws, buf, sizeof buf)) buf[0] = 0;
+        wdtor(ws, 0);
+        copy(name, sizeof name, "PanelName", 0); p = put_int(name + 9, t); *p = 0;
+        text(win_of(SKILLS_PREFIX, name), buf);
+    }
+    p = put_int(buf, *(int *)(hero + GOG_SKILL_POINTS)); *p = 0;
+    text(win_of(SKILLS_PREFIX, "skillPointsValue"), buf);
+    for (i = 0; list && i < n; i++) {
+        unsigned char *sk = (unsigned char *)list[i];
+        void *bg, *icon, *lvl;
+        int passive, selected;
+        if (!sk) continue;
+        t = *(int *)(sk + 0xdc); r = *(int *)(sk + 0xd8); c = *(int *)(sk + 0xd4);
+        if (t < 0 || t > 2 || r < 0 || r > 5 || c < 0 || c > 1) continue;
+        copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
+        p = put_int(p, c); *p = 0;
+        bg = win_of(SKILLS_PREFIX, name);
+        if (!bg) continue;
+        show(bg, 1);
+        passive = *(int *)(sk + 0x38) == 4;
+        selected = !sk_spells && t == sk_tab && r == sk_row && c == sk_col;
+        if (selected) cell = bg;
+        prop(bg, "Image", passive ? (selected ? "set:X360_widgets1 image:skills_window_passive_rollover" : "set:X360_widgets2 image:skills_window_passive")
+                                  : (selected ? "set:X360_widgets2 image:skills_window_active_rollover" : "set:X360_widgets2 image:skills_window_active"));
+        copy(name, sizeof name, "skillicon", 0); p = put_int(name + 9, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
+        p = put_int(p, c); *p = 0;
+        icon = win_of(SKILLS_PREFIX, name);
+        copy(name, sizeof name, "skilllvl", 0); p = put_int(name + 8, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
+        p = put_int(p, c); *p = 0;
+        lvl = win_of(SKILLS_PREFIX, name);
+        show(icon, 1);
+        prop(icon, "Alpha", *(int *)(sk + 0xa4) ? "1" : "0.35");
+        ((skill_int_fn)0x5d7d40)(sk, 0);
+        if (((skill_int_fn)0x5d5c00)(sk, 0) > *(int *)(hero + GOG_HERO_LEVEL) && *(int *)(sk + 0xa8) <= 0) {
+            skill_icon(sk, 0x5d5950, buf, sizeof buf);
+            prop(icon, "Image", buf);
+            show(lvl, 0);
+        } else {
+            skill_icon(sk, 0x5d5930, buf, sizeof buf);
+            prop(icon, "Image", buf);
+            show(lvl, 1);
+            p = put_int(buf, *(int *)(sk + 0xa8)); *p = 0;
+            text(lvl, buf);
+        }
+    }
+    /* The selected skill's column. */
+    sel = (unsigned char *)selected_skill();
+    if (sel) {
+        int m = skill_max(sel);
+        skill_icon(sel, 0x5d5930, buf, sizeof buf);
+        prop(win_of(SKILLS_PREFIX, "CurrentActiveSkillIconImage"), "Image", buf);
+        prop(win_of(SKILLS_PREFIX, "CurrentActiveSkillFrame"), "Image", *(int *)(sel + 0x38) == 4 ? "set:X360_widgets2 image:skills_window_passive_lg"
+                                                                                                 : "set:X360_widgets2 image:skills_window_active_lg");
+        p = put_int(buf, *(int *)(sel + 0xa8)); *p++ = '/'; p = put_int(p, m); *p = 0;
+        text(win_of(SKILLS_PREFIX, "RankTextVal"), buf);
+        if (!wstring_utf8((const unsigned char *)((skill_str_fn)0x5d59b0)(sel, 0), buf, sizeof buf)) buf[0] = 0;
+        text(win_of(SKILLS_PREFIX, "SkillNameText"), buf);
+        show(win_of(SKILLS_PREFIX, "PassiveDescText"), *(int *)(sel + 0x38) == 4);
+        wctor(ws, 0, empty);
+        __try { ((skill_out_fn)0x5d68e0)(sel, 0, ws); } __except (1) {}
+        if (!wstring_utf8(ws, buf, sizeof buf)) buf[0] = 0;
+        wdtor(ws, 0);
+        text(win_of(SKILLS_PREFIX, "TypeDescText"), buf);
+        wctor(ws, 0, empty);
+        __try { ((skill_desc_fn)0x5d88f0)(sel, 0, ws, hero, -1); } __except (1) {}
+        {
+            char desc[600];
+            if (!wstring_utf8_long(ws, desc, sizeof desc)) desc[0] = 0;
+            text(win_of(SKILLS_PREFIX, "SkillDescriptionText"), desc);
+        }
+        wdtor(ws, 0);
+        /* The next rank's text (sub_8235D558): under "Next Level" while the skill has a rank
+         * below its maximum; else nothing. */
+        {
+            int eff = *(int *)(sel + 0xa8);
+            char desc[600];
+            desc[0] = 0;
+            if (eff > 0 && eff < m) {
+                wctor(ws, 0, empty);
+                __try { ((skill_desc_fn)0x5d88f0)(sel, 0, ws, hero, eff + 1); } __except (1) {}
+                if (!wstring_utf8_long(ws, desc, sizeof desc)) desc[0] = 0;
+                wdtor(ws, 0);
+            }
+            show(win_of(SKILLS_PREFIX, "NextLevelHeader"), eff > 0 && eff < m);
+            text(win_of(SKILLS_PREFIX, "SkillDescriptionTextNext"), desc[0] ? desc : " ");
+        }
+    }
+    /* The skill set's slots: the icons the HUD's same slots show (its SkillSlot4 to 7). */
+    {
+        static const char *const slot[4] = {"SkillSlot4", "SkillSlot5", "SkillSlot6", "SkillSlot7"};
+        int j;
+        for (j = 0; j < 4; j++) {
+            char hudname[32], image[128];
+            void *src, *dst, *icon;
+            copy(hudname, sizeof hudname, "icon_", slot[j]);
+            src = win_of(HUD_PREFIX_SK, hudname);
+            dst = win_of(SKILLS_PREFIX, slot[j]);
+            if (!dst) continue;
+            copy(hudname, sizeof hudname, "icon_", slot[j]);
+            icon = win_of(SKILLS_PREFIX, hudname);
+            if (!icon && (icon = create_window(SKILLS_PREFIX, hudname, "ceguiWidget/StaticImage")) != 0) {
+                add_child(dst, 0, icon);
+                prop(icon, "UnifiedAreaRect", "{{0,0},{0,0},{1,0},{1,0}}");
+            }
+            image[0] = 0;
+            if (src) read_prop(src, "Image", image, sizeof image);
+            if (icon) {
+                char area[128];
+                prop(icon, "Image", image);
+                show(icon, image[0] != 0);
+                area[0] = 0;
+                if (src) read_prop(src, "UnifiedAreaRect", area, sizeof area);   /* the HUD's size rule */
+                if (area[0]) prop(icon, "UnifiedAreaRect", area);
+            }
+        }
+    }
+    /* The help box under the selected cell. */
+    {
+        void *box = win_of(SKILLS_PREFIX, "HelpSkillDialog");
+        char value[128];
+        float cv[8], pv[8], hv[8], s = k * 768.0f / 720.0f;
+        int points = *(int *)(hero + GOG_SKILL_POINTS);
+        show(box, 0);
+        if (box && cell && sel) {
+            void *parent = 0;
+            typedef void *(__fastcall *parent_fn)(const void *w, void *edx);
+            static parent_fn get_parent;
+            if (!get_parent) get_parent = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+            parent = get_parent ? get_parent(cell, 0) : 0;
+            read_prop(cell, "UnifiedAreaRect", value, sizeof value);
+            if (parse_rect(value, cv)) {
+                pv[1] = pv[3] = 0;
+                if (parent) { read_prop(parent, "UnifiedAreaRect", value, sizeof value); if (!parse_rect(value, pv)) pv[1] = pv[3] = 0; }
+                read_prop(box, "UnifiedAreaRect", value, sizeof value);
+                if (parse_rect(value, hv)) {
+                    float x = pv[1] + cv[1] - (help_width - (cv[5] - cv[1])) * 0.5f;
+                    float y = pv[3] + cv[3] + (cv[7] - cv[3]) - 7.0f * s;
+                    set_size(box, x, y, hv[5] - hv[1], hv[7] - hv[3]);
+                }
+            }
+            show(box, 1);
+            move_to_front(box, 0);   /* over the cells (the 360's: last of i_1802's children) */
+            show(win_of(SKILLS_PREFIX, "HideButtons"), 1);
+            show(win_of(SKILLS_PREFIX, "HighLevel"), 0);
+            p = put_int(buf, points); *p = 0;
+            text(win_of(SKILLS_PREFIX, "SkillPts"), buf);
+            if (*(int *)(sel + 0x34)) {
+                show(win_of(SKILLS_PREFIX, "ALearnSkill"), 0);
+                show(win_of(SKILLS_PREFIX, "ALevelUp"), 1); prop(win_of(SKILLS_PREFIX, "ALevelUp"), "Alpha", "0.3");
+                show(win_of(SKILLS_PREFIX, "XMapSKill"), 1); prop(win_of(SKILLS_PREFIX, "XMapSKill"), "Alpha", "1");
+            } else if (!*(int *)(sel + 0xa4)) {
+                if (!points) show(box, 0);
+                else if (((skill_int_fn)0x5d5c00)(sel, 0) > *(int *)(hero + GOG_HERO_LEVEL)) {
+                    show(win_of(SKILLS_PREFIX, "HideButtons"), 0);
+                    copy(buf, sizeof buf, "Requires Level ", 0);
+                    p = put_int(buf + length(buf), ((skill_int_fn)0x5d5c00)(sel, 0)); *p = 0;
+                    text(win_of(SKILLS_PREFIX, "HighLevel"), buf);
+                    show(win_of(SKILLS_PREFIX, "HighLevel"), 1);
+                } else {
+                    show(win_of(SKILLS_PREFIX, "ALearnSkill"), 1); prop(win_of(SKILLS_PREFIX, "ALearnSkill"), "Alpha", "1");
+                    show(win_of(SKILLS_PREFIX, "ALevelUp"), 0);
+                    show(win_of(SKILLS_PREFIX, "XMapSKill"), 1); prop(win_of(SKILLS_PREFIX, "XMapSKill"), "Alpha", "0.3");
+                }
+            } else {
+                show(win_of(SKILLS_PREFIX, "ALearnSkill"), 0);
+                show(win_of(SKILLS_PREFIX, "ALevelUp"), 1); prop(win_of(SKILLS_PREFIX, "ALevelUp"), "Alpha", points > 0 ? "1" : "0.3");
+                show(win_of(SKILLS_PREFIX, "XMapSKill"), 1);
+                prop(win_of(SKILLS_PREFIX, "XMapSKill"), "Alpha", *(int *)(sel + 0x38) == 3 ? "1" : "0.3");
+            }
+        }
+    }
+}
+
+/* A cell with a skill at (tab, row, column). */
+static int skill_at(int t, int r, int c) {
+    unsigned n, i;
+    void **list = skill_list(&n);
+    for (i = 0; list && i < n; i++) {
+        unsigned char *sk = (unsigned char *)list[i];
+        if (sk && *(int *)(sk + 0xdc) == t && *(int *)(sk + 0xd8) == r && *(int *)(sk + 0xd4) == c) return 1;
+    }
+    return 0;
+}
+
+static void skills_move(int dx, int dy) {
+    int tries;
+    for (tries = 0; tries < 40; tries++) {
+        if (dx > 0) { if (++sk_col > 1) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
+        if (dx < 0) { if (--sk_col < 0) { sk_col = 1; if (--sk_tab < 0) sk_tab = 2; } }
+        if (dy < 0 && --sk_row < 0) sk_row = 5;
+        if (dy > 0 && ++sk_row > 5) sk_row = 0;
+        if (skill_at(sk_tab, sk_row, sk_col)) break;
+    }
+    skills_fill();
+}
+
+static void skills_pad(unsigned pressed, int lx, int ly) {
+    static int held;
+    int dx = (pressed & 0x0008) || (lx > 500 && !held) ? 1 : (pressed & 0x0004) || (lx < -500 && !held) ? -1 : 0;
+    int dy = (pressed & 0x0002) || (ly < -500 && !held) ? 1 : (pressed & 0x0001) || (ly > 500 && !held) ? -1 : 0;
+    held = lx > 500 || lx < -500 || ly > 500 || ly < -500;
+    if (dx || dy) skills_move(dx, dy);
+    if (pressed & 0x1000) {                                              /* A: learn */
+        unsigned char *sk = (unsigned char *)selected_skill();
+        if (sk && skill_learnable(sk) && ((use_point_fn)0x488430)(hero, 0) & 0xff) {
+            ((set_skill_level_fn)0x5de550)(*(void **)(hero + GOG_SKILL_MANAGER), 0, sk, *(int *)(sk + 0xa4) + 1);
+            skills_fill();
+        }
+    }
+}
+
+static void skills_load(void) {
+    void *container = win_of(MASTER, "ContainerFrame");
+    char value[128];
+    float v[8];
+    if (skills_root || !container) return;
+    skills_root = load("media/ui/x360/skillsmenu_xenon.layout", SKILLS_PREFIX);
+    if (!skills_root) return;
+    scale_tree(skills_root, k, 0);
+    add_child(container, 0, skills_root);
+    /* Moved once and back: CEGUI recomputes the descendants' rectangles it kept from before the
+     * page was attached (else they are clipped where the page stood alone). */
+    move_by(skills_root, 1, 0);
+    move_by(skills_root, -1, 0);
+    plain_markup(skills_root, 0);
+    read_prop(win_of(SKILLS_PREFIX, "HelpSkillDialog"), "UnifiedAreaRect", value, sizeof value);
+    if (parse_rect(value, v)) help_width = v[5] - v[1];
+    /* What the 360's page keeps hidden (the catalog's menus/11): the second skill set and the
+     * mapping's sets, the stat bonuses' lines (shown by its fill for a skill with them). */
+    {
+        static const char *const hidden[] = {"SkillSet2", "MapSkillSet1", "MapSkillSet2", "SkillTypeStr", "SkillTypeDex",
+                                             "SkillTypeMag", "SkillTypeDef", "skillBonuses", "NextLevelHeader",
+                                             "CurrentPassiveSkillFrame"};
+        unsigned i;
+        for (i = 0; i < sizeof hidden / sizeof hidden[0]; i++) show(win_of(SKILLS_PREFIX, hidden[i]), 0);
+    }
+}
+
 /* The page shown: the inventory's bags, or the Stats page's two columns; the character's column
  * stays. */
 static void set_page(int p) {
@@ -2217,9 +2658,17 @@ static void set_page(int p) {
     if (panels[1].root) show(win_of(PET_PREFIX, "TopFrame"), page == 0);
     if (stats_root) set_visible(stats_root, 0, page == 1);
     if (journal_root) set_visible(journal_root, 0, page == 1);
+    if (skills_root) set_visible(skills_root, 0, page == 2);
+    /* The character's column (and its doll) on the inventory's and the Stats pages only. */
+    if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), page < 2);
+    show_doll(page < 2);
     page_titles();
     if (page == 1) { hide_info(); stat_sel = 0; stats_select(); journal_fill(); }
-    else update_info();
+    else if (page == 2) {
+        hide_info();
+        sk_spells = 0; sk_tab = 0; sk_row = 0; sk_col = 0;
+        if (!skill_at(0, 0, 0)) skills_move(1, 0); else skills_fill();
+    } else update_info();
 }
 
 /* ---- the pet's commands (Start in the inventory: the catalog's menus/09) ----
@@ -2406,11 +2855,12 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
      * (Skills, Quest) are passed over. */
     if (pressed & (0x10000 | 0x20000)) {
         int step = pressed & 0x10000 ? 3 : 1, p = (page + step) % 4;
-        while (p != 0 && p != 1) p = (p + step) % 4;
+        while (p == 3) p = (p + step) % 4;
         set_page(p);
         return;
     }
     if (page == 1) { stats_pad(pressed, ly); return; }
+    if (page == 2) { skills_pad(pressed, lx, ly); return; }
     if (pressed & 0x0010) { petcmd_show(1); return; }                /* Start: the pet's commands */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
@@ -2673,22 +3123,6 @@ typedef void *(__fastcall *safe_assign_fn)(void *pointer, void *edx, void *unit)
 typedef int (__fastcall *performing_fn)(void *unit, void *edx);
 typedef void *(__fastcall *unit_wstring_fn)(void *unit, void *edx, void *out);
 typedef int (__fastcall *playing_fn)(void *unit, void *edx, const void *name);
-typedef void *(__fastcall *wstr_ctor_fn)(void *self, void *edx, const unsigned short *text);
-typedef void (__fastcall *wstr_dtor_fn)(void *self, void *edx);
-
-/* msvcp90's std::wstring constructor (from a wide C string) and destructor. */
-static int wstring_functions(wstr_ctor_fn *ctor, wstr_dtor_fn *dtor) {
-    static wstr_ctor_fn c;
-    static wstr_dtor_fn d;
-    if (!c || !d) {
-        void *m = GetModuleHandleA("msvcp90.dll");
-        c = m ? (wstr_ctor_fn)GetProcAddress(m, "??0?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@PB_W@Z") : 0;
-        d = m ? (wstr_dtor_fn)GetProcAddress(m, "??1?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@XZ") : 0;
-    }
-    *ctor = c;
-    *dtor = d;
-    return c && d;
-}
 
 /* The 360 shows no target for a mimic still in its idle animation (sub_821A83C8: ISA 0xa7 and
  * "MIMICIDLE" playing, sub_822801d0); PC's update has the same test (GOG 0x558a8f, 0x482740). */
