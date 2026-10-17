@@ -1884,7 +1884,8 @@ static void triggers_reset(void);
 static void stats_load(void);
 static void stats_commit(void);
 static void skills_load(void);
-static void *skills_root;
+static void quest_load(void);
+static void *skills_root, *quest_root;
 static void *stats_root, *journal_root;
 static void hide_info(void);
 static void update_info(void);
@@ -1968,6 +1969,7 @@ void x360_inventory_toggle(void) {
     if (!inventory_root) return;
     stats_load();
     skills_load();
+    quest_load();
     inventory_open = !inventory_open;
     if (inventory_open) {
         select_panel(0);
@@ -1980,6 +1982,7 @@ void x360_inventory_toggle(void) {
     if (stats_root) set_visible(stats_root, 0, inventory_open && page == 1);
     if (journal_root) set_visible(journal_root, 0, inventory_open && page == 1);
     if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
+    if (quest_root) set_visible(quest_root, 0, inventory_open && page == 3);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     if (character_root) set_visible(character_root, 0, inventory_open);
     if (inventory_open) move_to_front(master_root, 0);
@@ -2246,6 +2249,25 @@ static void stats_pad(unsigned pressed, int ly) {
         if (hero && *(int *)(hero + GOG_STAT_POINTS) - pending > 0) { stat_added[stat_sel]++; stats_fill(); }
     }
     if (pressed & 0x8000 && stat_added[stat_sel] > 0) { stat_added[stat_sel]--; stats_fill(); }   /* Y */
+}
+
+/* A text set as the 360's would draw it: one "|cAARRGGBB" .. "|u" around it gives its colour (the
+ * text plain); else as it is (see plain_markup below). */
+static void marked_text(void *w, const char *t) {
+    char value[600], colour[12];
+    unsigned i, len;
+    if (t && t[0] == '|' && t[1] == 'c' && length(t) > 10) {
+        for (i = 0; i < 8; i++) colour[i] = t[2 + i];
+        colour[8] = 0;
+        copy(value, sizeof value, t + 10, 0);
+        len = length(value);
+        while (len && value[len - 1] == ' ') value[--len] = 0;
+        if (len >= 2 && value[len - 2] == '|' && value[len - 1] == 'u') value[len - 2] = 0;
+        text(w, value);
+        prop(w, "TextColour", colour);
+        return;
+    }
+    text(w, t);
 }
 
 /* The 360's CEGUI draws "|cAARRGGBB" .. "|u" in a text in that colour; PC's writes the marks as
@@ -2772,6 +2794,144 @@ static void skills_load(void) {
     }
 }
 
+/* ---- the Quest page (the catalog's menus/12) ----
+ * The 360's CQuestMenuXenon: questmenu_xenon in the frame. Its list (sub_8237DF30): the quests of
+ * the quest manager (GOG's: the player's +0x7b4, its list +0xc, count +0x10, as PC's own
+ * CQuestMenu::updateLayout *(OT)* at 0x5a0330) that have a name and details. Its rows
+ * (sub_8237E0B8): ItemTray0..5, the selected one load_chartext_window_rollover, the others
+ * load_chartext_window_selected; SlotText the name (GOG 0x59f180, the quest's +0xb0, "|cFFFFBA00" .. "|u");
+ * questcomplete shown for a quest complete (GOG 0x5e9200 with 1, the 360's sub_823CA628);
+ * moveframe at the selected row. The selected quest (sub_8237E688): questtitle its name,
+ * questdetails its details (GOG 0x5ea120, the 360's sub_823C7FE8), the reward boxes for XP, gold
+ * and fame shown when not 0 ("XP:" N; GOG 0x5e8750, 0x5e8730, 0x5e8770, the quest's +0x150's
+ * +0xc, +0x10, +0x14 as the 360's sub_823CBE88, BE28, BEE8). Up and down choose the quest. */
+#define QUEST_PREFIX "x360qu_"
+#define GOG_QUEST_MANAGER 0x7b4
+typedef void *(__fastcall *quest_text_fn)(void *quest, void *edx, void *out);
+typedef unsigned char (__fastcall *quest_complete_fn)(void *quest, void *edx, unsigned char flag);
+static int quest_sel, quest_top;
+static float qframe_dy;
+
+static int quest_text(void *quest, unsigned fn, char *out, unsigned size) {
+    wstr_ctor_fn wctor;
+    wstr_dtor_fn wdtor;
+    unsigned char ws[32];
+    static const unsigned short empty[] = {0};
+    out[0] = 0;
+    if (!wstring_functions(&wctor, &wdtor)) return 0;
+    wctor(ws, 0, empty);
+    __try { ((quest_text_fn)fn)(quest, 0, ws); } __except (1) {}
+    if (!wstring_utf8_long(ws, out, size)) out[0] = 0;
+    wdtor(ws, 0);
+    return out[0] != 0;
+}
+
+static int quest_list(void **out, int max) {
+    unsigned char *mgr = hero ? *(unsigned char **)(hero + GOG_QUEST_MANAGER) : 0;
+    void **data = mgr ? *(void ***)(mgr + 0xc) : 0;
+    unsigned n = mgr ? *(unsigned *)(mgr + 0x10) : 0, i;
+    int count = 0;
+    char buf[600];
+    for (i = 0; data && i < n && count < max; i++) {
+        if (!data[i]) continue;
+        if (!quest_text(data[i], 0x59f180, buf, sizeof buf) || !quest_text(data[i], 0x5ea120, buf, sizeof buf)) continue;
+        out[count++] = data[i];
+    }
+    return count;
+}
+
+static void quest_fill(void) {
+    void *quests[64];
+    int n = quest_list(quests, 64), row;
+    char name[32], buf[600], *p;
+    if (!quest_root) return;
+    if (quest_sel >= n) quest_sel = n ? n - 1 : 0;
+    if (quest_sel < quest_top) quest_top = quest_sel;
+    if (quest_sel >= quest_top + 6) quest_top = quest_sel - 5;
+    for (row = 0; row < 6; row++) {
+        int i = quest_top + row;
+        void *tray;
+        copy(name, sizeof name, "ItemTray", 0); p = put_int(name + 8, row); *p = 0;
+        tray = win_of(QUEST_PREFIX, name);
+        show(tray, i < n);
+        if (i >= n) continue;
+        prop(tray, "Image", i == quest_sel ? "set:X360_widgets1 image:load_chartext_window_rollover"
+                                           : "set:X360_widgets1 image:load_chartext_window_selected");
+        quest_text(quests[i], 0x59f180, buf, sizeof buf);
+        copy(name, sizeof name, "SlotText", 0); p = put_int(name + 8, row); *p = 0;
+        marked_text(win_of(QUEST_PREFIX, name), buf);
+        copy(name, sizeof name, "questcomplete", 0); p = put_int(name + 13, row); *p = 0;
+        show(win_of(QUEST_PREFIX, name), ((quest_complete_fn)0x5e9200)(quests[i], 0, 1) & 0xff);
+    }
+    /* The frame at the selected row. */
+    {
+        char value[128];
+        float t[8], m[8];
+        void *mf = win_of(QUEST_PREFIX, "moveframe");
+        copy(name, sizeof name, "ItemTray", 0); p = put_int(name + 8, quest_sel - quest_top); *p = 0;
+        read_prop(win_of(QUEST_PREFIX, name), "UnifiedAreaRect", value, sizeof value);
+        if (parse_rect(value, t)) {
+            read_prop(mf, "UnifiedAreaRect", value, sizeof value);
+            if (parse_rect(value, m)) move_by(mf, 0, t[3] + qframe_dy - m[3]);
+        }
+        show(mf, n > 0);
+    }
+    if (n) {
+        void *q = quests[quest_sel];
+        static const unsigned reward_fn[3] = {0x5e8750, 0x5e8730, 0x5e8770};
+        static const char *const reward_box[3] = {"RewardXPBox", "RewardGoldBox", "RewardFameBox"};
+        static const char *const reward_text[3] = {"RewardXP", "RewardGold", "RewardFame"};
+        static const char *const reward_label[3] = {"XP:", "GP:", "Fame:"};
+        int r, any = 0;
+        quest_text(q, 0x59f180, buf, sizeof buf);
+        marked_text(win_of(QUEST_PREFIX, "questtitle"), buf);
+        quest_text(q, 0x5ea120, buf, sizeof buf);
+        text(win_of(QUEST_PREFIX, "questdetails"), buf);
+        for (r = 0; r < 3; r++) {
+            int v = ((skill_int_fn)reward_fn[r])(q, 0);
+            show(win_of(QUEST_PREFIX, reward_box[r]), v != 0);
+            copy(buf, sizeof buf, reward_label[r], 0);
+            p = put_int(buf + length(buf), v); *p = 0;
+            text(win_of(QUEST_PREFIX, reward_text[r]), buf);
+            if (v) any = 1;
+        }
+        show(win_of(QUEST_PREFIX, "rewards"), any);
+    } else {
+        text(win_of(QUEST_PREFIX, "questtitle"), "");
+        text(win_of(QUEST_PREFIX, "questdetails"), "");
+        show(win_of(QUEST_PREFIX, "rewards"), 0);
+    }
+}
+
+static void quest_load(void) {
+    void *container = win_of(MASTER, "ContainerFrame");
+    char value[128];
+    float t[8], m[8];
+    if (quest_root || !container) return;
+    quest_root = load("media/ui/x360/questmenu_xenon.layout", QUEST_PREFIX);
+    if (!quest_root) return;
+    scale_tree(quest_root, k, 0);
+    add_child(container, 0, quest_root);
+    move_by(quest_root, 1, 0);
+    move_by(quest_root, -1, 0);
+    plain_markup(quest_root, 0);
+    show(win_of(QUEST_PREFIX, "buttontray"), 0);
+    read_prop(win_of(QUEST_PREFIX, "ItemTray0"), "UnifiedAreaRect", value, sizeof value);
+    if (parse_rect(value, t)) {
+        read_prop(win_of(QUEST_PREFIX, "moveframe"), "UnifiedAreaRect", value, sizeof value);
+        if (parse_rect(value, m)) qframe_dy = m[3] - t[3];
+    }
+}
+
+static void quest_pad(unsigned pressed, int ly) {
+    static int held;
+    int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
+    void *quests[64];
+    int n = quest_list(quests, 64);
+    held = ly > 500 || ly < -500;
+    if (dir && quest_sel + dir >= 0 && quest_sel + dir < n) { quest_sel += dir; quest_fill(); }
+}
+
 /* The page shown: the inventory's bags, or the Stats page's two columns; the character's column
  * stays. */
 static void set_page(int p) {
@@ -2782,6 +2942,7 @@ static void set_page(int p) {
     if (stats_root) set_visible(stats_root, 0, page == 1);
     if (journal_root) set_visible(journal_root, 0, page == 1);
     if (skills_root) set_visible(skills_root, 0, page == 2);
+    if (quest_root) set_visible(quest_root, 0, page == 3);
     /* The character's column (and its doll) on the inventory's and the Stats pages only. */
     if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), page < 2);
     show_doll(page < 2);
@@ -2791,7 +2952,8 @@ static void set_page(int p) {
         hide_info();
         sk_spells = 0; sk_tab = 0; sk_row = 0; sk_col = 0;
         if (!skill_at(0, 0, 0)) skills_move(1, 0); else skills_fill();
-    } else update_info();
+    } else if (page == 3) { hide_info(); quest_fill(); }
+    else update_info();
 }
 
 /* ---- the pet's commands (Start in the inventory: the catalog's menus/09) ----
@@ -2978,12 +3140,12 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
      * (Skills, Quest) are passed over. */
     if (pressed & (0x10000 | 0x20000)) {
         int step = pressed & 0x10000 ? 3 : 1, p = (page + step) % 4;
-        while (p == 3) p = (p + step) % 4;
         set_page(p);
         return;
     }
     if (page == 1) { stats_pad(pressed, ly); return; }
     if (page == 2) { skills_pad(pressed, lx, ly); return; }
+    if (page == 3) { quest_pad(pressed, ly); return; }
     if (pressed & 0x0010) { petcmd_show(1); return; }                /* Start: the pet's commands */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
