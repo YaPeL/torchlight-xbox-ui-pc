@@ -1895,8 +1895,13 @@ what they still lack. The screens done are in section 14.
    class). After the triggers, the object's `+0x2f0`/`+0x2f4` (a vector, PC's of 2 entries,
    X360_'s 0 before) are equal. The words that still differ are pointers and padding bytes, and
    PC's object reads as text past `+0x8` (another layout, or other memory). Nothing found in the
-   font object explains the gold. Next, outside the font: the text's drawing path for a window,
-   for instance a check on the font's name or on the window's type at render time.
+   font object explains the gold. Next steps:
+   - Confirm that the pointer read as PC's SerifBig was the Font: getFont's result and
+     FreeTypeFont's vtable. If it was not, the diff compared different things, and `+0x2f0` is not
+     conclusive.
+   - Create the X360_ fonts with the function PC loads its own with (near GOG `0x55fc60`, the one
+     that sets the triggers) instead of the scheme, then apply `match_spacing`. Whatever else that
+     path does is then inherited.
 2. **The quest reward item's icon** in the dialog (an empty slot). Also: its sockets only when
    it has them.
 3. **The object label of the candidate.** It is matched by text and, of several of one name, by
