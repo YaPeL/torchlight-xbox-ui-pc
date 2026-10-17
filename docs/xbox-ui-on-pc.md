@@ -1754,3 +1754,18 @@ mouse through (MousePassThroughEnabled). So do PC's own bottom HUD and pet HUD: 
 transparent under them, and a click on the bar opened PC's skills (its SkillsButton) once the
 360's let it through. After that, clicks over the HUD reached the world. **Open:** the dialog's
 Ok was not clicked again after the fix (the guide NPC walked off).
+
+**The gem goblins** (`town/02`, `03`): the enchanter's menu in its other modes, in both games.
+- PC's CEnchantMenu opens in mode 0x19 for a unit of type 132 and 0x1a for one of type 133
+  (`0x499038`, `0x499050`). The 360 titles type 132's page "Destroy Gems" (`title.destroygems`,
+  `0x820D1044`; its page `getsocket`, town/02) and type 133's "Recover Gems"
+  (`title.recovergems`, `0x820D1028`; `destroysocket`, town/03): its `sub_82360808` sets `+304`
+  to 10 and 9, and `sub_82376D48` titles by that. PC's internal names (GEMRECOVER,
+  SOCKETABLERECOVERER) read the other way round; the screens follow the 360's titles and pages.
+- The page's A prompt shows for an item with gems (the 360's `sub_8236B1C8`; here what PC asks
+  before working, the item's `+0x39c` and `+0x3a4`, `0x57c173`). The bag's bar has no button
+  (town/02, 03). A runs PC's command on slot 14, as at the enchanter. The result line starts
+  empty (the layout has a sample text).
+- **Tested** (GOG, run 13): both pages match the catalog window for window
+  (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no
+  socketed item with gems.

@@ -173,7 +173,9 @@ static void text(void *w, const char *utf8) {
 static void show(void *w, int on) { if (w) set_visible(w, 0, on); }
 /* The HUD only shows: every window of it lets the mouse through to PC's (its SkillSet1 is a
  * 1920x1080 window, and over a dialog of PC's it took the click on Ok: "x360 click: under the
- * mouse x360hud_SkillSet1", docs 14). PC's own HUD under it, transparent, keeps its clicks. */
+ * mouse x360hud_SkillSet1", docs 14). PC's own HUD under it, transparent, is let through too, from
+ * the 360's HUD's tick only: the layer is chosen at the game's start (x360_ui.ini) and cannot be
+ * turned off while it runs, so PC's HUD is never left visible and unclickable. */
 static void pass_mouse(void *w) {
     void *stack[256];
     int sp = 0;
@@ -659,7 +661,7 @@ static unsigned char *cur_owner;             /* the bag's owner: the hero, the p
 /* The transmuter (CCombineMenu, CGameUI's +0x2e0): its four places are slots of the hero's own
  * inventory, their numbers at the menu's +0x7c (read when it opens; GOG 0x569663). */
 static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
-static int at_enchant;                       /* PC's enchant menu is open in its enchanter's mode (shop: him) */
+static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x19/0x1a gems) */
 static int tm_slot[4], tm_known;
 static unsigned char *tm_shop;               /* the transmuter unit while it is open */
 static int is_tm_slot(int slot) {
@@ -698,6 +700,11 @@ static int can_enchant(unsigned char *item) {
     if (!item || !item[GOG_IDENTIFIED]) return 0;
     if (!(isa(item, 8) || isa(item, 13) || isa(item, 17) || isa(item, 24))) return 0;
     return *(int *)(item + GOG_ENCHANTS) < max_enchants();
+}
+/* Gems in its sockets: what PC's gem pages ask before working (GOG 0x57c173: the sockets +0x39c
+ * and the gems +0x3a4; the 360's sub_8236B1C8 asks its +924). */
+static int has_gems(unsigned char *item) {
+    return item && *(unsigned *)(item + 0x39c) && *(unsigned *)(item + 0x3a4);
 }
 static float disenchant_chance(unsigned char *item) {
     unsigned char *g = ((settings_fn)GOG_SETTINGS)();
@@ -1312,7 +1319,7 @@ static void refresh(void) {
             if (at_enchant) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
-                a = can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";
+                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
             } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
                  * transmuter's own prompt under its rows. */
@@ -1739,6 +1746,22 @@ static void update_info(void) {
 static void *ench_root;
 static void ench_fill(unsigned char *item) {
     char buf[160], *p;
+    /* The gem pages (the 360's sub_82360EC0, its modes 3 and 2): the goblin of type 132 (PC's
+     * interaction 0x19) has the page the 360 titles "Destroy Gems" (getsocket, town/02), the one of
+     * type 133 (0x1a) "Recover Gems" (destroysocket, town/03; the 360's sub_82376D48 by its +304:
+     * 132 -> 10, 133 -> 9). Their A prompt shows for an item with gems (sub_8236B1C8). */
+    if (at_enchant == 0x19 || at_enchant == 0x1a) {
+        int get = at_enchant == 0x19;
+        show(win_of(ENCH_PREFIX, "enchant"), 0);
+        show(win_of(ENCH_PREFIX, "retire"), 0);
+        show(win_of(ENCH_PREFIX, "getsocket"), get);
+        show(win_of(ENCH_PREFIX, "destroysocket"), !get);
+        /* The result lines start empty (the 360's catalog: town/02, 03); the layout has a sample. */
+        text(win_of(ENCH_PREFIX, "getsocketresult"), "");
+        text(win_of(ENCH_PREFIX, "destroysocketresult"), "");
+        show(win_of(ENCH_PREFIX, get ? "pressbuttongetsocket" : "pressbuttondestroysocket"), has_gems(item));
+        return;
+    }
     show(win_of(ENCH_PREFIX, "enchant"), 1);
     show(win_of(ENCH_PREFIX, "getsocket"), 0);
     show(win_of(ENCH_PREFIX, "destroysocket"), 0);
@@ -2150,7 +2173,7 @@ static void enchant(void) {
     if (!m || !bag || !from || !list_count) return;
     item = (unsigned char *)list[selected[filter]];
     slot = list_slot[selected[filter]];
-    if (!can_enchant(item)) { refuse(); x360_log("x360 enchanter: A: cannot enchant\r\n"); return; }
+    if (at_enchant == 0x15 ? !can_enchant(item) : !has_gems(item)) { refuse(); x360_log("x360 enchanter: A: not for this item\r\n"); return; }
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 enchanter: A: slot 14 is taken\r\n"); return; }
     ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(from, 0, item);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
@@ -2420,7 +2443,7 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
                                                : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
@@ -3885,11 +3908,12 @@ void x360_shop_tick(void) {
     if (!shop && en && en[ENCHANT_OPEN] && *(unsigned char **)(en + ENCHANT_OWNER)) {
         static int logged_mode;
         int mode = *(int *)(en + ENCHANT_MODE);
-        if (mode == 0x15) {
+        if (mode == 0x15 || mode == 0x19 || mode == 0x1a) {
             if (inventory_open) x360_inventory_toggle();
             shop = *(unsigned char **)(en + ENCHANT_OWNER);
-            at_enchant = 1;
-            x360_log("x360 shop: PC's enchant menu opened (the enchanter)\r\n");
+            at_enchant = mode;
+            x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
+                     : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
         } else if (mode != logged_mode) {
             logged_mode = mode;
