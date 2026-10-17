@@ -1764,7 +1764,8 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   SOCKETABLERECOVERER) read the other way round; the screens follow the 360's titles and pages.
 - The page's A prompt shows for an item with gems (the 360's `sub_8236B1C8`; here what PC asks
   before working, the item's `+0x39c` and `+0x3a4`, `0x57c173`). The bag's bar has no button
-  (town/02, 03). A runs PC's command on slot 14, as at the enchanter. The result line starts
+  (town/02, 03), and no gold: the 360 hides the bag's gold at a menu of mode 7, 8, 9 or 10
+  (`sub_82367D38`, `0x82368620`). A runs PC's command on slot 14, as at the enchanter. The result line starts
   empty (the layout has a sample text).
 - **Tested** (GOG, run 13): both pages match the catalog window for window
   (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no

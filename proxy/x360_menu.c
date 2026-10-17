@@ -1214,7 +1214,9 @@ static void refresh(void) {
         p = put_int(p, *(long *)(owner + GOG_GOLD));
         *p = 0;
         text(win("playergoldtext"), buf);
-        show(win("playergoldwin"), cur_owner == hero && !at_stash);   /* none at a stash (town/21) */
+        /* The bag's gold, but at a menu of mode 7, 8, 9 or 10 (sub_82367D38, 0x82368620: the
+         * stashes and the two gem pages; town/21, 02, 03). */
+        show(win("playergoldwin"), cur_owner == hero && !at_stash && at_enchant != 0x19 && at_enchant != 0x1a);
         if (inv) {
             void **refs = *(void ***)(inv + INV_REFS);
             unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;

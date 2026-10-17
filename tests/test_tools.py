@@ -508,6 +508,11 @@ class CompareUITest(unittest.TestCase):
         self.assertEqual(compare_ui.compare(ref, pc), ["Root/Label: missing on PC"])
         self.assertIn("Root/Other: only on PC", compare_ui.compare(ref, pc, show_extra=True))
 
+    def test_shown_on_pc_where_the_360_hides_it(self):
+        ref, pc = self.dumps(ui_window("Label", (10, 10, 110, 40), text="Level 3", font="Fancy"),
+                             [ui_window("Hidden", (0, 0, 5, 5))])
+        self.assertEqual(compare_ui.compare(ref, pc), ["Root/Hidden: shown on PC, hidden on the 360"])
+
     def test_under_limits_the_subtree(self):
         ref, pc = self.dumps(ui_window("Label", (99, 10, 110, 40)))
         self.assertEqual(compare_ui.compare(ref, pc, under="Icon"), [])

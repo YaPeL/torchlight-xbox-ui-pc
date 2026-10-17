@@ -12,6 +12,8 @@ are compared without the converter's `X360_` prefix (tools/convert_x360_ui.py).
 
 --under NAME   only the windows under the one of that base_name (on both sides)
 --all          also list the shown PC windows that have no 360 counterpart
+A PC window shown where the 360's of the same base name and parent is hidden is reported too
+("shown on PC, hidden on the 360"), as one the 360 hides by its rules (the gold at the gem pages).
 Prints one line per difference and a count; the exit code is 1 if anything differs.
 """
 import argparse
@@ -32,13 +34,14 @@ def base(w):
     return stripped.lstrip("_") if stripped and stripped != name else name
 
 
-def flatten(windows, under=None):
-    """[(window, parent base_name)] of the shown windows, in tree order."""
+def flatten(windows, under=None, hidden=False):
+    """[(window, parent base_name)] of the shown windows (the hidden ones with hidden=True), in
+    tree order."""
     out = []
 
     def walk(w, parent, inside):
         inside = inside or under is None or base(w) == under
-        if inside and w.get("shown"):
+        if inside and bool(w.get("shown")) != hidden:
             out.append((w, parent))
         for c in w.get("children", []):
             walk(c, base(w), inside)
@@ -130,6 +133,13 @@ def compare(ref_dump, pc_dump, under=None, tolerance=1.0, show_extra=False):
 
     for ref, pc in pairs:
         unnamed(ref, pc, ref["base_name"])
+    ref_hidden = {(base(w), parent) for w, parent in flatten(ref_dump["windows"], under, hidden=True)}
+    ref_shown = {(base(w), parent) for w, parent in ref_flat}
+    for w, parent in pc_flat:
+        key = (base(w), parent)
+        if id(w) not in used and key in ref_hidden and key not in ref_shown and (w.get("effective_alpha") or 0) > 0.01:
+            used.add(id(w))
+            lines.append(f"{parent}/{base(w)}: shown on PC, hidden on the 360")
     if show_extra:
         lines += [f"{parent}/{base(w)}: only on PC" for w, parent in pc_flat if id(w) not in used]
     return lines
