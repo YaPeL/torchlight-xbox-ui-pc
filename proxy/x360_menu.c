@@ -695,6 +695,7 @@ static int wstring_utf8_long(const unsigned char *p, char *out, unsigned size) {
 }
 
 typedef void *(__fastcall *wstr_ctor_fn)(void *self, void *edx, const unsigned short *text);
+typedef struct { unsigned char bytes[28]; } wstring_by_value;   /* VC9 std::wstring */
 typedef void (__fastcall *wstr_dtor_fn)(void *self, void *edx);
 /* msvcp90's std::wstring constructor (from a wide C string) and destructor. */
 static int wstring_functions(wstr_ctor_fn *ctor, wstr_dtor_fn *dtor) {
@@ -3098,6 +3099,76 @@ static void triggers_tick(void) {
     }
 }
 
+/* ---- the pause menu (Start in play: the catalog's menus/13 and 14) ----
+ * The 360's COptionsMenu with optionsmenu: Pause Menu over the game, its buttons Options, Help,
+ * Achievements, Leaderboards and Exit to Title, the focused one in its rollover image (the
+ * catalog: Options focused, gem_button_small_rollover); up and down move the focus, A presses,
+ * B or Start closes. Help opens howto_xenon (How To Play, B closes it). The trial's Unlock Full
+ * Game and Gift a Friend are hidden. Options (the 360's settings screen), Achievements and
+ * Leaderboards (Xbox Live) and Exit to Title do nothing yet (section 14). */
+#define PAUSE_PREFIX "x360pm_"
+static void *pc_window(const char *name);
+#define HOWTO_PREFIX "x360ht_"
+static void *pause_root, *howto_root;
+static int pause_open, howto_open, pause_focus;
+static const char *const pause_button[5] = {"i_416", "i_414", "i_404", "Leaderboards", "i_406"};
+
+static void pause_draw(void) {
+    int i;
+    for (i = 0; i < 5; i++)
+        prop(win_of(PAUSE_PREFIX, pause_button[i]), "NormalImage", i == pause_focus ? "set:X360_widgets1 image:gem_button_small_rollover"
+                                                                                   : "set:X360_widgets2 image:gem_button_small");
+}
+
+static void pause_show(int on) {
+    if (on && !pause_root) {
+        pause_root = load("media/ui/x360/optionsmenu.layout", PAUSE_PREFIX);
+        if (!pause_root) return;
+        if (!k) { RECT r; HWND w = GetActiveWindow(); k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f; }
+        scale_tree(pause_root, k, 0);
+        /* The trial's buttons, hidden in the full game (the catalog's menus/13 has neither). */
+        show(win_of(PAUSE_PREFIX, "UnlockFullGame"), 0);
+        show(win_of(PAUSE_PREFIX, "invitefriend"), 0);
+    }
+    if (!pause_root) return;
+    pause_open = on;
+    if (on) { pause_focus = 0; pause_draw(); }
+    set_visible(pause_root, 0, on);
+    if (on) move_to_front(pause_root, 0);
+    x360_log(on ? "x360 menu: pause shown\r\n" : "x360 menu: pause hidden\r\n");
+}
+
+static void howto_show(int on) {
+    if (on && !howto_root) {
+        howto_root = load("media/ui/x360/howto_xenon.layout", HOWTO_PREFIX);
+        if (!howto_root) return;
+        scale_tree(howto_root, k, 0);
+    }
+    if (!howto_root) return;
+    howto_open = on;
+    set_visible(howto_root, 0, on);
+    if (on) move_to_front(howto_root, 0);
+}
+
+int x360_pause_open(void) { return pause_open || howto_open; }
+
+/* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
+void x360_pause_pad(unsigned pressed, int ly) {
+    static int held;
+    int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
+    held = ly > 500 || ly < -500;
+    if (!resolve()) return;
+    if (howto_open) { if (pressed & 0x2000) howto_show(0); return; }
+    if (!pause_open) { if (pressed & 0x0010) pause_show(1); return; }
+    if (pressed & (0x2000 | 0x0010)) { pause_show(0); return; }      /* B, Start */
+    if (dir) { pause_focus = (pause_focus + (dir > 0 ? 1 : 4)) % 5; pause_draw(); }
+    if (pressed & 0x1000) {                                            /* A */
+        x360_log("x360 menu: pause A on "); x360_log_num(pause_focus); x360_log("\r\n");
+        if (pause_focus == 1) howto_show(1);
+        /* Exit to Title: not done (two tries failed, see the doc's section 14). */
+    }
+}
+
 /* A fingerprint of the inventory: its items, their slots and stacks. PC changes it outside our
  * buttons too (useItem takes a potion out while the hero drinks and puts the rest back; pickups),
  * and the 360's screen hears of every change (iInventoryListener): ours rebuilds when it moves. */
@@ -3187,7 +3258,6 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
 extern char x360_console_commands[400];
 #define GOG_CONSOLE 0x13ec
 #define GOG_EXECUTE_COMMAND_LINE 0x0056cd00
-typedef struct { unsigned char bytes[28]; } wstring_by_value;   /* VC9 std::wstring */
 typedef void (__fastcall *execute_fn)(void *console, void *edx, wstring_by_value command);
 typedef void *(__fastcall *wctor_fn)(void *self, void *edx, const unsigned short *text);
 

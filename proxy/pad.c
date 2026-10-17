@@ -142,6 +142,8 @@ void x360_inventory_toggle(void);
 void x360_run_console(void);
 int x360_inventory_open(void);
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
+int x360_pause_open(void);
+void x360_pause_pad(unsigned pressed, int ly);
 void x360_hud_tick(void);
 void x360_hud_attacked(void *unit);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
@@ -913,6 +915,11 @@ static void order(void) {
     x360_hud_tick();
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
+    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
+    if (!x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
+        x360_pause_pad(pressed, ly);
+        if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
+    }
     if (pressed & BUTTON_BACK) {
         x360_inventory_toggle();
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);

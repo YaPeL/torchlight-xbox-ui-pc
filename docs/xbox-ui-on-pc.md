@@ -1505,3 +1505,34 @@ functions `0x488450`, `0x488470`, `0x4884b0`, `0x488490`; the -1 ones `0x4884d0`
 read the values with them added, as the 360's `sub_82383ff8`/`sub_82384118`). The journal: PC's
 statistics at `+0x740` (PC's own journal `0x586c00`, the same 18 labels), the time played the float
 at `+0x2c8`, as 36 StaticTexts of the 360's sizes and colours.
+
+**The Skills page** (`menus/11`, the recomp agent's same-character reference `test/04`; "muy
+cerca"): `skillsmenu_xenon` filled as `sub_8235BE88` from the player's skill manager (GOG's CSkill
+has the 360's offsets: tab `+0xdc`, row `+0xd8`, column `+0xd4`, rank `+0xa4`, effective rank
+`+0xa8` from `0x5d7d40`; the manager's list `+0x3c`, count `+0x40`, the 360's `+0x2c`/`+0x30`); icons
+by name from the itemicons imagesets; the selected skill as `sub_8235D558`: name `0x5d59b0`, kind
+`0x5d68e0`, the rank's effects `0x5d8c60` (its `0x5e0fc0` writes "Inflicts .. of Weapon DPS"),
+Next Level with the next rank's and its required level (`0x5d5c00`); the help box as
+`sub_82381D18`; moves as `sub_8235E3A0`..`E6D0` with the spells' row (`getKnownSpell` *(OT)*,
+`0x484ff0`); A learns as `sub_8235E9D0` through PC's `0x488430` and `0x5de550`. The texts carry the
+360's colour marks (`|cAARRGGBB` .. `|u`, the data's own); PC's CEGUI writes them as they are, so a
+whole marked text becomes plain text and colour, and a description gets one StaticText per
+paragraph in its colour. **Not done:** X (mapping a skill to LT/RT/Y/B: `sub_823825F0` opens it,
+the slots the hotbar's); the 360's requirement line ("Right hand requires : melee Weapon", built by
+`sub_823B07C8` from its own strings, which PC does not have).
+
+**The Quest page** (`menus/12`): `questmenu_xenon` as `CQuestMenuXenon`: the quests of the player's
+quest manager (GOG `+0x7b4`, list `+0xc`, count `+0x10`) with a name (`0x59f180`) and details
+(`0x5ea120`), six rows with Quest Complete (`isComplete` *(OT)*, `0x5e9200`), the title, details
+and reward boxes (`0x5e8750`, `0x5e8730`, `0x5e8770`). **Not done:** the reward items' sockets.
+
+**The pause menu** (`menus/13`, `14`): Start in play opens `optionsmenu` (the 360's COptionsMenu),
+its focus in the rollover image, the trial's Unlock Full Game and Gift a Friend hidden; Help opens
+`howto_xenon`. **Exit to Title: stopped after two tries.** (1) Clicking PC's own pause button: PC's
+`media/ui/optionsmenu.layout` has `ExitGame`, but no window of that name exists while PC's menu is
+closed (neither under the GUI sheet nor by name). (2) PC's own `COptionsMenu` (vtable `0xab7d78`,
+among CGameUI's members): its `onClick` *(OT)* `0x591050` sets, for function 0
+(`LAYOUT_FUNCTION_EXIT_GAME` *(OT)*), its return to the main menu `+0x68` and close request `+0x1a`,
+and acts only while open (`+0x18`); opening it with `0x591200` and calling it from the pad's hook
+froze the game (the log stops there). Options (the 360's settings screen, `menus/04`),
+Achievements and Leaderboards do nothing yet.
