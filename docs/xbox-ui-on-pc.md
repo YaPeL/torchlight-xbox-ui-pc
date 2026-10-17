@@ -1837,7 +1837,33 @@ and is hidden in every catalog capture.
   property) and the 360's Serif. The label whose text is the name of pad.c's candidate (`+0x420`,
   or the item's name) is enabled; the others are disabled. The state is written only when it
   changes.
-- **Limitation:** the candidate is matched by the label's text, so two objects of the same name
-  near each other are both lit.
+- **The A button's size and place.** In the 360's look the button is 21×21 pixels at −20, −1, in
+  the 360's 720 rows, and PC's looks do not scale with the screen. The converter writes it as
+  fractions of the label's height (`label_button_relative`), and the label is given the 360's
+  height (17.27 of 720), its centre kept: PC's engine makes it 40 high at 1080.
+- **Two of the same name** (three "Chest" were lit in one dump): only the one nearest the
+  screen's centre, where the hero is, is lit. **This is not the 360's rule**, an approximation.
+  PC keeps no link from the label to its unit (a pool of windows). Open: project the
+  candidate's position instead.
+- **Open:** the 360's label background is darker (its StaticShared frame, also in 720-row
+  pixels).
 - **Tested** (GOG, run 40; the user walked the hero): "A staff" on an item on the ground and
   "A Chest" (`screens/gog/label-item-1.png`, `label-chest-1`).
+
+**Fishing** (`in-game/09`). PC's `CFishingMenu` (CGameUI's `+0x31c`, vtable `0xab72a0`; open
+`+0x18`) and the 360's `fishing.layout` size their ring by the same rule. The 360's is
+`sub_821FFE90`, read on the recomp with gdb watchpoints on the ring's area; PC's is at `0x57c997`.
+The player is `[[menu+0x1c]+0x1c]`, and f = sin(phase `+0x7a0`) × 0.2 + base `+0x79c`, or 1.0 when
+the fish bites (`+0x7ac` > 0). The ring's lower right corner sits at f × 128 pixels of 720 rows;
+its upper left is kept.
+- While PC's menu is open the 360's layout is shown, and PC's ring, target, button and base are
+  made transparent.
+- A gives PC's menu its command 0xe and B its command 6 (its virtual `+0x14`, `0x57d060`).
+  Command 0xe is the catch: run 41, A shown as PC's "You caught nothing!" when pressed before a
+  bite.
+- **Open:**
+  - PC's ripples still show under the 360's ring.
+  - The result ("You caught …") is PC's window.
+  - B (cancel) is untested.
+- **Tested:** `screens/gog/fishing-1`, `fishing-catch.png`; the label "A helm" with the
+  360's button size (`label-item-2.png`).

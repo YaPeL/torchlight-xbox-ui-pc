@@ -523,6 +523,18 @@ class CompareUITest(unittest.TestCase):
         self.assertEqual(compare_ui.compare(ref, pc, under="Icon"), [])
 
 
+class LabelLookTest(unittest.TestCase):
+    def test_the_label_button_is_made_relative_to_the_height(self):
+        look = ('<WidgetLook name="ceguiWidget/ItemTextButton"><ImagerySection name="Button"><ImageryComponent><Area>'
+                '<Dim type="LeftEdge" ><AbsoluteDim value="-20" /></Dim><Dim type="Width" ><AbsoluteDim value="21" /></Dim>'
+                '</Area></ImageryComponent></ImagerySection></WidgetLook>')
+        out = convert_x360_ui.label_button_relative(look)
+        self.assertIn('<Dim type="LeftEdge" ><UnifiedDim scale="-1.1581" type="Height" /></Dim>', out)
+        self.assertIn('<Dim type="Width" ><UnifiedDim scale="1.2160" type="Height" /></Dim>', out)
+        self.assertEqual(convert_x360_ui.label_button_relative("<WidgetLook name=\"x\"></WidgetLook>"),
+                         "<WidgetLook name=\"x\"></WidgetLook>")
+
+
 class ImageStringsTest(unittest.TestCase):
     def test_reads_the_texts_at_their_addresses(self):
         image = bytearray(0x200)

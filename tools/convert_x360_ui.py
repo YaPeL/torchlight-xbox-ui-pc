@@ -186,6 +186,7 @@ def convert(files):
         text, enc = decode(data)
         text, unknown = rename_sets(text, names)
         text = rename_fonts(text, fonts)
+        text = label_button_relative(text)
         report["looknfeel_unknown_imagesets"] = unknown
         return set_attr(tag, "Filename", put(basename(src), text.encode(enc)))
 
@@ -269,6 +270,33 @@ STRINGS = {
     "journal.12": 0x820CF718, "journal.13": 0x820CF734, "journal.14": 0x820CF750, "journal.15": 0x820CF768,
     "journal.16": 0x820CF784, "journal.17": 0x820CF7A8,
 }
+
+
+LABEL_LOOK = "ceguiWidget/ItemTextButton"
+LABEL_HEIGHT_720 = 17.27        # the 360's object label: 26 pixels at 1080 (the catalog's in-game/07)
+
+
+def label_button_relative(text):
+    """The object label's A button (ItemTextButton's "Button" section: 21x21 at -20, -1, pixels at
+    the 360's 720 rows) as fractions of the label's height, so that it keeps the 360's size and
+    place at any resolution: PC's looks are not scaled with the screen."""
+    start = text.find(f'<WidgetLook name="{LABEL_LOOK}">')
+    if start < 0:
+        return text
+    end = text.find("</WidgetLook>", start)
+    section = text.find('<ImagerySection name="Button">', start, end)
+    if section < 0:
+        return text
+    close = text.find("</ImagerySection>", section)
+    body = text[section:close]
+
+    def rel(v):
+        return f'<UnifiedDim scale="{v / LABEL_HEIGHT_720:.4f}" type="Height" />'
+
+    for kind, value in (("LeftEdge", -20), ("TopEdge", -1), ("Width", 21), ("Height", 21)):
+        body = body.replace(f'<Dim type="{kind}" ><AbsoluteDim value="{value}" /></Dim>',
+                            f'<Dim type="{kind}" >{rel(value)}</Dim>')
+    return text[:section] + body + text[close:]
 
 
 def image_strings(image):

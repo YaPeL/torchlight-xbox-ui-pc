@@ -4821,6 +4821,8 @@ static void dialog_tick(void) {
  * and the one whose text is the candidate's name (pad.c's) enabled. */
 void *x360_pad_candidate(void);
 #define GOG_UNIT_LABEL_NAME 0x420           /* a unit's shown name, a std::wstring (also the target bar's) */
+static int screen_w(void) { RECT r; HWND w = active_window(); return w && GetClientRect(w, &r) ? r.right - r.left : 1920; }
+static int screen_h(void) { RECT r; HWND w = active_window(); return w && GetClientRect(w, &r) ? r.bottom - r.top : 1080; }
 static void labels_tick(void) {
     typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
     typedef void (__fastcall *set_str_fn)(void *self, void *edx, const void *s);
@@ -4849,8 +4851,11 @@ static void labels_tick(void) {
     }
     {
         /* PC's labels: children of the sheet's first child (Ingame UI Sheet) of type GuiLook/ItemText. */
-        void *root = ingame;
+        void *root = ingame, *best = 0;
+        float best_d = 1e30f;
         unsigned m = root ? child_count(root, 0) : 0, j;
+        int pass;
+        for (pass = 0; pass < 2; pass++)
         for (j = 0; j < m; j++) {
             void *w = child_at(root, 0, j);
             const char *type = c_str(get_type(w, 0), 0);
@@ -4872,9 +4877,37 @@ static void labels_tick(void) {
                     logged++;
                 }
             }
+            /* The 360's label height (17.27 at 720: 26 pixels at 1080), its centre kept: PC's engine
+             * makes it 40 high at 1080; the look's A button is a fraction of it. */
+            {
+                char rect[128];
+                float vr[8], h = 17.27f * (float)screen_h() / 720.0f, mid;
+                read_prop(w, "UnifiedAreaRect", rect, sizeof rect);
+                if (parse_rect(rect, vr) && vr[0] == 0 && vr[2] == 0 && (vr[7] - vr[3] > h + 0.5f || vr[7] - vr[3] < h - 0.5f)) {
+                    mid = (vr[3] + vr[7]) * 0.5f;
+                    vr[3] = mid - h * 0.5f; vr[7] = mid + h * 0.5f;
+                    write_rect(rect, vr);
+                    prop(w, "UnifiedAreaRect", rect);
+                }
+            }
             read_prop(w, "Text", t, sizeof t);
             on = want[0] && t[0] && length(t) == length(want);
             if (on) { unsigned q; for (q = 0; t[q]; q++) if (t[q] != want[q]) { on = 0; break; } }
+            /* Two of the same name (two chests): only the one nearest the screen's centre, where
+             * the hero is and so the candidate, nearest of them (the review: three "Chest" lit). */
+            if (on) {
+                char rect[128];
+                float vr[8], dx, dy, d;
+                read_prop(w, "UnifiedAreaRect", rect, sizeof rect);
+                d = 1e9f;
+                if (parse_rect(rect, vr)) {
+                    dx = (vr[1] + vr[5]) * 0.5f - (float)screen_w() * 0.5f;
+                    dy = (vr[3] + vr[7]) * 0.5f - (float)screen_h() * 0.5f;
+                    d = dx * dx + dy * dy;
+                }
+                if (pass == 0) { if (d < best_d) { best_d = d; best = w; } continue; }
+                on = w == best;
+            } else if (pass == 0) continue;
             {
                 /* The state written only when it changes (a window's last, by its pointer). */
                 static void *seen[64];
@@ -4891,6 +4924,76 @@ static void labels_tick(void) {
             }
         }
     }
+}
+
+/* ---- fishing (in-game/09) ----
+ * PC's CFishingMenu (CGameUI's +0x31c, vtable 0xab72a0, made at 0x563478; open +0x18) and the
+ * 360's fishing.layout size their ring by the same rule (the 360's sub_821FFE90, read with gdb on
+ * the recomp; PC's 0x57c997): of the player ([[menu+0x1c]+0x1c]), f = sin(phase +0x7a0) * 0.2 +
+ * base +0x79c, or 1.0 when the fish bites (+0x7ac > 0); the ring's lower right corner at f * 128
+ * (0xab72b8; the 360's 0x820AA2C0 base) pixels of the 360's 720 rows, its upper left kept (the
+ * 360 sets the area's maximum only). While PC's menu is open the 360's layout is shown over it,
+ * PC's made transparent; A gives PC's menu its command 0xe, B its command 6 (its virtual +0x14,
+ * 0x57d060: the player's +0x170, or 0x494ab0 and the player's +0x174 with 2). */
+#define GOG_FISHING_MENU 0x31c
+static float x87_sin(float x) { float r; __asm__("fsin" : "=t"(r) : "0"(x)); return r; }   /* as PC: fsin */
+#define FISH_PREFIX "x360fish_"
+static void *fish_root;
+static int fish_shown;
+static void fishing_tick(void) {
+    typedef unsigned char (__fastcall *cmd_fn)(void *self, void *edx, int cmd);
+    static unsigned prev;
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_FISHING_MENU) : 0, *player;
+    int open = m && m[0x18] && *(unsigned char **)(m + 0x1c) && *(unsigned char **)(*(unsigned char **)(m + 0x1c) + 0x1c);
+    unsigned buttons, pressed;
+    if (!open) {
+        if (fish_shown) { fish_shown = 0; set_visible(fish_root, 0, 0); x360_log("x360 fishing: hidden\r\n"); }
+        return;
+    }
+    if (!fish_root) {
+        fish_root = load("media/ui/x360/fishing.layout", FISH_PREFIX);
+        if (!fish_root) return;
+        if (!k) k = (float)screen_h() / 768.0f;
+        scale_tree(fish_root, k, 0);
+        pass_mouse(fish_root);
+        x360_log("x360 fishing: loaded fishing.layout\r\n");
+    }
+    if (!fish_shown) {
+        void *pc = pc_window("FishingRing"), *root = pc;
+        typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+        static parent_fn gp;
+        if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+        while (root && gp && gp(root, 0) && gp(gp(root, 0), 0)) root = gp(root, 0);   /* PC's layout's root */
+        if (pc) prop(pc_window("FishingRing"), "Alpha", "0");
+        if (pc_window("FishingRingTarget")) prop(pc_window("FishingRingTarget"), "Alpha", "0");
+        if (pc_window("FishingButton")) prop(pc_window("FishingButton"), "Alpha", "0");
+        if (pc_window("Base")) prop(pc_window("Base"), "Alpha", "0");
+        fish_shown = 1;
+        set_visible(fish_root, 0, 1);
+        move_to_front(fish_root, 0);
+        x360_log("x360 fishing: shown over PC's\r\n");
+    }
+    player = *(unsigned char **)(*(unsigned char **)(m + 0x1c) + 0x1c);
+    {
+        float f = 0.2f * x87_sin(*(float *)(player + 0x7a0)) + *(float *)(player + 0x79c), size;
+        void *ring = win_of(FISH_PREFIX, "FishingRing");
+        char rect[128];
+        float vr[8];
+        if (*(float *)(player + 0x7ac) > 0) f = 1.0f;
+        size = f * 128.0f * (float)screen_h() / 720.0f;
+        read_prop(ring, "UnifiedAreaRect", rect, sizeof rect);
+        if (ring && parse_rect(rect, vr)) {
+            vr[4] = vr[6] = 0;
+            vr[5] = size; vr[7] = size;
+            write_rect(rect, vr);
+            prop(ring, "UnifiedAreaRect", rect);
+        }
+    }
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~prev;
+    prev = buttons;
+    if (pressed & 0x1000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 0xe); x360_log("x360 fishing: A (PC's command 0xe)\r\n"); }
+    if (pressed & 0x2000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 6); x360_log("x360 fishing: B (PC's command 6)\r\n"); }
 }
 
 /* Once a frame: the screens that must run when PC's dialogs stop the pad's polls. An
@@ -4925,6 +5028,7 @@ void x360_frame_tick(void) {
     if (!find_world()) return;
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
+    __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }
