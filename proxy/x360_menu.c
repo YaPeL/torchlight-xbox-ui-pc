@@ -4570,6 +4570,7 @@ static void hud_tick(void) {
  * the text rise faster (sub_82192640, 0x821929c4: the frame's time times a factor, [r29+268], a
  * value of the running game not measured yet: x360_ui.ini's dialog_fast_scroll, 4 by default). */
 int x360_dialog_fast_scroll = 4;
+int x360_dialog_pc;                          /* x360_ui.ini dialog_pc=1: PC's dialog left visible (a diagnosis) */
 #define QD_PREFIX "x360qd_"
 static void *qd_root, *pc_qd_text_frame;
 static char pc_qd_prefix[48];
@@ -4643,8 +4644,8 @@ static void qd_press(const char *name) {
 static void qd_show(int on) {
     if (on == qd_shown) return;
     qd_shown = on;
-    set_visible(qd_root, 0, on);
-    prop(win_of(pc_qd_prefix, "Frame"), "Alpha", on ? "0" : "1");
+    set_visible(qd_root, 0, on && !x360_dialog_pc);
+    prop(win_of(pc_qd_prefix, "Frame"), "Alpha", on && !x360_dialog_pc ? "0" : "1");
     if (hud_root) set_visible(hud_root, 0, !on);
     if (pet_hud_root) set_visible(pet_hud_root, 0, !on);
     if (on) move_to_front(qd_root, 0);

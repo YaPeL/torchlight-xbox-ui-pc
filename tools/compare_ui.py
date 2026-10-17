@@ -4,7 +4,7 @@ against the same screen in the PC game (proxy/ui_dump.c writes PC's).
 
 compare_ui.py REF.json PC.json [--under NAME] [--tolerance PX] [--all]
 
-Only the windows shown on screen (`shown`) are compared. Windows are matched by base_name (the
+Only the windows shown on screen (`shown`, and not drawn at alpha 0) are compared. Windows are matched by base_name (the
 name without its layout's prefix) and their parent's base_name; a base_name that is unique on
 both sides matches alone. For each pair: the 1080p rectangle (rect_1080p, within the tolerance,
 1 px by default), the text, the font, the images and the effective alpha. Font and imageset names
@@ -41,7 +41,8 @@ def flatten(windows, under=None, hidden=False):
 
     def walk(w, parent, inside):
         inside = inside or under is None or base(w) == under
-        if inside and bool(w.get("shown")) != hidden:
+        seen = w.get("shown") and (w.get("effective_alpha") is None or w.get("effective_alpha") > 0.01)
+        if inside and bool(seen) != hidden:
             out.append((w, parent))
         for c in w.get("children", []):
             walk(c, base(w), inside)

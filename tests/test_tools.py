@@ -513,6 +513,11 @@ class CompareUITest(unittest.TestCase):
                              [ui_window("Hidden", (0, 0, 5, 5))])
         self.assertEqual(compare_ui.compare(ref, pc), ["Root/Hidden: shown on PC, hidden on the 360"])
 
+    def test_windows_at_alpha_0_are_not_shown(self):
+        ref, pc = self.dumps(ui_window("Label", (10, 10, 110, 40), text="Level 3", font="Fancy"),
+                             [ui_window("Unseen", (0, 0, 5, 5), effective_alpha=0)])
+        self.assertEqual(compare_ui.compare(ref, pc, show_extra=True), [])
+
     def test_under_limits_the_subtree(self):
         ref, pc = self.dumps(ui_window("Label", (99, 10, 110, 40)))
         self.assertEqual(compare_ui.compare(ref, pc, under="Icon"), [])
