@@ -1625,17 +1625,23 @@ no pet commands; the merchant's column focused at the start.
   or `title.sharedstash` for a chest of type 170 (the 360's strings at `0x820D0EA0` and
   `0x820D0EC4`), and that title is the frame's title too. The columns are 303 and 606 apart
   (constants at `0x820aa8bc`), not 299 and 602. No column shows the gold, and no `buyandsell`
-  header shows. The stash's tabs are not dimmed (`sub_823654B8` skips a column whose owner is
-  of type 134). PC's chests are of other types, so here the test is the column of the stash
-  menu's owner.
-- **The buttons** (`sub_8236C8D0`, mode 5, before mode 4): in every column X is `act.swap`; A and Y
-  show no text.
-- **Input** (`sub_8236AD18`, `sub_8236AA48`, `sub_8236A810`):
+  header shows. The stash's tabs are not dimmed: the 360's stash is the hero's own inventory (its
+  `+2548`, `sub_8236AD18`), so its column counts as the player's (`sub_823654B8` dims only the
+  others).
+- **The menu's mode** (its virtual `+0x34`, the field `+268`, set in `sub_82383DC8`): 7 for the
+  stash, 8 for the shared one. Mode 4 is the merchant's and mode 5 the transmuter's (type 134 is
+  the transmuter, as PC's interaction names show at `0x4f3d34`). An earlier version took mode 5
+  for the stash; corrected.
+- **The buttons** (`sub_8236C8D0`): modes 7 and 8 get the plain bar. In the bags A is by the item,
+  Y is `act.drop` and X is `act.swap`. In the stash's column Y and X are the same, and A is not
+  done (the 360 acts for the column's owner, the hero, on an item of another inventory).
+- **Input** (`sub_8236AD18`, `sub_8236A810`):
   - X in the stash's column takes the item: to the hero's bag, else the pet's, else to the ground
     at the hero's feet (`sub_8236B8B0`, sound 18 for a bag).
-  - X in a bag stores the item in the stash (`sub_8236BA20`): sound 18, or sound 24 and the item
-    stays when it does not fit. PC's `pickupEquipment` places it, as for the pet's bag.
-  - A does nothing in the stash's column (owner of type 134). Y does nothing at a stash.
+  - X in a bag stores the item in the stash (`sub_8236BA20`, the target the hero's `+2548` for
+    mode 7, the game's for 8): sound 18, or sound 24 and the item stays when it does not fit.
+    PC's `pickupEquipment` places it, as for the pet's bag.
+  - Y drops the item (`sub_82369E80`), in any column.
 - **The card** has no price (PC's tooltip, with no merchant menu open).
 - **A first showing.** The left column's `HiliteFrame` kept the area it had before its `TopFrame`
   moved into the `ContainerFrame`. It was drawn at the screen's corner, and its texts (the
@@ -1645,6 +1651,10 @@ no pet commands; the merchant's column focused at the start.
 - **Each menu its own column.** The left column's filter and rows are kept separately for
   the merchants and for the stashes, as the 360 has two menus. Before this, the stash's last
   filter showed at the next merchant. *Not tested in game yet.*
+- **The rows' alpha** (`sub_823652A0`, from `sub_82368980`): the column's selected row is at
+  1.0 whether the column is focused or not (the row's item against `sub_82369F60`'s); the
+  others are at 0.9 if equipped, else 0.6. Before this, an unfocused column's selected row
+  showed at 0.9 or 0.6.
 - **Tested** (GOG, three runs; the stash is the chest at the foot of the brazier in the town's
   square, the shared stash the chest before the shed north of it):
   - Both open, titled as the catalog, the counts PC's (`0/42`).
@@ -1653,3 +1663,11 @@ no pet commands; the merchant's column focused at the start.
   - Captures: `screens/gog/stash-1..6`, `shared-stash-1..6`.
   - Open as at the merchant: PC's panels at the screen's sides, and PC's Tips after closing (its
     inventory's and its stash's).
+  - Fourth run (after the alpha and mode corrections): the rows' alpha (the bag's selected row
+    at 1 beside the focused stash), the plain bar in the bag (A by the item, Y, X) and Y and X in
+    the stash's column (`screens/gog/stash-1`, `stash-bag-1`, `stash-item-1`,
+    `shared-stash-1`). **Open: a hang.** In the shared stash, after X stored the sword, the
+    game stopped while LB walked the stash's column from Fish back toward Weapons. The frame
+    froze at Miscellaneous, the main thread used all of a core, and the log stopped at an LB
+    press. The game was closed. Run 1 did the same steps without hanging. Not reproduced or
+    explained yet.

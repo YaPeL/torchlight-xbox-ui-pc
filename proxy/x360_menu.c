@@ -861,7 +861,7 @@ static struct { const char *prefix; int is_pet, is_shop, filter, selected[6], to
     {PREFIX, 0, 0, 0, {0}, {0}, 0}, {PET_PREFIX, 1, 0, 0, {0}, {0}, 0}, {SHOP_PREFIX, 0, 1, 0, {0}, {0}, 0}};
 static int active_panel, focus_panel;
 static unsigned char *shop;                  /* the merchant or the stash while PC's menu of it is open */
-static int at_stash;                         /* shop is a stash (ISA 134; the shared one 170) */
+static int at_stash;                         /* shop is a stash's chest (the shared one of type 170) */
 static unsigned char *the_pet(void) {
     typedef void *(__fastcall *pet_fn)(void *hero, void *edx, int index);
     return hero ? (unsigned char *)((pet_fn)GOG_GET_PET_FN)(hero, 0, 0) : 0;
@@ -1084,10 +1084,11 @@ static void refresh(void) {
             copy(image + length(image), sizeof image - length(image), "_rollover", 0);
         prop(win(tab_window[i]), "Image", image);
     }
-    /* A column that is not the player's (the pet's, a merchant's; not a stash's: the 360's ISA 134
-     * test, its stash's type; PC's chests are of other types, so the stash menu's owner here) dims
-     * the tabs of the filters it has nothing in to 0.25, but the focused column's own filter
-     * (sub_823654B8, 0x82365948: the tab's count at its entry's +116). */
+    /* A column that is not the player's (the pet's, a merchant's) dims the tabs of the filters it
+     * has nothing in to 0.25, but the focused column's own filter (sub_823654B8, 0x82365948: the
+     * tab's count at its entry's +116; a transmuter's column, ISA 134, has no tabs). The 360's
+     * stash is the hero's own (its +2548, sub_8236AD18), so its column is the player's: not
+     * dimmed (town/21). */
     for (i = 0; i < 6; i++)
         prop(win(tab_window[i]), "Alpha", cur_owner != hero && !(at_stash && cur_owner == shop) && !counts[i] &&
                                           !(i == filter && active_panel == focus_panel) ? "0.25" : "1");
@@ -1153,10 +1154,11 @@ static void refresh(void) {
         row_name(name, "SlotText", row); show(win(name), 1);
         row_name(name, "Equipped", row); show(win(name), list_slot[idx] < EQUIPPED_SLOTS);
         /* The tray (sub_823652A0): item_tray, or item_tray_equipped for an equipped item; the
-         * selected row at alpha 1.0, the others at 0.9 if equipped, else 0.6. */
+         * column's selected row at alpha 1.0 (focused or not: sub_82368980 tests the row's item
+         * against the column's, sub_82369F60), the others at 0.9 if equipped, else 0.6. */
         prop(tray, "Image", list_slot[idx] < EQUIPPED_SLOTS ? "set:X360_widgets1 image:item_tray_equipped"
                                                             : "set:X360_widgets1 image:item_tray");
-        prop(tray, "Alpha", idx == selected[filter] && active_panel == focus_panel ? "1.0"
+        prop(tray, "Alpha", idx == selected[filter] ? "1.0"
                             : list_slot[idx] < EQUIPPED_SLOTS ? "0.9" : "0.6");
         /* The details (sub_82368980); the quality and the sockets are not filled yet, so hidden as
          * the 360 hides each when it has no text. */
@@ -1209,13 +1211,15 @@ static void refresh(void) {
                 label[n++] = ')';
                 label[n] = 0;
             }
-            if (at_stash) {
-                /* At a stash (sub_8236C8D0, mode 5), in every column: X swaps, nothing else. */
-                a = ""; x = x360_text("act.swap"); y = "";
-            } else if (shop && panels[active_panel].is_shop) {
+            if (at_stash && panels[active_panel].is_shop) {
+                /* The stash's column (its menu's mode 7, the shared one's 8: sub_8236C8D0's plain
+                 * bar): Y Drop, X Swap. A for an item in the stash is not done (the 360's acts
+                 * for the column's owner, the hero, on an item of another inventory). */
+                a = ""; x = x360_text("act.swap"); y = x360_text("act.drop");
+            } else if (shop && !at_stash && panels[active_panel].is_shop) {
                 /* The merchant's column: X buys, nothing else (sub_8236C8D0, ISA 41). */
                 a = ""; x = x360_text("act.buy"); y = "";
-            } else if (shop) {
+            } else if (shop && !at_stash) {
                 /* A bag at a merchant (sub_8236C8D0 with the merchant's menu, mode 4): X sells; A
                  * identifies an unidentified item, unequips an equipped one, equips a weapon,
                  * armour or trinket (ISA 8, 13, 39; for an owner not of type 28, the pet, a
@@ -1836,11 +1840,14 @@ static void sell(void) {
 }
 
 /* ---- the stash (CStashMenuXenon) ----
- * X in any column swaps (sub_8236AD18): from the stash's column (its owner of type 134; here PC's
- * stash menu's owner) the item
+ * The 360's stash menu is of mode 7, the shared one's 8 (its +268, sub_82383DC8; mode 5 is the
+ * transmuter's, 4 the merchant's): its bar is the plain one (sub_8236C8D0), Y drops
+ * (sub_8236A810 -> sub_82369E80). X swaps (sub_8236AD18): from the stash's column the item
  * goes to the hero's bag, else the pet's, else to the ground at the hero's feet (sub_8236B8B0,
  * the sound 18 for a bag); from a bag into the stash (sub_8236BA20: the sound 18, or 24 and the
- * item kept when it does not fit). PC's pickupEquipment puts it in, as for the pet's bag. */
+ * item kept when it does not fit); the stash is the hero's +2548 for mode 7, the game's for 8
+ * (PC: the chest's +0x404, or the shared stash's). PC's pickupEquipment puts it in, as for the
+ * pet's bag. */
 static void stash_swap(void) {
     unsigned char *box = (unsigned char *)owner_bag(shop), *item, *pet = the_pet();
     void *inv = inventory();
@@ -3613,8 +3620,8 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
-    if ((pressed & 0x1000) && !panels[active_panel].is_shop) { act(); refresh_all(); }    /* A (a stash's column: ISA 134) */
-    if ((pressed & 0x8000) && !shop) { drop(); refresh_all(); }                          /* Y */
+    if ((pressed & 0x1000) && !panels[active_panel].is_shop) { act(); refresh_all(); }    /* A */
+    if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }            /* Y (a stash: mode 7/8) */
     if (pressed & 0x4000) {                                                              /* X */
         if (at_stash) stash_swap();
         else if (!shop) swap_to_pet();
