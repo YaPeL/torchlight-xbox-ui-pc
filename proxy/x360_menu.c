@@ -433,6 +433,31 @@ static void set_colour_triggers(void *font) {
     off(font, 0, v);
 }
 
+/* A diagnosis of the colour markup (docs 15, item 1): PC's SerifBig and the converted
+ * X360_SerifBig, their first 0x300 bytes as dwords, where they differ (x360_ui.ini font_diff=1). */
+int x360_font_diff;
+static void font_diff(void) {
+    singleton_fn fm_get = (singleton_fn)need("?getSingletonPtr@?$Singleton@VFontManager@CEGUI@@@CEGUI@@SAPAVFontManager@2@XZ");
+    get_font_fn get_font = (get_font_fn)need("?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z");
+    void *fm = fm_get ? fm_get() : 0, *a = 0, *b = 0;
+    object n;
+    unsigned i;
+    static int done;
+    if (done || !fm || !get_font) return;
+    done = 1;
+    string_ctor(&n, 0, "SerifBig"); __try { a = get_font(fm, 0, &n); } __except (1) { a = 0; } string_dtor(&n, 0);
+    string_ctor(&n, 0, "X360_SerifBig"); __try { b = get_font(fm, 0, &n); } __except (1) { b = 0; } string_dtor(&n, 0);
+    if (!a || !b) { x360_log("x360 font diff: a font missing\r\n"); return; }
+    x360_log("x360 font diff: PC's vtable "); x360_log_num(*(long *)a); x360_log(", X360_'s "); x360_log_num(*(long *)b); x360_log("\r\n");
+    for (i = 0x200 / 4; i < 0x400 / 4; i++) {
+        unsigned va = ((unsigned *)a)[i], vb = ((unsigned *)b)[i];
+        if (va != vb) {
+            x360_log("x360 font diff: +"); x360_log_num((long)(i * 4)); x360_log(" PC "); x360_log_num((long)va);
+            x360_log(" X360 "); x360_log_num((long)vb); x360_log("\r\n");
+        }
+    }
+}
+
 static void match_spacing(float width, float height) {
     singleton_fn fm_get = (singleton_fn)need("?getSingletonPtr@?$Singleton@VFontManager@CEGUI@@@CEGUI@@SAPAVFontManager@2@XZ");
     get_font_fn get_font = (get_font_fn)need("?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z");
@@ -515,6 +540,7 @@ static void match_spacing(float width, float height) {
             x360_log("x360 menu: the spacing threw\r\n");
         }
     }
+    if (x360_font_diff) font_diff();   /* after the triggers and the layout */
 }
 
 /* ---- loading ---- */

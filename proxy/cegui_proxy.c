@@ -197,6 +197,7 @@ static void read_config(void) {
         if (starts(line, "pad_face=0")) pad_old_face = 1;
         if (starts(line, "pad_log=1")) pad_log = 1;
         if (starts(line, "dialog_pc=1")) { extern int x360_dialog_pc; x360_dialog_pc = 1; }
+        if (starts(line, "font_diff=1")) { extern int x360_font_diff; x360_font_diff = 1; }
         if (starts(line, "dump_targets=1")) { extern int x360_dump_targets; x360_dump_targets = 1; }
         if (starts(line, "dialog_markup=1")) { extern int x360_dialog_markup; x360_dialog_markup = 1; }
         if (starts(line, "dialog_font=") && length(line + 12) < 32) { extern char x360_dialog_font[32]; memcpy(x360_dialog_font, line + 12, length(line + 12) + 1); }

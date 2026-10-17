@@ -1890,8 +1890,13 @@ what they still lack. The screens done are in section 14.
 **Work not done or not finished, most visible first:**
 1. **The dialogs' names in gold.** PC's own fonts draw the `|cAARRGGBB` markup and the converted
    X360_ fonts do not. Two tries failed: PC's font breaks the lines elsewhere, and the colour
-   triggers did not take. The names show white. Next: compare a PC Font object with an X360_ one
-   in memory.
+   triggers did not take. The names show white. A diagnosis (`font_diff=1`, runs 47-48)
+   compared PC's SerifBig object with X360_SerifBig in memory. The vtable is the same (one
+   class). After the triggers, the object's `+0x2f0`/`+0x2f4` (a vector, PC's of 2 entries,
+   X360_'s 0 before) are equal. The words that still differ are pointers and padding bytes, and
+   PC's object reads as text past `+0x8` (another layout, or other memory). Nothing found in the
+   font object explains the gold. Next, outside the font: the text's drawing path for a window,
+   for instance a check on the font's name or on the window's type at render time.
 2. **The quest reward item's icon** in the dialog (an empty slot). Also: its sockets only when
    it has them.
 3. **The object label of the candidate.** It is matched by text and, of several of one name, by
