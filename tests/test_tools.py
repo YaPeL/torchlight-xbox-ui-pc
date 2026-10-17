@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import build_proxy  # noqa: E402
 import check_no_game_files  # noqa: E402
 import compare_installs  # noqa: E402
+import compare_ui  # noqa: E402
 import convert_x360_ui  # noqa: E402
 import layout_windows  # noqa: E402
 import send_input  # noqa: E402
@@ -469,3 +470,44 @@ class SendInputTypeTest(unittest.TestCase):
                          ["down", "16", "key", "192", "up", "16"])
         with self.assertRaises(ValueError):
             send_input.translate(["type", "a;b"])
+
+
+def ui_window(base, rect, children=(), shown=True, prefix="7_", **fields):
+    """A window of a synthetic UI dump: rect is (left, top, right, bottom) at 1080p."""
+    left, top, right, bottom = rect
+    w = {"name": prefix + base, "base_name": base, "shown": shown, "text": "", "font": "Serif",
+         "images": {}, "effective_alpha": 1,
+         "rect_1080p": {"left": left, "top": top, "right": right, "bottom": bottom}, "children": list(children)}
+    w.update(fields)
+    return w
+
+
+class CompareUITest(unittest.TestCase):
+    def dumps(self, pc_label, pc_extra=()):
+        ref = {"windows": [ui_window("Root", (0, 0, 1920, 1080), [
+            ui_window("Label", (10, 10, 110, 40), text="Level 3", font="Fancy"),
+            ui_window("Icon", (0, 0, 32, 32), images={"Image": {"imageset": "widgets", "image": "a"}}),
+            ui_window("Hidden", (0, 0, 5, 5), shown=False)])]}
+        pc = {"windows": [ui_window("Root", (0, 0, 1920, 1080), [
+            pc_label,
+            ui_window("Icon", (0, 0, 32, 32), prefix="x360hud_",
+                      images={"Image": {"imageset": "X360_widgets", "image": "a"}}), *pc_extra])]}
+        return ref, pc
+
+    def test_same_screen_has_no_differences(self):
+        ref, pc = self.dumps(ui_window("Label", (10.5, 10, 110, 40), text="Level 3", font="X360_Fancy"))
+        self.assertEqual(compare_ui.compare(ref, pc), [])
+
+    def test_rect_text_font_and_missing_windows(self):
+        ref, pc = self.dumps(ui_window("Label", (14, 10, 110, 40), text="Level 2", font="X360_Serif"))
+        lines = compare_ui.compare(ref, pc)
+        self.assertEqual(len(lines), 3)
+        self.assertIn("Root/Label: rect left 10 vs 14", lines)
+        self.assertTrue(any("text 'Level 3' vs 'Level 2'" in line for line in lines))
+        ref, pc = self.dumps(ui_window("Other", (10, 10, 110, 40)), [ui_window("Extra", (0, 0, 1, 1))])
+        self.assertEqual(compare_ui.compare(ref, pc), ["Root/Label: missing on PC"])
+        self.assertIn("Root/Other: only on PC", compare_ui.compare(ref, pc, show_extra=True))
+
+    def test_under_limits_the_subtree(self):
+        ref, pc = self.dumps(ui_window("Label", (99, 10, 110, 40)))
+        self.assertEqual(compare_ui.compare(ref, pc, under="Icon"), [])

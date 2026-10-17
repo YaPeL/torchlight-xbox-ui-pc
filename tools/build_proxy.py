@@ -42,7 +42,7 @@ HOOKS = {
 KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "CreateFileA": 28,
             "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
             "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16,
-            "QueryPerformanceCounter": 4, "QueryPerformanceFrequency": 4}
+            "QueryPerformanceCounter": 4, "QueryPerformanceFrequency": 4, "DeleteFileA": 4}
 # send_input.exe's imports (proxy/send_input.c, a test helper that runs in the game's prefix).
 KERNEL32_EXE = {"GetCommandLineA": 0, "Sleep": 4, "ExitProcess": 4, "GetStdHandle": 4}
 USER32 = {"EnumWindows": 8, "GetWindowTextA": 12, "IsWindowVisible": 4, "IsIconic": 4, "GetClientRect": 8, "ShowWindow": 8, "SetForegroundWindow": 4, "ClientToScreen": 8, "SetCursorPos": 8, "SendInput": 12,
@@ -117,8 +117,9 @@ def build(real_dll, out):
     os.makedirs(out, exist_ok=True)
     src = os.path.join(repo, "proxy", "cegui_proxy.c")
     menu = os.path.join(repo, "proxy", "x360_menu.c")
+    ui_dump = os.path.join(repo, "proxy", "ui_dump.c")
     missing = []
-    for path in (src, menu):
+    for path in (src, menu, ui_dump):
         with open(path) as f:
             missing += check_names(f.read(), os.path.dirname(os.path.abspath(real_dll)), real_dll)
     if missing:
@@ -140,8 +141,10 @@ def build(real_dll, out):
          os.path.join(repo, "proxy", "pad.c")],
         ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fox360_menu.obj",
          menu],
+        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Foui_dump.obj",
+         ui_dump],
         ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
-         "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "x360_menu.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
+         "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "x360_menu.obj", "ui_dump.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
     helper = os.path.join(repo, "proxy", "send_input.c")
     steps += [
