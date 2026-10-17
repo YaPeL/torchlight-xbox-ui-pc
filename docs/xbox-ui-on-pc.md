@@ -1824,3 +1824,20 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   - A pressed PC's Ok and closed the dialog; B pressed PC's Decline and closed the offer.
   - X held was read; its speed was not measured (the captures came after the text had risen).
   - Captures: `screens/gog/dialog-open`, `quest-offer-1`.
+
+**Object labels** (`in-game/04`-`08`). The engine labels the objects near (chest, shrine, lever,
+fishing hole, an item on the ground) with a window each under the Ingame UI Sheet, placed over
+the object. PC's are of type GuiLook/ItemText (created at GOG `0x55aa5e`); the 360's look is
+ceguiWidget/ItemTextButton, which draws the `a_button` 20 pixels left of the text in the Enabled
+state only. The 360 enables the label of what A would use, in white (`FFFFFFFF`), and disables
+the others, in grey (`FFCCCCCC`): the catalog's 07, "A Chest" with "healing shrine" grey
+behind. A gdb run on the recomp showed that `TargetInteractHover` of hud.layout is never written
+and is hidden in every catalog capture.
+- Each of PC's labels is given the 360's look once (`setLookNFeel`; checked by its `LookNFeel`
+  property) and the 360's Serif. The label whose text is the name of pad.c's candidate (`+0x420`,
+  or the item's name) is enabled; the others are disabled. The state is written only when it
+  changes.
+- **Limitation:** the candidate is matched by the label's text, so two objects of the same name
+  near each other are both lit.
+- **Tested** (GOG, run 40; the user walked the hero): "A staff" on an item on the ground and
+  "A Chest" (`screens/gog/label-item-1.png`, `label-chest-1`).

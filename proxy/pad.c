@@ -241,6 +241,8 @@ static void poll(void) {
 /* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
  * dialogs stop the GetCursorPos polls that drive order()). */
 unsigned x360_pad_buttons(void) { poll(); return buttons; }
+/* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
+void *x360_pad_candidate(void);
 
 static int stick_active(void) { return lx * lx + ly * ly > DEAD_ZONE * DEAD_ZONE; }
 
@@ -657,6 +659,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     any_candidate = a;
     item_candidate = it;
 }
+void *x360_pad_candidate(void) { return item_candidate ? item_candidate : any_candidate; }
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
 static unsigned char *attack_level;

@@ -4811,6 +4811,88 @@ static void dialog_tick(void) {
     }
 }
 
+/* ---- the labels over objects (in-game/04-08) ----
+ * The engine labels the objects near (a chest, a shrine, a lever, a fishing hole) with a window
+ * each on the GUI sheet, placed over the object: PC's of type GuiLook/ItemText (GOG 0x55aa5e),
+ * the 360's ceguiWidget/ItemTextButton (its look draws the a_button 20 pixels left of the text
+ * when the window is enabled). The 360 enables the label of what A would use, in white
+ * (FFFFFFFF), and disables the others, in grey (FFCCCCCC) (the catalog's 07: "A Chest" with
+ * "healing shrine" grey behind). Here each of PC's labels is given the 360's look and font,
+ * and the one whose text is the candidate's name (pad.c's) enabled. */
+void *x360_pad_candidate(void);
+#define GOG_UNIT_LABEL_NAME 0x420           /* a unit's shown name, a std::wstring (also the target bar's) */
+static void labels_tick(void) {
+    typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
+    typedef void (__fastcall *set_str_fn)(void *self, void *edx, const void *s);
+    static str_fn get_type;
+    static set_str_fn set_look;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *ingame = 0;
+    unsigned i, n;
+    char want[96];
+    unsigned char *cand = (unsigned char *)x360_pad_candidate();
+    if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!set_look) set_look = (set_str_fn)need("?setLookNFeel@Window@CEGUI@@UAEXABVString@2@@Z");
+    if (!sheet || !get_type || !set_look) return;
+    want[0] = 0;
+    if (cand && !wstring_utf8(cand + GOG_UNIT_LABEL_NAME, want, sizeof want))
+        if (!wstring_utf8(cand + GOG_ITEM_NAME, want, sizeof want)) want[0] = 0;
+    {
+        typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+        static name_fn gn;
+        if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        n = gn ? child_count(sheet, 0) : 0;
+        for (i = 0; i < n && !ingame; i++) {
+            void *c = child_at(sheet, 0, i);
+            const char *nm = c_str(gn(c, 0), 0);
+            if (nm && nm[0] == 'I' && nm[1] == 'n' && nm[2] == 'g') ingame = c;   /* "Ingame UI Sheet" */
+        }
+    }
+    {
+        /* PC's labels: children of the sheet's first child (Ingame UI Sheet) of type GuiLook/ItemText. */
+        void *root = ingame;
+        unsigned m = root ? child_count(root, 0) : 0, j;
+        for (j = 0; j < m; j++) {
+            void *w = child_at(root, 0, j);
+            const char *type = c_str(get_type(w, 0), 0);
+            char t[96];
+            int on;
+            static int logged;
+            if (!type || type[0] != 'G' || type[1] != 'u' || length(type) != 16) continue;   /* GuiLook/ItemText */
+            read_prop(w, "LookNFeel", t, sizeof t);
+            if (t[0] != 'c') {   /* not yet ceguiWidget/ItemTextButton: setLookNFeel once (it remakes the window's imagery) */
+                object look;
+                string_ctor(&look, 0, "ceguiWidget/ItemTextButton");
+                __try { set_look(w, 0, &look); } __except (1) { x360_log("x360 labels: setLookNFeel threw\r\n"); }
+                string_dtor(&look, 0);
+                prop(w, "Font", "X360_Serif");
+                pass_mouse(w);
+                if (logged < 8) {
+                    read_prop(w, "Text", t, sizeof t);
+                    x360_log("x360 labels: a label of PC's given the 360's look: "); x360_log(t); x360_log("\r\n");
+                    logged++;
+                }
+            }
+            read_prop(w, "Text", t, sizeof t);
+            on = want[0] && t[0] && length(t) == length(want);
+            if (on) { unsigned q; for (q = 0; t[q]; q++) if (t[q] != want[q]) { on = 0; break; } }
+            {
+                /* The state written only when it changes (a window's last, by its pointer). */
+                static void *seen[64];
+                static signed char state[64];
+                unsigned q, slot = 64;
+                for (q = 0; q < 64; q++) if (seen[q] == w) { slot = q; break; }
+                if (slot == 64) for (q = 0; q < 64; q++) if (!seen[q]) { slot = q; seen[q] = w; state[q] = -1; break; }
+                if (slot == 64) { slot = (unsigned)(GetTickCount() & 63); seen[slot] = w; state[slot] = -1; }
+                if (state[slot] != on) {
+                    state[slot] = (signed char)on;
+                    prop(w, "Disabled", on ? "False" : "True");
+                    prop(w, "TextColour", on ? "FFFFFFFF" : "FFCCCCCC");
+                }
+            }
+        }
+    }
+}
+
 /* Once a frame: the screens that must run when PC's dialogs stop the pad's polls. An
  * Ogre::FrameListener of the proxy's (its virtuals, as PC's own at GOG 0xabbac4: frameStarted,
  * frameRenderingQueued, frameEnded, the destructor), added to PC's Root from the HUD's tick. */
@@ -4842,6 +4924,7 @@ void x360_frame_tick(void) {
     static int logged;
     if (!find_world()) return;
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
+    __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }
