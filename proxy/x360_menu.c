@@ -25,6 +25,7 @@ typedef struct { long left, top, right, bottom; } RECT;
 
 void x360_log(const char *s);
 void x360_log_num(long v);
+const char *x360_text(const char *key);   /* the 360 code's texts, from the user's copy (proxy/cegui_proxy.c) */
 FARPROC x360_need(const char *name);
 __declspec(dllimport) HWND __stdcall GetActiveWindow(void);
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
@@ -860,7 +861,7 @@ static void select_panel(int i) {
 static const char *const tab_window[6] = {"inventory_filter_weapons", "inventory_filter_armor",
     "inventory_filter_jewelry", "inventory_filter_potions", "inventory_filter_spells", "inventory_filter_fish"};
 static const char *const tab_image[6] = {"tab_weapons", "tab_armor", "tab_jewelry", "tab_potions", "tab_gems", "tab_fish"};
-static const char *const filter_name[6] = {"Weapons", "Armor", "Jewelry", "Miscellaneous", "Socketables", "Fish"};
+static const char *const filter_name[6] = {"filter.0", "filter.1", "filter.2", "filter.3", "filter.4", "filter.5"};   /* x360_text keys */
 
 static void row_name(char *out, const char *base, int row) {
     char n[2] = {(char)('0' + row), 0};
@@ -943,7 +944,7 @@ static void fill_details(int row, unsigned char *item) {
     }
     row_name(name, "DamageArmor", row); text(win(name), buf); show(win(name), buf[0] != 0);
     row_name(name, "Requirment", row);
-    text(win(name), identified ? "" : "Press A to identify");
+    text(win(name), identified ? "" : x360_text("identify_hint"));
     prop(win(name), "TextColour", "FFFF2A2A");
     show(win(name), !identified);
     /* "Effects:" and the count (sub_82368980, the string at 0x820d0ef0) for an identified item
@@ -951,7 +952,7 @@ static void fill_details(int row, unsigned char *item) {
     {
         int effects = identified && !isa(item, 1) ? effects_count(item) : 0;
         p = buf;
-        if (effects) { copy(buf, sizeof buf, "Effects:", 0); p = put_int(buf + 8, effects); }
+        if (effects) { copy(buf, sizeof buf, x360_text("effects"), 0); p = put_int(buf + length(buf), effects); }
         *p = 0;
         row_name(name, "Enchantments", row); text(win(name), buf); show(win(name), effects != 0);
     }
@@ -1054,8 +1055,8 @@ static void refresh(void) {
                                                                   : "set:X360_widgets image:framea");
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
-    text(win("filtername"), filter_name[filter]);
-    text(win("characterName"), panels[active_panel].is_pet ? "Pet Bag" : "My Bag");
+    text(win("filtername"), x360_text(filter_name[filter]));
+    text(win("characterName"), x360_text(panels[active_panel].is_pet ? "bag.pet" : "bag.mine"));
     /* RB on the focused bag only (the catalog: the bag, the pet's bag, the stash's columns). */
     show(win("rightbumper"), active_panel == focus_panel);
     show(win("transmutor"), 0);
@@ -1138,22 +1139,24 @@ static void refresh(void) {
         show(win("buttonB"), 0);
         show(win("buttonY"), 1);
         show(win("buttonX"), 1);
-        text(win("buttonYtext"), "Drop");
-        text(win("buttonXtext"), "Swap");
+        text(win("buttonYtext"), x360_text("act.drop"));
+        text(win("buttonXtext"), x360_text("act.swap"));
         if (list_count) {
             unsigned char *item = (unsigned char *)list[selected[filter]];
-            const char *a = list_slot[selected[filter]] < EQUIPPED_SLOTS ? "Unequip"
-                            : isa(item, 129) ? "Learn"
-                            : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "Use" : "Equip";
+            const char *a = x360_text(list_slot[selected[filter]] < EQUIPPED_SLOTS ? "act.unequip"
+                                      : isa(item, 129) ? "act.learn"
+                                      : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "act.use" : "act.equip");
             int scrolls = 0;
             char label[32];
             /* An unidentified item: the 360's "Identify (" + the scrolls + ")" (its screenshot,
              * "Identify(11)"). */
             if (!item[GOG_IDENTIFIED] && identify_scrolls(&scrolls) && scrolls > 0) {
-                const char *p = "Identify (";
+                const char *p = x360_text("act.identify");
                 char digits[12];
                 int n = 0, d = 0, v = scrolls;
                 while (*p && n < 20) label[n++] = *p++;
+                label[n++] = ' ';
+                label[n++] = '(';
                 do { digits[d++] = (char)('0' + v % 10); v /= 10; } while (v && d < 11);
                 while (d && n < 30) label[n++] = digits[--d];
                 label[n++] = ')';
@@ -1161,7 +1164,7 @@ static void refresh(void) {
                 a = label;
             }
             text(win("buttonAtext"), a);
-            place_buttons(a, "Drop", "Swap");
+            place_buttons(a, x360_text("act.drop"), x360_text("act.swap"));
         }
     }
 }
@@ -1501,7 +1504,7 @@ static void refresh_all(void) {
     select_panel(focus_panel);
     if (cur_owner) refresh();
     fill_character();
-    text(win_of(MASTER, "itemcomparetext"), compare_on ? "disable item compare" : "enable item compare");
+    text(win_of(MASTER, "itemcomparetext"), x360_text(compare_on ? "compare.disable" : "compare.enable"));
     update_info();
 }
 
@@ -1892,13 +1895,13 @@ static void hide_info(void);
 static void update_info(void);
 
 /* The master menu's pages, in the 360's order (LT to the left, RT to the right). */
-static const char *const page_name[4] = {"Inventory", "Stats", "Skills", "Quest"};
+static const char *const page_name[4] = {"page.inventory", "page.stats", "page.skills", "page.quest"};   /* x360_text keys */
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), page_name[page]);
-    text(win_of(MASTER, "MenuLeft"), page_name[(page + 3) % 4]);
-    text(win_of(MASTER, "MenuRight"), page_name[(page + 1) % 4]);
+    text(win_of(MASTER, "MenuName"), x360_text(page_name[page]));
+    text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
+    text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
     /* "pet commands" (Start) and the item compare's toggle on the inventory's page only (the
      * catalog: menus/08 against 10). */
     show(win_of(MASTER, "PetCommands"), page == 0);
@@ -2109,11 +2112,7 @@ static void stats_fill(void) {
  * "0hrs 44mins 34secs" (PC's: the float at +0x2c8, its seconds). */
 #define GOG_STATISTICS 0x740
 #define GOG_TIME_PLAYED 0x2c8
-static const char *const journal_label[18] = {
-    "Time Played:", "Gold Gathered:", "Levels Explored:", "Steps Taken:", "Quests Completed:", "Deaths:",
-    "Monsters Defeated:", "Champions Defeated:", "Skills/Spells Cast:", "Chests Opened:", "Traps Sprung:",
-    "Barrels Broken:", "Potions Used:", "Portals Used:", "Fish Caught:", "Times Gambled:", "Items Transmuted:",
-    "Items Enchanted:"};
+
 
 static void *create_window(const char *prefix, const char *name, const char *type);
 static void *create_static(const char *prefix, const char *name) { return create_window(prefix, name, "ceguiWidget/StaticText"); }
@@ -2164,14 +2163,20 @@ static void journal_fill(void) {
         }
         /* The 360's texts are "|cFFC8C8C8" .. "|u", its CEGUI's colour markup, which PC's CEGUI
          * writes as it is: the text plain and the colour as the TextColour instead. */
-        text(label, journal_label[i]);
+        {   /* the 360's label (its key journal.N) and a colon */
+            char key[16];
+            copy(key, sizeof key, "journal.", 0);
+            p = put_int(key + 8, i); *p = 0;
+            copy(value, sizeof value, x360_text(key), ":");
+            text(label, value);
+        }
         value[0] = 0;
         p = value;
         if (i == 0) {
             long t = (long)*(float *)(hero + GOG_TIME_PLAYED);
-            p = put_int(p, t / 3600); copy(p, 8, "hrs ", 0); p += 4;
-            p = put_int(p, t / 60 % 60); copy(p, 8, "mins ", 0); p += 5;
-            p = put_int(p, t % 60); copy(p, 8, "secs", 0); p += 4;
+            p = put_int(p, t / 3600); copy(p, 16, x360_text("time.hrs"), " "); p += length(p);
+            p = put_int(p, t / 60 % 60); copy(p, 16, x360_text("time.mins"), " "); p += length(p);
+            p = put_int(p, t % 60); copy(p, 16, x360_text("time.secs"), 0); p += length(p);
         } else {
             p = put_int(p, *(int *)(hero + GOG_STATISTICS + 4 * i));
         }
@@ -2694,7 +2699,7 @@ static void skills_fill(void) {
                 if (!points) show(box, 0);
                 else if (((skill_int_fn)0x5d5c00)(sel, 0) > *(int *)(hero + GOG_HERO_LEVEL)) {
                     show(win_of(SKILLS_PREFIX, "HideButtons"), 0);
-                    copy(buf, sizeof buf, "Requires Level ", 0);
+                    copy(buf, sizeof buf, x360_text("requires_level"), " ");
                     p = put_int(buf + length(buf), ((skill_int_fn)0x5d5c00)(sel, 0)); *p = 0;
                     text(win_of(SKILLS_PREFIX, "HighLevel"), buf);
                     show(win_of(SKILLS_PREFIX, "HighLevel"), 1);
@@ -2882,7 +2887,7 @@ static void quest_fill(void) {
         static const unsigned reward_fn[3] = {0x5e8750, 0x5e8730, 0x5e8770};
         static const char *const reward_box[3] = {"RewardXPBox", "RewardGoldBox", "RewardFameBox"};
         static const char *const reward_text[3] = {"RewardXP", "RewardGold", "RewardFame"};
-        static const char *const reward_label[3] = {"XP:", "GP:", "Fame:"};
+        static const char *const reward_label[3] = {"reward.xp", "reward.gp", "reward.fame"};   /* x360_text keys */
         int r, any = 0;
         quest_text(q, 0x59f180, buf, sizeof buf);
         marked_text(win_of(QUEST_PREFIX, "questtitle"), buf);
@@ -2891,7 +2896,7 @@ static void quest_fill(void) {
         for (r = 0; r < 3; r++) {
             int v = ((skill_int_fn)reward_fn[r])(q, 0);
             show(win_of(QUEST_PREFIX, reward_box[r]), v != 0);
-            copy(buf, sizeof buf, reward_label[r], 0);
+            copy(buf, sizeof buf, x360_text(reward_label[r]), ":");
             p = put_int(buf + length(buf), v); *p = 0;
             text(win_of(QUEST_PREFIX, reward_text[r]), buf);
             if (v) any = 1;
@@ -2986,7 +2991,7 @@ static void *housing_root, *petcmd_root;
 static void petcmd_draw(void) {
     static const char *const window[3] = {"PetPassive", "PetAggressive", "PetDefensive"};
     static const char *const image[3] = {"pet_passive", "pet_aggressive", "pet_defensive"};
-    static const char *const name[3] = {"Passive Stance", "Aggressive Stance", "Defensive Stance"};
+    static const char *const name[3] = {"stance.0", "stance.1", "stance.2"};   /* x360_text keys */
     unsigned char *pet = the_pet();
     int stance = pet ? *(int *)(pet + GOG_PET_STANCE) : 0, i;
     char value[96];
@@ -2995,7 +3000,7 @@ static void petcmd_draw(void) {
         if (i != stance) copy(value + length(value), sizeof value - length(value), "_inactive", 0);
         prop(win_of(PETCMD_PREFIX, window[i]), "Image", value);
     }
-    text(win_of(PETCMD_PREFIX, "stancetext"), stance >= 0 && stance < 3 ? name[stance] : "");
+    text(win_of(PETCMD_PREFIX, "stancetext"), stance >= 0 && stance < 3 ? x360_text(name[stance]) : "");
 }
 
 static void petcmd_show(int on) {
@@ -3557,8 +3562,8 @@ static void target_tick(void) {
         champion_shown = unit[GOG_UNIT_CHAMPION];
         prop(win_of(HUD_PREFIX, "TargetName"), "TextColour", champion_shown ? "FFFFE03D" : "FFFFFFFF");
     }
-    copy(buf, sizeof buf, "Level ", 0);
-    p = put_int(buf + 6, *(int *)(unit + GOG_UNIT_LEVEL));
+    copy(buf, sizeof buf, x360_text("level"), " ");
+    p = put_int(buf + length(buf), *(int *)(unit + GOG_UNIT_LEVEL));
     *p = 0;
     text(win_of(HUD_PREFIX, "TargetLevel"), buf); show(win_of(HUD_PREFIX, "TargetLevel"), 1);
     unit_description(unit, buf, sizeof buf);

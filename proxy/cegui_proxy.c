@@ -124,6 +124,49 @@ static char pad_file[400];
 char x360_console_commands[400];
 static char out_dir[400];
 
+/* The texts the 360's code puts in its screens, read by the converter from the user's 360 image
+ * into OUT/x360_strings.txt (tools/convert_x360_ui.py --image): key=value lines, UTF-8. The
+ * repository holds only the keys; a key not found gives "". */
+static char texts[16384];
+static const char *text_key[160], *text_value[160];
+static int texts_count, texts_loaded;
+
+static void load_texts(void) {
+    char path[520];
+    DWORD got = 0, i, n = 0;
+    HANDLE f;
+    char *line;
+    texts_loaded = 1;
+    if (!out_dir[0]) return;
+    for (i = 0; out_dir[i] && n < 480; i++) path[n++] = out_dir[i];
+    memcpy(path + n, "\\x360_strings.txt", 18);
+    f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    if (f == INVALID_HANDLE) { put("x360: no x360_strings.txt (convert with --image)\r\n"); return; }
+    ReadFile(f, texts, sizeof texts - 1, &got, 0);
+    CloseHandle(f);
+    texts[got] = 0;
+    for (line = texts; *line && texts_count < 160;) {
+        char *end = line, *eq = 0;
+        while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
+        if (*end) *end++ = 0;
+        if (end > line && end[-1] == '\r') end[-1] = 0;
+        if (eq) { *eq = 0; text_key[texts_count] = line; text_value[texts_count++] = eq + 1; }
+        line = end;
+    }
+}
+
+const char *x360_text(const char *key) {
+    int i;
+    if (!texts_loaded) load_texts();
+    for (i = 0; i < texts_count; i++) {
+        const char *a = text_key[i], *b = key;
+        while (*a && *a == *b) a++, b++;
+        if (!*a && !*b) return text_value[i];
+    }
+    return "";
+}
+
+
 static int starts(const char *s, const char *prefix) {
     while (*prefix) if (*s++ != *prefix++) return 0;
     return 1;

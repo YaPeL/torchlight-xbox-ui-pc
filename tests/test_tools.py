@@ -511,3 +511,19 @@ class CompareUITest(unittest.TestCase):
     def test_under_limits_the_subtree(self):
         ref, pc = self.dumps(ui_window("Label", (99, 10, 110, 40)))
         self.assertEqual(compare_ui.compare(ref, pc, under="Icon"), [])
+
+
+class ImageStringsTest(unittest.TestCase):
+    def test_reads_the_texts_at_their_addresses(self):
+        image = bytearray(0x200)
+        base = convert_x360_ui.IMAGE_BASE
+        saved = dict(convert_x360_ui.STRINGS)
+        try:
+            convert_x360_ui.STRINGS.clear()
+            convert_x360_ui.STRINGS.update({"a": base + 0x10, "b": base + 0x40, "c": base + 0x1000})
+            image[0x10:0x10 + 8] = "Tab1".encode("utf-16-be")
+            image[0x40:0x42] = b"\x00\x01"   # not printable
+            self.assertEqual(convert_x360_ui.image_strings(bytes(image)), {"a": "Tab1"})
+        finally:
+            convert_x360_ui.STRINGS.clear()
+            convert_x360_ui.STRINGS.update(saved)

@@ -1536,3 +1536,13 @@ among CGameUI's members): its `onClick` *(OT)* `0x591050` sets, for function 0
 and acts only while open (`+0x18`); opening it with `0x591200` and calling it from the pad's hook
 froze the game (the log stops there). Options (the 360's settings screen, `menus/04`),
 Achievements and Leaderboards do nothing yet.
+
+**The 360 code's texts come from the user's copy** (2026-10-17): the texts the 360's code (not its
+layouts) puts in its screens (page names, the bags' and buttons' names, the filters, stances,
+journal labels, "Requires Level", the rewards' labels, the identify hint...) are no longer in the
+proxy's source. `tools/convert_x360_ui.py ... --image IMAGE` reads them from the user's decrypted
+360 executable (`~/torchlight-rewrite/out/pcre/default.bin`, base `0x82000000`) at the addresses of
+its `STRINGS` table (key -> address only) into `OUT/x360_strings.txt`; the proxy loads that file
+(`x360_text(key)`, `proxy/cegui_proxy.c`, from the `out=` folder) and shows "" for a key it lacks.
+Run the converter with `--image` once to get them. Earlier commits on this branch still carry
+those texts as literals; whether to rewrite the branch's history is the user's decision.

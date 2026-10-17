@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """The Xbox 360 interface's files, converted from the user's 360 `pak.zip` for the PC game.
 
-convert_x360_ui.py PAK OUT [--prompts STYLE] [--swap-confirm-cancel]
+convert_x360_ui.py PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE]
                                writes OUT/media/ui/x360/ and OUT/x360_ui_report.json
+
+--image IMAGE: the user's decrypted 360 executable (its image at 0x82000000, as their recomp
+tools write it): the texts the 360's code puts in its screens (not in its layouts: the pages'
+names, the bars' buttons, the stances...) are read from it at the addresses in STRINGS and written
+to OUT/x360_strings.txt (key=value, UTF-8), which the proxy loads; the repository holds only the
+keys and the addresses.
 
 --prompts playstation3|playstation4|playstation5|playstation|nintendo draws the pad prompts (a_button,
 left_bumper, start_button, the sticks, the d-pad, the help screen's controller...) with
@@ -237,8 +243,59 @@ def inside(path, root):
     return path == root or path.startswith(root + os.sep)
 
 
+# The 360 code's texts: key -> address of a UTF-16BE string in the 360 image (default.xex
+# decrypted, base 0x82000000). Each address was found in the user's image; none of the texts is
+# kept here.
+IMAGE_BASE = 0x82000000
+STRINGS = {
+    "page.inventory": 0x820D17D0, "page.stats": 0x820CFB74, "page.skills": 0x820BF818, "page.quest": 0x820CF9A8,
+    "bag.mine": 0x820D0E6C, "bag.pet": 0x820D0E7C, "title.merchant": 0x820D0E8C, "title.stash": 0x820D0EA0,
+    "title.gambler": 0x820D0EE0,
+    "act.unequip": 0x820D0FB0, "act.equip": 0x820D0FA4, "act.use": 0x820D0F9C, "act.learn": 0x820D1080,
+    "act.drop": 0x820D0F90, "act.swap": 0x820D0F84, "act.identify": 0x820D1014, "act.buy": 0x820D0F48,
+    "act.sell": 0x820D0F50,
+    "compare.enable": 0x820D0FEC, "compare.disable": 0x820D0FC0,
+    "filter.0": 0x820D0BE0, "filter.1": 0x820C0CB4, "filter.2": 0x820D0BF0, "filter.3": 0x820D0C00,
+    "filter.4": 0x820D0C1C, "filter.5": 0x820D0C34,
+    "effects": 0x820D0EF0, "level": 0x820C0DD4, "requires_level": 0x820C0DB4, "identify_hint": 0x820C17FC,
+    "reward.xp": 0x820BEB40, "reward.gp": 0x820CF528, "reward.fame": 0x820C0494,
+    "stance.0": 0x820D198C, "stance.1": 0x820D1968, "stance.2": 0x820D19AC,
+    "time.hrs": 0x820CF7C8, "time.mins": 0x820CF7D0, "time.secs": 0x820CF7DC,
+    "journal.0": 0x820CF5AC, "journal.1": 0x820CF5C4, "journal.2": 0x820CF5E0, "journal.3": 0x820CF600,
+    "journal.4": 0x820CF618, "journal.5": 0x820CF63C, "journal.6": 0x820CF64C, "journal.7": 0x820CF670,
+    "journal.8": 0x820CF698, "journal.9": 0x820CF6C0, "journal.10": 0x820CF6DC, "journal.11": 0x820CF6F8,
+    "journal.12": 0x820CF718, "journal.13": 0x820CF734, "journal.14": 0x820CF750, "journal.15": 0x820CF768,
+    "journal.16": 0x820CF784, "journal.17": 0x820CF7A8,
+}
+
+
+def image_strings(image):
+    """{key: text} of STRINGS read from the 360 image's bytes; a key whose bytes are not a short
+    printable UTF-16BE string is left out (and listed by the caller)."""
+    out = {}
+    for key, addr in STRINGS.items():
+        off = addr - IMAGE_BASE
+        if not 0 <= off < len(image) - 1:
+            continue
+        end = off
+        while end + 1 < len(image) and end - off < 400 and image[end:end + 2] != b"\0\0":
+            end += 2
+        try:
+            text = image[off:end].decode("utf-16-be")
+        except UnicodeDecodeError:
+            continue
+        if text and len(text) < 100 and text.isprintable() and "=" not in text:
+            out[key] = text
+    return out
+
+
 def main():
     args = sys.argv[1:]
+    image = None
+    if "--image" in args:
+        i = args.index("--image")
+        image = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
     style, swap = "xbox", False
     if "--swap-confirm-cancel" in args:
         swap = True
@@ -265,6 +322,13 @@ def main():
             f.write(data)
     with open(os.path.join(dest, "x360_ui_report.json"), "w") as f:
         json.dump(report, f, indent=1)
+    if image:
+        with open(image, "rb") as f:
+            texts = image_strings(f.read())
+        with open(os.path.join(dest, "x360_strings.txt"), "w", encoding="utf-8") as f:
+            f.write("".join(f"{k}={v}\n" for k, v in sorted(texts.items())))
+        missing = sorted(set(STRINGS) - set(texts))
+        print(f"{len(texts)} texts of the 360's code into x360_strings.txt" + (f"; not found: {', '.join(missing)}" if missing else ""))
     unknown = sorted({s for v in report["layouts"].values() for s in v["unknown_imagesets"]})
     print(f"{len(out)} files into {os.path.join(dest, DEST)}: {len(report['layouts'])} layouts, "
           f"{len(report['imagesets'])} imagesets, {len(report['fonts'])} fonts")
