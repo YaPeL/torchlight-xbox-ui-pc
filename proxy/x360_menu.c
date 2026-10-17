@@ -170,6 +170,10 @@ static void text(void *w, const char *utf8) {
 }
 
 static void show(void *w, int on) { if (w) set_visible(w, 0, on); }
+static void show_children(void *w, int on) {
+    unsigned i, n = w ? child_count(w, 0) : 0;
+    for (i = 0; i < n; i++) show(child_at(w, 0, i), on);
+}
 
 /* ---- numbers, without a CRT ---- */
 
@@ -636,8 +640,19 @@ static unsigned char *cur_owner;             /* the bag's owner: the hero, the p
 /* A unit's CInventory*; the shared stash's (its chest of type 170) is the game's, kept apart from
  * the characters (PC's stash menu, GOG 0x5aac2d: 0x52dfe0's +0x8). */
 #define GOG_SHARED_STASH 0x00e40900
+/* The transmuter (CCombineMenu, CGameUI's +0x2e0): its four places are slots of the hero's own
+ * inventory, their numbers at the menu's +0x7c (read when it opens; GOG 0x569663). */
+static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
+static int tm_slot[4], tm_known;
+static unsigned char *tm_shop;               /* the transmuter unit while it is open */
+static int is_tm_slot(int slot) {
+    int j;
+    for (j = 0; tm_known && j < 4; j++) if (tm_slot[j] == slot) return 1;
+    return 0;
+}
 static void *owner_bag(unsigned char *owner) {
     if (!owner) return 0;
+    if (at_transmute && owner == tm_shop) owner = hero;
     if (isa(owner, 170)) return *(unsigned char **)GOG_SHARED_STASH ? *(void **)(*(unsigned char **)GOG_SHARED_STASH + 8) : 0;
     return *(void **)(owner + GOG_INVENTORY);
 }
@@ -661,6 +676,19 @@ static void build_list(int filter) {
     if (!inv) return;
     refs = *(void ***)(inv + INV_REFS);
     n = *(unsigned *)(inv + INV_REFS + 4);
+    /* The transmuter's column: the items in its four places, in their order, whatever the filter
+     * (it has no tabs: town/05); the bags leave those places out. */
+    if (at_transmute && cur_owner == tm_shop) {
+        int j;
+        for (j = 0; j < 4 && tm_known; j++)
+            for (i = 0; i < n; i++) {
+                unsigned char *ref = (unsigned char *)refs[i];
+                if (ref && *(void **)(ref + REF_ITEM) && *(int *)(ref + REF_SLOT) == tm_slot[j] && list_count < MAX_LIST) {
+                    list[list_count] = *(void **)(ref + REF_ITEM); list_slot[list_count] = tm_slot[j]; list_count++;
+                }
+            }
+        return;
+    }
     for (pass = 0; pass < 2; pass++) {
         for (i = n; i-- > 0;) {
             unsigned char *ref = (unsigned char *)refs[i];
@@ -668,6 +696,7 @@ static void build_list(int filter) {
             int slot, c;
             if (!ref || !(item = *(void **)(ref + REF_ITEM))) continue;
             slot = *(int *)(ref + REF_SLOT);
+            if (is_tm_slot(slot)) continue;
             if ((slot < EQUIPPED_SLOTS) != (pass == 0)) continue;
             c = category(item);
             if (c != filter && c != 6) continue;
@@ -1076,7 +1105,8 @@ static void refresh(void) {
      * tab (the catalog: menus/08-inventory's bag against the pet's, town/21-stash-1's columns). */
     /* The merchant's column has its own images (the catalog's town/01: backroundbase_merchant,
      * merchant_tab_*). */
-    int is_shop = panels[active_panel].is_shop;
+    int is_shop = panels[active_panel].is_shop && !at_transmute;   /* the transmuter's: the plain images (town/05) */
+    int is_tm = panels[active_panel].is_shop && at_transmute;
     for (i = 0; i < 6; i++) {
         char image[64];
         copy(image, sizeof image, is_shop ? "set:X360_widgets2 image:merchant_" : "set:X360_widgets2 image:", tab_image[i]);
@@ -1100,15 +1130,21 @@ static void refresh(void) {
                                                                   : "set:X360_widgets image:framea");
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
-    text(win("filtername"), x360_text(filter_name[filter]));
+    text(win("filtername"), x360_text(is_tm ? "filter.transmute" : filter_name[filter]));
+    /* The transmuter's column (sub_82367D38, ISA 134): no tabs, its line of help (the layout's
+     * "transmutor", with the Y prompt under the rows) instead. */
+    for (i = 0; i < 6; i++) show(win(tab_window[i]), !is_tm);
     /* The merchant's name (sub_82367D38): the Gambler's (ISA 127, GAMBLER) or a merchant's; at a
      * stash its own (the catalog's town/21, 30). */
-    text(win("characterName"), x360_text(is_shop ? (at_stash ? (isa(cur_owner, 170) ? "title.sharedstash" : "title.stash")
+    text(win("characterName"), x360_text(is_tm ? "title.transmuter"
+                                         : is_shop ? (at_stash ? (isa(cur_owner, 170) ? "title.sharedstash" : "title.stash")
                                                     : isa(cur_owner, 127) ? "title.gambler" : "title.merchant")
                                          : panels[active_panel].is_pet ? "bag.pet" : "bag.mine"));
     /* RB on the focused bag only (the catalog: the bag, the pet's bag, the stash's columns). */
-    show(win("rightbumper"), active_panel == focus_panel);
-    show(win("transmutor"), 0);
+    show(win("rightbumper"), active_panel == focus_panel && !is_tm);
+    /* At the transmuter the focused bag has LB too (town/05). */
+    show(win("leftbumper"), active_panel == focus_panel && at_transmute && !is_tm);
+    show(win("transmutor"), is_tm);
     show(win("petintown"), 0);
     /* The 360 writes the owner's gold and "items/capacity" over the layout's samples ("12423",
      * "3/25"; sub_82367D38): PC's gold, and the bag's items and slots (the slots from the first
@@ -1129,9 +1165,9 @@ static void refresh(void) {
             int first = starts ? starts[0] : EQUIPPED_SLOTS;
             for (j = 0; j < count; j++)
                 if (refs[j] && *(int *)((unsigned char *)refs[j] + REF_SLOT) >= first) n++;
-            p = put_int(buf, n);
+            p = put_int(buf, is_tm ? list_count : n);   /* the transmuter's: of its 4 (sub_82367D38) */
             *p++ = '/';
-            p = put_int(p, *(long *)(inv + INV_SLOTS) - first);
+            p = put_int(p, is_tm ? 4 : *(long *)(inv + INV_SLOTS) - first);
             *p = 0;
             text(win("inventorysize"), buf);
         }
@@ -1141,8 +1177,20 @@ static void refresh(void) {
     for (row = 0; row < ROWS; row++) {
         int idx = top[filter] + row;
         void *tray;
+        static int emptied[ROWS];            /* the shop column's trays shown empty at the transmuter */
         row_name(name, "ItemTray", row);
         tray = win(name);
+        /* The transmuter's four places are drawn even empty: the tray at 0.6, nothing in it
+         * (town/05: ItemTray0-3, their windows hidden). */
+        if (is_tm && row < 4 && idx >= list_count) {
+            show(tray, 1);
+            prop(tray, "Image", "set:X360_widgets1 image:item_tray");
+            prop(tray, "Alpha", "0.6");
+            show_children(tray, 0);
+            emptied[row] = 1;
+            continue;
+        }
+        if (panels[active_panel].is_shop && emptied[row]) { show_children(tray, 1); emptied[row] = 0; }
         show(tray, idx < list_count);
         if (idx >= list_count) continue;
         item_name((unsigned char *)list[idx], buf, sizeof buf);
@@ -1186,8 +1234,8 @@ static void refresh(void) {
         show(win("buttonB"), 0);
         /* At a merchant (sub_8236C5C0) the frame's header says what X does: act.buy in the
          * merchant's column (TextColour FFFBE469), act.sell in the others (FFFF4800). */
-        show(win("buyandsell"), shop && !at_stash);
-        if (shop && !at_stash) {
+        show(win("buyandsell"), shop && !at_stash && !at_transmute);
+        if (shop && !at_stash && !at_transmute) {
             text(win("buyandselltext"), x360_text(panels[active_panel].is_shop ? "act.buy" : "act.sell"));
             prop(win("buyandselltext"), "TextColour", panels[active_panel].is_shop ? "FFFBE469" : "FFFF4800");
         }
@@ -1211,15 +1259,19 @@ static void refresh(void) {
                 label[n++] = ')';
                 label[n] = 0;
             }
-            if (at_stash && panels[active_panel].is_shop) {
+            if (at_transmute) {
+                /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
+                 * transmuter's own prompt under its rows. */
+                a = ""; x = x360_text("act.swap"); y = "";
+            } else if (at_stash && panels[active_panel].is_shop) {
                 /* The stash's column (its menu's mode 7, the shared one's 8: sub_8236C8D0's plain
                  * bar): Y Drop, X Swap. A for an item in the stash is not done (the 360's acts
                  * for the column's owner, the hero, on an item of another inventory). */
                 a = ""; x = x360_text("act.swap"); y = x360_text("act.drop");
-            } else if (shop && !at_stash && panels[active_panel].is_shop) {
+            } else if (shop && !at_stash && !at_transmute && panels[active_panel].is_shop) {
                 /* The merchant's column: X buys, nothing else (sub_8236C8D0, ISA 41). */
                 a = ""; x = x360_text("act.buy"); y = "";
-            } else if (shop && !at_stash) {
+            } else if (shop && !at_stash && !at_transmute) {
                 /* A bag at a merchant (sub_8236C8D0 with the merchant's menu, mode 4): X sells; A
                  * identifies an unidentified item, unequips an equipped one, equips a weapon,
                  * armour or trinket (ISA 8, 13, 39; for an owner not of type 28, the pet, a
@@ -1313,7 +1365,7 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
         /* The card's character is the item's owner: for a merchant's item PC writes the price it
          * asks (its tooltip, GOG 0x546c9f: a character other than the hero, of type 41), as the
          * 360's card; for the bags' what it pays (0x5471bc, with the merchant's menu open). */
-        ((show_tooltip_fn)GOG_SHOW_EQUIPMENT_TOOLTIP)(ui, 0, i == 0 && panels[focus_panel].is_shop && shop ? shop : hero,
+        ((show_tooltip_fn)GOG_SHOW_EQUIPMENT_TOOLTIP)(ui, 0, i == 0 && panels[focus_panel].is_shop && shop && !at_transmute ? shop : hero,
                                                       item, t, cmp1, cmp2);
     } __except (1) {
         x360_log("x360 inv: showEquipmentTooltip threw\r\n");
@@ -1576,6 +1628,7 @@ static void update_info(void) {
  * layout's "Your pet has gone to town." when there is no pet. */
 static void refresh_all(void) {
     int c;
+    if (shop) x360_log("x360 shop: refresh in\r\n");   /* the shared stash's hang, once (docs 14) */
     for (c = 0; c < columns(); c++) {
         int p = column_panel(c);
         if (p == focus_panel || !panels[p].root) continue;
@@ -1589,6 +1642,7 @@ static void refresh_all(void) {
     fill_character();
     text(win_of(MASTER, "itemcomparetext"), x360_text(compare_on ? "compare.disable" : "compare.enable"));
     update_info();
+    if (shop) x360_log("x360 shop: refresh out\r\n");
 }
 
 /* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
@@ -1874,6 +1928,62 @@ static void stash_swap(void) {
     x360_log("x360 stash: X: the stash is full\r\n");
 }
 
+/* ---- the transmuter (the 360's mode 5) ----
+ * X in a bag puts the item into the first free of the transmuter's four places (sub_8236BA20:
+ * the slots 15 to 18 of a column of type 134; the sound 18, or 24 when all are taken), here with
+ * PC's own placing into a slot (GOG 0x4e9480, as its transmute puts its result back, 0x56a197);
+ * X in the transmuter's column takes the item back as from a stash (sub_8236B8B0). Y in any
+ * column transmutes (sub_8236A810 -> sub_82379058): PC's transmute, CCombineMenu's command 9
+ * (its virtual +0x30, 0x56a490 -> 0x569550). */
+#define GOG_COMBINE_MENU 0x2e0
+#define GOG_ITEM_AT_SLOT 0x004e7890          /* CInventory: the item in a slot, or 0 */
+#define GOG_PUT_AT_SLOT 0x004e9480           /* CInventory: the item into a slot (item, slot, 1) */
+#define GOG_TRANSMUTE 0x00569550             /* CCombineMenu: transmute the items in its places */
+typedef void *(__fastcall *item_at_fn)(void *inv, void *edx, int slot);
+typedef void *(__fastcall *put_at_fn)(void *inv, void *edx, void *item, int slot, int flag);
+static void transmute_swap(void) {
+    void *bag = owner_bag(hero);
+    unsigned char *item;
+    int j;
+    if (!bag || !list_count || !tm_known) return;
+    item = (unsigned char *)list[selected[filter]];
+    if (panels[active_panel].is_shop) {           /* back from the transmuter */
+        unsigned char *pet = the_pet();
+        float pos[3];
+        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, item);
+        if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1) ||
+            (pet && ((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(pet), 0, item, 1))) {
+            shop_sound(18);
+            x360_log("x360 transmuter: X: taken\r\n");
+            return;
+        }
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+        ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
+        ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
+        x360_log("x360 transmuter: X: taken, to the ground\r\n");
+        return;
+    }
+    for (j = 0; j < 4; j++) if (!((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j])) break;
+    if (j == 4) { shop_sound(24); x360_log("x360 transmuter: X: its places are full\r\n"); return; }
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inventory(), 0, item);
+    ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, tm_slot[j], 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) != item) {
+        x360_log("x360 transmuter: X: not placed, back\r\n");
+        if (!((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]))
+            ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inventory(), 0, item, 1);
+        return;
+    }
+    shop_sound(18);
+    x360_log("x360 transmuter: X: placed\r\n");
+}
+
+static void transmute(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_COMBINE_MENU) : 0;
+    if (!m) return;
+    ((void_fn)GOG_TRANSMUTE)(m, 0);
+    x360_log("x360 transmuter: Y: transmuted\r\n");
+}
+
 /* The inventory, logged once per opening: the panes and every reference (a diagnosis). */
 static void dump(void) {
     unsigned char *inv = (unsigned char *)inventory();
@@ -2118,7 +2228,7 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : !at_stash ? "title.merchant"
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
                                                : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
@@ -2214,7 +2324,8 @@ void x360_inventory_toggle(void) {
     inventory_open = !inventory_open;
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
-        if (shop) { if (page) set_page(0); focus_panel = 2; }
+        /* At the transmuter the bag is focused (town/05). */
+        if (shop) { if (page) set_page(0); focus_panel = at_transmute ? 0 : 2; }
         else if (focus_panel == 2) focus_panel = 0;
         select_panel(0);
         dump();
@@ -3477,6 +3588,12 @@ static unsigned fingerprint(void) {
  * opened with PC's inventory; the 360's CStashMenuXenon (vtable 0x8200149c) puts the stash in the
  * first column (sub_82383630: its +0x104, the bag +0x100, the pet's +0x108). */
 #define GOG_STASH_MENU 0x2e4
+/* The transmuter's: CCombineMenu (CGameUI's +0x2e0, vtable 0xab2c4c, made at 0x562ff7), its owner
+ * +0x4c (the transmuter the hero used: CGameUI 0x557ddf), the character +0x50, open +0x54 (its
+ * virtual +0x10, 0x56a350), opened with PC's inventory too (0x557dcd). */
+#define COMBINE_OWNER 0x4c
+#define COMBINE_OPEN 0x54
+#define COMBINE_SLOTS 0x7c
 #define MENU_OPEN 0x30
 #define MERCHANT_OWNER 0x28
 #define MENU_SET_OPEN (0x1c / 4)
@@ -3495,13 +3612,16 @@ static void pc_inventory_close(void) {
 }
 
 static void shop_close(void) {
-    unsigned char *m = ui ? *(unsigned char **)(ui + (at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
+    unsigned char *m = ui ? *(unsigned char **)(ui + (at_transmute ? GOG_COMBINE_MENU : at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
+    int open = m && (at_transmute ? m[COMBINE_OPEN] : m[MENU_OPEN]);
     shop_closing = 1;
     if (inventory_open) x360_inventory_toggle();
     shop_closing = 0;
     shop = 0;
     at_stash = 0;
-    if (m && m[MENU_OPEN]) ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
+    at_transmute = 0;
+    tm_shop = 0;
+    if (open) ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
     pc_inventory_close();
     x360_log("x360 shop: closed\r\n");
 }
@@ -3509,7 +3629,7 @@ static void shop_close(void) {
 /* The 360 has a menu for the merchants and another for the stashes, each its own columns: the
  * left column's filter and rows are kept for each (the stash's not left at the merchant's). */
 static void left_column_for(int stash) {
-    static struct { int filter, selected[6], top[6]; } kept[2];
+    static struct { int filter, selected[6], top[6]; } kept[3];
     static int kind = 0;
     int j;
     if (stash == kind) return;
@@ -3522,15 +3642,28 @@ static void left_column_for(int stash) {
 }
 
 void x360_shop_tick(void) {
-    unsigned char *m, *st;
+    unsigned char *m, *st, *tm;
     if (!find_world() || !ui) return;
     m = *(unsigned char **)(ui + GOG_MERCHANT_MENU);
     st = *(unsigned char **)(ui + GOG_STASH_MENU);
-    if (!shop && st && st[MENU_OPEN] && *(unsigned char **)(st + MERCHANT_OWNER)) {
+    tm = *(unsigned char **)(ui + GOG_COMBINE_MENU);
+    if (!shop && tm && tm[COMBINE_OPEN] && *(unsigned char **)(tm + COMBINE_OWNER)) {
+        int j;
+        if (inventory_open) x360_inventory_toggle();
+        for (j = 0; j < 4; j++) tm_slot[j] = ((int *)(tm + COMBINE_SLOTS))[j];
+        tm_known = 1;
+        shop = tm_shop = *(unsigned char **)(tm + COMBINE_OWNER);
+        at_transmute = 1;
+        left_column_for(2);
+        x360_log("x360 shop: PC's transmuter menu opened, its slots");
+        for (j = 0; j < 4; j++) { x360_log(" "); x360_log_num(tm_slot[j]); }
+        x360_log(isa(shop, 134) ? " (type 134)\r\n" : " (not of type 134)\r\n");
+        x360_inventory_toggle();
+    } else if (!shop && st && st[MENU_OPEN] && *(unsigned char **)(st + MERCHANT_OWNER)) {
         if (inventory_open) x360_inventory_toggle();
         shop = *(unsigned char **)(st + MERCHANT_OWNER);
         at_stash = 1;
-        left_column_for(1);
+        left_column_for(1);   /* 0 merchants, 1 stashes, 2 the transmuter */
         x360_log(isa(shop, 170) ? "x360 shop: PC's stash menu opened (the shared stash)\r\n" : "x360 shop: PC's stash menu opened\r\n");
         x360_inventory_toggle();
     } else if (m && m[MENU_OPEN] && !shop && *(unsigned char **)(m + MERCHANT_OWNER)) {
@@ -3547,13 +3680,16 @@ void x360_shop_tick(void) {
         hide_pc_ui(1);
     }
     if (at_stash) m = st;
-    if (shop && !(m && m[MENU_OPEN])) {
-        x360_log(at_stash ? "x360 shop: PC's stash menu closed\r\n" : "x360 shop: PC's merchant menu closed\r\n");
+    if (shop && (at_transmute ? !(tm && tm[COMBINE_OPEN]) : !(m && m[MENU_OPEN]))) {
+        x360_log(at_transmute ? "x360 shop: PC's transmuter menu closed\r\n"
+                 : at_stash ? "x360 shop: PC's stash menu closed\r\n" : "x360 shop: PC's merchant menu closed\r\n");
         shop_closing = 1;
         if (inventory_open) x360_inventory_toggle();
         shop_closing = 0;
         shop = 0;
         at_stash = 0;
+        at_transmute = 0;
+        tm_shop = 0;
     }
 }
 
@@ -3601,6 +3737,13 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     }
     /* LB/RB: the filter; past the ends, the column before or after, round (sub_8236A488,
      * sub_823702E0). */
+    /* The transmuter's column has no filters: LB and RB go straight to the next column. */
+    if ((pressed & (0x0100 | 0x0200)) && at_transmute && panels[focus_panel].is_shop) {
+        focus_panel = column_panel((panel_column(focus_panel) + (pressed & 0x0100 ? columns() - 1 : 1)) % columns());
+        select_panel(focus_panel); filter = pressed & 0x0100 ? 5 : 0;
+        refresh_all();
+        pressed &= ~(0x0100u | 0x0200u);
+    }
     if (pressed & 0x0100) {                                            /* LB */
         if (filter > 0) filter--;
         else if (panels[1].root) {
@@ -3620,10 +3763,13 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
-    if ((pressed & 0x1000) && !panels[active_panel].is_shop) { act(); refresh_all(); }    /* A */
-    if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }            /* Y (a stash: mode 7/8) */
+    /* At the transmuter (mode 5) A shows nothing and is not done here; Y transmutes. */
+    if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
+    if ((pressed & 0x8000) && at_transmute) { transmute(); refresh_all(); }               /* Y */
+    else if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }       /* Y (a stash: mode 7/8) */
     if (pressed & 0x4000) {                                                              /* X */
-        if (at_stash) stash_swap();
+        if (at_transmute) transmute_swap();
+        else if (at_stash) stash_swap();
         else if (!shop) swap_to_pet();
         else if (panels[active_panel].is_shop) buy();
         else sell();

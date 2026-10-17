@@ -1671,3 +1671,30 @@ no pet commands; the merchant's column focused at the start.
     froze at Miscellaneous, the main thread used all of a core, and the log stopped at an LB
     press. The game was closed. Run 1 did the same steps without hanging. Not reproduced or
     explained yet.
+
+**The transmuter** (`town/05`; the 360's mode 5, type 134): Duran the Transmuter, a townsman west
+of the gem goblins (`MERCHANT_COMBINER`, unit type `COMBINER`). His frame is the merchant's.
+- **PC's side.** CGameUI's `+0x2e0` is PC's `CCombineMenu` (made at `0x562ff7`, vtable
+  `0xab2c4c`). CGameUI opens it on the interaction 0x11 (`0x557d7d`), with PC's inventory, for
+  the unit the hero used (`+0x4c`); its character is at `+0x50` and its open flag at `+0x54`.
+  Its four places are slots of the hero's own inventory, numbered at `+0x7c`; the run read 15,
+  16, 17 and 18, the slots the 360 looks for, `sub_8236BA20`. Its command 9 transmutes (its
+  virtual `+0x30`, `0x56a490` → `0x569550`).
+- **The look** (`sub_82367D38`, the catalog):
+  - The left column has the plain images, `title.transmuter`, no tabs, and the layout's help
+    line `transmutor` with the Y prompt and arrow under the rows. The filter's name is
+    `filter.transmute` (the 360's string at `0x820D0C40`).
+  - The four places are always drawn; an empty one is the tray at 0.6 with nothing in it.
+  - The counter shows the places taken of 4. The bags leave those slots out.
+  - The bag is focused at the start, and shows LB and RB and the gold.
+- **The buttons and input** (`sub_8236C8D0`, mode 5): X `act.swap` in every column; A and Y have
+  no text, and A is not done at the transmuter.
+  - X in a bag puts the item into the first free place (PC's slot placing `0x4e9480`, as its
+    transmute puts its result back): sound 18, or 24 when all four are taken.
+  - X in the transmuter's column takes the item back as from a stash.
+  - Y in any column calls PC's transmute.
+- **Tested** (GOG, run 5): the frame opened at Duran. X placed the sword in a place (1/4) and
+  took it back, and B closed both menus. Y with that one item made nothing (no recipe); a real
+  recipe is untested. PC's card has no sell price here (the 360's shows one, `town/05`).
+  Captures: `screens/gog/transmuter-1`, `transmuter-item-1`, `transmuter-after-1`,
+  `transmuter-back-1`.
