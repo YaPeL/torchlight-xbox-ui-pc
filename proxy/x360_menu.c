@@ -2274,6 +2274,83 @@ static void plain_markup(void *w, int depth) {
     for (i = 0; i < n; i++) plain_markup(child_at(w, 0, i), depth + 1);
 }
 
+/* A text with the 360's colour marks in it ("|cAARRGGBB" .. "|u" around a line, as the skills'
+ * descriptions have them, from the game's data): PC's CEGUI writes the marks as they are, and one
+ * window has one colour, so each paragraph gets a StaticText of its own under the window, in the
+ * window's font and formatting, its colour the mark's or the window's, one under the other by
+ * the lines CEGUI wraps it into (Font::getFormattedLineCount, getLineSpacing). */
+typedef struct { float top, bottom, left, right; } cegui_rect;
+static void rich_text(void *w, const char *prefix, const char *base, const char *textv) {
+    typedef void *(__fastcall *get_font_fn)(const void *self, void *edx, unsigned char def);
+    typedef unsigned (__fastcall *line_count_fn)(void *font, void *edx, const void *text, const cegui_rect *area, int fmt, float scale);
+    typedef float (__fastcall *spacing_fn)(const void *font, void *edx, float scale);
+    typedef cegui_rect *(__fastcall *rect_fn)(const void *self, void *edx, cegui_rect *out);
+    static get_font_fn get_font;
+    static line_count_fn line_count;
+    static spacing_fn spacing;
+    static rect_fn unclipped;
+    char colour_base[24], fontname[48], name[64], para[400], colour[12], *p;
+    const char *t = textv;
+    void *font;
+    cegui_rect r, area;
+    float y = 0, h, sp;
+    int n = 0, i;
+    if (!w) return;
+    if (!get_font) {
+        get_font = (get_font_fn)need("?getFont@Window@CEGUI@@QBEPAVFont@2@_N@Z");
+        line_count = (line_count_fn)need("?getFormattedLineCount@Font@CEGUI@@QAEIABVString@2@ABVRect@2@W4TextFormatting@2@M@Z");
+        spacing = (spacing_fn)need("?getLineSpacing@Font@CEGUI@@QBEMM@Z");
+        unclipped = (rect_fn)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    }
+    if (!get_font || !line_count || !spacing || !unclipped) { text(w, textv); return; }
+    read_prop(w, "TextColour", colour_base, sizeof colour_base);
+    read_prop(w, "Font", fontname, sizeof fontname);
+    font = get_font(w, 0, 1);
+    unclipped(w, 0, &r);
+    sp = font ? spacing(font, 0, 1.0f) : 0;
+    text(w, "");
+    while (*t && n < 12) {
+        unsigned len = 0;
+        void *pw;
+        object str;
+        colour[0] = 0;
+        while (t[len] && t[len] != '\n') len++;
+        if (len >= 10 && t[0] == '|' && t[1] == 'c') { for (i = 0; i < 8; i++) colour[i] = t[2 + i]; colour[8] = 0; }
+        for (i = 0, p = para; (unsigned)i < len && p < para + sizeof para - 1; i++) {
+            if (t[i] == '|' && t[i + 1] == 'c' && (unsigned)i + 10 <= len) { i += 9; continue; }
+            if (t[i] == '|' && t[i + 1] == 'u') { i += 1; continue; }
+            *p++ = t[i];
+        }
+        *p = 0;
+        t += len;
+        if (*t == '\n') t++;
+        if (!para[0] && !*t) break;   /* the text's last newline */
+        copy(name, sizeof name, base, "_rt");
+        p = put_int(name + length(name), n); *p = 0;
+        pw = win_of(prefix, name);
+        if (!pw && (pw = create_window(prefix, name, "ceguiWidget/StaticText")) != 0) add_child(w, 0, pw);
+        if (!pw) break;
+        if (fontname[0]) prop(pw, "Font", fontname);
+        prop(pw, "HorzTextFormatting", "WordWrapLeftAligned");
+        prop(pw, "VertFormatting", "TopAligned");
+        prop(pw, "TextColour", colour[0] ? colour : colour_base);
+        text(pw, para[0] ? para : " ");
+        area.left = 0; area.top = 0; area.right = r.right - r.left; area.bottom = 100000.0f;
+        string_utf8(&str, 0, para[0] ? para : " ");
+        h = sp * (float)(font ? line_count(font, 0, &str, &area, 4, 1.0f) : 1);   /* 4: WordWrapLeftAligned */
+        string_dtor(&str, 0);
+        set_size(pw, 0, y, r.right - r.left, h);
+        show(pw, 1);
+        y += h;
+        n++;
+    }
+    for (; n < 12; n++) {   /* the paragraphs not used this time */
+        copy(name, sizeof name, base, "_rt");
+        p = put_int(name + length(name), n); *p = 0;
+        show(win_of(prefix, name), 0);
+    }
+}
+
 /* ---- the Skills page (the catalog's menus/11) ----
  * The 360's CSkillMenuXenon: skillsmenu_xenon in the frame. Its fill (sub_8235BE88) for each skill
  * of the player's skill manager (the player's +0x184; its list +0x2c on the 360, GOG's +0x3c and
@@ -2286,8 +2363,9 @@ static void plain_markup(void *w, int depth) {
  * player's tab names (GOG 0x4a2220, 1 to 3); skillPointsValue the player's skill points (+0x3e0).
  * The selected skill (sub_8235D558): its icon, Rank "effective/maximum" (+0x188, else +0x68,
  * else 1), its name (GOG 0x5d59b0), its kind's text (GOG 0x5d68e0), "Always Enabled" for a passive,
- * its description at its rank (CSkill::getSkillLevelDescription *(OT)*, GOG 0x5d88f0: out, the unit,
- * the rank or -1 for the effective one, as the 360's sub_823B07C8). The help box (sub_82381D18): centred under the
+ * its rank's effects (the 360's sub_823B07C8: "Inflicts 86% of Weapon DPS" ..; GOG 0x5d8c60, out, the
+ * unit, the rank or -1 for the effective one, whose 0x5e0fc0 writes those lines; its neighbour
+ * 0x5d88f0 gives the data's own description instead), its colour marks drawn by rich_text. The help box (sub_82381D18): centred under the
  * selected cell, 7 (720 rows) up into it; skill points; for a spell (+0x34 != 0) upgrade at 0.3
  * and map; with no rank: hidden without points, "Requires Level N" when the level is short, else
  * learn and map at 0.3; with a rank: upgrade (0.3 without points) and map (at 1 for a +0x38 == 3).
@@ -2360,13 +2438,17 @@ static void skill_icon(void *skill, unsigned fn, char *out, unsigned size) {
     if (wstring_utf8((const unsigned char *)((skill_str_fn)fn)(skill, 0), icon, sizeof icon)) icon_image(icon, out, size);
 }
 
+/* CCharacter::getKnownSpell *(OT)* (GOG 0x484ff0; the 360's sub_821FD868): the player's spell i. */
+typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);
+static int sk_spell;
+
 static void *selected_skill(void) {
     unsigned n, i;
     void **list = skill_list(&n);
+    if (sk_spells) return hero ? ((known_spell_fn)0x484ff0)(hero, 0, sk_spell) : 0;
     for (i = 0; list && i < n; i++) {
         unsigned char *sk = (unsigned char *)list[i];
         if (!sk) continue;
-        if (sk_spells) continue;   /* the spells' row: not made yet */
         if (*(int *)(sk + 0xdc) == sk_tab && *(int *)(sk + 0xd8) == sk_row && *(int *)(sk + 0xd4) == sk_col) return sk;
     }
     return 0;
@@ -2456,6 +2538,27 @@ static void skills_fill(void) {
             text(lvl, buf);
         }
     }
+    /* The spells' row (sub_8235BE88's second loop): spellbg i, its _rollover when selected, and
+     * spellIcon i: the spell's inactive icon, at 1 with a rank, else 0.35; none: no image. */
+    for (t = 0; t < 4; t++) {
+        unsigned char *sp = (unsigned char *)((known_spell_fn)0x484ff0)(hero, 0, t);
+        void *bg, *icon;
+        copy(name, sizeof name, "spellbg", 0); p = put_int(name + 7, t); *p = 0;
+        bg = win_of(SKILLS_PREFIX, name);
+        copy(name, sizeof name, "spellIcon", 0); p = put_int(name + 9, t); *p = 0;
+        icon = win_of(SKILLS_PREFIX, name);
+        prop(bg, "Image", sk_spells && sk_spell == t ? "set:X360_widgets2 image:spells_windowb_rollover"
+                                                     : "set:X360_widgets2 image:spells_windowb");
+        if (sk_spells && sk_spell == t) cell = bg;
+        if (sp) {
+            skill_icon(sp, 0x5d5950, buf, sizeof buf);
+            prop(icon, "Image", buf);
+            prop(icon, "Alpha", *(int *)(sp + 0xa4) ? "1" : "0.35");
+        } else {
+            prop(icon, "Image", "");
+            prop(icon, "Alpha", "0.35");
+        }
+    }
     /* The selected skill's column. */
     sel = (unsigned char *)selected_skill();
     if (sel) {
@@ -2475,11 +2578,11 @@ static void skills_fill(void) {
         wdtor(ws, 0);
         text(win_of(SKILLS_PREFIX, "TypeDescText"), buf);
         wctor(ws, 0, empty);
-        __try { ((skill_desc_fn)0x5d88f0)(sel, 0, ws, hero, -1); } __except (1) {}
+        __try { ((skill_desc_fn)0x5d8c60)(sel, 0, ws, hero, -1); } __except (1) {}
         {
             char desc[600];
             if (!wstring_utf8_long(ws, desc, sizeof desc)) desc[0] = 0;
-            text(win_of(SKILLS_PREFIX, "SkillDescriptionText"), desc);
+            rich_text(win_of(SKILLS_PREFIX, "SkillDescriptionText"), SKILLS_PREFIX, "SkillDescriptionText", desc);
         }
         wdtor(ws, 0);
         /* The next rank's text (sub_8235D558): under "Next Level" while the skill has a rank
@@ -2490,12 +2593,15 @@ static void skills_fill(void) {
             desc[0] = 0;
             if (eff > 0 && eff < m) {
                 wctor(ws, 0, empty);
-                __try { ((skill_desc_fn)0x5d88f0)(sel, 0, ws, hero, eff + 1); } __except (1) {}
+                __try { ((skill_desc_fn)0x5d8c60)(sel, 0, ws, hero, eff + 1); } __except (1) {}
                 if (!wstring_utf8_long(ws, desc, sizeof desc)) desc[0] = 0;
                 wdtor(ws, 0);
             }
             show(win_of(SKILLS_PREFIX, "NextLevelHeader"), eff > 0 && eff < m);
-            text(win_of(SKILLS_PREFIX, "SkillDescriptionTextNext"), desc[0] ? desc : " ");
+            /* "Requires Level" N: the level the next rank asks (GOG 0x5d5c00, the 360's sub_823ADE08). */
+            p = put_int(buf, ((skill_int_fn)0x5d5c00)(sel, 0)); *p = 0;
+            text(win_of(SKILLS_PREFIX, "RequiredLevelVal"), buf);
+            rich_text(win_of(SKILLS_PREFIX, "SkillDescriptionTextNext"), SKILLS_PREFIX, "SkillDescriptionTextNext", desc);
         }
     }
     /* The skill set's slots: the icons the HUD's same slots show (its SkillSlot4 to 7). */
@@ -2595,13 +2701,30 @@ static int skill_at(int t, int r, int c) {
     return 0;
 }
 
+/* The spells' row under the tree: spell i stands under (tab, column) 0 (0,1), 1 (1,0), 2 (1,1),
+ * 3 (2,0) (sub_8235E570, sub_8235E6D0). */
+static const int spell_tab[4] = {0, 1, 1, 2}, spell_col[4] = {1, 0, 1, 0};
+
 static void skills_move(int dx, int dy) {
     int tries;
     for (tries = 0; tries < 40; tries++) {
-        if (dx > 0) { if (++sk_col > 1) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
-        if (dx < 0) { if (--sk_col < 0) { sk_col = 1; if (--sk_tab < 0) sk_tab = 2; } }
-        if (dy < 0 && --sk_row < 0) sk_row = 5;
-        if (dy > 0 && ++sk_row > 5) sk_row = 0;
+        if (sk_spells) {
+            if (dx) { sk_spell = (sk_spell + (dx > 0 ? 1 : 3)) % 4; break; }
+            if (dy) {   /* out of the row: up to the last row, down to the first */
+                sk_spells = 0;
+                sk_tab = spell_tab[sk_spell];
+                sk_col = spell_col[sk_spell];
+                sk_row = dy < 0 ? 5 : 0;
+            }
+        } else {
+            if (dx > 0) { if (++sk_col > 1) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
+            if (dx < 0) { if (--sk_col < 0) { sk_col = 1; if (--sk_tab < 0) sk_tab = 2; } }
+            if ((dy < 0 && --sk_row < 0) || (dy > 0 && ++sk_row > 5)) {
+                sk_spells = 1;
+                sk_spell = sk_tab == 0 ? 0 : sk_tab == 2 ? 3 : sk_col == 0 ? 1 : 2;
+                break;
+            }
+        }
         if (skill_at(sk_tab, sk_row, sk_col)) break;
     }
     skills_fill();
