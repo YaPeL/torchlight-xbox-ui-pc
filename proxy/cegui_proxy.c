@@ -26,6 +26,8 @@
  *   pad_face=0                                  the old movement, setDestination only (to compare)
  *   pad_log=1                                   the pad's detailed diagnosis in the log (costly)
  *   console=ITEM <the identify scroll's name>,3;MONEY 100    game console commands run once in play (test runs)
+ *   dialog_fast_scroll=4                        how many times faster a dialog's text rises with X
+ *                                               held (the 360's factor is not measured yet; 4 by default)
  * In mode=scheme, OUT is added to Ogre's world resource group (a FileSystem location, recursive),
  * so the converted files' own paths (media/ui/x360/...) resolve, and then
  * media/ui/x360/ceguiWidgets.scheme is loaded once, inside __try: if it throws, the game's own
@@ -194,6 +196,13 @@ static void read_config(void) {
         if (starts(line, "pad_mode=direct")) pad_direct = 1;
         if (starts(line, "pad_face=0")) pad_old_face = 1;
         if (starts(line, "pad_log=1")) pad_log = 1;
+        if (starts(line, "dialog_fast_scroll=")) {
+            extern int x360_dialog_fast_scroll;
+            const char *v = line + 19;
+            int n = 0;
+            while (*v >= '0' && *v <= '9') n = n * 10 + (*v++ - '0');
+            if (n > 0) x360_dialog_fast_scroll = n;
+        }
         if (starts(line, "pad_file=") && length(line + 9) < sizeof pad_file) memcpy(pad_file, line + 9, length(line + 9) + 1);
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
         if (starts(line, "console=") && length(line + 8) < sizeof x360_console_commands)

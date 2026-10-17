@@ -2417,6 +2417,7 @@ static void show_doll(int on) {
 }
 
 static void *hud_root, *pet_hud_root;
+static int qd_shown;                         /* the 360's NPC dialog is shown (its section, at the end) */
 static int shop_closing;
 static int is_ours(void *w) {
     return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == ench_root || w == character_root ||
@@ -4433,8 +4434,10 @@ static const char *hud_stage = "";
 /* The HUD's tick, guarded: while a level loads, the pointers it reads may not be set yet. */
 void x360_ui_dump_poll(void);
 
+static void add_frame_listener(void);
 void x360_hud_tick(void) {
     static int logged;
+    add_frame_listener();
     x360_ui_dump_poll();
     __try { hud_tick(); }
     __except (1) {
@@ -4468,6 +4471,8 @@ static void hud_tick(void) {
         if (!k) k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
         scale_tree(hud_root, k, 0);
         pass_mouse(hud_root);
+        if (w && GetClientRect(w, &r) && r.bottom > r.top)   /* the 360's fonts, before any menu opens */
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
         x360_log("x360 hud: shown, PC's bottom HUD transparent\r\n");
     }
     /* PC shows its bottom HUD again each frame, so it is made transparent instead (its children
@@ -4480,7 +4485,7 @@ static void hud_tick(void) {
         if (!faded) { prop(pc_hud_root, "Alpha", "0"); pass_mouse(pc_hud_root); faded = 1; }
     }
     hud_stage = "bars";
-    show(hud_root, 1);
+    show(hud_root, !qd_shown);                     /* no HUD under a dialog (town/13) */
     mirror_bar("PlayerHealthBar", "PlayerHealthBarSub", 0, health);
     mirror_bar("PlayerManaBar", "PlayerManaBarSub", 0, mana);
     mirror_bar("ExperienceBar", "ExperienceBarSub", 1, xp);
@@ -4522,7 +4527,7 @@ static void hud_tick(void) {
         if (p != pc_pet) { pc_pet = p; if (pc_pet) { prop(pc_pet, "Alpha", "0"); pass_mouse(pc_pet); } }
         if (!pc_pet && pet_root) show(pet_root, 0);
         if (pet_root && vis && pc_pet) {
-            show(pet_root, vis(pc_pet, 0, 0));
+            show(pet_root, vis(pc_pet, 0, 0) && !qd_shown);
             mirror_bar_of(PETHUD_PREFIX, "PetHealthBar", "PetHealth", 1, pet_health);
             mirror_bar_of(PETHUD_PREFIX, "PetManaBar", "PetMana", 1, pet_mana);
             mirror_text_of(PETHUD_PREFIX, "FleeingText");
@@ -4547,4 +4552,256 @@ static void hud_tick(void) {
     hud_stage = "minimap";
     minimap_tick();
     hud_stage = "done";
+}
+
+/* ---- NPC dialogs (the 360's CQuestDialogMenu: town/04, 13, 14, 27-29, 42) ----
+ * PC's quest dialog (CQuestDialogMenu, vtable 0xab7ff0) and the 360's questdialogmenu.layout have
+ * the same windows (Portrait, DialogTextFrame/DialogText, Ok, Accept, Decline, RewardGold/XP/Fame
+ * and their Box, ItemBkg1-3/ItemSlot1-3). While PC's is shown the 360's is shown over it, its
+ * windows mirrored from PC's each frame, PC's made transparent; the HUD is hidden (town/13).
+ * PC's modal dialog stops the GetCursorPos polls that drive the pad's ticks, and CEGUI is drawn
+ * only when something changes, so this runs from an Ogre FrameListener of the proxy's, added to
+ * PC's Root (OgreMain's Root::addFrameListener), once a frame.
+ * The text rises (the 360's sub_82357C40, each frame with the frame's time): t grows to
+ * T = max(the text's characters * 0.015, 5.0) seconds (sub_823568D0: its +344 times 0x820aa7d8,
+ * at least 0x820aa464), the text's top at (1 - t/T) * (its height + 50) pixels (0x820aa388) below
+ * its frame's top, at the 360's 720 rows.
+ * The pad: A presses PC's Accept when shown, else its Ok; B its Decline when shown. X held makes
+ * the text rise faster (sub_82192640, 0x821929c4: the frame's time times a factor, [r29+268], a
+ * value of the running game not measured yet: x360_ui.ini's dialog_fast_scroll, 4 by default). */
+int x360_dialog_fast_scroll = 4;
+#define QD_PREFIX "x360qd_"
+static void *qd_root, *pc_qd_text_frame;
+static char pc_qd_prefix[48];
+static int qd_failed;
+static unsigned qd_last, qd_prev_buttons;
+static float qd_T, qd_t;
+unsigned x360_pad_buttons(void);
+
+/* PC's quest dialog's DialogTextFrame: the first window under the GUI sheet named
+ * "...DialogTextFrame" not of the proxy's layouts. */
+static void *find_pc_dialog(void) {
+    typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+    static name_fn gn;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *stack[256];
+    int sp = 0;
+    const char *suffix = "DialogTextFrame";
+    unsigned n = length(suffix);
+    if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!sheet || !gn) return 0;
+    stack[sp++] = sheet;
+    while (sp > 0) {
+        void *v = stack[--sp];
+        const char *name = c_str(gn(v, 0), 0);
+        unsigned len = length(name), c, nc;
+        if (name[0] == 'x' && name[1] == '3' && name[2] == '6' && name[3] == '0') continue;
+        if (len > n && len - n < sizeof pc_qd_prefix) {
+            unsigned i = 0;
+            while (i < n && name[len - n + i] == suffix[i]) i++;
+            if (i == n) {
+                for (i = 0; i < len - n; i++) pc_qd_prefix[i] = name[i];
+                pc_qd_prefix[len - n] = 0;
+                return v;
+            }
+        }
+        nc = child_count(v, 0);
+        for (c = 0; c < nc && sp < 255; c++) stack[sp++] = child_at(v, 0, c);
+    }
+    return 0;
+}
+
+static int pc_shown(const char *name) {
+    typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    static vis_fn vis;
+    void *w = win_of(pc_qd_prefix, name);
+    if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    return w && vis && vis(w, 0, 0);
+}
+
+static void qd_mirror_text(const char *name) {
+    char v[160];
+    read_prop(win_of(pc_qd_prefix, name), "Text", v, sizeof v);
+    text(win_of(QD_PREFIX, name), v);
+}
+
+/* A left click on PC's button (its centre, the mouse injected into CEGUI). */
+static void qd_press(const char *name) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    static pixel_rect_fn6 rect_of;
+    void x360_inject_left(int down, float x, float y);
+    void *w = win_of(pc_qd_prefix, name);
+    rect6 r;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!w || !rect_of) return;
+    rect_of(w, 0, &r);
+    x360_inject_left(1, (r.left + r.right) * 0.5f, (r.top + r.bottom) * 0.5f);
+    x360_inject_left(0, (r.left + r.right) * 0.5f, (r.top + r.bottom) * 0.5f);
+    x360_log("x360 dialog: pressed PC's "); x360_log(name); x360_log("\r\n");
+}
+
+static void qd_show(int on) {
+    if (on == qd_shown) return;
+    qd_shown = on;
+    set_visible(qd_root, 0, on);
+    prop(win_of(pc_qd_prefix, "Frame"), "Alpha", on ? "0" : "1");
+    if (hud_root) set_visible(hud_root, 0, !on);
+    if (pet_hud_root) set_visible(pet_hud_root, 0, !on);
+    if (on) move_to_front(qd_root, 0);
+    x360_log(on ? "x360 dialog: shown over PC's\r\n" : "x360 dialog: hidden\r\n");
+}
+
+static void dialog_tick(void) {
+    static unsigned last_search;
+    unsigned now = GetTickCount(), buttons, pressed;
+    char v[2048];
+    if (qd_failed) return;
+    if (!pc_qd_text_frame && now - last_search > 250) { last_search = now; pc_qd_text_frame = find_pc_dialog(); }
+    if (!pc_qd_text_frame) return;
+    /* PC closes its dialog by taking it off the GUI sheet (it stays "visible"): open while its
+     * Frame is visible and under the sheet. */
+    {
+        typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+        static parent_fn gp;
+        void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *w = win_of(pc_qd_prefix, "Frame");
+        int depth = 0, attached = 0;
+        if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+        for (; w && gp && depth < 32; w = gp(w, 0), depth++) if (w == sheet) { attached = 1; break; }
+        if (!attached || !pc_shown("Frame")) { if (qd_shown) qd_show(0); qd_last = 0; return; }
+    }
+    if (!qd_root) {
+        RECT r;
+        HWND hw = GetActiveWindow();
+        qd_root = load("media/ui/x360/questdialogmenu.layout", QD_PREFIX);
+        if (!qd_root) { qd_failed = 1; return; }
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(qd_root, k, 0);
+        pass_mouse(qd_root);
+        set_visible(qd_root, 0, 0);
+        x360_log("x360 dialog: loaded questdialogmenu.layout\r\n");
+    }
+    if (!qd_shown) {
+        /* The 360's letter spacing and native width (match_spacing), which the inventory's
+         * opening did before: a dialog can come first (the review: its text 1.3 times wider). */
+        RECT r;
+        HWND hw = GetActiveWindow();
+        if (hw && GetClientRect(hw, &r) && r.bottom > r.top)
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+    }
+    qd_show(1);
+    /* The windows, as PC's. */
+    read_prop(win_of(pc_qd_prefix, "Portrait"), "Image", v, sizeof v);
+    prop(win_of(QD_PREFIX, "Portrait"), "Image", v);
+    read_prop(win_of(pc_qd_prefix, "DialogText"), "Text", v, sizeof v);
+    {
+        /* A new text (its hash): the rise starts again. */
+        static unsigned seen;
+        unsigned i, chars = 0, h = 2166136261u;
+        for (i = 0; v[i]; i++) h = (h ^ (unsigned char)v[i]) * 16777619u;
+        if (h != seen) {
+            seen = h;
+            for (i = 0; v[i]; i++) if ((v[i] & 0xc0) != 0x80) chars++;
+            /* The 360's colour markup (|cAARRGGBB .. |u) is drawn as text by this CEGUI's
+             * StaticText: taken out, the words kept (their colour is open, docs 14). */
+            {
+                unsigned r = 0, w2 = 0;
+                while (v[r]) {
+                    if (v[r] == '|' && v[r + 1] == 'c') { unsigned j = 2; while (j < 10 && v[r + j]) j++; r += j; continue; }
+                    if (v[r] == '|' && v[r + 1] == 'u') { r += 2; continue; }
+                    v[w2++] = v[r++];
+                }
+                v[w2] = 0;
+            }
+            text(win_of(QD_PREFIX, "DialogText"), v);
+            qd_T = (float)chars * 0.015f;
+            if (qd_T < 5.0f) qd_T = 5.0f;
+            qd_t = 0;
+        }
+    }
+    show(win_of(QD_PREFIX, "Ok"), pc_shown("Ok"));
+    show(win_of(QD_PREFIX, "Accept"), pc_shown("Accept"));
+    show(win_of(QD_PREFIX, "Decline"), pc_shown("Decline"));
+    show(win_of(QD_PREFIX, "Fast Scroll"), 1);
+    {
+        static const char *const box[3] = {"RewardGoldBox", "RewardXPBox", "RewardFameBox"};
+        static const char *const val[3] = {"RewardGold", "RewardXP", "RewardFame"};
+        int i, items = 0;
+        for (i = 0; i < 3; i++) {
+            show(win_of(QD_PREFIX, box[i]), pc_shown(box[i]));
+            qd_mirror_text(val[i]);
+        }
+        for (i = 1; i <= 3; i++) {
+            char bkg[16], slot[16];
+            int on;
+            copy(bkg, sizeof bkg, "ItemBkg", 0); bkg[7] = (char)('0' + i); bkg[8] = 0;
+            copy(slot, sizeof slot, "ItemSlot", 0); slot[8] = (char)('0' + i); slot[9] = 0;
+            on = pc_shown(bkg);
+            items += on;
+            show(win_of(QD_PREFIX, bkg), on);
+            read_prop(win_of(pc_qd_prefix, slot), "Image", v, sizeof v);
+            prop(win_of(QD_PREFIX, slot), "Image", v);
+        }
+        show(win_of(QD_PREFIX, "ItemHighlight"), 0);
+        /* "Rewards" with the stick's prompt when there are items (town/04; not town/13). */
+        show(win_of(QD_PREFIX, "RewardsTooltip"), items > 0);
+    }
+    /* The pad. */
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~qd_prev_buttons;
+    qd_prev_buttons = buttons;
+    /* The frame's time, faster with X held. */
+    if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
+    qd_last = now;
+    if (pressed & 0x1000) qd_press(pc_shown("Accept") ? "Accept" : "Ok");    /* A */
+    if ((pressed & 0x2000) && pc_shown("Decline")) qd_press("Decline");       /* B */
+    /* The rising text. */
+    {
+        void *t = win_of(QD_PREFIX, "DialogText");
+        float vr[8], s = k * 768.0f / 720.0f, h, elapsed = qd_t, y;
+        char rect[128];
+        read_prop(t, "UnifiedAreaRect", rect, sizeof rect);
+        if (t && parse_rect(rect, vr)) {
+            h = vr[7] - vr[3];
+            if (elapsed > qd_T) elapsed = qd_T;
+            y = (1.0f - elapsed / qd_T) * (h + 50.0f * s);
+            vr[3] = y; vr[7] = y + h;
+            write_rect(rect, vr);
+            prop(t, "UnifiedAreaRect", rect);
+        }
+    }
+}
+
+/* Once a frame: the screens that must run when PC's dialogs stop the pad's polls. An
+ * Ogre::FrameListener of the proxy's (its virtuals, as PC's own at GOG 0xabbac4: frameStarted,
+ * frameRenderingQueued, frameEnded, the destructor), added to PC's Root from the HUD's tick. */
+void x360_frame_tick(void);
+static unsigned char __fastcall fl_started(void *self, void *edx, const void *evt) { x360_frame_tick(); return 1; }
+static unsigned char __fastcall fl_other(void *self, void *edx, const void *evt) { return 1; }
+static void *__fastcall fl_dtor(void *self, void *edx, unsigned flags) { return self; }
+static void *fl_vtable[4] = {(void *)fl_started, (void *)fl_other, (void *)fl_other, (void *)fl_dtor};
+static struct { void **vt; } frame_listener = {fl_vtable};
+static void add_frame_listener(void) {
+    typedef void *(__cdecl *root_fn)(void);
+    typedef void (__fastcall *add_fn)(void *root, void *edx, void *listener);
+    static int done;
+    void *ogre, *root;
+    root_fn get_root;
+    add_fn add;
+    if (done) return;
+    ogre = GetModuleHandleA("OgreMain.dll");
+    get_root = ogre ? (root_fn)GetProcAddress(ogre, "?getSingletonPtr@?$Singleton@VRoot@Ogre@@@Ogre@@SAPAVRoot@2@XZ") : 0;
+    add = ogre ? (add_fn)GetProcAddress(ogre, "?addFrameListener@Root@Ogre@@QAEXPAVFrameListener@2@@Z") : 0;
+    root = get_root ? get_root() : 0;
+    if (!root || !add) return;
+    add(root, 0, &frame_listener);
+    done = 1;
+    x360_log("x360 menu: frame listener added\r\n");
+}
+
+void x360_frame_tick(void) {
+    static int logged;
+    if (!find_world()) return;
+    if (qd_shown) x360_ui_dump_poll();        /* the HUD's tick, which polls it, stops under a dialog */
+    __try { dialog_tick(); }
+    __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }

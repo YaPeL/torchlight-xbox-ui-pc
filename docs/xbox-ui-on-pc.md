@@ -1770,3 +1770,49 @@ Ok was not clicked again after the fix (the guide NPC walked off).
 - **Tested** (GOG, run 13): both pages match the catalog window for window
   (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no
   socketed item with gems.
+
+**NPC dialogs** (`town/04`, `13`, `14`, `27`-`29`, the quest offer `42`; the 360's
+`CQuestDialogMenu`, vtable `0x820010BC`).
+- **PC's side.** PC's `CQuestDialogMenu` (vtable `0xab7ff0`) shows a layout whose windows have the
+  360's names: Portrait, DialogTextFrame/DialogText, Ok, Accept, Decline, RewardGold/XP/Fame and
+  their Box, ItemBkg1-3 and ItemSlot1-3. PC takes its dialog off the GUI sheet to close it,
+  which leaves it "visible", so it counts as open only while it is under the sheet (a dump with
+  the guide NPC's dialog open:
+  `screens/gog/pc-dialog-guide`). The cinema bars (Root, TopBar/BottomBar) are PC's in both games.
+- **A tick once a frame.** While PC's dialog is open, PC does not call GetCursorPos unless the
+  mouse moves, so the pad's tick (pad.c's `order`, run from that hook) stops. A first try ran it
+  from `System::renderGUI`, but CEGUI is drawn only when something changes: once the text had
+  risen, the pad went unread until the mouse moved. The tick now comes from an Ogre
+  FrameListener of the proxy's, added to PC's Root (`Root::addFrameListener`; its virtuals in the
+  order of PC's own listener at GOG `0xabbac4`), once a frame.
+- **The screen.** While PC's dialog Frame is shown, the 360's `questdialogmenu.layout` is shown
+  over it, every window mirrored from PC's each frame. PC's Frame is kept at alpha 0, and the
+  360's HUD is hidden (town/13). "Rewards" with its stick prompt shows when there are reward
+  items: town/04 has one, 13 none (inferred, not read in the code).
+- **The rising text** (`sub_82357C40`, each frame with the frame's time): t grows to
+  T = max(the text's characters × 0.015, 5.0) s (`sub_823568D0`: its `+344` times `0x820aa7d8`, at
+  least `0x820aa464`). The text's top sits (1 − t/T) × (its height + 50) pixels below its frame's
+  top, at 720 rows (`0x820aa388`). This matches the catalog's tops: 219, 110 and 97.6 in 13, 14
+  and 04.
+- **The pad.** A presses PC's Accept when shown, else its Ok; B its Decline; both as a left click
+  injected at the button's centre. X held makes the text rise faster: `sub_82192640` multiplies
+  the frame's time by `[r29+268]` while one of two input actions is held, or a flag of the menu
+  (`+452`) is set (bytes 4356/4359 and 4357/4360 of the input state; the branch that sets t to T
+  cannot be reached with them at 0 or 1). **Open:** the factor is a value of the running game,
+  not measured; `dialog_fast_scroll` in `x360_ui.ini`, 4 by default. Also open: the second
+  action's button, and who sets `+452`.
+- **The fonts.** The 360's letter spacing and native width (`match_spacing`) were set when the
+  inventory first opened; a dialog before that had its text 1.3 times wider (the review). They
+  are set when the HUD loads and when a dialog shows now. The dialog's lines then break at the
+  catalog's words (`screens/gog/dialog-open` against town/13).
+- **The colour markup.** The 360's text marks names with `|cAARRGGBB`…`|u`, which this CEGUI's
+  StaticText writes as text; it is taken out, the words kept. **Open:** the names' colour (PC's
+  own dialog text widget may draw it).
+- **Open:** the reward item's icon (the slot shows empty; PC draws its icons in windows of its
+  own, `QuestRewardSockets`).
+- **Tested** (GOG, runs 15-19; the user opened the dialogs with the mouse):
+  - the guide NPC's dialog (Ok only) and the quest NPC's quest offer (Accept, Decline, the rewards and an item).
+  - The text rose and stopped at its frame's top, and the fonts match the 360's.
+  - A pressed PC's Ok and closed the dialog; B pressed PC's Decline and closed the offer.
+  - X held was read; its speed was not measured (the captures came after the text had risen).
+  - Captures: `screens/gog/dialog-open`, `quest-offer-1`.

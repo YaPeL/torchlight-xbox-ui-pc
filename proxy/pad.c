@@ -238,6 +238,10 @@ static void poll(void) {
     if ((buttons & 0x1000) && !(old & 0x1000)) a_pressed_at = now;
 }
 
+/* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
+ * dialogs stop the GetCursorPos polls that drive order()). */
+unsigned x360_pad_buttons(void) { poll(); return buttons; }
+
 static int stick_active(void) { return lx * lx + ly * ly > DEAD_ZONE * DEAD_ZONE; }
 
 static int clicking(void) { return a_pressed_at && GetTickCount() - a_pressed_at < CLICK_MS; }
