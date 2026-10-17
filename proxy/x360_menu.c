@@ -3134,7 +3134,7 @@ static void pause_show(int on) {
     pause_open = on;
     if (on) { pause_focus = 0; pause_draw(); }
     set_visible(pause_root, 0, on);
-    if (on) move_to_front(pause_root, 0);
+    if (on) { prop(pause_root, "AlwaysOnTop", "True"); move_to_front(pause_root, 0); }
     x360_log(on ? "x360 menu: pause shown\r\n" : "x360 menu: pause hidden\r\n");
 }
 
@@ -3147,7 +3147,9 @@ static void howto_show(int on) {
     if (!howto_root) return;
     howto_open = on;
     set_visible(howto_root, 0, on);
-    if (on) move_to_front(howto_root, 0);
+    /* Over everything, the HUD's AlwaysOnTop windows too (the 360's veil, i_661 at 0.5, dims the
+     * pet's HUD as the rest: the catalog's menus/14). */
+    if (on) { prop(howto_root, "AlwaysOnTop", "True"); move_to_front(howto_root, 0); }
 }
 
 int x360_pause_open(void) { return pause_open || howto_open; }
