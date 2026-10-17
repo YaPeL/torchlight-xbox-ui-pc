@@ -403,3 +403,9 @@ void x360_ui_dump_poll(void) {
     if (!resolve()) return;
     dump(name);
 }
+
+/* A dump now, by name (the proxy's own screens: the target bar's first unit of each kind). */
+void x360_ui_dump_now(const char *name) {
+    if (!resolve()) return;
+    dump(name);
+}

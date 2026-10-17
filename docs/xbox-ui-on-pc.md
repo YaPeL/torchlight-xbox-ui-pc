@@ -1867,3 +1867,54 @@ its upper left is kept.
   - B (cancel) is untested.
 - **Tested:** `screens/gog/fishing-1`, `fishing-catch.png`; the label "A helm" with the
   360's button size (`label-item-2.png`).
+
+**Target bars** (`in-game/01`-`03`). A dump of the enemy's bar (`screens/gog/target-enemy.json`,
+taken by the proxy at the first live enemy shown: `dump_targets=1` in `x360_ui.ini`) against
+in-game/01 differs only in the unit's data: name, level, description, and the fill (full
+health). **Open:**
+- The champion (02): none met in the save.
+- The pet or an NPC (03, "the pet"): PC's mouse-over does not give the pet, so the bar does not
+  show it. Not known what makes the 360 show it.
+- A unit killed stays in the bar, empty, for the rest of the 3 s the attacked one is shown (run
+  41: "monster" empty). The 360's rule for a dead target is not read (`sub_821A83C8` is long).
+
+## 15. The final list (2026-10-17)
+
+What the night's port left as it is, and why. The screens done are in section 14.
+
+**The user's decisions (left PC's on purpose):**
+- The front end: the title, main menu, options, new and load character.
+- Exit to Title, and the pause's Options, Achievements and Leaderboards.
+
+**Work not done or not finished, most visible first:**
+1. **The dialogs' names in gold.** PC's own fonts draw the `|cAARRGGBB` markup and the converted
+   X360_ fonts do not. Two tries failed: PC's font breaks the lines elsewhere, and the colour
+   triggers did not take. The names show white. Next: compare a PC Font object with an X360_ one
+   in memory.
+2. **The quest reward item's icon** in the dialog (an empty slot). Also: its sockets only when
+   it has them.
+3. **The object label of the candidate.** It is matched by text and, of several of one name, by
+   the screen's centre (not the 360's rule). Next: project the candidate's position.
+4. **The object label's background**, darker in the 360 (its frame's pixels are 720-row ones).
+5. **Target bars:** the champion's and the pet's or NPC's are not compared; the rule for a dead
+   target is not read.
+6. **The merchant's screen sides** keep PC's panels (PC narrows the world's viewport; stopped
+   after two tries), and PC's first-time Tips show after closing a shop.
+7. **Fishing:** PC's ripples under the 360's ring, and PC's result window. A real catch and B
+   (cancel) are for the user to play: they take reflexes.
+8. **Smaller:**
+   - the quest NPC's "?" seen through the dialog's panel.
+   - The Fast Scroll factor (`dialog_fast_scroll`, 4, not measured).
+   - The gold hidden at the gem pages is not seen in a run.
+   - The identify scroll's card text is PC's mouse text (the item's data, unchanged).
+   - The card's price at the merchant is 3 pixels off (town/07).
+
+**Untested for want of the means in the save:**
+- An enchantment (300 gold needed, 100 in the save).
+- Removing gems (no socketed item).
+- The Gambler's purchase and selling from the pet's bag.
+
+**Earlier lists** (sections 11-13) still open:
+- The converter must decrypt the player's XEX itself.
+- The Skills page's requirement line and its X.
+- The target bar's size, checked here only for the enemy.

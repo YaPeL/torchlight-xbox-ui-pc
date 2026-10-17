@@ -4413,6 +4413,23 @@ static void target_tick(void) {
         w720 = (float)(long)(220.0f * 0.9375f * f + 0.5f);
         set_size(win_of(HUD_PREFIX, "TargetHealthBar"), k, k, w720 * k / 0.9375f, 84.0f * k);
     }
+    {
+        /* A test aid: the first frame a unit of each kind is shown, a dump (target-enemy,
+         * target-champion, target-npc), as the catalog's in-game/01-03; x360_ui.ini dump_targets=1. */
+        extern int x360_dump_targets;
+        void x360_ui_dump_now(const char *name);
+        static void *dumped_unit;
+        static int done[3];
+        if (x360_dump_targets && unit != dumped_unit && *(float *)(unit + GOG_UNIT_HEALTH) > 0) {
+            int kind = unit == the_pet() ? 2 : unit[GOG_UNIT_CHAMPION] ? 1 : 0;   /* in-game/03 is the pet */
+            dumped_unit = unit;
+            if (!done[kind]) {
+                done[kind] = 1;
+                x360_ui_dump_now(kind == 1 ? "target-champion" : kind == 2 ? "target-npc" : "target-enemy");
+                x360_log("x360 hud: dumped the target bar\r\n");
+            }
+        }
+    }
     (void)bar;
 }
 
@@ -4606,6 +4623,7 @@ static void hud_tick(void) {
  * the text rise faster (sub_82192640, 0x821929c4: the frame's time times a factor, [r29+268], a
  * value of the running game not measured yet: x360_ui.ini's dialog_fast_scroll, 4 by default). */
 int x360_dialog_fast_scroll = 4;
+int x360_dump_targets;                       /* x360_ui.ini dump_targets=1: a dump at the first target of each kind */
 int x360_dialog_pc;                          /* x360_ui.ini dialog_pc=1: PC's dialog left visible (a diagnosis) */
 int x360_dialog_markup = 0;                  /* x360_ui.ini dialog_markup=0: the colour markup taken out */
 char x360_dialog_font[32];                   /* x360_ui.ini dialog_font=NAME: the text's font */
