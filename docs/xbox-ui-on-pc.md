@@ -1546,3 +1546,64 @@ its `STRINGS` table (key -> address only) into `OUT/x360_strings.txt`; the proxy
 (`x360_text(key)`, `proxy/cegui_proxy.c`, from the `out=` folder) and shows "" for a key it lacks.
 Run the converter with `--image` once to get them. Earlier commits on this branch still carry
 those texts as literals; whether to rewrite the branch's history is the user's decision.
+
+**The user's scope (2026-10-17, relayed by the recomp agent):** the title screen, main menu,
+options, new and load character, Exit to Title and the pause's Options, Achievements and
+Leaderboards stay PC's; the 360's pause and How To Play, already done, stay. Pixel perfect is for
+the gameplay screens: the HUD, the inventory and its pages, the town (merchants, stash,
+transmuter, enchanter, gems), the NPC dialogs, target bars, item labels and fishing.
+
+**The merchant** (`town/01`, `07`-`20`; `CMerchantMenuXenon`, vtable `0x8200151c`): while PC's own
+merchant menu is open the 360's frame shows three columns, the merchant's (a third
+`inventorymenu_xenon`, at the frame's left, where the character's column is), the bag and the pet's
+bag (`sub_82378D30`: its `+0x10C`, `+0x108`, `+0x110`), the title `title.merchant` for every
+merchant, the Gambler's too; no pages beside it (`MenuLeft`/`MenuRight`, the trigger images) and
+no pet commands; the merchant's column focused at the start.
+- **PC's side.** CGameUI's `+0x2d8` is PC's `CMerchantMenu` (made at `0x562f57`, vtable
+  `0xab7b58`): CGameUI sets its owner (the virtual `+0x18`, `0x58ab90`: the merchant at `+0x28`)
+  and opens it (`+0x1c` with 1, `0x557d3f`); `+0x30` is its open flag (the virtual `+0x10`). The
+  proxy watches it each pad tick (`x360_shop_tick`) and opens the 360's frame; B closes PC's menu
+  (`+0x1c` with 0, as CGameUI at `0x558413`) and PC's inventory (`+0x2cc`), which PC opens with the
+  merchant's and which closes the merchant's with it.
+- **The column's look** (`sub_82367D38`, the catalog): `backroundbase_merchant(_rollover)`,
+  `merchant_tab_*`, the name `title.gambler` at the Gambler (ISA 127) or `title.merchant`, no gold;
+  the tabs of empty filters at 0.25 (any column not the player's).
+- **Prices** (`sub_822BC4B8`, by the item's owner): the merchant's items show what it asks
+  (`CEquipment::sellPrice` *(OT)*, GOG `0x4b3a90`, the price PC's purchase checks, `0x54f01f`), the
+  bags' what it pays (`buyPrice` *(OT)*, `0x4b3b70`, what PC's sale gives, `0x54ef2f`); none for
+  type 103. The plain inventory showed the asked price before (60 for the 360's 19 in `test/02`);
+  it shows the paid one now, as the 360.
+- **The header and the buttons** (`sub_8236C5C0`, `sub_8236C8D0`, `sub_8236E888`/`E7B0`):
+  `buyandsell` shows `act.buy` (`FFFBE469`) in the merchant's column, `act.sell` (`FFFF4800`) in the bags;
+  the merchant's column has X `act.buy` only; a bag has X `act.sell`, A `act.identify` with the
+  scrolls for an unidentified item, `act.unequip`, `act.equip` for a weapon, armour or trinket (ISA
+  8, 13, 39; an owner not of type 28 a trinket only), `act.socket` for a gem (120), else nothing,
+  and no Y. A button with no text is hidden and its
+  text's width not counted.
+- **Input** (`sub_8236A810`, `sub_8236AA48`, `sub_8236AD18`): LB/RB through the three columns,
+  round; A does nothing in the merchant's column; Y nothing at a merchant (mode 4); X buys there
+  (`sub_8236B578`) or sells from a bag (`sub_8236B7B8`), at once. Buying: refused (the sound 24, the
+  hero's voice 49, `sub_82369E28`) when the gold is under the price or the item is of type 103; an
+  endless stock item (a stack of 1 with `+0x1ff`, the 360's `+0x1E4`/`+0x1FF`) is copied (GOG
+  `0x5ff150` on CGameUI's `+0x1074`, from the item's `+0x178`, as PC's purchase), another taken out;
+  into the bag, or back with the voice 47 when it is full; at the Gambler identified (`+0x2fc` and
+  `destroyItemText`, the 360's `+0x31C`), the journal's items gambled +1 (`0x4d90f0` with 15) and
+  for type 54 the achievement 5 (`0x5f9f90`, `0x5fa360`, `0x5f9e70`); then `giveGold` *(OT)*
+  (`0x487f20`) of minus the price and the sound 23. Selling: refused for type 103; the sound 23,
+  the paid price given, PC's items-sold count (`0x4d90d0`, which PC's sale keeps), the item into
+  the merchant's bag or destroyed when that is full. The sounds are CGameUI's (`+0x13f8`,
+  `0x5366f0`) at the hero (`+0x58`), the voices on the hero's emitter (`+0x230`, `0x5368d0`); PC
+  uses the same numbers (`0x54ef26`, `0x54e7d7`). Y also refuses to drop type 103 now
+  (`sub_82369E80`).
+- **Tested** (GOG, the mine save taken up to town with the mouse, the blacksmith): the screen
+  opens with PC's menu, X bought a staff (100 -> 34 gold, the staff in the bag at 17) and sold it
+  back (34 -> 51), RB moved through the columns, B closed both menus.
+- **Open: the screen's sides.** With PC's merchant and inventory menus both open, PC narrows the
+  world's viewport between them every frame (its viewport listener `0x4025d0`, when CGameUI's
+  `0x549b70` finds an open menu on each side: `0x541090`, `0x541130` over the menus at CGameUI's
+  `+0x16b8`, by their virtuals `+0x8` and `+0xc`), so outside the 360's frame the screen keeps
+  PC's last drawn panels. **Stopped after two tries:** (1) closing PC's inventory under the frame
+  (its `+0x1c` with 0) closed the merchant's menu too; (2) pointing the import
+  `Viewport::setDimensions` at the proxy to keep the main viewport (Z order 0) whole changed
+  nothing (the hook was installed; it never saw the narrowed call). Also PC's first-time Tip for
+  its inventory shows after closing (PC opened its inventory).

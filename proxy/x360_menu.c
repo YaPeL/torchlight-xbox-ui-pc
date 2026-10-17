@@ -563,7 +563,11 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_OWNER 0x5b4                  /* CCharacter: the owner giveGold walks up to */
 #define GOG_IDENTIFIED 0x2fc            /* CEquipment: identified (OT +0x348: getItemName, sellPrice) */
 #define GOG_STACK 0x1e4                  /* CEquipment: the stack's count (OT +0x238, getStackSizeOfEquipment) */
-#define GOG_SELL_PRICE 0x004b3a90        /* CEquipment::sellPrice() */
+/* An item's two prices: what a merchant asks for it (CEquipment::sellPrice *(OT)*, GOG 0x4b3a90:
+ * PC's purchase checks the gold against it, 0x54f01f) and what a merchant pays for it
+ * (CEquipment::buyPrice *(OT)*, 0x4b3b70: PC's sale gives it, 0x54ef2f). */
+#define GOG_ASKED_PRICE 0x004b3a90
+#define GOG_PAID_PRICE 0x004b3b70
 #define GOG_DPS 0x004b8f10               /* CEquipment::DPS(), an int (fistp into eax) */
 /* CEquipment's elemental damages and sockets, as getDamageBonus (OT) reads them (GOG 0x4b84d0):
  * the damage types (a std::vector's begin and end), their bonuses (begin), the socketed items (a
@@ -590,6 +594,15 @@ typedef unsigned char (__fastcall *can_equip_fn)(void *item, void *edx, void *ch
 typedef void (__fastcall *int_fn)(void *self, void *edx, int v);
 typedef void (__fastcall *ptr_fn)(void *self, void *edx, void *p);
 typedef void (__fastcall *create_icon_fn)(void *item, void *edx, void *ui, int flag);
+/* A unit's voice (on its emitter, the character's +0x230) and a sound at a node (CGameUI's +0x13f8,
+ * GOG 0x5366f0, ret 0x14), as PC plays them (the pet's command, GOG 0x54de5c; the shop, 0x54ef28). */
+#define GOG_PLAY_SOUND 0x005368d0
+#define GOG_UNIT_EMITTER 0x230
+#define GOG_UI_SOUNDS 0x13f8
+#define GOG_PLAY_SOUND_AT 0x005366f0
+#define GOG_UNIT_NODE 0x58
+typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
+typedef void (__fastcall *play_sound_at_fn)(void *sounds, void *edx, int id, void *node, float a, float b, int flag);
 
 static unsigned char *hero, *level, *ui;
 
@@ -837,14 +850,21 @@ static int selected[6], top[6];
  * (to its last or first filter). The drawing and the actions work on the globals above, which
  * hold the bag selected by select_panel. */
 #define PET_PREFIX "x360pet_"
+#define SHOP_PREFIX "x360mer_"
 #define GOG_GET_PET_FN 0x0040e720
-static struct { const char *prefix; int is_pet, filter, selected[6], top[6]; void *root; } panels[2] = {
-    {PREFIX, 0, 0, {0}, {0}, 0}, {PET_PREFIX, 1, 0, {0}, {0}, 0}};
+static struct { const char *prefix; int is_pet, is_shop, filter, selected[6], top[6]; void *root; } panels[3] = {
+    {PREFIX, 0, 0, 0, {0}, {0}, 0}, {PET_PREFIX, 1, 0, 0, {0}, {0}, 0}, {SHOP_PREFIX, 0, 1, 0, {0}, {0}, 0}};
 static int active_panel, focus_panel;
+static unsigned char *shop;                  /* the merchant while PC's merchant menu is open */
 static unsigned char *the_pet(void) {
     typedef void *(__fastcall *pet_fn)(void *hero, void *edx, int index);
     return hero ? (unsigned char *)((pet_fn)GOG_GET_PET_FN)(hero, 0, 0) : 0;
 }
+/* The columns, left to right (LB and RB walk through them, round): the bag and the pet's bag; at a
+ * merchant (CMerchantMenuXenon, sub_82378D30: its +0x10C, +0x108, +0x110) the merchant's first. */
+static int columns(void) { return shop ? 3 : 2; }
+static int column_panel(int c) { return shop ? (c ? c - 1 : 2) : c; }
+static int panel_column(int p) { return shop ? (p == 2 ? 0 : p + 1) : p; }
 static void select_panel(int i) {
     int j;
     panels[active_panel].filter = filter;
@@ -853,7 +873,7 @@ static void select_panel(int i) {
     filter = panels[i].filter;
     for (j = 0; j < 6; j++) { selected[j] = panels[i].selected[j]; top[j] = panels[i].top[j]; }
     cur_prefix = panels[i].prefix;
-    cur_owner = panels[i].is_pet ? the_pet() : hero;
+    cur_owner = panels[i].is_shop ? shop : panels[i].is_pet ? the_pet() : hero;
 }
 #define ROWS 5
 #define ROW_PITCH 92.0f                     /* ItemTray0-4 are 92 pixels apart in the layout */
@@ -888,7 +908,7 @@ static const char *quality_image(unsigned char *item) {
  * equipped one from getComparisonItems); armour's value is not located yet, so no arrow there. */
 static void compare_arrow(int row, unsigned char *item, int equipped) {
     char name[48];
-    void *inv = inventory(), *first = 0, *second = 0;
+    void *inv = panels[focus_panel].is_shop ? *(void **)(hero + GOG_INVENTORY) : inventory(), *first = 0, *second = 0;
     int mine, theirs;
     row_name(name, "qualityarrow", row);
     if (equipped || !inv || !(isa(item, 8) || isa(item, 13)) || !item[GOG_IDENTIFIED]) { show(win(name), 0); return; }
@@ -926,9 +946,16 @@ static int effects_count(unsigned char *item) {
 static void fill_details(int row, unsigned char *item) {
     char name[48], buf[64], *p;
     int identified = item[GOG_IDENTIFIED] != 0, stack = *(int *)(item + GOG_STACK);
-    p = put_int(buf, ((int_get_fn)GOG_SELL_PRICE)(item, 0));
-    *p = 0;
-    row_name(name, "Gold", row); text(win(name), buf); show(win(name), 1);
+    /* The price (sub_822BC4B8, by the item's owner): what the merchant asks for its own items
+     * (ISA 41, MERCHANT), what it pays for the others; none for an item of type 103, which the
+     * merchant does not take (sub_8236B7B8; PC refuses it too, GOG 0x54eec2). Gold is hidden
+     * when empty (sub_82368980). */
+    buf[0] = 0;
+    if (!isa(item, 103)) {
+        p = put_int(buf, ((int_get_fn)(cur_owner && isa(cur_owner, 41) ? GOG_ASKED_PRICE : GOG_PAID_PRICE))(item, 0));
+        *p = 0;
+    }
+    row_name(name, "Gold", row); text(win(name), buf); show(win(name), buf[0] != 0);
     buf[0] = 0;
     if (!identified) copy(buf, sizeof buf, "???", 0);
     else if (stack > 1) { buf[0] = 'x'; p = put_int(buf + 1, stack); *p = 0; }
@@ -988,7 +1015,8 @@ static void row_icon_size(int row, unsigned char *item, const char *image) {
     prop(slot, "VerticalAlignment", "Centre");
 }
 
-/* The bar's buttons as the 360's sub_8236E888 places them: each takes its icon's width plus its
+/* The bar's buttons as the 360's sub_8236E888 places them: a button with no text is hidden, one
+ * with a text shown with it (sub_8236E7B0); each takes its icon's width plus, with a text, the
  * text's (A and X also 2.5); a gap of max(0, (0.9 x the tray's width - their sum) x 0.15) after
  * each one with a text; the group centred (x = half the gap - half the sum + 5): A, then Y, then
  * X, each at the widths of the ones before it. Its constants are pixels at 720 rows, so they are
@@ -1006,10 +1034,14 @@ static void place_buttons(const char *a, const char *y, const char *x) {
     if (!parse_rect(value, vy)) return;
     read_prop(bx, "UnifiedAreaRect", value, sizeof value);
     if (!parse_rect(value, vx)) return;
+    show(ba, a[0] != 0); show(by, y[0] != 0); show(bx, x[0] != 0);
+    if (a[0]) text(win("buttonAtext"), a);
+    if (y[0]) text(win("buttonYtext"), y);
+    if (x[0]) text(win("buttonXtext"), x);
     icon = va[5] - va[1];
-    wa = text_width(win("buttonAtext"), a) + 2.5f * s + icon;
-    wx = text_width(win("buttonXtext"), x) + 2.5f * s + icon;
-    wy = text_width(win("buttonYtext"), y) + icon;
+    wa = (a[0] ? text_width(win("buttonAtext"), a) + 2.5f * s : 0) + icon;
+    wx = (x[0] ? text_width(win("buttonXtext"), x) + 2.5f * s : 0) + icon;
+    wy = (y[0] ? text_width(win("buttonYtext"), y) : 0) + icon;
     gap = (0.9f * (vt[5] - vt[1]) - (wy + wx + wa)) * 0.15f;
     if (gap < 0) gap = 0;
     if (a[0]) wa += gap;
@@ -1036,9 +1068,12 @@ static void refresh(void) {
     if (top[filter] < 0) top[filter] = 0;
     /* The focused column only has its "_rollover" images: its frame, its border and its filter's
      * tab (the catalog: menus/08-inventory's bag against the pet's, town/21-stash-1's columns). */
+    /* The merchant's column has its own images (the catalog's town/01: backroundbase_merchant,
+     * merchant_tab_*). */
+    int is_shop = panels[active_panel].is_shop;
     for (i = 0; i < 6; i++) {
         char image[64];
-        copy(image, sizeof image, "set:X360_widgets2 image:", tab_image[i]);
+        copy(image, sizeof image, is_shop ? "set:X360_widgets2 image:merchant_" : "set:X360_widgets2 image:", tab_image[i]);
         if (i == filter && active_panel == focus_panel)
             copy(image + length(image), sizeof image - length(image), "_rollover", 0);
         prop(win(tab_window[i]), "Image", image);
@@ -1047,16 +1082,20 @@ static void refresh(void) {
      * filters it has nothing in to 0.25, but the focused column's own filter (sub_823654B8,
      * 0x82365948: the tab's count at its entry's +116). */
     for (i = 0; i < 6; i++)
-        prop(win(tab_window[i]), "Alpha", panels[active_panel].is_pet && !counts[i] &&
+        prop(win(tab_window[i]), "Alpha", cur_owner != hero && !counts[i] &&
                                           !(i == filter && active_panel == focus_panel) ? "0.25" : "1");
-    prop(win("TopFrame"), "Image", active_panel == focus_panel ? "set:X360_widgets2 image:backroundbase_inventory_rollover"
-                                                               : "set:X360_widgets2 image:backroundbase_inventory");
+    prop(win("TopFrame"), "Image", is_shop ? (active_panel == focus_panel ? "set:X360_widgets2 image:backroundbase_merchant_rollover"
+                                                                          : "set:X360_widgets2 image:backroundbase_merchant")
+                                           : active_panel == focus_panel ? "set:X360_widgets2 image:backroundbase_inventory_rollover"
+                                                                         : "set:X360_widgets2 image:backroundbase_inventory");
     prop(win("HiliteFrame"), "Image", active_panel == focus_panel ? "set:X360_widgets image:framea_rollover"
                                                                   : "set:X360_widgets image:framea");
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
     text(win("filtername"), x360_text(filter_name[filter]));
-    text(win("characterName"), x360_text(panels[active_panel].is_pet ? "bag.pet" : "bag.mine"));
+    /* The merchant's name (sub_82367D38): the Gambler's (ISA 127, GAMBLER) or a merchant's. */
+    text(win("characterName"), x360_text(is_shop ? (isa(cur_owner, 127) ? "title.gambler" : "title.merchant")
+                                         : panels[active_panel].is_pet ? "bag.pet" : "bag.mine"));
     /* RB on the focused bag only (the catalog: the bag, the pet's bag, the stash's columns). */
     show(win("rightbumper"), active_panel == focus_panel);
     show(win("transmutor"), 0);
@@ -1072,7 +1111,7 @@ static void refresh(void) {
         p = put_int(p, *(long *)(owner + GOG_GOLD));
         *p = 0;
         text(win("playergoldtext"), buf);
-        show(win("playergoldwin"), !panels[active_panel].is_pet);
+        show(win("playergoldwin"), cur_owner == hero);
         if (inv) {
             void **refs = *(void ***)(inv + INV_REFS);
             unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;
@@ -1133,23 +1172,22 @@ static void refresh(void) {
         read_prop(mf, "UnifiedAreaRect", value, sizeof value);
         if (parse_rect(value, v)) move_by(mf, 0, moveframe_top + (float)sel_row * ROW_PITCH * k - v[3]);
         show(win("IDENTIFYWIN"), 0);
-        show(win("buyandsell"), 0);
-        /* The bar as in the 360's screenshots: A by the item (Unequip, Equip, Use, Learn for a
-         * spell), Y Drop, X Swap (to the pet's bag); no Info. */
         show(win("buttonB"), 0);
-        show(win("buttonY"), 1);
-        show(win("buttonX"), 1);
-        text(win("buttonYtext"), x360_text("act.drop"));
-        text(win("buttonXtext"), x360_text("act.swap"));
+        /* At a merchant (sub_8236C5C0) the frame's header says what X does: act.buy in the
+         * merchant's column (TextColour FFFBE469), act.sell in the others (FFFF4800). */
+        show(win("buyandsell"), shop != 0);
+        if (shop) {
+            text(win("buyandselltext"), x360_text(panels[active_panel].is_shop ? "act.buy" : "act.sell"));
+            prop(win("buyandselltext"), "TextColour", panels[active_panel].is_shop ? "FFFBE469" : "FFFF4800");
+        }
         if (list_count) {
             unsigned char *item = (unsigned char *)list[selected[filter]];
-            const char *a = x360_text(list_slot[selected[filter]] < EQUIPPED_SLOTS ? "act.unequip"
-                                      : isa(item, 129) ? "act.learn"
-                                      : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "act.use" : "act.equip");
-            int scrolls = 0;
+            int equipped = list_slot[selected[filter]] < EQUIPPED_SLOTS, scrolls = 0;
+            const char *a, *x, *y;
             char label[32];
             /* An unidentified item: the 360's "Identify (" + the scrolls + ")" (its screenshot,
              * "Identify(11)"). */
+            label[0] = 0;
             if (!item[GOG_IDENTIFIED] && identify_scrolls(&scrolls) && scrolls > 0) {
                 const char *p = x360_text("act.identify");
                 char digits[12];
@@ -1161,10 +1199,30 @@ static void refresh(void) {
                 while (d && n < 30) label[n++] = digits[--d];
                 label[n++] = ')';
                 label[n] = 0;
-                a = label;
             }
-            text(win("buttonAtext"), a);
-            place_buttons(a, x360_text("act.drop"), x360_text("act.swap"));
+            if (shop && panels[active_panel].is_shop) {
+                /* The merchant's column: X buys, nothing else (sub_8236C8D0, ISA 41). */
+                a = ""; x = x360_text("act.buy"); y = "";
+            } else if (shop) {
+                /* A bag at a merchant (sub_8236C8D0 with the merchant's menu, mode 4): X sells; A
+                 * identifies an unidentified item, unequips an equipped one, equips a weapon,
+                 * armour or trinket (ISA 8, 13, 39; for an owner not of type 28, the pet, a
+                 * trinket only), sockets a gem (120), else nothing; no Y. */
+                x = x360_text("act.sell"); y = "";
+                if (!item[GOG_IDENTIFIED]) a = label;
+                else if (isa(item, 8) || isa(item, 13) || isa(item, 39))
+                    a = equipped ? x360_text("act.unequip") : cur_owner == hero || isa(item, 39) ? x360_text("act.equip") : "";
+                else if (isa(item, 120)) a = x360_text("act.socket");
+                else a = "";
+            } else {
+                /* The bar as in the 360's screenshots: A by the item (Unequip, Equip, Use, Learn
+                 * for a spell), Y Drop, X Swap (to the pet's bag); no Info. */
+                a = label[0] ? label : x360_text(equipped ? "act.unequip"
+                                                 : isa(item, 129) ? "act.learn"
+                                                 : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "act.use" : "act.equip");
+                x = x360_text("act.swap"); y = x360_text("act.drop");
+            }
+            place_buttons(a, y, x);
         }
     }
 }
@@ -1280,7 +1338,10 @@ static void show_info(void *item, float y, float list_left) {
     typedef struct { float top, bottom, left, right; } rect6;   /* CEGUI 0.6's Rect */
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
     static pixel_rect_fn6 rect_of;
-    void *pet_top = win_of(PET_PREFIX, "TopFrame"), *inv = inventory(), *first = 0, *second = 0;
+    /* The card goes over the column right of the focused one (the catalog: the bag's over the
+     * pet's column, menus/08; the merchant's over the bag, town/07). */
+    void *pet_top = win_of(panels[column_panel(panel_column(focus_panel) + 1)].prefix, "TopFrame");
+    void *inv = inventory(), *first = 0, *second = 0;
     float x = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, bottom = 0, w, y1;
     RECT cr;
     HWND hw = GetActiveWindow();
@@ -1494,9 +1555,11 @@ static void update_info(void) {
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
  * layout's "Your pet has gone to town." when there is no pet. */
 static void refresh_all(void) {
-    int other = 1 - focus_panel;
-    if (panels[1].root) {
-        select_panel(other);
+    int c;
+    for (c = 0; c < columns(); c++) {
+        int p = column_panel(c);
+        if (p == focus_panel || !panels[p].root) continue;
+        select_panel(p);
         if (cur_owner) refresh();
         show(win("petintown"), !cur_owner);
         if (!cur_owner) { int r; char n[48]; for (r = 0; r < ROWS; r++) { row_name(n, "ItemTray", r); show(win(n), 0); } show(win("moveframe"), 0); }
@@ -1624,6 +1687,8 @@ static void act(void) {
 typedef void *(__fastcall *get_position_fn)(void *self, void *edx, float *out, int flag);
 typedef void (__fastcall *add_item_fn)(void *level, void *edx, void *item, const float *pos, int flag);
 typedef void *(__fastcall *get_pet_fn)(void *hero, void *edx, int index);
+static void shop_sound(int id);
+static void hero_voice(int id);
 
 /* Y: the item to the ground at the hero's feet, as PC drops an item that does not fit (GOG
  * 0x55e28a): removeEquipment, CLevel::addItem at the hero's position, the item's virtual +0x198. */
@@ -1633,6 +1698,8 @@ static void drop(void) {
     float pos[3];
     if (!inv || !list_count) return;
     item = (unsigned char *)list[selected[filter]];
+    /* An item of type 103 is not dropped (sub_82369E80: the 360's refusal, sub_82369E28). */
+    if (isa(item, 103)) { shop_sound(24); hero_voice(49); return; }
     ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
@@ -1654,6 +1721,102 @@ static void swap_to_pet(void) {
     if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(pet_inv, 0, item, 1)) { x360_log("x360 inv: X: to the pet\r\n"); return; }
     ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1);
     x360_log("x360 inv: X: the pet's bag is full\r\n");
+}
+
+/* ---- the merchant (CMerchantMenuXenon) ----
+ * X in the merchant's column buys (sub_8236AD18 -> sub_8236B578), in a bag sells
+ * (sub_8236B7B8), at once, with no question. Each step is done with PC's own function for it, as
+ * PC's shop does it (CGameUI's slot click, GOG 0x54eeff and 0x54f003):
+ * - buying: refused when the hero's gold is under the asked price or the item is of type 103 (the
+ *   360's sub_82369E28: the sound 24 and the hero's voice 49); an endless stock item (a stack of 1
+ *   with +0x1ff set; the 360's +0x1E4 and +0x1FF) is copied (GOG 0x5ff150, CGameUI's +0x1074, from
+ *   the item's +0x178), another taken out of the merchant's bag; into the hero's bag, or, when it
+ *   is full, back (the copy destroyed) with the voice 47; at the Gambler (ISA 127) identified (the
+ *   360 sets +0x31C and remakes the text; here +0x2fc and destroyItemText), the journal's items
+ *   gambled +1 (statistic 15, GOG 0x4d90f0) and, for type 54, the achievement 5 (GOG 0x5f9f90,
+ *   0x5fa360, 0x5f9e70); the price taken (giveGold, GOG 0x487f20) and the sound 23;
+ * - selling: refused for type 103; the sound 23, the paid price given, PC's items-sold count
+ *   (GOG 0x4d90d0, which PC's sale keeps), the item out of its bag into the merchant's, or
+ *   destroyed when that is full (the 360 too).
+ * The sounds are CGameUI's (+0x13f8, GOG 0x5366f0) at the hero, the voices the hero's. */
+#define GOG_GIVE_GOLD 0x00487f20
+#define GOG_ENDLESS 0x1ff
+#define GOG_ITEM_TEMPLATE 0x178
+#define GOG_UI_ITEM_MAKER 0x1074
+#define GOG_MAKE_ITEM 0x005ff150
+#define GOG_COUNT_SOLD 0x004d90d0
+#define GOG_COUNT_STAT 0x004d90f0
+#define GOG_ACHIEVEMENTS 0x005f9f90
+#define GOG_FIND_ACHIEVEMENT 0x005fa360
+#define GOG_UNLOCK_ACHIEVEMENT 0x005f9e70
+typedef void *(__fastcall *make_item_fn)(void *maker, void *edx, void *what, int a, int b, int c);
+typedef void (__fastcall *count_stat_fn)(void *unit, void *edx, int stat, int n);
+typedef void *(__cdecl *achievements_fn)(void);
+typedef void *(__fastcall *find_achievement_fn)(void *self, void *edx, int id);
+typedef void (__fastcall *destroy_fn)(void *self, void *edx, int flags);
+
+static void shop_sound(int id) {
+    void *sounds = ui ? *(void **)(ui + GOG_UI_SOUNDS) : 0;
+    if (sounds) ((play_sound_at_fn)GOG_PLAY_SOUND_AT)(sounds, 0, id, *(void **)(hero + GOG_UNIT_NODE), 0.0f, 0.0f, 0);
+}
+
+static void hero_voice(int id) {
+    void *emitter = *(void **)(hero + GOG_UNIT_EMITTER);
+    if (emitter) ((play_sound_fn)GOG_PLAY_SOUND)(emitter, 0, id, 0.0f, *(float *)0x00a8ec04);
+}
+
+static void refuse(void) { shop_sound(24); hero_voice(49); }
+
+static void buy(void) {
+    unsigned char *stock = shop ? *(unsigned char **)(shop + GOG_INVENTORY) : 0;
+    unsigned char *bag = *(unsigned char **)(hero + GOG_INVENTORY), *item, *got;
+    int price;
+    if (!stock || !bag || !list_count) return;
+    item = (unsigned char *)list[selected[filter]];
+    price = ((int_get_fn)GOG_ASKED_PRICE)(item, 0);
+    if (*(int *)(hero + GOG_GOLD) < price || isa(item, 103)) { refuse(); x360_log("x360 shop: X: cannot buy\r\n"); return; }
+    if (*(int *)(item + GOG_STACK) == 1 && item[GOG_ENDLESS])
+        got = (unsigned char *)((make_item_fn)GOG_MAKE_ITEM)(*(void **)(ui + GOG_UI_ITEM_MAKER), 0,
+                                                            *(void **)(item + GOG_ITEM_TEMPLATE), 0, 0, 0);
+    else {
+        got = item;
+        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(stock, 0, item);
+    }
+    if (!got) return;
+    if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, got, 1)) {
+        if (got != item) ((destroy_fn)(*(void ***)got)[0])(got, 0, 1);
+        else ((pickup_fn)GOG_PICKUP_EQUIPMENT)(stock, 0, item, 1);
+        hero_voice(47);
+        x360_log("x360 shop: X: the bag is full\r\n");
+        return;
+    }
+    if (isa(shop, 127)) {
+        got[GOG_IDENTIFIED] = 1;
+        ((void_fn)GOG_DESTROY_ITEM_TEXT)(got, 0);
+        ((count_stat_fn)GOG_COUNT_STAT)(hero, 0, 15, 1);
+        if (isa(got, 54)) {
+            void *all = ((achievements_fn)GOG_ACHIEVEMENTS)();
+            void *a = all ? ((find_achievement_fn)GOG_FIND_ACHIEVEMENT)(all, 0, 5) : 0;
+            if (a) ((void_fn)GOG_UNLOCK_ACHIEVEMENT)(a, 0);
+        }
+    }
+    ((int_fn)GOG_GIVE_GOLD)(hero, 0, -price);
+    shop_sound(23);
+    x360_log("x360 shop: X: bought\r\n");
+}
+
+static void sell(void) {
+    unsigned char *stock = shop ? *(unsigned char **)(shop + GOG_INVENTORY) : 0, *item;
+    void *inv = inventory();
+    if (!stock || !inv || !list_count) return;
+    item = (unsigned char *)list[selected[filter]];
+    if (isa(item, 103)) { refuse(); x360_log("x360 shop: X: cannot sell\r\n"); return; }
+    shop_sound(23);
+    ((int_fn)GOG_GIVE_GOLD)(hero, 0, ((int_get_fn)GOG_PAID_PRICE)(item, 0));
+    ((ptr_fn)GOG_COUNT_SOLD)(hero, 0, item);
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+    if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(stock, 0, item, 1)) ((destroy_fn)(*(void ***)item)[0])(item, 0, 1);
+    x360_log("x360 shop: X: sold\r\n");
 }
 
 /* The inventory, logged once per opening: the panes and every reference (a diagnosis). */
@@ -1682,7 +1845,7 @@ static void dump(void) {
         x360_log(" useable "); x360_log_num(((item_bool_fn)GOG_IS_USEABLE)(item, 0));
         x360_log(" identified "); x360_log_num(item[GOG_IDENTIFIED]);
         x360_log(" stack "); x360_log_num(*(long *)(item + GOG_STACK));
-        x360_log(" price "); x360_log_num(((int_get_fn)GOG_SELL_PRICE)(item, 0));
+        x360_log(" price "); x360_log_num(((int_get_fn)GOG_PAID_PRICE)(item, 0));
         item_icon(item, buf, sizeof buf);
         x360_log(" icon \""); x360_log(buf); x360_log("\"\r\n");
     }
@@ -1864,7 +2027,7 @@ static void show_doll_of(int pet, int on) {
 
 /* The doll of the focused bag's character while the screen is open (on: -1 to close). */
 static void show_doll(int on) {
-    int want = on ? (panels[focus_panel].is_pet ? 1 : 0) : -1;
+    int want = on && !shop ? (panels[focus_panel].is_pet ? 1 : 0) : -1;   /* no doll at a merchant */
     if (want == doll_shown) return;
     if (doll_shown >= 0) show_doll_of(doll_shown, 0);
     if (want >= 0) show_doll_of(want, 1);
@@ -1872,8 +2035,9 @@ static void show_doll(int on) {
 }
 
 static void *hud_root, *pet_hud_root;
+static int shop_closing;
 static int is_ours(void *w) {
-    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == character_root ||
+    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == character_root ||
                  w == card_root(0) || w == card_root(1) || w == card_root(2));   /* the Info cards, PC's tooltips */
 }
 
@@ -1899,17 +2063,26 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(page_name[page]));
+    text(win_of(MASTER, "MenuName"), x360_text(shop ? "title.merchant" : page_name[page]));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
+    /* At a merchant the frame has one page, no pages beside it and no pet commands (the
+     * catalog's town/01-20: the title title.merchant, the Gambler's too). */
+    show(win_of(MASTER, "MenuLeft"), !shop);
+    show(win_of(MASTER, "MenuRight"), !shop);
+    show(win_of(MASTER, "lefttrigger"), !shop);
+    show(win_of(MASTER, "righttrigger"), !shop);
     /* "pet commands" (Start) and the item compare's toggle on the inventory's page only (the
      * catalog: menus/08 against 10). */
-    show(win_of(MASTER, "PetCommands"), page == 0);
+    show(win_of(MASTER, "PetCommands"), page == 0 && !shop);
     show(win_of(MASTER, "ToggleItemCompare"), page == 0);
 }
 
+static void shop_close(void);
+static void set_page(int p);
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
+    if (inventory_open && shop && !shop_closing) { shop_close(); return; }
     x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
     {
         RECT r;
@@ -1923,6 +2096,8 @@ void x360_inventory_toggle(void) {
         panels[0].root = inventory_root;
         /* The pet's bag: the same layout again, in the frame's third column. */
         panels[1].root = inventory_root ? load("media/ui/x360/inventorymenu_xenon.layout", PET_PREFIX) : 0;
+        /* The merchant's column at a shop: the same layout, in the character's column. */
+        panels[2].root = inventory_root ? load("media/ui/x360/inventorymenu_xenon.layout", SHOP_PREFIX) : 0;
         character_root = inventory_root ? load("media/ui/x360/charactermenu_xenon.layout", CHR_PREFIX) : 0;
         if (!inventory_root) inventory_failed = 1;
         else {
@@ -1938,6 +2113,7 @@ void x360_inventory_toggle(void) {
             scale_tree(master_root, k, 0);
             scale_tree(inventory_root, k, 0);
             if (panels[1].root) scale_tree(panels[1].root, k, 0);
+            if (panels[2].root) scale_tree(panels[2].root, k, 0);
             if (character_root) scale_tree(character_root, k, 0);
             if (character_root) unclip_tree(character_root, 0);
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
@@ -1957,6 +2133,10 @@ void x360_inventory_toggle(void) {
                     add_child(container, 0, top);
                     move_by(top, 602.0f * k, 0);
                 }
+                /* The merchant's at the frame's left, where the 360 shows it (town/01: x 325
+                 * at 1080, the character's column). */
+                top = panels[2].root ? win_of(SHOP_PREFIX, "TopFrame") : 0;
+                if (container && top) add_child(container, 0, top);
             }
             /* The pages' names (the 360's strings, its image near 0x820d17d0): the page in the
              * middle, the one LT goes to on the left, RT's on the right (the catalog's menus/08 to
@@ -1967,6 +2147,7 @@ void x360_inventory_toggle(void) {
             if (parse_rect(value, v)) moveframe_top = v[3];
             clear_samples();
             if (panels[1].root) { select_panel(1); clear_samples(); select_panel(0); }
+            if (panels[2].root) { select_panel(2); clear_samples(); select_panel(0); }
             x360_log("x360 menu: scaled by x1000 "); x360_log_num((long)(k * 1000)); x360_log("\r\n");
         }
     }
@@ -1976,6 +2157,9 @@ void x360_inventory_toggle(void) {
     quest_load();
     inventory_open = !inventory_open;
     if (inventory_open) {
+        /* At a merchant: its page, the merchant's column focused (town/01-20). */
+        if (shop) { if (page) set_page(0); focus_panel = 2; }
+        else if (focus_panel == 2) focus_panel = 0;
         select_panel(0);
         dump();
         refresh_all();
@@ -1988,10 +2172,14 @@ void x360_inventory_toggle(void) {
     if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
     if (quest_root) set_visible(quest_root, 0, inventory_open && page == 3);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
+    if (panels[2].root) set_visible(panels[2].root, 0, inventory_open && shop);
+    if (panels[2].root) show(win_of(SHOP_PREFIX, "TopFrame"), inventory_open && shop);
     if (character_root) set_visible(character_root, 0, inventory_open);
+    if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), page < 2 && !shop);
+    page_titles();
     if (inventory_open) move_to_front(master_root, 0);
     hide_pc_ui(inventory_open);
-    if (character_root) show_doll(inventory_open);
+    if (character_root) show_doll(inventory_open && !shop);
     if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); }
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
@@ -2980,12 +3168,9 @@ static void set_page(int p) {
 #define GOG_UI_PET_STANCE 0x1450
 #define GOG_PET_UPDATE 0x004949d0
 #define GOG_SEND_TO_TOWN 0x0049a390
-#define GOG_PLAY_SOUND 0x005368d0
 #define GOG_UI_LEVEL 0x20
 typedef void (__fastcall *pet_update_fn)(void *pet, void *edx, int arg);
 typedef void (__fastcall *send_to_town_fn)(void *pet, void *edx, void *level);
-typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
-
 static void *housing_root, *petcmd_root;
 
 static void petcmd_draw(void) {
@@ -3201,7 +3386,67 @@ static unsigned fingerprint_of(unsigned char *inv) {
 static unsigned fingerprint(void) {
     unsigned char *pet = the_pet();
     unsigned h = fingerprint_of(hero ? *(unsigned char **)(hero + GOG_INVENTORY) : 0);
+    h = h * 31u + fingerprint_of(shop ? *(unsigned char **)(shop + GOG_INVENTORY) : 0);
     return h * 31u + fingerprint_of(pet ? *(unsigned char **)(pet + GOG_INVENTORY) : 0);
+}
+
+/* ---- the shop: the 360's screen while PC's merchant menu is open ----
+ * PC opens its CMerchantMenu (CGameUI's +0x2d8, vtable 0xab7b58) when the hero talks to a merchant
+ * (CGameUI sets its owner, the virtual +0x18, then opens it, the virtual +0x1c with 1: GOG
+ * 0x557d3f); its open flag is +0x30 (its virtual +0x10, 0x57e850), the merchant +0x28. While it is
+ * open the 360's frame shows the merchant's column with the bags (CMerchantMenuXenon,
+ * sub_82378D30); B closes both (PC's own close: the virtual +0x1c with 0, GOG 0x558413). */
+#define GOG_MERCHANT_MENU 0x2d8
+#define MENU_OPEN 0x30
+#define MERCHANT_OWNER 0x28
+#define MENU_SET_OPEN (0x1c / 4)
+#define MENU_IS_OPEN (0x10 / 4)
+/* PC opens its own inventory with the merchant's (CGameUI's +0x2cc, the virtual +0x10 its open
+ * flag) and closes the merchant's when it closes it (GOG 0x54d465): it stays open under the frame,
+ * its windows shown after the frame opened hidden with the others, its doll's viewport taken off;
+ * it is closed with the shop. */
+static void pc_inventory_close(void) {
+    typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_INVENTORY_MENU) : 0;
+    if (m && ((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) {
+        ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
+        x360_log("x360 shop: PC's inventory closed\r\n");
+    }
+}
+
+static void shop_close(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_MERCHANT_MENU) : 0;
+    shop_closing = 1;
+    if (inventory_open) x360_inventory_toggle();
+    shop_closing = 0;
+    shop = 0;
+    if (m && m[MENU_OPEN]) ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
+    pc_inventory_close();
+    x360_log("x360 shop: closed\r\n");
+}
+
+void x360_shop_tick(void) {
+    unsigned char *m;
+    if (!find_world() || !ui) return;
+    m = *(unsigned char **)(ui + GOG_MERCHANT_MENU);
+    if (m && m[MENU_OPEN] && !shop && *(unsigned char **)(m + MERCHANT_OWNER)) {
+        if (inventory_open) x360_inventory_toggle();
+        shop = *(unsigned char **)(m + MERCHANT_OWNER);
+        x360_log(isa(shop, 127) ? "x360 shop: PC's merchant menu opened (the Gambler)\r\n"
+                                : "x360 shop: PC's merchant menu opened\r\n");
+        x360_inventory_toggle();
+    } else if (shop && inventory_open) {
+        unsigned char *inv_menu = pc_inventory_menu();
+        if (inv_menu && *(void **)(inv_menu + INVMENU_VIEWPORT)) show_doll_of(0, 0);
+        hide_pc_ui(1);
+    }
+    if (shop && !(m && m[MENU_OPEN])) {
+        x360_log("x360 shop: PC's merchant menu closed\r\n");
+        shop_closing = 1;
+        if (inventory_open) x360_inventory_toggle();
+        shop_closing = 0;
+        shop = 0;
+    }
 }
 
 /* The pad while the inventory is open: pressed, the buttons just pressed; ly, the stick (of 1000).
@@ -3216,10 +3461,14 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (!inventory_open || !find_world()) return;
     triggers_tick();
     if (petcmd_open) { petcmd_pad(pressed, lx); return; }
-    if (pressed & 0x2000) { x360_inventory_toggle(); return; }       /* B */
-    /* LT and RT: the page before and after (sub_82377990, sub_82377928); the pages not made yet
-     * (Skills, Quest) are passed over. */
-    if (pressed & (0x10000 | 0x20000)) {
+    if (pressed & 0x2000) {                                            /* B */
+        if (shop) shop_close();
+        else x360_inventory_toggle();
+        return;
+    }
+    /* LT and RT: the page before and after (sub_82377990, sub_82377928); a merchant's frame has
+     * one page. */
+    if ((pressed & (0x10000 | 0x20000)) && !shop) {
         int step = pressed & 0x10000 ? 3 : 1, p = (page + step) % 4;
         set_page(p);
         return;
@@ -3227,7 +3476,7 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (page == 1) { stats_pad(pressed, ly); return; }
     if (page == 2) { skills_pad(pressed, lx, ly); return; }
     if (page == 3) { quest_pad(pressed, ly); return; }
-    if (pressed & 0x0010) { petcmd_show(1); return; }                /* Start: the pet's commands */
+    if ((pressed & 0x0010) && !shop) { petcmd_show(1); return; }     /* Start: the pet's commands */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
         last_check = now;
@@ -3242,21 +3491,35 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         next_repeat = now + (next_repeat ? 120 : 350);
         refresh_all();
     }
-    /* LB/RB: the filter; past the ends, the other bag (sub_8236A488, sub_823702E0). */
+    /* LB/RB: the filter; past the ends, the column before or after, round (sub_8236A488,
+     * sub_823702E0). */
     if (pressed & 0x0100) {                                            /* LB */
         if (filter > 0) filter--;
-        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 5; show_doll(1); }
+        else if (panels[1].root) {
+            focus_panel = column_panel((panel_column(focus_panel) + columns() - 1) % columns());
+            select_panel(focus_panel); filter = 5; show_doll(1);
+        }
         refresh_all();
     }
     if (pressed & 0x0200) {                                            /* RB */
         if (filter < 5) filter++;
-        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 0; show_doll(1); }
+        else if (panels[1].root) {
+            focus_panel = column_panel((panel_column(focus_panel) + 1) % columns());
+            select_panel(focus_panel); filter = 0; show_doll(1);
+        }
         refresh_all();
     }
     if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
-    if (pressed & 0x1000) { act(); refresh_all(); }                    /* A */
-    if (pressed & 0x8000) { drop(); refresh_all(); }                   /* Y */
-    if (pressed & 0x4000) { swap_to_pet(); refresh_all(); }            /* X */
+    /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
+     * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
+    if ((pressed & 0x1000) && !panels[active_panel].is_shop) { act(); refresh_all(); }    /* A */
+    if ((pressed & 0x8000) && !shop) { drop(); refresh_all(); }                          /* Y */
+    if (pressed & 0x4000) {                                                              /* X */
+        if (!shop) swap_to_pet();
+        else if (panels[active_panel].is_shop) buy();
+        else sell();
+        refresh_all();
+    }
 }
 
 /* ---- test runs: the game's console commands ----

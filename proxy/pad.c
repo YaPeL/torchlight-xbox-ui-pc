@@ -145,6 +145,7 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
 int x360_pause_open(void);
 void x360_pause_pad(unsigned pressed, int ly);
 void x360_hud_tick(void);
+void x360_shop_tick(void);
 void x360_hud_attacked(void *unit);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
 #define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
@@ -913,6 +914,9 @@ static void order(void) {
     prev_buttons = buttons;
     auto_pickup(hero, level);
     x360_hud_tick();
+    /* PC's merchant menu, opened by talking to a merchant, shows as the 360's shop
+     * (proxy/x360_menu.c). */
+    x360_shop_tick();
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
