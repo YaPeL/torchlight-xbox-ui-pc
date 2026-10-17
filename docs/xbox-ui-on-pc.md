@@ -1811,7 +1811,11 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   showed the name in gold, and in the converted X360_SerifBig the markup came out as text. But
   PC's font breaks the lines elsewhere than the 360 (its letters narrower), so the 360's font is
   kept and the markup taken out (`dialog_markup=1` keeps it). **Open, high priority:** the names'
-  gold with the 360's font; why the converted fonts do not take the markup.
+  gold with the 360's font. **Stopped after two tries:** (1) PC's SerifBig draws the gold but
+  breaks the lines elsewhere; (2) PC sets `Font::setColourTrigger("|c")` and
+  `setColourUnTrigger("|u")` on its fonts (GOG `0x55fcf0`, `0x55fd1d`, this build's own exports);
+  the same calls on the X360_ fonts (`set_colour_triggers`, run 39: called for each, logged)
+  changed nothing, the markup still drawn as text. Not known yet what else PC's fonts have.
 - **Open:** the reward item's icon (the slot shows empty; PC draws its icons in windows of its
   own, `QuestRewardSockets`).
 - **Tested** (GOG, runs 15-19; the user opened the dialogs with the mouse):

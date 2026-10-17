@@ -28,6 +28,14 @@ void x360_log_num(long v);
 const char *x360_text(const char *key);   /* the 360 code's texts, from the user's copy (proxy/cegui_proxy.c) */
 FARPROC x360_need(const char *name);
 __declspec(dllimport) HWND __stdcall GetActiveWindow(void);
+/* The game's window, also while another has the focus (GetActiveWindow is then 0: the 360's
+ * fonts were left unset when the user played with the mouse in another window). */
+static HWND active_window(void) {
+    static HWND cached;
+    HWND w = GetActiveWindow();
+    if (w) cached = w;
+    return cached;
+}
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
 __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
 __declspec(dllimport) short __stdcall GetAsyncKeyState(int key);
@@ -401,6 +409,30 @@ static const char *const x360_fonts[] = {"X360_Serif", "X360_Serif14", "X360_Ser
 static float advance_720[FONTS][LAST_CP - FIRST_CP + 1];
 static float patched_e[FONTS];               /* the advance of 'e' as patched: a re-layout resets it */
 
+/* The colour markup: this build's CEGUI draws "|cAARRGGBB" .. "|u" as a colour for a font given
+ * its triggers (Font::setColourTrigger and setColourUnTrigger, with the String by value; PC sets
+ * them on its own fonts, GOG 0x55fcf0 and 0x55fd1d). The converted X360_ fonts were created
+ * without them: their text showed the markup (a name in gold in the 360's dialogs). */
+typedef struct { unsigned char b[0x98]; } string_value;     /* CEGUI 0.6's String, by value */
+typedef void (__fastcall *trigger_fn)(void *font, void *edx, string_value s);
+static void set_colour_triggers(void *font) {
+    static trigger_fn on, off;
+    object s;
+    string_value v;
+    unsigned i;
+    if (!on) on = (trigger_fn)need("?setColourTrigger@Font@CEGUI@@QAEXVString@2@@Z");
+    if (!off) off = (trigger_fn)need("?setColourUnTrigger@Font@CEGUI@@QAEXVString@2@@Z");
+    if (!on || !off || !font) return;
+    /* Two-character strings stay in the String's own buffer (no heap): the callee destroys its
+     * copy; ours is copied out and not destroyed. */
+    string_ctor(&s, 0, "|c");
+    for (i = 0; i < sizeof v.b; i++) v.b[i] = s.bytes[i];
+    on(font, 0, v);
+    string_ctor(&s, 0, "|u");
+    for (i = 0; i < sizeof v.b; i++) v.b[i] = s.bytes[i];
+    off(font, 0, v);
+}
+
 static void match_spacing(float width, float height) {
     singleton_fn fm_get = (singleton_fn)need("?getSingletonPtr@?$Singleton@VFontManager@CEGUI@@@CEGUI@@SAPAVFontManager@2@XZ");
     get_font_fn get_font = (get_font_fn)need("?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z");
@@ -443,6 +475,10 @@ static void match_spacing(float width, float height) {
         __try { font = get_font(fm, 0, &name); } __except (1) { font = 0; }
         string_dtor(&name, 0);
         if (!font) continue;
+        {
+            static void *triggered[FONTS];
+            if (triggered[f] != font) { set_colour_triggers(font); triggered[f] = font; }
+        }
         g = (float *)glyph(font, 0, 'e');
         if (patched_e[f] && g && g[1] == patched_e[f]) continue;          /* still as patched */
         {
@@ -1520,7 +1556,7 @@ static void show_info(void *item, float y, float list_left) {
     void *inv = inventory(), *first = 0, *second = 0;
     float x = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, bottom = 0, w, y1;
     RECT cr;
-    HWND hw = GetActiveWindow();
+    HWND hw = active_window();
     if (!item) { hide_info(); return; }
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     if (pet_top && rect_of) {
@@ -2370,7 +2406,7 @@ static void show_doll_of(int pet, int on) {
     {
         void *view = win_of(CHR_PREFIX, "CharacterViewport");
         RECT r;
-        HWND w = GetActiveWindow();
+        HWND w = active_window();
         frect a;
         float W, H, rgba[4] = {0, 0, 0, 1};
         if (!view || !rect_of || !w || !GetClientRect(w, &r) || r.right <= r.left || r.bottom <= r.top) return;
@@ -2470,7 +2506,7 @@ void x360_inventory_toggle(void) {
     x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
     {
         RECT r;
-        HWND w = GetActiveWindow();
+        HWND w = active_window();
         if (resolve() && w && GetClientRect(w, &r) && r.bottom > r.top)
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
     }
@@ -2488,7 +2524,7 @@ void x360_inventory_toggle(void) {
         if (!inventory_root) inventory_failed = 1;
         else {
             RECT r;
-            HWND w = GetActiveWindow();
+            HWND w = active_window();
             void *mf;
             char value[128];
             float v[8];
@@ -3732,7 +3768,7 @@ static void pause_show(int on) {
     if (on && !pause_root) {
         pause_root = load("media/ui/x360/optionsmenu.layout", PAUSE_PREFIX);
         if (!pause_root) return;
-        if (!k) { RECT r; HWND w = GetActiveWindow(); k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f; }
+        if (!k) { RECT r; HWND w = active_window(); k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f; }
         scale_tree(pause_root, k, 0);
         /* The trial's buttons, hidden in the full game (the catalog's menus/13 has neither). */
         show(win_of(PAUSE_PREFIX, "UnlockFullGame"), 0);
@@ -4411,7 +4447,7 @@ static void minimap_tick(void) {
 static void minimap_tick_body(void) {
     unsigned char *map = level ? *(unsigned char **)(level + GOG_LEVEL_AUTOMAP) : 0;
     void *vp;
-    HWND w = GetActiveWindow();
+    HWND w = active_window();
     RECT r;
     float W, H, s;
     if (!map || !class_is(map, ".?AVCAutomap@@")) return;
@@ -4462,7 +4498,7 @@ static void hud_tick(void) {
         return;
     }
     if (!hud_root) {
-        HWND w = GetActiveWindow();
+        HWND w = active_window();
         RECT r;
         pc_hud_root = pc_window("PlayerHealthRoot");
         if (!pc_hud_root) return;                       /* PC's HUD not loaded yet */
@@ -4674,7 +4710,7 @@ static void dialog_tick(void) {
     }
     if (!qd_root) {
         RECT r;
-        HWND hw = GetActiveWindow();
+        HWND hw = active_window();
         qd_root = load("media/ui/x360/questdialogmenu.layout", QD_PREFIX);
         if (!qd_root) { qd_failed = 1; return; }
         if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
@@ -4687,7 +4723,7 @@ static void dialog_tick(void) {
         /* The 360's letter spacing and native width (match_spacing), which the inventory's
          * opening did before: a dialog can come first (the review: its text 1.3 times wider). */
         RECT r;
-        HWND hw = GetActiveWindow();
+        HWND hw = active_window();
         if (hw && GetClientRect(hw, &r) && r.bottom > r.top)
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
     }
@@ -4805,7 +4841,7 @@ static void add_frame_listener(void) {
 void x360_frame_tick(void) {
     static int logged;
     if (!find_world()) return;
-    if (qd_shown) x360_ui_dump_poll();        /* the HUD's tick, which polls it, stops under a dialog */
+    x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }
