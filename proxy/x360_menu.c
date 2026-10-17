@@ -1233,23 +1233,25 @@ static void fill_character(void) {
     char buf[96], *p;
     int level, xp, xp_next = 0, fame_level, fame, fame_next = 0;
     void *table;
-    if (!character_root || !hero) return;
+    /* The focused bag's character (the 360's two columns, sub_823702E0): the hero or the pet. */
+    unsigned char *who = panels[focus_panel].is_pet ? (unsigned char *)the_pet() : hero;
+    if (!character_root || !who) return;
     (void)pc_stats_menu;
     __try {
-        level = *(int *)(hero + 0xf0);
-        xp = *(int *)(hero + 0x3c8);
-        fame = *(int *)(hero + 0x3cc);
-        fame_level = *(int *)(hero + 0x3d0);
+        level = *(int *)(who + 0xf0);
+        xp = *(int *)(who + 0x3c8);
+        fame = *(int *)(who + 0x3cc);
+        fame_level = *(int *)(who + 0x3d0);
         table = ((table_fn)GOG_XP_TABLE)();
         if (table) {
             xp_next = ((int_arg_fn)GOG_XP_FOR_LEVEL)(table, 0, level);
             fame_next = ((int_arg_fn)GOG_FAME_FOR_LEVEL)(table, 0, fame_level);
         }
     } __except (1) {
-        x360_log("x360 chr: reading the hero threw\r\n");
+        x360_log("x360 chr: reading the character threw\r\n");
         return;
     }
-    if (wstring_utf8(hero + 0x420, buf, sizeof buf)) text(win_of(CHR_PREFIX, "characterName"), buf);
+    if (wstring_utf8(who + 0x420, buf, sizeof buf)) text(win_of(CHR_PREFIX, "characterName"), buf);
     /* The fame title, as PC's stats menu picks it (GOG 0x5b146e): the game data's singleton
      * (0x524d40) holds the titles, VC9 wstrings of 28 bytes from +0xc8, their count +0xcc, a bound
      * +0xd0; the title is the fame level's minus one, at most the last. */
@@ -1276,12 +1278,12 @@ static void fill_character(void) {
     text(win_of(CHR_PREFIX, "XP"), buf);
     copy(buf, sizeof buf, "Fame: ", 0); p = put_int(buf + 6, fame); *p++ = '/'; p = put_int(p, fame_next); *p = 0;
     text(win_of(CHR_PREFIX, "Fame"), buf);
-    p = put_int(buf, ((int_get_fn)GOG_MAX_HP)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "HP"), buf);
-    p = put_int(buf, ((int_get_fn)GOG_MAX_MANA)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "Mana"), buf);
-    p = put_int(buf, ((int_get_fn)GOG_STRENGTH)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "strPts"), buf);
-    p = put_int(buf, ((int_get_fn)GOG_DEXTERITY)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "dexPts"), buf);
-    p = put_int(buf, ((int_get_fn)GOG_MAGIC)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "magicPts"), buf);
-    p = put_int(buf, ((int_get_fn)GOG_DEFENSE)(hero, 0)); *p = 0; text(win_of(CHR_PREFIX, "defPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAX_HP)(who, 0)); *p = 0; text(win_of(CHR_PREFIX, "HP"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAX_MANA)(who, 0)); *p = 0; text(win_of(CHR_PREFIX, "Mana"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_STRENGTH)(who, 0)); *p = 0; text(win_of(CHR_PREFIX, "strPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_DEXTERITY)(who, 0)); *p = 0; text(win_of(CHR_PREFIX, "dexPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAGIC)(who, 0)); *p = 0; text(win_of(CHR_PREFIX, "magicPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_DEFENSE)(who, 0)); *p = 0; text(win_of(CHR_PREFIX, "defPts"), buf);
     if (!logged) {
         /* A diagnosis: the numbers did not show in a run though they were read. */
         typedef unsigned char (__fastcall *visible_fn)(const void *self, void *edx, int local_only);
@@ -1629,27 +1631,48 @@ static float arctan(float x) {
 }
 typedef const float *(__fastcall *get_fovy_fn)(const void *frustum, void *edx);
 typedef void (__fastcall *set_fovy_fn)(void *frustum, void *edx, const float *radian);
-static float fovy_saved;
+/* The pet's: PC's CPetMenu (CGameUI's +0x2d4, vtable 0xab7de0; made at GOG 0x5630c9) keeps its
+ * own wardrobe the same way ("PetWardrobeCam", +0x7b28; its render window +0x7b2c; its viewport,
+ * Z 4, at +0x7b30: its showing, GOG 0x5920c0). The 360 shows the focused bag's character in the
+ * first column (sub_823702E0 calls sub_8235AA28 for the hero's column, +0x10c, and the pet's,
+ * +0x110: the column shown, its character's model shown, the doll's viewport on its
+ * CharacterViewport): with the pet's bag focused, the pet. */
+#define GOG_PET_MENU 0x2d4
+#define GOG_PET_MENU_VTABLE 0x00ab7de0
+#define PETMENU_CAMERA 0x7b28
+#define PETMENU_TARGET 0x7b2c
+#define PETMENU_VIEWPORT 0x7b30
 
-static void show_doll(int on) {
+static unsigned char *pc_pet_menu(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_PET_MENU) : 0;
+    return m && *(unsigned *)m == GOG_PET_MENU_VTABLE ? m : 0;
+}
+
+static float fovy_saved[2];
+static int doll_shown = -1;                 /* -1 none, 0 the hero's, 1 the pet's */
+
+static void show_doll_of(int pet, int on) {
     static pixel_rect_fn rect_of;
     static get_fovy_fn fovy;
     static set_fovy_fn set_fovy;
+    unsigned char *m = pet ? pc_pet_menu() : pc_inventory_menu();
+    unsigned cam_at = pet ? PETMENU_CAMERA : INVMENU_CAMERA, target_at = pet ? PETMENU_TARGET : INVMENU_TARGET,
+             vp_at = pet ? PETMENU_VIEWPORT : INVMENU_VIEWPORT;
+    int z = pet ? 4 : 3;
+    void *target, *camera, *vp;
     if (!fovy) {
         void *ogre = GetModuleHandleA("OgreMain.dll");
         fovy = ogre ? (get_fovy_fn)GetProcAddress(ogre, "?getFOVy@Frustum@Ogre@@UBEABVRadian@2@XZ") : 0;
         set_fovy = ogre ? (set_fovy_fn)GetProcAddress(ogre, "?setFOVy@Frustum@Ogre@@UAEXABVRadian@2@@Z") : 0;
     }
-    unsigned char *m = pc_inventory_menu();
-    void *target, *camera, *vp;
-    if (!m) { x360_log("x360 chr: no CInventoryMenu, no doll\r\n"); return; }
-    target = *(void **)(m + INVMENU_TARGET);
-    camera = *(void **)(m + INVMENU_CAMERA);
-    vp = *(void **)(m + INVMENU_VIEWPORT);
+    if (!m) { x360_log(pet ? "x360 chr: no CPetMenu, no doll\r\n" : "x360 chr: no CInventoryMenu, no doll\r\n"); return; }
+    target = *(void **)(m + target_at);
+    camera = *(void **)(m + cam_at);
+    vp = *(void **)(m + vp_at);
     if (!target || !camera) return;
     if (!on) {
-        if (vp) { ((remove_viewport_fn)(*(void ***)target)[0x2c / 4])(target, 0, 3); *(void **)(m + INVMENU_VIEWPORT) = 0; }
-        if (fovy_saved && set_fovy) { set_fovy(camera, 0, &fovy_saved); fovy_saved = 0; }
+        if (vp) { ((remove_viewport_fn)(*(void ***)target)[0x2c / 4])(target, 0, z); *(void **)(m + vp_at) = 0; }
+        if (fovy_saved[pet] && set_fovy) { set_fovy(camera, 0, &fovy_saved[pet]); fovy_saved[pet] = 0; }
         return;
     }
     if (!rect_of) rect_of = (pixel_rect_fn)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
@@ -1665,8 +1688,8 @@ static void show_doll(int on) {
         fresh_rects(win_of(CHR_PREFIX, "TopFrame"));
         rect_of(view, 0, &a);
         if (!vp) {
-            vp = ((add_viewport_fn)(*(void ***)target)[0x20 / 4])(target, 0, camera, 3, 0, 0, 1, 1);
-            *(void **)(m + INVMENU_VIEWPORT) = vp;
+            vp = ((add_viewport_fn)(*(void ***)target)[0x20 / 4])(target, 0, camera, z, 0, 0, 1, 1);
+            *(void **)(m + vp_at) = vp;
         }
         if (!vp) return;
         (*(set_dims_fn *)IAT_VP_SET_DIMENSIONS)(vp, 0, a.left / W, a.top / H, (a.right - a.left) / W, (a.bottom - a.top) / H);
@@ -1680,16 +1703,26 @@ static void show_doll(int on) {
         /* PC frames the doll for its own 166x192 viewport; in the 360's taller window it would fill
          * the height and lose its sides, so the camera's field of view is widened (tan of half
          * the angle times DOLL_ZOOM_OUT) while the screen is open, and given back on closing. */
-        if (fovy && set_fovy && !fovy_saved) {
-            fovy_saved = *fovy(camera, 0);
+        if (!pet && fovy && set_fovy && !fovy_saved[pet]) {   /* the pet is framed small already */
+            fovy_saved[pet] = *fovy(camera, 0);
             {
-                float wide = 2.0f * arctan(DOLL_ZOOM_OUT * tangent(fovy_saved / 2.0f));
+                float wide = 2.0f * arctan(DOLL_ZOOM_OUT * tangent(fovy_saved[pet] / 2.0f));
                 set_fovy(camera, 0, &wide);
             }
         }
-        x360_log("x360 chr: doll viewport at "); x360_log_num((long)a.left); x360_log(","); x360_log_num((long)a.top);
+        x360_log(pet ? "x360 chr: pet doll viewport at " : "x360 chr: doll viewport at ");
+        x360_log_num((long)a.left); x360_log(","); x360_log_num((long)a.top);
         x360_log(" "); x360_log_num((long)(a.right - a.left)); x360_log("x"); x360_log_num((long)(a.bottom - a.top)); x360_log("\r\n");
     }
+}
+
+/* The doll of the focused bag's character while the screen is open (on: -1 to close). */
+static void show_doll(int on) {
+    int want = on ? (panels[focus_panel].is_pet ? 1 : 0) : -1;
+    if (want == doll_shown) return;
+    if (doll_shown >= 0) show_doll_of(doll_shown, 0);
+    if (want >= 0) show_doll_of(want, 1);
+    doll_shown = want;
 }
 
 static void *hud_root, *pet_hud_root;
@@ -1838,12 +1871,12 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
     /* LB/RB: the filter; past the ends, the other bag (sub_8236A488, sub_823702E0). */
     if (pressed & 0x0100) {                                            /* LB */
         if (filter > 0) filter--;
-        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 5; }
+        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 5; show_doll(1); }
         refresh_all();
     }
     if (pressed & 0x0200) {                                            /* RB */
         if (filter < 5) filter++;
-        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 0; }
+        else if (panels[1].root) { focus_panel = 1 - focus_panel; select_panel(focus_panel); filter = 0; show_doll(1); }
         refresh_all();
     }
     if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
@@ -2068,8 +2101,62 @@ static void mirror_icon(const char *slot, const char *pc_slot) {
 #define GOG_UNIT_LEVEL 0xf0          /* CCharacter: its level (PC's 0x5588e8) */
 #define GOG_UNIT_HEALTH 0x394        /* CCharacter: its health, a float (GOG 0x487e00) */
 #define GOG_MAX_HEALTH 0x004901e0
+#define GOG_UNIT_DESCRIPTION 0x004854a0   /* its DESCRIPTION (the unit's data, +0x178) into a wstring */
+#define GOG_UNIT_CHAMPION 0x64e          /* CCharacter: a champion (PC's 0x5589ff; the 360's +0x63a) */
+#define GOG_PLAYING_ANIMATION 0x00482740 /* thiscall (unit, const std::wstring &): that animation is on */
+#define TYPE_MIMIC 0xa7
 typedef void *(__fastcall *safe_assign_fn)(void *pointer, void *edx, void *unit);
 typedef int (__fastcall *performing_fn)(void *unit, void *edx);
+typedef void *(__fastcall *unit_wstring_fn)(void *unit, void *edx, void *out);
+typedef int (__fastcall *playing_fn)(void *unit, void *edx, const void *name);
+typedef void *(__fastcall *wstr_ctor_fn)(void *self, void *edx, const unsigned short *text);
+typedef void (__fastcall *wstr_dtor_fn)(void *self, void *edx);
+
+/* msvcp90's std::wstring constructor (from a wide C string) and destructor. */
+static int wstring_functions(wstr_ctor_fn *ctor, wstr_dtor_fn *dtor) {
+    static wstr_ctor_fn c;
+    static wstr_dtor_fn d;
+    if (!c || !d) {
+        void *m = GetModuleHandleA("msvcp90.dll");
+        c = m ? (wstr_ctor_fn)GetProcAddress(m, "??0?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@PB_W@Z") : 0;
+        d = m ? (wstr_dtor_fn)GetProcAddress(m, "??1?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@XZ") : 0;
+    }
+    *ctor = c;
+    *dtor = d;
+    return c && d;
+}
+
+/* The 360 shows no target for a mimic still in its idle animation (sub_821A83C8: ISA 0xa7 and
+ * "MIMICIDLE" playing, sub_822801d0); PC's update has the same test (GOG 0x558a8f, 0x482740). */
+static int hidden_mimic(void *unit) {
+    static const unsigned short idle[] = {'M', 'I', 'M', 'I', 'C', 'I', 'D', 'L', 'E', 0};
+    wstr_ctor_fn ctor;
+    wstr_dtor_fn dtor;
+    unsigned char ws[32];
+    int on = 0;
+    if (!isa(unit, TYPE_MIMIC) || !wstring_functions(&ctor, &dtor)) return 0;
+    ctor(ws, 0, idle);
+    __try { on = ((playing_fn)GOG_PLAYING_ANIMATION)(unit, 0, ws) & 0xff; } __except (1) { on = 0; }
+    dtor(ws, 0);
+    return on;
+}
+
+/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, "Undead - Fast";
+ * none for an NPC), as UTF-8; "" if it has none. */
+static void unit_description(void *unit, char *out, unsigned size) {
+    static const unsigned short empty[] = {0};
+    wstr_ctor_fn ctor;
+    wstr_dtor_fn dtor;
+    unsigned char ws[32];
+    out[0] = 0;
+    if (!wstring_functions(&ctor, &dtor)) return;
+    ctor(ws, 0, empty);
+    __try {
+        ((unit_wstring_fn)GOG_UNIT_DESCRIPTION)(unit, 0, ws);
+        if (!wstring_utf8(ws, out, size)) out[0] = 0;
+    } __except (1) { out[0] = 0; }
+    dtor(ws, 0);
+}
 
 static struct { void *unit; int handle; } attacked = {0, -1};
 static unsigned attacked_until;
@@ -2086,6 +2173,7 @@ void x360_hud_attacked(void *unit) {
 
 static void target_tick(void) {
     static float bar[8];
+    static int champion_shown = -1;
     unsigned now = GetTickCount();
     unsigned char *unit;
     void *x = win_of(HUD_PREFIX, "TargetHealth"), *pc = pc_window("TargetHealth");
@@ -2100,15 +2188,23 @@ static void target_tick(void) {
     /* The 360's order: the unit under the cursor, else the one attacked. */
     unit = ui ? *(unsigned char **)(ui + GOG_UI_MOUSE_OVER) : 0;
     if (!unit) unit = (unsigned char *)attacked.unit;
+    if (unit && hidden_mimic(unit)) unit = 0;
     show(x, unit != 0);
     if (!unit) return;
     if (!wstring_utf8(unit + GOG_UNIT_NAME, buf, sizeof buf)) buf[0] = 0;
     text(win_of(HUD_PREFIX, "TargetName"), buf); show(win_of(HUD_PREFIX, "TargetName"), 1);
+    /* A champion's name in gold: the 360's colour (1, 0.88, 0.24, its catalog's FFFFE03D), as PC's
+     * own update (the constants at GOG 0xab2150, 0xab2154). */
+    if (unit[GOG_UNIT_CHAMPION] != champion_shown) {
+        champion_shown = unit[GOG_UNIT_CHAMPION];
+        prop(win_of(HUD_PREFIX, "TargetName"), "TextColour", champion_shown ? "FFFFE03D" : "FFFFFFFF");
+    }
     copy(buf, sizeof buf, "Level ", 0);
     p = put_int(buf + 6, *(int *)(unit + GOG_UNIT_LEVEL));
     *p = 0;
     text(win_of(HUD_PREFIX, "TargetLevel"), buf); show(win_of(HUD_PREFIX, "TargetLevel"), 1);
-    show(win_of(HUD_PREFIX, "TargetDescription"), 0);
+    unit_description(unit, buf, sizeof buf);
+    text(win_of(HUD_PREFIX, "TargetDescription"), buf); show(win_of(HUD_PREFIX, "TargetDescription"), 1);
     max = ((int_get_fn)GOG_MAX_HEALTH)(unit, 0);
     set_bar(HUD_PREFIX, "TargetHealthBar", "TargetHealthBarSub", 1, bar,
             max > 0 ? *(float *)(unit + GOG_UNIT_HEALTH) / (float)max : 0);
@@ -2166,8 +2262,11 @@ static void hud_tick(void);
 static const char *hud_stage = "";
 
 /* The HUD's tick, guarded: while a level loads, the pointers it reads may not be set yet. */
+void x360_ui_dump_poll(void);
+
 void x360_hud_tick(void) {
     static int logged;
+    x360_ui_dump_poll();
     __try { hud_tick(); }
     __except (1) {
         if (logged < 5) { x360_log("x360 hud: exception in the tick at "); x360_log(hud_stage); x360_log("\r\n"); logged++; }

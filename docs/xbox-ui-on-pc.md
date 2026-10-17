@@ -85,6 +85,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 |------|--------------|
 | `pe_info.py` | Sections, imports and exports of an `.exe`/`.dll` |
 | `compare_installs.py` | Two installs' binaries compared: hash, link time, sections, imports, exports |
+| `compare_ui.py` | A 360 catalog screen against PC's dump of the same screen, window by window (section 14) |
 | `layout_windows.py` | The named windows of a CEGUI layout, and how many of them another layout has |
 | `convert_x360_ui.py` | Stage 0: the 360 UI files from the user's `pak.zip` into `OUT/media/ui/x360/` (section 6) |
 | `build_proxy.py` | Stage 1: builds the proxy `CEGUIBase.dll` from the user's DLL (clang-cl, lld-link); installs and removes it in a game folder |
@@ -1420,3 +1421,41 @@ something the hero cannot equip) and identifying with A. **[the runs]**
   arrow (35 against the equipped 33), its A now "Equip". "12/63" and the gold 600.
 - **Item names** the console takes are the units' `NAME` (`media/units/items/*/*.DAT` in PC's pak);
   random items come from spawn classes (`media/spawnclasses/`, their `NAME`).
+
+## 14. The 360 catalog, screen by screen (2026-10-17)
+
+The user's plan for the night: every screen of the 360 catalog
+(`~/torchlight-gog/screens/ref/catalog/`, made by the recomp's agent: `menus/`, `town/`,
+`in-game/`, each a 1920x1080 PNG and a JSON dump of the CEGUI tree, its `README.md` gives the
+format) in the GOG game, pixel perfect or very close. The rule, verbatim: "esto es portear de 360
+a pc, nada de inventar código": everything comes from the 360's layouts, images, texts and code;
+what is not known is looked up in the recomp, not guessed. Each screen's GOG capture goes to the
+recomp's agent, who answers with the differences.
+
+**The tools:**
+- **PC's dump** (`proxy/ui_dump.c`): when `x360_dump.req` appears in the game folder, the proxy
+  writes `x360_dump_NAME.json` (NAME: the request's first line) in the catalog's format
+  ("torchlight-ui-dump 1"), from the HUD tick (the game's thread). It reads CEGUI only through
+  its exports, checked in GOG's `CEGUIBase.dll`: `Window::getUnclippedPixelRect` (`rect`) and
+  `getPixelRect` (`clipped`) return a `Rect` laid out top, bottom, left, right (the constructor
+  `Rect(left, top, right, bottom)` at `0x1008bdf0` stores its second argument at `+0`, the fourth
+  at `+4`, the first at `+8`, the third at `+0xC`; `getWidth`, `0x10001aa0`, is `[+0xC] - [+8]`);
+  `isVisible(true)` is the own flag (`visible`), `isVisible(false)` with the parents' (`shown`).
+  The font is the window's font in use (`getFont(true)`) by its `Name` property; the images are
+  the `Image`, `NormalImage`, `HoverImage`, `PushedImage` and `DisabledImage` properties. The
+  base name drops the proxy's layout prefixes (`x360inv_`, `x360hud_`...) or a layout instance
+  number, as the catalog's.
+- **The comparison** (`tools/compare_ui.py REF.json PC.json [--under NAME]`): shown windows only,
+  matched by base name and their parent's; the 1080p rectangle (1 px), text, font and imageset
+  (without the converter's `X360_`), images, effective alpha.
+
+**The target's bar** (`in-game/01` to `03`): the 360's HUD update (`sub_821A83C8`) fills, for the
+unit it shows: the name (its `+0x404`) in `TargetName`, white, or, for a champion (its `+0x63A`),
+in the colour of its constants (the catalog: `FFFFE03D`); "Level" and the level in `TargetLevel`;
+the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; "Undead - Fast", none for
+an NPC) in `TargetDescription`; and it shows nothing for a mimic still in its `MIMICIDLE`
+animation (type `0xA7`). PC's update (GOG `0x558750`) has the same pieces: the champion flag at
+`+0x64E` with the colour (1, 0.88, 0.24) (the floats at `0xab2150`, `0xab2154`: `E0`, `3D`, the
+360's), the description by `0x4854a0` (thiscall on the unit, a `std::wstring` out: the data at
+`+0x178`, the key at `0xd5d9a4`), the mimic test (`0x480760` with `0xA7`, then `0x482740` with
+"MIMICIDLE"). The proxy now fills the 360's three lines with those.
