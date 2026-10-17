@@ -250,7 +250,7 @@ IMAGE_BASE = 0x82000000
 STRINGS = {
     "page.inventory": 0x820D17D0, "page.stats": 0x820CFB74, "page.skills": 0x820BF818, "page.quest": 0x820CF9A8,
     "bag.mine": 0x820D0E6C, "bag.pet": 0x820D0E7C, "title.merchant": 0x820D0E8C, "title.stash": 0x820D0EA0,
-    "title.gambler": 0x820D0EE0,
+    "title.gambler": 0x820D0EE0, "title.sharedstash": 0x820D0EC4, "title.transmuter": 0x820D0EAC,
     "act.unequip": 0x820D0FB0, "act.equip": 0x820D0FA4, "act.use": 0x820D0F9C, "act.learn": 0x820D1080,
     "act.drop": 0x820D0F90, "act.swap": 0x820D0F84, "act.identify": 0x820D1014, "act.buy": 0x820D0F48,
     "act.sell": 0x820D0F50, "act.socket": 0x820D1060,

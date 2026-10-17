@@ -632,11 +632,16 @@ static int category(void *item) {
     return isa(item, 124) ? 5 : 6;
 }
 
-static unsigned char *cur_owner;             /* the bag's owner: the hero, or the pet */
-static void *inventory(void) {
-    unsigned char *owner = cur_owner ? cur_owner : hero;
-    return owner ? *(void **)(owner + GOG_INVENTORY) : 0;
+static unsigned char *cur_owner;             /* the bag's owner: the hero, the pet, a merchant or a stash */
+/* A unit's CInventory*; the shared stash's (its chest of type 170) is the game's, kept apart from
+ * the characters (PC's stash menu, GOG 0x5aac2d: 0x52dfe0's +0x8). */
+#define GOG_SHARED_STASH 0x00e40900
+static void *owner_bag(unsigned char *owner) {
+    if (!owner) return 0;
+    if (isa(owner, 170)) return *(unsigned char **)GOG_SHARED_STASH ? *(void **)(*(unsigned char **)GOG_SHARED_STASH + 8) : 0;
+    return *(void **)(owner + GOG_INVENTORY);
 }
+static void *inventory(void) { return owner_bag(cur_owner ? cur_owner : hero); }
 
 #define MAX_LIST 128
 static void *list[MAX_LIST];
@@ -855,7 +860,8 @@ static int selected[6], top[6];
 static struct { const char *prefix; int is_pet, is_shop, filter, selected[6], top[6]; void *root; } panels[3] = {
     {PREFIX, 0, 0, 0, {0}, {0}, 0}, {PET_PREFIX, 1, 0, 0, {0}, {0}, 0}, {SHOP_PREFIX, 0, 1, 0, {0}, {0}, 0}};
 static int active_panel, focus_panel;
-static unsigned char *shop;                  /* the merchant while PC's merchant menu is open */
+static unsigned char *shop;                  /* the merchant or the stash while PC's menu of it is open */
+static int at_stash;                         /* shop is a stash (ISA 134; the shared one 170) */
 static unsigned char *the_pet(void) {
     typedef void *(__fastcall *pet_fn)(void *hero, void *edx, int index);
     return hero ? (unsigned char *)((pet_fn)GOG_GET_PET_FN)(hero, 0, 0) : 0;
@@ -908,7 +914,7 @@ static const char *quality_image(unsigned char *item) {
  * equipped one from getComparisonItems); armour's value is not located yet, so no arrow there. */
 static void compare_arrow(int row, unsigned char *item, int equipped) {
     char name[48];
-    void *inv = panels[focus_panel].is_shop ? *(void **)(hero + GOG_INVENTORY) : inventory(), *first = 0, *second = 0;
+    void *inv = panels[focus_panel].is_shop ? owner_bag(hero) : inventory(), *first = 0, *second = 0;
     int mine, theirs;
     row_name(name, "qualityarrow", row);
     if (equipped || !inv || !(isa(item, 8) || isa(item, 13)) || !item[GOG_IDENTIFIED]) { show(win(name), 0); return; }
@@ -1078,11 +1084,12 @@ static void refresh(void) {
             copy(image + length(image), sizeof image - length(image), "_rollover", 0);
         prop(win(tab_window[i]), "Image", image);
     }
-    /* A column that is not the player's (the pet's; the 360's ISA 134 test) dims the tabs of the
-     * filters it has nothing in to 0.25, but the focused column's own filter (sub_823654B8,
-     * 0x82365948: the tab's count at its entry's +116). */
+    /* A column that is not the player's (the pet's, a merchant's; not a stash's: the 360's ISA 134
+     * test, its stash's type; PC's chests are of other types, so the stash menu's owner here) dims
+     * the tabs of the filters it has nothing in to 0.25, but the focused column's own filter
+     * (sub_823654B8, 0x82365948: the tab's count at its entry's +116). */
     for (i = 0; i < 6; i++)
-        prop(win(tab_window[i]), "Alpha", cur_owner != hero && !counts[i] &&
+        prop(win(tab_window[i]), "Alpha", cur_owner != hero && !(at_stash && cur_owner == shop) && !counts[i] &&
                                           !(i == filter && active_panel == focus_panel) ? "0.25" : "1");
     prop(win("TopFrame"), "Image", is_shop ? (active_panel == focus_panel ? "set:X360_widgets2 image:backroundbase_merchant_rollover"
                                                                           : "set:X360_widgets2 image:backroundbase_merchant")
@@ -1093,8 +1100,10 @@ static void refresh(void) {
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
     text(win("filtername"), x360_text(filter_name[filter]));
-    /* The merchant's name (sub_82367D38): the Gambler's (ISA 127, GAMBLER) or a merchant's. */
-    text(win("characterName"), x360_text(is_shop ? (isa(cur_owner, 127) ? "title.gambler" : "title.merchant")
+    /* The merchant's name (sub_82367D38): the Gambler's (ISA 127, GAMBLER) or a merchant's; at a
+     * stash its own (the catalog's town/21, 30). */
+    text(win("characterName"), x360_text(is_shop ? (at_stash ? (isa(cur_owner, 170) ? "title.sharedstash" : "title.stash")
+                                                    : isa(cur_owner, 127) ? "title.gambler" : "title.merchant")
                                          : panels[active_panel].is_pet ? "bag.pet" : "bag.mine"));
     /* RB on the focused bag only (the catalog: the bag, the pet's bag, the stash's columns). */
     show(win("rightbumper"), active_panel == focus_panel);
@@ -1111,7 +1120,7 @@ static void refresh(void) {
         p = put_int(p, *(long *)(owner + GOG_GOLD));
         *p = 0;
         text(win("playergoldtext"), buf);
-        show(win("playergoldwin"), cur_owner == hero);
+        show(win("playergoldwin"), cur_owner == hero && !at_stash);   /* none at a stash (town/21) */
         if (inv) {
             void **refs = *(void ***)(inv + INV_REFS);
             unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;
@@ -1175,8 +1184,8 @@ static void refresh(void) {
         show(win("buttonB"), 0);
         /* At a merchant (sub_8236C5C0) the frame's header says what X does: act.buy in the
          * merchant's column (TextColour FFFBE469), act.sell in the others (FFFF4800). */
-        show(win("buyandsell"), shop != 0);
-        if (shop) {
+        show(win("buyandsell"), shop && !at_stash);
+        if (shop && !at_stash) {
             text(win("buyandselltext"), x360_text(panels[active_panel].is_shop ? "act.buy" : "act.sell"));
             prop(win("buyandselltext"), "TextColour", panels[active_panel].is_shop ? "FFFBE469" : "FFFF4800");
         }
@@ -1200,7 +1209,10 @@ static void refresh(void) {
                 label[n++] = ')';
                 label[n] = 0;
             }
-            if (shop && panels[active_panel].is_shop) {
+            if (at_stash) {
+                /* At a stash (sub_8236C8D0, mode 5), in every column: X swaps, nothing else. */
+                a = ""; x = x360_text("act.swap"); y = "";
+            } else if (shop && panels[active_panel].is_shop) {
                 /* The merchant's column: X buys, nothing else (sub_8236C8D0, ISA 41). */
                 a = ""; x = x360_text("act.buy"); y = "";
             } else if (shop) {
@@ -1823,6 +1835,38 @@ static void sell(void) {
     x360_log("x360 shop: X: sold\r\n");
 }
 
+/* ---- the stash (CStashMenuXenon) ----
+ * X in any column swaps (sub_8236AD18): from the stash's column (its owner of type 134; here PC's
+ * stash menu's owner) the item
+ * goes to the hero's bag, else the pet's, else to the ground at the hero's feet (sub_8236B8B0,
+ * the sound 18 for a bag); from a bag into the stash (sub_8236BA20: the sound 18, or 24 and the
+ * item kept when it does not fit). PC's pickupEquipment puts it in, as for the pet's bag. */
+static void stash_swap(void) {
+    unsigned char *box = (unsigned char *)owner_bag(shop), *item, *pet = the_pet();
+    void *inv = inventory();
+    if (!box || !inv || !list_count) return;
+    item = (unsigned char *)list[selected[filter]];
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+    if (panels[active_panel].is_shop) {
+        float pos[3];
+        if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(hero), 0, item, 1) ||
+            (pet && ((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(pet), 0, item, 1))) {
+            shop_sound(18);
+            x360_log("x360 stash: X: taken\r\n");
+            return;
+        }
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+        ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
+        ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
+        x360_log("x360 stash: X: taken, to the ground\r\n");
+        return;
+    }
+    if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(box, 0, item, 1)) { shop_sound(18); x360_log("x360 stash: X: stored\r\n"); return; }
+    ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1);
+    shop_sound(24);
+    x360_log("x360 stash: X: the stash is full\r\n");
+}
+
 /* The inventory, logged once per opening: the panes and every reference (a diagnosis). */
 static void dump(void) {
     unsigned char *inv = (unsigned char *)inventory();
@@ -2067,7 +2111,8 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(shop ? "title.merchant" : page_name[page]));
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : !at_stash ? "title.merchant"
+                                               : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
     /* At a merchant the frame has one page, no pages beside it and no pet commands (the
@@ -2176,8 +2221,27 @@ void x360_inventory_toggle(void) {
     if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
     if (quest_root) set_visible(quest_root, 0, inventory_open && page == 3);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
+    /* A stash's columns are 303 and 606 apart (sub_823832B8, its constants at 0x820aa8bc), not the
+     * inventory's 299 and 602 (the catalog's town/21: 752 and 1178 at 1080). */
+    {
+        static int shifted;
+        int want = inventory_open && at_stash;
+        if (want != shifted) {
+            float dx = (want ? 4.0f : -4.0f) * k;
+            move_by(win_of(PREFIX, "TopFrame"), dx, 0);
+            if (panels[1].root) move_by(win_of(PET_PREFIX, "TopFrame"), dx, 0);
+            shifted = want;
+        }
+    }
     if (panels[2].root) set_visible(panels[2].root, 0, inventory_open && shop);
     if (panels[2].root) show(win_of(SHOP_PREFIX, "TopFrame"), inventory_open && shop);
+    /* Its first showing kept its frame's area from before it was moved into the ContainerFrame
+     * (the stash's first opening: HiliteFrame drawn at the screen's corner, its texts clipped);
+     * moving the column there and back has CEGUI work it out again. */
+    if (panels[2].root && inventory_open && shop) {
+        move_by(win_of(SHOP_PREFIX, "TopFrame"), 1.0f, 0);
+        move_by(win_of(SHOP_PREFIX, "TopFrame"), -1.0f, 0);
+    }
     if (character_root) set_visible(character_root, 0, inventory_open);
     if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), page < 2 && !shop);
     page_titles();
@@ -3390,7 +3454,7 @@ static unsigned fingerprint_of(unsigned char *inv) {
 static unsigned fingerprint(void) {
     unsigned char *pet = the_pet();
     unsigned h = fingerprint_of(hero ? *(unsigned char **)(hero + GOG_INVENTORY) : 0);
-    h = h * 31u + fingerprint_of(shop ? *(unsigned char **)(shop + GOG_INVENTORY) : 0);
+    h = h * 31u + fingerprint_of(owner_bag(shop));
     return h * 31u + fingerprint_of(pet ? *(unsigned char **)(pet + GOG_INVENTORY) : 0);
 }
 
@@ -3401,6 +3465,11 @@ static unsigned fingerprint(void) {
  * open the 360's frame shows the merchant's column with the bags (CMerchantMenuXenon,
  * sub_82378D30); B closes both (PC's own close: the virtual +0x1c with 0, GOG 0x558413). */
 #define GOG_MERCHANT_MENU 0x2d8
+/* The stash's the same way: CStashMenu (CGameUI's +0x2e4, vtable 0xab8730), its owner the chest
+ * the hero used (the hero's +0x290; CGameUI 0x5582c3 for the stash, 0x55832e for the shared one),
+ * opened with PC's inventory; the 360's CStashMenuXenon (vtable 0x8200149c) puts the stash in the
+ * first column (sub_82383630: its +0x104, the bag +0x100, the pet's +0x108). */
+#define GOG_STASH_MENU 0x2e4
 #define MENU_OPEN 0x30
 #define MERCHANT_OWNER 0x28
 #define MENU_SET_OPEN (0x1c / 4)
@@ -3419,23 +3488,49 @@ static void pc_inventory_close(void) {
 }
 
 static void shop_close(void) {
-    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_MERCHANT_MENU) : 0;
+    unsigned char *m = ui ? *(unsigned char **)(ui + (at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
     shop_closing = 1;
     if (inventory_open) x360_inventory_toggle();
     shop_closing = 0;
     shop = 0;
+    at_stash = 0;
     if (m && m[MENU_OPEN]) ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
     pc_inventory_close();
     x360_log("x360 shop: closed\r\n");
 }
 
+/* The 360 has a menu for the merchants and another for the stashes, each its own columns: the
+ * left column's filter and rows are kept for each (the stash's not left at the merchant's). */
+static void left_column_for(int stash) {
+    static struct { int filter, selected[6], top[6]; } kept[2];
+    static int kind = 0;
+    int j;
+    if (stash == kind) return;
+    if (active_panel == 2) select_panel(0);   /* the column's state out of the globals first */
+    kept[kind].filter = panels[2].filter;
+    for (j = 0; j < 6; j++) { kept[kind].selected[j] = panels[2].selected[j]; kept[kind].top[j] = panels[2].top[j]; }
+    kind = stash;
+    panels[2].filter = kept[kind].filter;
+    for (j = 0; j < 6; j++) { panels[2].selected[j] = kept[kind].selected[j]; panels[2].top[j] = kept[kind].top[j]; }
+}
+
 void x360_shop_tick(void) {
-    unsigned char *m;
+    unsigned char *m, *st;
     if (!find_world() || !ui) return;
     m = *(unsigned char **)(ui + GOG_MERCHANT_MENU);
-    if (m && m[MENU_OPEN] && !shop && *(unsigned char **)(m + MERCHANT_OWNER)) {
+    st = *(unsigned char **)(ui + GOG_STASH_MENU);
+    if (!shop && st && st[MENU_OPEN] && *(unsigned char **)(st + MERCHANT_OWNER)) {
+        if (inventory_open) x360_inventory_toggle();
+        shop = *(unsigned char **)(st + MERCHANT_OWNER);
+        at_stash = 1;
+        left_column_for(1);
+        x360_log(isa(shop, 170) ? "x360 shop: PC's stash menu opened (the shared stash)\r\n" : "x360 shop: PC's stash menu opened\r\n");
+        x360_inventory_toggle();
+    } else if (m && m[MENU_OPEN] && !shop && *(unsigned char **)(m + MERCHANT_OWNER)) {
         if (inventory_open) x360_inventory_toggle();
         shop = *(unsigned char **)(m + MERCHANT_OWNER);
+        at_stash = 0;
+        left_column_for(0);
         x360_log(isa(shop, 127) ? "x360 shop: PC's merchant menu opened (the Gambler)\r\n"
                                 : "x360 shop: PC's merchant menu opened\r\n");
         x360_inventory_toggle();
@@ -3444,12 +3539,14 @@ void x360_shop_tick(void) {
         if (inv_menu && *(void **)(inv_menu + INVMENU_VIEWPORT)) show_doll_of(0, 0);
         hide_pc_ui(1);
     }
+    if (at_stash) m = st;
     if (shop && !(m && m[MENU_OPEN])) {
-        x360_log("x360 shop: PC's merchant menu closed\r\n");
+        x360_log(at_stash ? "x360 shop: PC's stash menu closed\r\n" : "x360 shop: PC's merchant menu closed\r\n");
         shop_closing = 1;
         if (inventory_open) x360_inventory_toggle();
         shop_closing = 0;
         shop = 0;
+        at_stash = 0;
     }
 }
 
@@ -3516,10 +3613,11 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
-    if ((pressed & 0x1000) && !panels[active_panel].is_shop) { act(); refresh_all(); }    /* A */
+    if ((pressed & 0x1000) && !panels[active_panel].is_shop) { act(); refresh_all(); }    /* A (a stash's column: ISA 134) */
     if ((pressed & 0x8000) && !shop) { drop(); refresh_all(); }                          /* Y */
     if (pressed & 0x4000) {                                                              /* X */
-        if (!shop) swap_to_pet();
+        if (at_stash) stash_swap();
+        else if (!shop) swap_to_pet();
         else if (panels[active_panel].is_shop) buy();
         else sell();
         refresh_all();

@@ -1611,3 +1611,45 @@ no pet commands; the merchant's column focused at the start.
   `Viewport::setDimensions` at the proxy to keep the main viewport (Z order 0) whole changed
   nothing (the hook was installed; it never saw the narrowed call). Also PC's first-time Tip for
   its inventory shows after closing (PC opened its inventory).
+
+**The stash and the shared stash** (`town/21`-`26`, `30`-`35`; `CStashMenuXenon`, vtable
+`0x8200149c`): the merchant's frame again, with the stash in the left column.
+- **PC's side.** CGameUI's `+0x2e4` is PC's `CStashMenu` (made at `0x56304c`, vtable `0xab8730`),
+  of the merchant's menu's base: owner `+0x28`, open flag `+0x30`. CGameUI gives it the chest the
+  hero used (the hero's `+0x290`) and opens it with PC's inventory (`0x5582c3` for the stash,
+  `0x55832e` for the shared one). Its inventory (`0x5aac2d`) is the chest's `+0x404`, or, for a
+  chest of type 170 (the shared stash), the game's own, `+0x8` of what `0x52dfe0` returns. The
+  same tick opens the 360's frame, and the same B closes both menus.
+- **The look** (`sub_82383630`, `sub_823832B8`, the catalog): the left column holds the stash, with
+  the merchant's images (`backroundbase_merchant`, `merchant_tab_*`). It is titled `title.stash`,
+  or `title.sharedstash` for a chest of type 170 (the 360's strings at `0x820D0EA0` and
+  `0x820D0EC4`), and that title is the frame's title too. The columns are 303 and 606 apart
+  (constants at `0x820aa8bc`), not 299 and 602. No column shows the gold, and no `buyandsell`
+  header shows. The stash's tabs are not dimmed (`sub_823654B8` skips a column whose owner is
+  of type 134). PC's chests are of other types, so here the test is the column of the stash
+  menu's owner.
+- **The buttons** (`sub_8236C8D0`, mode 5, before mode 4): in every column X is `act.swap`; A and Y
+  show no text.
+- **Input** (`sub_8236AD18`, `sub_8236AA48`, `sub_8236A810`):
+  - X in the stash's column takes the item: to the hero's bag, else the pet's, else to the ground
+    at the hero's feet (`sub_8236B8B0`, sound 18 for a bag).
+  - X in a bag stores the item in the stash (`sub_8236BA20`): sound 18, or sound 24 and the item
+    stays when it does not fit. PC's `pickupEquipment` places it, as for the pet's bag.
+  - A does nothing in the stash's column (owner of type 134). Y does nothing at a stash.
+- **The card** has no price (PC's tooltip, with no merchant menu open).
+- **A first showing.** The left column's `HiliteFrame` kept the area it had before its `TopFrame`
+  moved into the `ContainerFrame`. It was drawn at the screen's corner, and its texts (the
+  count, RB) were clipped, until a row showed in it. The merchant always has rows, so it never
+  showed this; the empty stash did. Fix: the column is moved by a pixel and back each time it is
+  shown, so CEGUI works the area out again.
+- **Each menu its own column.** The left column's filter and rows are kept separately for
+  the merchants and for the stashes, as the 360 has two menus. Before this, the stash's last
+  filter showed at the next merchant. *Not tested in game yet.*
+- **Tested** (GOG, three runs; the stash is the chest at the foot of the brazier in the town's
+  square, the shared stash the chest before the shed north of it):
+  - Both open, titled as the catalog, the counts PC's (`0/42`).
+  - X stored the equipped sword and took it back to the bag, in both stashes.
+  - LB/RB moved through the columns, and B closed both menus.
+  - Captures: `screens/gog/stash-1..6`, `shared-stash-1..6`.
+  - Open as at the merchant: PC's panels at the screen's sides, and PC's Tips after closing (its
+    inventory's and its stash's).
