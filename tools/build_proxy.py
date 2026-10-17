@@ -47,7 +47,7 @@ KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "C
 KERNEL32_EXE = {"GetCommandLineA": 0, "Sleep": 4, "ExitProcess": 4, "GetStdHandle": 4}
 USER32 = {"EnumWindows": 8, "GetWindowTextA": 12, "IsWindowVisible": 4, "IsIconic": 4, "GetClientRect": 8, "ShowWindow": 8, "SetForegroundWindow": 4, "ClientToScreen": 8, "SetCursorPos": 8, "SendInput": 12,
           "MapVirtualKeyA": 8, "GetCursorPos": 4, "ScreenToClient": 8, "GetForegroundWindow": 0,
-          "GetActiveWindow": 0, "PostMessageW": 16}
+          "GetActiveWindow": 0, "PostMessageW": 16, "GetAsyncKeyState": 4}
 # msvcr90's SEH handler, which clang-cl's __try/__except on x86 registers (cdecl: no @bytes).
 MSVCR90 = ["_except_handler3"]
 

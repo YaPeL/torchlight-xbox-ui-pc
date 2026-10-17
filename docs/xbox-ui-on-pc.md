@@ -1710,3 +1710,47 @@ of the gem goblins (`MERCHANT_COMBINER`, unit type `COMBINER`). His frame is the
   tooltip's call and put back after it, on the error path too.
 - **The card's place**: 22 pixels at 1080 into the column right of the focused one (the catalog:
   menus/08 and town/05); it was 11. Open: town/07's merchant card is 25.1 in, not explained.
+
+**The enchanter** (`town/06`; `CEnchantMenuXenon`, vtable `0x8200159c`): Goren, by the stall east
+of the brazier (`MERCHANT_ENCHANTER`).
+- **PC's side.** CGameUI's `+0x2dc` is PC's `CEnchantMenu` (made at `0x562fb0`, vtable
+  `0xab6c0c`). Its owner is at `+0x2c`, the character at `+0x30`, the open flag at `+0x38` and the
+  mode at `+0x90`. CGameUI opens it with PC's inventory, in the mode of the interaction: 0x15 is
+  the enchanter (`0x557e23`); 0x16, 0x19, 0x1a and 0x1b are its gem, shrine and heirloom pages,
+  left to PC for now and logged. Its command 9 (`0x57c900` → `0x57a800`) does the mode's work on
+  the item in the hero's slot 14 (`0x57aea4`): the price checked and taken, the enchantment or
+  the disenchant, and PC's sounds.
+- **The look** (`enchantermenu_xenon`, its 15 windows named by the table at `0x83385300`): the
+  panel takes the left column. The bags are at 300 and 603. LB and RB walk the bags only, and the
+  bag is focused at the start.
+- **The panel** (`sub_82360EC0`, for the bag's selected item):
+  - No item: no price, no chance, no prompt.
+  - An item that cannot be enchanted: `ench.cannot` (`0x820CF18C`), or `ench.max`
+    (`0x820CF128`) at the maximum, written red in the price's window. "The price of the
+    enchantment is" stays, and the chance is emptied.
+  - Else the price (`CEquipment::enchantPrice` *(OT)*, GOG `0x4b2590`, the 360's `sub_822ABAC8`),
+    red when it is over the hero's gold, and `ench.chance` (`0x820CF164`) ": N%". N is the
+    settings' base `+0x7c` plus the enchantments (`+0x2f8`) times `+0x98`, at most `+0x80` (GOG
+    `0x524d40`, the same offsets as the 360's). The Enchant prompt shows.
+  - What can be enchanted (`sub_822B5688`): identified, of type 8, 13, 17 or 24, under the
+    maximum (`+0x94`).
+  - The 360's red is text markup (`|cFFFF0000`…`|u`), which PC's CEGUI writes as text; here it is
+    the window's TextColour instead (first run: "FFFF0000300" on screen).
+- **The bar and A**: A `act.enchant` (`0x820CF118`) for an item that can be enchanted. A puts the
+  item into slot 14, runs PC's command and puts the result back in its place, an equipped slot
+  too.
+- **Tested** (GOG, runs 7-9): the frame, the red price (300 over 100 gold) and "Cannot enchant
+  item" red for a scroll (`screens/gog/enchanter-1`, `enchanter-cannot-1`). An enchantment
+  itself is untested (not enough gold). The card's item name is in the 360's SerifBig now (PC's
+  layout had FrizQuadrataBig there), in every screen.
+- **identify scroll's card text** (right click, left click) is the item's own text in PC's
+  data, left unchanged.
+
+**Clicks on PC's windows** (runs 8-9). A dialog of PC's (the guide NPC's, by the brazier) took no click on
+its Ok; Escape did not close it either. The click log (`x360 click:`, each left click's window
+from `System::getWindowContainingMouse`) showed the 360's HUD under the mouse:
+`x360hud_SkillSet1`, a 1920x1080 window. Every window of the 360's HUD and pet HUD now lets the
+mouse through (MousePassThroughEnabled). So do PC's own bottom HUD and pet HUD: they are kept
+transparent under them, and a click on the bar opened PC's skills (its SkillsButton) once the
+360's let it through. After that, clicks over the HUD reached the world. **Open:** the dialog's
+Ok was not clicked again after the fix (the guide NPC walked off).

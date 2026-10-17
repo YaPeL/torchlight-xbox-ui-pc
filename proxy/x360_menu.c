@@ -30,6 +30,7 @@ FARPROC x360_need(const char *name);
 __declspec(dllimport) HWND __stdcall GetActiveWindow(void);
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
 __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
+__declspec(dllimport) short __stdcall GetAsyncKeyState(int key);
 __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *name);
 __declspec(dllimport) void *__stdcall GetProcAddress(void *module, const char *name);
 
@@ -170,6 +171,21 @@ static void text(void *w, const char *utf8) {
 }
 
 static void show(void *w, int on) { if (w) set_visible(w, 0, on); }
+/* The HUD only shows: every window of it lets the mouse through to PC's (its SkillSet1 is a
+ * 1920x1080 window, and over a dialog of PC's it took the click on Ok: "x360 click: under the
+ * mouse x360hud_SkillSet1", docs 14). PC's own HUD under it, transparent, keeps its clicks. */
+static void pass_mouse(void *w) {
+    void *stack[256];
+    int sp = 0;
+    if (!w) return;
+    stack[sp++] = w;
+    while (sp > 0) {
+        void *v = stack[--sp];
+        unsigned c, n = child_count(v, 0);
+        prop(v, "MousePassThroughEnabled", "True");
+        for (c = 0; c < n && sp < 255; c++) stack[sp++] = child_at(v, 0, c);
+    }
+}
 static void show_children(void *w, int on) {
     unsigned i, n = w ? child_count(w, 0) : 0;
     for (i = 0; i < n; i++) show(child_at(w, 0, i), on);
@@ -643,6 +659,7 @@ static unsigned char *cur_owner;             /* the bag's owner: the hero, the p
 /* The transmuter (CCombineMenu, CGameUI's +0x2e0): its four places are slots of the hero's own
  * inventory, their numbers at the menu's +0x7c (read when it opens; GOG 0x569663). */
 static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
+static int at_enchant;                       /* PC's enchant menu is open in its enchanter's mode (shop: him) */
 static int tm_slot[4], tm_known;
 static unsigned char *tm_shop;               /* the transmuter unit while it is open */
 static int is_tm_slot(int slot) {
@@ -657,6 +674,38 @@ static void *owner_bag(unsigned char *owner) {
     return *(void **)(owner + GOG_INVENTORY);
 }
 static void *inventory(void) { return owner_bag(cur_owner ? cur_owner : hero); }
+
+/* ---- the enchanter's rules (the 360's sub_822B5688, sub_822ABAC8, sub_82360EC0) ----
+ * The game's settings (GOG 0x524d40, the 360's global at 0x835594C4 with the same offsets): the
+ * price per enchantment +0x78, the disenchant chance's base +0x7c and maximum +0x80, the
+ * enchantments' maximum +0x94, the chance added per enchantment +0x98 (PC fills them from
+ * ENCHANTER_PRICE_PER_ENCHANT, _DISENCHANT_CHANCE, _MAX_DISENCHANT_CHANCE, _MAX_ENCHANTS,
+ * _DISENCHANT_INCREASE: 0x525579-0x52577e). An item's enchantments are its +0x2f8 (the 360's
+ * +792); its price is CEquipment::enchantPrice *(OT)* (GOG 0x4b2590, the 360's sub_822ABAC8:
+ * PRICE_ENCHANT by level, plus the enchantments' share, at least 300). */
+#define GOG_SETTINGS 0x00524d40
+#define GOG_ENCHANT_PRICE 0x004b2590
+#define GOG_ENCHANTS 0x2f8
+typedef unsigned char *(__cdecl *settings_fn)(void);
+typedef int (__fastcall *enchant_price_fn)(void *item, void *edx);
+static int max_enchants(void) {
+    unsigned char *g = ((settings_fn)GOG_SETTINGS)();
+    return g ? *(int *)(g + 0x94) : 0;
+}
+/* Identified, a weapon, armour or trinket of the four kinds (ISA 8, 13, 17, 24), under the
+ * maximum of enchantments (sub_822B5688). */
+static int can_enchant(unsigned char *item) {
+    if (!item || !item[GOG_IDENTIFIED]) return 0;
+    if (!(isa(item, 8) || isa(item, 13) || isa(item, 17) || isa(item, 24))) return 0;
+    return *(int *)(item + GOG_ENCHANTS) < max_enchants();
+}
+static float disenchant_chance(unsigned char *item) {
+    unsigned char *g = ((settings_fn)GOG_SETTINGS)();
+    float v;
+    if (!g) return 0;
+    v = *(float *)(g + 0x7c) + (float)*(int *)(item + GOG_ENCHANTS) * *(float *)(g + 0x98);
+    return v > *(float *)(g + 0x80) ? *(float *)(g + 0x80) : v;
+}
 
 #define MAX_LIST 128
 static void *list[MAX_LIST];
@@ -897,9 +946,10 @@ static unsigned char *the_pet(void) {
 }
 /* The columns, left to right (LB and RB walk through them, round): the bag and the pet's bag; at a
  * merchant (CMerchantMenuXenon, sub_82378D30: its +0x10C, +0x108, +0x110) the merchant's first. */
-static int columns(void) { return shop ? 3 : 2; }
-static int column_panel(int c) { return shop ? (c ? c - 1 : 2) : c; }
-static int panel_column(int p) { return shop ? (p == 2 ? 0 : p + 1) : p; }
+/* At the enchanter the first column is his panel, not a list: the bags only are walked. */
+static int columns(void) { return shop && !at_enchant ? 3 : 2; }
+static int column_panel(int c) { return shop && !at_enchant ? (c ? c - 1 : 2) : c; }
+static int panel_column(int p) { return shop && !at_enchant ? (p == 2 ? 0 : p + 1) : p; }
 static void select_panel(int i) {
     int j;
     panels[active_panel].filter = filter;
@@ -1234,8 +1284,8 @@ static void refresh(void) {
         show(win("buttonB"), 0);
         /* At a merchant (sub_8236C5C0) the frame's header says what X does: act.buy in the
          * merchant's column (TextColour FFFBE469), act.sell in the others (FFFF4800). */
-        show(win("buyandsell"), shop && !at_stash && !at_transmute);
-        if (shop && !at_stash && !at_transmute) {
+        show(win("buyandsell"), shop && !at_stash && !at_transmute && !at_enchant);
+        if (shop && !at_stash && !at_transmute && !at_enchant) {
             text(win("buyandselltext"), x360_text(panels[active_panel].is_shop ? "act.buy" : "act.sell"));
             prop(win("buyandselltext"), "TextColour", panels[active_panel].is_shop ? "FFFBE469" : "FFFF4800");
         }
@@ -1259,7 +1309,11 @@ static void refresh(void) {
                 label[n++] = ')';
                 label[n] = 0;
             }
-            if (at_transmute) {
+            if (at_enchant) {
+                /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
+                 * else (the pressbutton's rule, sub_82360EC0). */
+                a = can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";
+            } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
                  * transmuter's own prompt under its rows. */
                 a = ""; x = x360_text("act.swap"); y = "";
@@ -1271,7 +1325,7 @@ static void refresh(void) {
             } else if (shop && !at_stash && !at_transmute && panels[active_panel].is_shop) {
                 /* The merchant's column: X buys, nothing else (sub_8236C8D0, ISA 41). */
                 a = ""; x = x360_text("act.buy"); y = "";
-            } else if (shop && !at_stash && !at_transmute) {
+            } else if (shop && !at_stash && !at_transmute && !at_enchant) {
                 /* A bag at a merchant (sub_8236C8D0 with the merchant's menu, mode 4): X sells; A
                  * identifies an unidentified item, unequips an equipped one, equips a weapon,
                  * armour or trinket (ISA 8, 13, 39; for an owner not of type 28, the pet, a
@@ -1351,6 +1405,30 @@ static void hide_info(void) { hide_card(0); hide_card(1); hide_card(2); info_ite
 /* Card i (0 the item's, 1 and 2 the comparison's) filled by PC for item, compared against cards
  * cmp1 and cmp2, moved onto the sheet; its height in pixels, 0 if none. */
 #define GOG_MERCHANT_MENU_UI 0x2d8         /* CGameUI's CMerchantMenu (the shop's section below) */
+/* The first window under w whose name ends with suffix (PC's tooltips are made with a numbered
+ * prefix: "gui__3497ItemName"). */
+static void *descendant_ending(void *w, const char *suffix) {
+    typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+    static name_fn gn;
+    void *stack[96];
+    int sp = 0;
+    unsigned n = length(suffix);
+    if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!w || !gn) return 0;
+    stack[sp++] = w;
+    while (sp > 0) {
+        void *v = stack[--sp];
+        const char *name = c_str(gn(v, 0), 0);
+        unsigned len = length(name), c, nc = child_count(v, 0);
+        if (len >= n) {
+            unsigned i = 0;
+            while (i < n && name[len - n + i] == suffix[i]) i++;
+            if (i == n && v != w) return v;
+        }
+        for (c = 0; c < nc && sp < 95; c++) stack[sp++] = child_at(v, 0, c);
+    }
+    return 0;
+}
 static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     void *root, *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
     unsigned char *t = card(i);
@@ -1386,6 +1464,10 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     if (saved31 >= 0) (*(unsigned char **)(ui + GOG_MERCHANT_MENU_UI))[0x31] = (unsigned char)saved31;
     root = card_root(i);
     if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
+    /* The 360's card names the item in its SerifBig (the catalog's 103ItemName); PC's layout has
+     * FrizQuadrataBig there. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
+     * the 360's already. */
+    prop(descendant_ending(root, "ItemName"), "Font", "X360_SerifBig");
     add_child(sheet, 0, root);
     set_visible(root, 0, 1);
     read_prop(root, "UnifiedAreaRect", value, sizeof value);
@@ -1642,6 +1724,61 @@ static void update_info(void) {
 
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
  * layout's "Your pet has gone to town." when there is no pet. */
+/* ---- the enchanter's panel (enchantermenu_xenon, the frame's first column: town/06) ----
+ * sub_82360EC0, for the item selected in the focused bag (the 360's +292):
+ * - none: no price, no chance, no Enchant prompt;
+ * - its enchantments at the maximum: the price red "Maximum enchantments reached" (0x820CF128),
+ *   (the 360's red is markup in the text; here the window's TextColour),
+ *   no chance, no prompt; one he cannot enchant: red "Cannot enchant item" (0x820CF18C);
+ * - else the price (sub_822ABAC8), red when it is over the hero's gold, the disenchant chance
+ *   "Disenchant chance" (0x820CF164) ": " N "%" (the settings' base and per-enchantment chance,
+ *   at most their maximum), and the prompt.
+ * The result line is cleared each time; the title is the enchanter's (title.enchanter). Its
+ * other pages (getsocket, destroysocket, retire, enchantshrine) stay hidden. */
+#define ENCH_PREFIX "x360ench_"
+static void *ench_root;
+static void ench_fill(unsigned char *item) {
+    char buf[160], *p;
+    show(win_of(ENCH_PREFIX, "enchant"), 1);
+    show(win_of(ENCH_PREFIX, "getsocket"), 0);
+    show(win_of(ENCH_PREFIX, "destroysocket"), 0);
+    show(win_of(ENCH_PREFIX, "retire"), 0);
+    show(win_of(ENCH_PREFIX, "enchantshrine"), 0);
+    text(win_of(ENCH_PREFIX, "title"), x360_text("title.enchanter"));
+    text(win_of(ENCH_PREFIX, "resultofenchant"), "");
+    if (!item) {
+        text(win_of(ENCH_PREFIX, "priceofenchantment"), "");
+        text(win_of(ENCH_PREFIX, "disenchantChance"), "");
+        show(win_of(ENCH_PREFIX, "pressbutton"), 0);
+        return;
+    }
+    if (!can_enchant(item)) {
+        int at_max = item[GOG_IDENTIFIED] && *(int *)(item + GOG_ENCHANTS) >= max_enchants();
+        prop(win_of(ENCH_PREFIX, "priceofenchantment"), "TextColour", "FFFF0000");
+        text(win_of(ENCH_PREFIX, "priceofenchantment"), x360_text(at_max ? "ench.max" : "ench.cannot"));
+        text(win_of(ENCH_PREFIX, "disenchantChance"), "");
+        show(win_of(ENCH_PREFIX, "pressbutton"), 0);
+        return;
+    }
+    {
+        int price = ((enchant_price_fn)GOG_ENCHANT_PRICE)(item, 0);
+        unsigned char *owner = hero;
+        while (*(unsigned char **)(owner + GOG_OWNER)) owner = *(unsigned char **)(owner + GOG_OWNER);
+        /* The 360's red is the text's "|cFFFF0000" .. "|u"; PC's CEGUI has no such markup, so
+         * the window's colour (its layout's FFF7DF09 otherwise). */
+        p = put_int(buf, price);
+        *p = 0;
+        prop(win_of(ENCH_PREFIX, "priceofenchantment"), "TextColour",
+             *(int *)(owner + GOG_GOLD) < price ? "FFFF0000" : "FFF7DF09");
+        text(win_of(ENCH_PREFIX, "priceofenchantment"), buf);
+    }
+    copy(buf, sizeof buf, x360_text("ench.chance"), ": ");
+    p = put_int(buf + length(buf), (int)(disenchant_chance(item) + 0.5f));
+    *p++ = '%'; *p = 0;
+    text(win_of(ENCH_PREFIX, "disenchantChance"), buf);
+    show(win_of(ENCH_PREFIX, "pressbutton"), 1);
+}
+
 static void refresh_all(void) {
     int c;
     for (c = 0; c < columns(); c++) {
@@ -1654,6 +1791,7 @@ static void refresh_all(void) {
     }
     select_panel(focus_panel);
     if (cur_owner) refresh();
+    if (at_enchant) ench_fill(list_count ? (unsigned char *)list[selected[filter]] : 0);
     fill_character();
     text(win_of(MASTER, "itemcomparetext"), x360_text(compare_on ? "compare.disable" : "compare.enable"));
     update_info();
@@ -1949,6 +2087,18 @@ static void stash_swap(void) {
  * X in the transmuter's column takes the item back as from a stash (sub_8236B8B0). Y in any
  * column transmutes (sub_8236A810 -> sub_82379058): PC's transmute, CCombineMenu's command 9
  * (its virtual +0x30, 0x56a490 -> 0x569550). */
+/* The enchanter's: CEnchantMenu (CGameUI's +0x2dc, vtable 0xab6c0c, made at 0x562fb0), its owner
+ * +0x2c, the character +0x30, open +0x38 (its virtual +0x10, 0x575950), its mode +0x90 (the
+ * interaction CGameUI opened it for: 0x15 the enchanter, 0x557e23; the others its gem and
+ * heirloom pages), opened with PC's inventory. Its command 9 (virtual +0x30, 0x57c900 ->
+ * 0x57a800) does the mode's work on the item in the hero's slot 14 (0x57aea4): for 0x15 the
+ * price checked and taken, the enchantment or the disenchant, PC's sounds. */
+#define GOG_ENCHANT_MENU 0x2dc
+#define ENCHANT_OWNER 0x2c
+#define ENCHANT_OPEN 0x38
+#define ENCHANT_MODE 0x90
+#define ENCHANT_SLOT 14
+#define GOG_ENCHANT_ACT 0x0057a800
 #define GOG_COMBINE_MENU 0x2e0
 #define GOG_ITEM_AT_SLOT 0x004e7890          /* CInventory: the item in a slot, or 0 */
 #define GOG_PUT_AT_SLOT 0x004e9480           /* CInventory: the item into a slot (item, slot, 1) */
@@ -1989,6 +2139,34 @@ static void transmute_swap(void) {
     }
     shop_sound(18);
     x360_log("x360 transmuter: X: placed\r\n");
+}
+
+/* A at the enchanter: the selected item into the hero's slot 14, PC's own enchanting there
+ * (CEnchantMenu's command 9), and back to its place (a bag's slot, an equipped one, the pet's). */
+static void enchant(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item, *got;
+    void *bag = owner_bag(hero), *from = inventory();
+    int slot;
+    if (!m || !bag || !from || !list_count) return;
+    item = (unsigned char *)list[selected[filter]];
+    slot = list_slot[selected[filter]];
+    if (!can_enchant(item)) { refuse(); x360_log("x360 enchanter: A: cannot enchant\r\n"); return; }
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 enchanter: A: slot 14 is taken\r\n"); return; }
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(from, 0, item);
+    ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        ((put_at_fn)GOG_PUT_AT_SLOT)(from, 0, item, slot, 1);
+        x360_log("x360 enchanter: A: not placed\r\n");
+        return;
+    }
+    ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    got = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT);
+    if (got) {
+        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, got);
+        ((put_at_fn)GOG_PUT_AT_SLOT)(from, 0, got, slot, 1);
+        if (((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot) != got) ((pickup_fn)GOG_PICKUP_EQUIPMENT)(from, 0, got, 1);
+    }
+    x360_log(got ? "x360 enchanter: A: done\r\n" : "x360 enchanter: A: done, the item is gone\r\n");
 }
 
 static void transmute(void) {
@@ -2216,7 +2394,7 @@ static void show_doll(int on) {
 static void *hud_root, *pet_hud_root;
 static int shop_closing;
 static int is_ours(void *w) {
-    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == character_root ||
+    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == ench_root || w == character_root ||
                  w == card_root(0) || w == card_root(1) || w == card_root(2));   /* the Info cards, PC's tooltips */
 }
 
@@ -2242,7 +2420,7 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
                                                : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
@@ -2278,6 +2456,8 @@ void x360_inventory_toggle(void) {
         panels[1].root = inventory_root ? load("media/ui/x360/inventorymenu_xenon.layout", PET_PREFIX) : 0;
         /* The merchant's column at a shop: the same layout, in the character's column. */
         panels[2].root = inventory_root ? load("media/ui/x360/inventorymenu_xenon.layout", SHOP_PREFIX) : 0;
+        /* The enchanter's panel in the same place (town/06: its column at the frame's left). */
+        ench_root = inventory_root ? load("media/ui/x360/enchantermenu_xenon.layout", ENCH_PREFIX) : 0;
         character_root = inventory_root ? load("media/ui/x360/charactermenu_xenon.layout", CHR_PREFIX) : 0;
         if (!inventory_root) inventory_failed = 1;
         else {
@@ -2294,6 +2474,7 @@ void x360_inventory_toggle(void) {
             scale_tree(inventory_root, k, 0);
             if (panels[1].root) scale_tree(panels[1].root, k, 0);
             if (panels[2].root) scale_tree(panels[2].root, k, 0);
+            if (ench_root) scale_tree(ench_root, k, 0);
             if (character_root) scale_tree(character_root, k, 0);
             if (character_root) unclip_tree(character_root, 0);
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
@@ -2317,6 +2498,8 @@ void x360_inventory_toggle(void) {
                  * at 1080, the character's column). */
                 top = panels[2].root ? win_of(SHOP_PREFIX, "TopFrame") : 0;
                 if (container && top) add_child(container, 0, top);
+                top = ench_root ? win_of(ENCH_PREFIX, "i_2631") : 0;
+                if (container && top) add_child(container, 0, top);
             }
             /* The pages' names (the 360's strings, its image near 0x820d17d0): the page in the
              * middle, the one LT goes to on the left, RT's on the right (the catalog's menus/08 to
@@ -2339,7 +2522,7 @@ void x360_inventory_toggle(void) {
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
         /* At the transmuter the bag is focused (town/05). */
-        if (shop) { if (page) set_page(0); focus_panel = at_transmute ? 0 : 2; }
+        if (shop) { if (page) set_page(0); focus_panel = at_transmute || at_enchant ? 0 : 2; }
         else if (focus_panel == 2) focus_panel = 0;
         select_panel(0);
         dump();
@@ -2372,12 +2555,14 @@ void x360_inventory_toggle(void) {
             shop_shifted = want_shop;
         }
     }
-    if (panels[2].root) set_visible(panels[2].root, 0, inventory_open && shop);
-    if (panels[2].root) show(win_of(SHOP_PREFIX, "TopFrame"), inventory_open && shop);
+    if (panels[2].root) set_visible(panels[2].root, 0, inventory_open && shop && !at_enchant);
+    if (panels[2].root) show(win_of(SHOP_PREFIX, "TopFrame"), inventory_open && shop && !at_enchant);
+    if (ench_root) set_visible(ench_root, 0, inventory_open && at_enchant);
+    if (ench_root) show(win_of(ENCH_PREFIX, "i_2631"), inventory_open && at_enchant);
     /* Its first showing kept its frame's area from before it was moved into the ContainerFrame
      * (the stash's first opening: HiliteFrame drawn at the screen's corner, its texts clipped);
      * moving the column there and back has CEGUI work it out again. */
-    if (panels[2].root && inventory_open && shop) {
+    if (panels[2].root && inventory_open && shop && !at_enchant) {
         move_by(win_of(SHOP_PREFIX, "TopFrame"), 1.0f, 0);
         move_by(win_of(SHOP_PREFIX, "TopFrame"), -1.0f, 0);
     }
@@ -3633,14 +3818,15 @@ static void pc_inventory_close(void) {
 }
 
 static void shop_close(void) {
-    unsigned char *m = ui ? *(unsigned char **)(ui + (at_transmute ? GOG_COMBINE_MENU : at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
-    int open = m && (at_transmute ? m[COMBINE_OPEN] : m[MENU_OPEN]);
+    unsigned char *m = ui ? *(unsigned char **)(ui + (at_enchant ? GOG_ENCHANT_MENU : at_transmute ? GOG_COMBINE_MENU : at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
+    int open = m && (at_enchant ? m[ENCHANT_OPEN] : at_transmute ? m[COMBINE_OPEN] : m[MENU_OPEN]);
     shop_closing = 1;
     if (inventory_open) x360_inventory_toggle();
     shop_closing = 0;
     shop = 0;
     at_stash = 0;
     at_transmute = 0;
+    at_enchant = 0;
     tm_shop = 0;
     if (open) ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
     pc_inventory_close();
@@ -3662,13 +3848,56 @@ static void left_column_for(int stash) {
     for (j = 0; j < 6; j++) { panels[2].selected[j] = kept[kind].selected[j]; panels[2].top[j] = kept[kind].top[j]; }
 }
 
+/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window CEGUI
+ * has under the mouse (System::getWindowContainingMouse), its name and its parents'. */
+static void log_click_window(void) {
+    typedef void *(__fastcall *under_fn)(const void *self, void *edx);
+    typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    static under_fn under; static name_fn gn; static parent_fn gp;
+    static int was_down;
+    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+    void *sys, *w;
+    int depth = 0;
+    if (down == was_down) return;
+    was_down = down;
+    if (!down) return;
+    if (!under) under = (under_fn)need("?getWindowContainingMouse@System@CEGUI@@QBEPAVWindow@2@XZ");
+    if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    sys = system_ptr();
+    if (!under || !gn || !gp || !sys) return;
+    w = under(sys, 0);
+    x360_log("x360 click: under the mouse");
+    for (; w && depth < 6; w = gp(w, 0), depth++) { x360_log(depth ? " < " : " "); x360_log(c_str(gn(w, 0), 0)); }
+    if (!depth) x360_log(" nothing");
+    x360_log("\r\n");
+}
+
 void x360_shop_tick(void) {
-    unsigned char *m, *st, *tm;
+    log_click_window();
+    unsigned char *m, *st, *tm, *en;
     if (!find_world() || !ui) return;
     m = *(unsigned char **)(ui + GOG_MERCHANT_MENU);
     st = *(unsigned char **)(ui + GOG_STASH_MENU);
     tm = *(unsigned char **)(ui + GOG_COMBINE_MENU);
-    if (!shop && tm && tm[COMBINE_OPEN] && *(unsigned char **)(tm + COMBINE_OWNER)) {
+    en = *(unsigned char **)(ui + GOG_ENCHANT_MENU);
+    if (!shop && en && en[ENCHANT_OPEN] && *(unsigned char **)(en + ENCHANT_OWNER)) {
+        static int logged_mode;
+        int mode = *(int *)(en + ENCHANT_MODE);
+        if (mode == 0x15) {
+            if (inventory_open) x360_inventory_toggle();
+            shop = *(unsigned char **)(en + ENCHANT_OWNER);
+            at_enchant = 1;
+            x360_log("x360 shop: PC's enchant menu opened (the enchanter)\r\n");
+            x360_inventory_toggle();
+        } else if (mode != logged_mode) {
+            logged_mode = mode;
+            x360_log("x360 shop: PC's enchant menu opened in mode ");
+            x360_log_num(mode);
+            x360_log(", left to PC\r\n");
+        }
+    } else if (!shop && tm && tm[COMBINE_OPEN] && *(unsigned char **)(tm + COMBINE_OWNER)) {
         int j;
         if (inventory_open) x360_inventory_toggle();
         for (j = 0; j < 4; j++) tm_slot[j] = ((int *)(tm + COMBINE_SLOTS))[j];
@@ -3701,8 +3930,8 @@ void x360_shop_tick(void) {
         hide_pc_ui(1);
     }
     if (at_stash) m = st;
-    if (shop && (at_transmute ? !(tm && tm[COMBINE_OPEN]) : !(m && m[MENU_OPEN]))) {
-        x360_log(at_transmute ? "x360 shop: PC's transmuter menu closed\r\n"
+    if (shop && (at_enchant ? !(en && en[ENCHANT_OPEN]) : at_transmute ? !(tm && tm[COMBINE_OPEN]) : !(m && m[MENU_OPEN]))) {
+        x360_log(at_enchant ? "x360 shop: PC's enchant menu closed\r\n" : at_transmute ? "x360 shop: PC's transmuter menu closed\r\n"
                  : at_stash ? "x360 shop: PC's stash menu closed\r\n" : "x360 shop: PC's merchant menu closed\r\n");
         shop_closing = 1;
         if (inventory_open) x360_inventory_toggle();
@@ -3710,6 +3939,7 @@ void x360_shop_tick(void) {
         shop = 0;
         at_stash = 0;
         at_transmute = 0;
+        at_enchant = 0;
         tm_shop = 0;
     }
 }
@@ -3785,10 +4015,11 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
     /* At the transmuter (mode 5) A shows nothing and is not done here; Y transmutes. */
-    if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
+    if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
+    else if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
     if ((pressed & 0x8000) && at_transmute) { transmute(); refresh_all(); }               /* Y */
     else if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }       /* Y (a stash: mode 7/8) */
-    if (pressed & 0x4000) {                                                              /* X */
+    if ((pressed & 0x4000) && !at_enchant) {                                             /* X (none at the enchanter) */
         if (at_transmute) transmute_swap();
         else if (at_stash) stash_swap();
         else if (!shop) swap_to_pet();
@@ -4210,14 +4441,17 @@ static void hud_tick(void) {
         if (!hud_root) { failed = 1; return; }
         if (!k) k = (w && GetClientRect(w, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
         scale_tree(hud_root, k, 0);
+        pass_mouse(hud_root);
         x360_log("x360 hud: shown, PC's bottom HUD transparent\r\n");
     }
     /* PC shows its bottom HUD again each frame, so it is made transparent instead (its children
      * inherit the alpha); PC still updates it, and its bars are read from it. */
     {
         void *p = pc_window("PlayerHealthRoot");
-        if (p != pc_hud_root) { pc_hud_root = p; prop(pc_hud_root, "Alpha", "0"); }
-        if (!faded) { prop(pc_hud_root, "Alpha", "0"); faded = 1; }
+        /* Unseen, it takes no click either: with the 360's HUD letting the mouse through, a click
+         * on the bottom bar opened PC's skills (its SkillsButton under the mouse). */
+        if (p != pc_hud_root) { pc_hud_root = p; prop(pc_hud_root, "Alpha", "0"); pass_mouse(pc_hud_root); }
+        if (!faded) { prop(pc_hud_root, "Alpha", "0"); pass_mouse(pc_hud_root); faded = 1; }
     }
     hud_stage = "bars";
     show(hud_root, 1);
@@ -4257,9 +4491,9 @@ static void hud_tick(void) {
         void *p = pc_window("PetHud");
         if (p && !pet_root) {
             pet_root = load("media/ui/x360/pethud.layout", PETHUD_PREFIX);
-            if (pet_root) { scale_tree(pet_root, k, 0); pet_hud_root = pet_root; }
+            if (pet_root) { scale_tree(pet_root, k, 0); pass_mouse(pet_root); pet_hud_root = pet_root; }
         }
-        if (p != pc_pet) { pc_pet = p; if (pc_pet) prop(pc_pet, "Alpha", "0"); }
+        if (p != pc_pet) { pc_pet = p; if (pc_pet) { prop(pc_pet, "Alpha", "0"); pass_mouse(pc_pet); } }
         if (!pc_pet && pet_root) show(pet_root, 0);
         if (pet_root && vis && pc_pet) {
             show(pet_root, vis(pc_pet, 0, 0));
