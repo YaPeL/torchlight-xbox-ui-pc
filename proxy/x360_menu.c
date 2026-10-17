@@ -4571,6 +4571,8 @@ static void hud_tick(void) {
  * value of the running game not measured yet: x360_ui.ini's dialog_fast_scroll, 4 by default). */
 int x360_dialog_fast_scroll = 4;
 int x360_dialog_pc;                          /* x360_ui.ini dialog_pc=1: PC's dialog left visible (a diagnosis) */
+int x360_dialog_markup = 0;                  /* x360_ui.ini dialog_markup=0: the colour markup taken out */
+char x360_dialog_font[32];                   /* x360_ui.ini dialog_font=NAME: the text's font */
 #define QD_PREFIX "x360qd_"
 static void *qd_root, *pc_qd_text_frame;
 static char pc_qd_prefix[48];
@@ -4704,7 +4706,7 @@ static void dialog_tick(void) {
             for (i = 0; v[i]; i++) if ((v[i] & 0xc0) != 0x80) chars++;
             /* The 360's colour markup (|cAARRGGBB .. |u) is drawn as text by this CEGUI's
              * StaticText: taken out, the words kept (their colour is open, docs 14). */
-            {
+            if (!x360_dialog_markup) {
                 unsigned r = 0, w2 = 0;
                 while (v[r]) {
                     if (v[r] == '|' && v[r + 1] == 'c') { unsigned j = 2; while (j < 10 && v[r + j]) j++; r += j; continue; }
@@ -4713,6 +4715,7 @@ static void dialog_tick(void) {
                 }
                 v[w2] = 0;
             }
+            if (x360_dialog_font[0]) prop(win_of(QD_PREFIX, "DialogText"), "Font", x360_dialog_font);
             text(win_of(QD_PREFIX, "DialogText"), v);
             qd_T = (float)chars * 0.015f;
             if (qd_T < 5.0f) qd_T = 5.0f;

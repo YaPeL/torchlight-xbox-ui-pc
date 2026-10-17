@@ -197,6 +197,8 @@ static void read_config(void) {
         if (starts(line, "pad_face=0")) pad_old_face = 1;
         if (starts(line, "pad_log=1")) pad_log = 1;
         if (starts(line, "dialog_pc=1")) { extern int x360_dialog_pc; x360_dialog_pc = 1; }
+        if (starts(line, "dialog_markup=1")) { extern int x360_dialog_markup; x360_dialog_markup = 1; }
+        if (starts(line, "dialog_font=") && length(line + 12) < 32) { extern char x360_dialog_font[32]; memcpy(x360_dialog_font, line + 12, length(line + 12) + 1); }
         if (starts(line, "dialog_fast_scroll=")) {
             extern int x360_dialog_fast_scroll;
             const char *v = line + 19;

@@ -1805,9 +1805,13 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   inventory first opened; a dialog before that had its text 1.3 times wider (the review). They
   are set when the HUD loads and when a dialog shows now. The dialog's lines then break at the
   catalog's words (`screens/gog/dialog-open` against town/13).
-- **The colour markup.** The 360's text marks names with `|cAARRGGBB`…`|u`, which this CEGUI's
-  StaticText writes as text; it is taken out, the words kept. **Open:** the names' colour (PC's
-  own dialog text widget may draw it).
+- **The colour markup.** The 360's text marks names with `|cAARRGGBB`…`|u` (a name in gold).
+  PC's own dialog draws it (`dialog_pc=1` in `x360_ui.ini` leaves PC's dialog visible: a
+  diagnosis). With the same text, the window drawn in PC's SerifBig (`dialog_font=SerifBig`)
+  showed the name in gold, and in the converted X360_SerifBig the markup came out as text. But
+  PC's font breaks the lines elsewhere than the 360 (its letters narrower), so the 360's font is
+  kept and the markup taken out (`dialog_markup=1` keeps it). **Open, high priority:** the names'
+  gold with the 360's font; why the converted fonts do not take the markup.
 - **Open:** the reward item's icon (the slot shows empty; PC draws its icons in windows of its
   own, `QuestRewardSockets`).
 - **Tested** (GOG, runs 15-19; the user opened the dialogs with the mouse):
