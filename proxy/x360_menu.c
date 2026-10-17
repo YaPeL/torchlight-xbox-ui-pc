@@ -236,6 +236,62 @@ static void write_rect(char *out, const float v[8]) {
     *p = 0;
 }
 
+/* The size of an image named by an Image property's value ("set:NAME image:IMAGE"), from CEGUI's
+ * own imageset (Image::getWidth, getHeight); 0 if it is not defined. */
+static int image_size(const char *value, float *w, float *h) {
+    typedef void *(__fastcall *get_set_fn)(const void *mgr, void *edx, const void *name);
+    typedef const void *(__fastcall *get_image_fn)(const void *set, void *edx, const void *name);
+    typedef float (__fastcall *image_float_fn)(const void *image, void *edx);
+    static singleton_fn manager;
+    static get_set_fn get_set;
+    static get_image_fn get_image;
+    static image_float_fn width, height;
+    char set[64], image[64];
+    const char *p;
+    unsigned n;
+    object a, b;
+    int ok = 0;
+    if (!manager) {
+        manager = (singleton_fn)need("?getSingletonPtr@?$Singleton@VImagesetManager@CEGUI@@@CEGUI@@SAPAVImagesetManager@2@XZ");
+        get_set = (get_set_fn)need("?getImageset@ImagesetManager@CEGUI@@QBEPAVImageset@2@ABVString@2@@Z");
+        get_image = (get_image_fn)need("?getImage@Imageset@CEGUI@@QBEABVImage@2@ABVString@2@@Z");
+        width = (image_float_fn)need("?getWidth@Image@CEGUI@@QBEMXZ");
+        height = (image_float_fn)need("?getHeight@Image@CEGUI@@QBEMXZ");
+    }
+    if (!manager || !get_set || !get_image || !width || !height || !manager()) return 0;
+    set[0] = image[0] = 0;
+    for (p = value; *p; p++) {
+        if (p[0] == 's' && p[1] == 'e' && p[2] == 't' && p[3] == ':') {
+            for (n = 0; p[4 + n] && p[4 + n] != ' ' && n + 1 < sizeof set; n++) set[n] = p[4 + n];
+            set[n] = 0;
+        }
+        if (p[0] == 'i' && p[1] == 'm' && p[2] == 'a' && p[3] == 'g' && p[4] == 'e' && p[5] == ':') {
+            for (n = 0; p[6 + n] && p[6 + n] != ' ' && n + 1 < sizeof image; n++) image[n] = p[6 + n];
+            image[n] = 0;
+        }
+    }
+    if (!set[0] || !image[0]) return 0;
+    string_ctor(&a, 0, set);
+    string_ctor(&b, 0, image);
+    __try {
+        const void *img = get_image(get_set(manager(), 0, &a), 0, &b);
+        *w = width(img, 0);
+        *h = height(img, 0);
+        ok = *w > 0 && *h > 0;
+    } __except (1) { ok = 0; }
+    string_dtor(&b, 0);
+    string_dtor(&a, 0);
+    return ok;
+}
+
+/* A window sized w x h (pixels), its place left to its alignments. */
+static void set_size(void *w, float left, float top, float width, float height) {
+    float v[8] = {0, left, 0, top, 0, left + width, 0, top + height};
+    char value[128];
+    write_rect(value, v);
+    prop(w, "UnifiedAreaRect", value);
+}
+
 /* Every window's pixel offsets times k (the layouts are drawn for 720 rows). */
 static void scale_tree(void *w, float k, int depth) {
     char value[128];
@@ -874,25 +930,100 @@ static void fill_details(int row, unsigned char *item) {
     }
 }
 
+/* The row's icon at its image's proportions, as the 360's row fill (sub_82368980, 0x82368D14):
+ * the image's width and height (W, H) times s = min(the frame's height / W, its width / H), the
+ * frame being the row's QualityBk; s halved for a unit of type 0x78; centred in the frame (the
+ * catalog's Slot0: 36 x 54 of a 54 x 80 frame, Centre and Centre). */
+#define TYPE_HALF_ICON 0x78
+static void row_icon_size(int row, unsigned char *item, const char *image) {
+    char name[48], value[128];
+    float v[8], w, h, fw, fh, s;
+    void *slot;
+    row_name(name, "QualityBk", row);
+    read_prop(win(name), "UnifiedAreaRect", value, sizeof value);
+    row_name(name, "Slot", row);
+    slot = win(name);
+    if (!slot || !parse_rect(value, v) || !image_size(image, &w, &h)) return;
+    fw = v[5] - v[1];
+    fh = v[7] - v[3];
+    s = fh / w < fw / h ? fh / w : fw / h;
+    if (isa(item, TYPE_HALF_ICON)) s *= 0.5f;
+    set_size(slot, 0, 0, w * s, h * s);
+    prop(slot, "HorizontalAlignment", "Centre");
+    prop(slot, "VerticalAlignment", "Centre");
+}
+
+/* The bar's buttons as the 360's sub_8236E888 places them: each takes its icon's width plus its
+ * text's (A and X also 2.5); a gap of max(0, (0.9 x the tray's width - their sum) x 0.15) after
+ * each one with a text; the group centred (x = half the gap - half the sum + 5): A, then Y, then
+ * X, each at the widths of the ones before it. Its constants are pixels at 720 rows, so they are
+ * scaled here by height / 720. */
+static void place_buttons(const char *a, const char *y, const char *x) {
+    void *ba = win("buttonA"), *by = win("buttonY"), *bx = win("buttonX"), *tray = win("buttontray");
+    char value[128];
+    float va[8], vy[8], vx[8], vt[8], icon, s = k * 768.0f / 720.0f, wa, wy, wx, gap, sum, left;
+    if (!ba || !by || !bx || !tray) return;
+    read_prop(tray, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, vt)) return;
+    read_prop(ba, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, va)) return;
+    read_prop(by, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, vy)) return;
+    read_prop(bx, "UnifiedAreaRect", value, sizeof value);
+    if (!parse_rect(value, vx)) return;
+    icon = va[5] - va[1];
+    wa = text_width(win("buttonAtext"), a) + 2.5f * s + icon;
+    wx = text_width(win("buttonXtext"), x) + 2.5f * s + icon;
+    wy = text_width(win("buttonYtext"), y) + icon;
+    gap = (0.9f * (vt[5] - vt[1]) - (wy + wx + wa)) * 0.15f;
+    if (gap < 0) gap = 0;
+    if (a[0]) wa += gap;
+    if (y[0]) wy += gap;
+    if (x[0]) wx += gap;
+    sum = wa + wy + wx;
+    left = gap * 0.5f - sum * 0.5f + 5.0f * s;
+    va[1] = left; va[5] = left + icon;
+    vy[1] = left + wa; vy[5] = vy[1] + icon;
+    vx[1] = left + wa + wy; vx[5] = vx[1] + icon;
+    write_rect(value, va); prop(ba, "UnifiedAreaRect", value);
+    write_rect(value, vy); prop(by, "UnifiedAreaRect", value);
+    write_rect(value, vx); prop(bx, "UnifiedAreaRect", value);
+}
+
 static void refresh(void) {
-    int row, i;
+    int row, i, counts[6];
     char name[48], buf[200];
+    for (i = 0; i < 6; i++) { build_list(i); counts[i] = list_count; }
     build_list(filter);
     if (selected[filter] >= list_count) selected[filter] = list_count ? list_count - 1 : 0;
     if (selected[filter] < top[filter]) top[filter] = selected[filter];
     if (selected[filter] >= top[filter] + ROWS) top[filter] = selected[filter] - ROWS + 1;
     if (top[filter] < 0) top[filter] = 0;
+    /* The focused column only has its "_rollover" images: its frame, its border and its filter's
+     * tab (the catalog: menus/08-inventory's bag against the pet's, town/21-stash-1's columns). */
     for (i = 0; i < 6; i++) {
         char image[64];
         copy(image, sizeof image, "set:X360_widgets2 image:", tab_image[i]);
-        if (i == filter) copy(image + length(image), sizeof image - length(image), "_rollover", 0);
+        if (i == filter && active_panel == focus_panel)
+            copy(image + length(image), sizeof image - length(image), "_rollover", 0);
         prop(win(tab_window[i]), "Image", image);
     }
+    /* A column that is not the player's (the pet's; the 360's ISA 134 test) dims the tabs of the
+     * filters it has nothing in to 0.25, but the focused column's own filter (sub_823654B8,
+     * 0x82365948: the tab's count at its entry's +116). */
+    for (i = 0; i < 6; i++)
+        prop(win(tab_window[i]), "Alpha", panels[active_panel].is_pet && !counts[i] &&
+                                          !(i == filter && active_panel == focus_panel) ? "0.25" : "1");
+    prop(win("TopFrame"), "Image", active_panel == focus_panel ? "set:X360_widgets2 image:backroundbase_inventory_rollover"
+                                                               : "set:X360_widgets2 image:backroundbase_inventory");
+    prop(win("HiliteFrame"), "Image", active_panel == focus_panel ? "set:X360_widgets image:framea_rollover"
+                                                                  : "set:X360_widgets image:framea");
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
     text(win("filtername"), filter_name[filter]);
     text(win("characterName"), panels[active_panel].is_pet ? "Pet Bag" : "My Bag");
-    show(win("rightbumper"), 1);
+    /* RB on the focused bag only (the catalog: the bag, the pet's bag, the stash's columns). */
+    show(win("rightbumper"), active_panel == focus_panel);
     show(win("transmutor"), 0);
     show(win("petintown"), 0);
     /* The 360 writes the owner's gold and "items/capacity" over the layout's samples ("12423",
@@ -934,6 +1065,7 @@ static void refresh(void) {
         row_name(name, "SlotText", row); text(win(name), buf);
         item_icon((unsigned char *)list[idx], buf, sizeof buf);
         row_name(name, "Slot", row); prop(win(name), "Image", buf);
+        row_icon_size(row, (unsigned char *)list[idx], buf);
         row_name(name, "QualityBk", row); prop(win(name), "Image", quality_image((unsigned char *)list[idx]));
         row_name(name, "SlotText", row); show(win(name), 1);
         row_name(name, "Equipped", row); show(win(name), list_slot[idx] < EQUIPPED_SLOTS);
@@ -995,30 +1127,7 @@ static void refresh(void) {
                 a = label;
             }
             text(win("buttonAtext"), a);
-            /* The 360's bar (its screenshot: "A Identify(11)  Y Drop  X Swap"): each button after
-             * the text of the one before it. The layout's gap after "Unequip" (A at -112, Y at -29,
-             * X at 26, the icons 15 wide, the texts 15 in) is kept after the measured texts. */
-            {
-                void *ba = win("buttonA"), *by = win("buttonY"), *bx = win("buttonX");
-                char value[128];
-                float va[8], vy[8], vx[8], wa = text_width(win("buttonAtext"), a), wy = text_width(win("buttonYtext"), "Drop");
-                if (ba && by && bx && wa > 0 && wy > 0) {
-                    read_prop(ba, "UnifiedAreaRect", value, sizeof value);
-                    if (parse_rect(value, va)) {
-                        float gap = 10.0f * k, icon = va[5] - va[1];
-                        read_prop(by, "UnifiedAreaRect", value, sizeof value);
-                        if (parse_rect(value, vy)) {
-                            vy[1] = va[1] + icon + wa + gap; vy[5] = vy[1] + icon;
-                            write_rect(value, vy); prop(by, "UnifiedAreaRect", value);
-                            read_prop(bx, "UnifiedAreaRect", value, sizeof value);
-                            if (parse_rect(value, vx)) {
-                                vx[1] = vy[1] + icon + wy + gap; vx[5] = vx[1] + icon;
-                                write_rect(value, vx); prop(bx, "UnifiedAreaRect", value);
-                            }
-                        }
-                    }
-                }
-            }
+            place_buttons(a, "Drop", "Swap");
         }
     }
 }
@@ -1736,6 +1845,23 @@ int x360_inventory_open(void) { return inventory_open; }
 /* The pad's Back: the 360's inventory on or off. */
 void x360_run_console(void);
 
+static int petcmd_open;
+static void petcmd_show(int on);
+static void hide_info(void);
+static void update_info(void);
+
+/* The master menu's pages, in the 360's order (LT to the left, RT to the right). */
+static const char *const page_name[4] = {"Inventory", "Stats", "Skills", "Quest"};
+static int page;
+
+static void page_titles(void) {
+    text(win_of(MASTER, "MenuName"), page_name[page]);
+    text(win_of(MASTER, "MenuLeft"), page_name[(page + 3) % 4]);
+    text(win_of(MASTER, "MenuRight"), page_name[(page + 1) % 4]);
+    /* "pet commands" (Start) on the inventory's page only (the catalog: menus/08 against 10). */
+    show(win_of(MASTER, "PetCommands"), page == 0);
+}
+
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
     x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
@@ -1769,13 +1895,14 @@ void x360_inventory_toggle(void) {
             if (character_root) scale_tree(character_root, k, 0);
             if (character_root) unclip_tree(character_root, 0);
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
-             * ContainerFrame, three columns of 301: the character, the bag, the pet's bag. The bag
-             * goes in the second (the screenshots: its frame at (747, 127) of 1080). */
+             * ContainerFrame, three columns: the character, the bag, the pet's bag. The 360's dump
+             * of the screen (the catalog's menus/08-inventory) has the bag's TopFrame 299 (base
+             * units, 280.313 at 720) from the frame's left and the pet's 602 (564.375). */
             {
                 void *container = win_of(MASTER, "ContainerFrame"), *top = win("TopFrame");
                 if (container && top) {
                     add_child(container, 0, top);
-                    move_by(top, 301.0f * k, 0);
+                    move_by(top, 299.0f * k, 0);
                 }
                 top = character_root ? win_of(CHR_PREFIX, "TopFrame") : 0;
                 if (container && top) add_child(container, 0, top);
@@ -1785,13 +1912,10 @@ void x360_inventory_toggle(void) {
                     move_by(top, 602.0f * k, 0);
                 }
             }
-            /* Not working yet, so not shown: the LT/RT tabs, pet commands. */
-            show(win_of(MASTER, "lefttrigger"), 0);
-            show(win_of(MASTER, "righttrigger"), 0);
-            show(win_of(MASTER, "MenuLeft"), 0);
-            show(win_of(MASTER, "MenuRight"), 0);
-            show(win_of(MASTER, "PetCommands"), 0);
-            text(win_of(MASTER, "MenuName"), "Inventory");   /* the 360's string (its image, 0x820d17d0) */
+            /* The pages' names (the 360's strings, its image near 0x820d17d0): the page in the
+             * middle, the one LT goes to on the left, RT's on the right (the catalog's menus/08 to
+             * 12: Inventory, Stats, Skills, Quest, round). */
+            page_titles();
             mf = win("moveframe");
             read_prop(mf, "UnifiedAreaRect", value, sizeof value);
             if (parse_rect(value, v)) moveframe_top = v[3];
@@ -1814,8 +1938,99 @@ void x360_inventory_toggle(void) {
     if (inventory_open) move_to_front(master_root, 0);
     hide_pc_ui(inventory_open);
     if (character_root) show_doll(inventory_open);
-    if (!inventory_open) hide_info();
+    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); }
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
+}
+
+/* ---- the pet's commands (Start in the inventory: the catalog's menus/09) ----
+ * The 360's CMessagePetCommandsXenon (vtable 0x820d1a48) in its CMessageHousingXenon: the housing
+ * (messagehousing_xenon: the screen darkened by its black at 0.7, its own close button hidden)
+ * holds petcommands_xenon in its "parent". Its input (sub_8237B080): the stick or the d-pad left
+ * and right turn the pet's stance (+0x1608 on the 360, GOG's +0x65c; 0 passive, 1 aggressive,
+ * 2 defensive): right 0 -> 1 -> 2 -> 0, left back, then the pet's update (the 360's sub_8219c070,
+ * GOG 0x4949d0, as PC's own stance buttons at 0x54ddfb, which also keep CGameUI's +0x1450); Y
+ * sends the pet to town and closes: CCharacter::sendToTown *(OT)* (GOG 0x49a390, the level CGameUI's
+ * +0x20) after PC's own test (the level's +0x15c, its +0x89: "Your pet cannot depart from here!"
+ * otherwise) and its sound (0x5368d0, 0x2b, on CGameUI's +0x1c's +0x230), as PC's command at
+ * 0x54de5c; B closes. Its drawing (sub_8237B648): each stance's image, pet_*_inactive but the
+ * current one's, and the stance's name in stancetext. */
+#define PETCMD_PREFIX "x360pc_"
+#define HOUSING_PREFIX "x360mh_"
+#define GOG_PET_STANCE 0x65c
+#define GOG_UI_PET_STANCE 0x1450
+#define GOG_PET_UPDATE 0x004949d0
+#define GOG_SEND_TO_TOWN 0x0049a390
+#define GOG_PLAY_SOUND 0x005368d0
+#define GOG_UI_LEVEL 0x20
+typedef void (__fastcall *pet_update_fn)(void *pet, void *edx, int arg);
+typedef void (__fastcall *send_to_town_fn)(void *pet, void *edx, void *level);
+typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
+
+static void *housing_root, *petcmd_root;
+
+static void petcmd_draw(void) {
+    static const char *const window[3] = {"PetPassive", "PetAggressive", "PetDefensive"};
+    static const char *const image[3] = {"pet_passive", "pet_aggressive", "pet_defensive"};
+    static const char *const name[3] = {"Passive Stance", "Aggressive Stance", "Defensive Stance"};
+    unsigned char *pet = the_pet();
+    int stance = pet ? *(int *)(pet + GOG_PET_STANCE) : 0, i;
+    char value[96];
+    for (i = 0; i < 3; i++) {
+        copy(value, sizeof value, "set:X360_widgets2 image:", image[i]);
+        if (i != stance) copy(value + length(value), sizeof value - length(value), "_inactive", 0);
+        prop(win_of(PETCMD_PREFIX, window[i]), "Image", value);
+    }
+    text(win_of(PETCMD_PREFIX, "stancetext"), stance >= 0 && stance < 3 ? name[stance] : "");
+}
+
+static void petcmd_show(int on) {
+    if (on && !housing_root) {
+        housing_root = load("media/ui/x360/messagehousing_xenon.layout", HOUSING_PREFIX);
+        petcmd_root = housing_root ? load("media/ui/x360/petcommands_xenon.layout", PETCMD_PREFIX) : 0;
+        if (!petcmd_root) return;
+        scale_tree(housing_root, k, 0);
+        scale_tree(petcmd_root, k, 0);
+        add_child(win_of(HOUSING_PREFIX, "parent"), 0, petcmd_root);
+        show(win_of(HOUSING_PREFIX, "closebutton"), 0);
+    }
+    if (!housing_root) return;
+    petcmd_open = on;
+    if (on) petcmd_draw();
+    /* No Info card under it (the catalog's menus/09); back on closing. */
+    if (on) hide_info(); else update_info();
+    set_visible(housing_root, 0, on);
+    if (on) move_to_front(housing_root, 0);
+    x360_log(on ? "x360 menu: pet commands shown\r\n" : "x360 menu: pet commands hidden\r\n");
+}
+
+static void petcmd_pad(unsigned pressed, int lx) {
+    static int held;
+    unsigned char *pet = the_pet();
+    int dir = (pressed & 0x0004) || (lx < -500 && !held) ? -1 : (pressed & 0x0008) || (lx > 500 && !held) ? 1 : 0;
+    held = lx < -500 || lx > 500;
+    if (pressed & 0x2000) { petcmd_show(0); return; }                  /* B */
+    if (!pet) return;
+    if (dir) {
+        int stance = *(int *)(pet + GOG_PET_STANCE);
+        stance = dir > 0 ? (stance == 0 ? 1 : stance == 1 ? 2 : 0) : (stance == 0 ? 2 : stance == 1 ? 0 : 1);
+        *(int *)(pet + GOG_PET_STANCE) = stance;
+        if (ui) *(int *)(ui + GOG_UI_PET_STANCE) = stance;
+        ((pet_update_fn)GOG_PET_UPDATE)(pet, 0, 0);
+        petcmd_draw();
+    }
+    if (pressed & 0x8000) {                                             /* Y */
+        unsigned char *level_ = ui ? *(unsigned char **)(ui + GOG_UI_LEVEL) : 0;
+        unsigned char *data = level_ ? *(unsigned char **)(level_ + 0x15c) : 0;
+        if (!data || !data[0x89]) { x360_log("x360 menu: the pet cannot depart from here\r\n"); return; }
+        {
+            unsigned char *owner = *(unsigned char **)(ui + 0x1c);
+            void *emitter = owner ? *(void **)(owner + 0x230) : 0;
+            if (emitter) ((play_sound_fn)GOG_PLAY_SOUND)(emitter, 0, 0x2b, 0.0f, *(float *)0x00a8ec04);
+        }
+        ((send_to_town_fn)GOG_SEND_TO_TOWN)(pet, 0, level_);
+        x360_log("x360 menu: the pet goes to town\r\n");
+        petcmd_show(0);
+    }
 }
 
 /* A fingerprint of the inventory: its items, their slots and stacks. PC changes it outside our
@@ -1846,13 +2061,15 @@ static unsigned fingerprint(void) {
 /* The pad while the inventory is open: pressed, the buttons just pressed; ly, the stick (of 1000).
  * Up and down (the stick or the d-pad) move the selection, repeating while held; LB and RB the
  * filter; A acts on the row; B or Back closes. */
-void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly) {
+void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     static unsigned next_repeat;
     static int held_dir;
     unsigned now = GetTickCount();
     int dir = 0;
     static unsigned last_print, last_check;
     if (!inventory_open || !find_world()) return;
+    if (petcmd_open) { petcmd_pad(pressed, lx); return; }
+    if (pressed & 0x0010 && page == 0) { petcmd_show(1); return; }   /* Start: the pet's commands */
     if (pressed & 0x2000) { x360_inventory_toggle(); return; }       /* B */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
@@ -2080,7 +2297,13 @@ static void mirror_icon(const char *slot, const char *pc_slot) {
         if (w != p) read_prop(w, "Image", image, sizeof image);
         for (c = 0; c < nc && sp < 16; c++) stack[sp++] = child_at(w, 0, c);
     }
-    if (image[0]) prop(icon, "Image", image);
+    if (image[0]) {
+        float w, h, side = 36.0f * k;   /* the 360's icon side (its CGameUI +0x384): the slot's 36 */
+        prop(icon, "Image", image);
+        /* As the 360's hotbar (sub_821F42A8, 0x821F4A5C): the icon as tall as the slot, as wide
+         * as its image's proportions give, centred across (a potion's 24 x 36, a skill's 36). */
+        if (image_size(image, &w, &h)) set_size(icon, (side - side * w / h) * 0.5f, 0, side * w / h, side);
+    }
     show(icon, image[0] != 0);
 }
 

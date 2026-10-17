@@ -141,7 +141,7 @@ static unsigned prev_buttons;
 void x360_inventory_toggle(void);
 void x360_run_console(void);
 int x360_inventory_open(void);
-void x360_inventory_pad(unsigned pressed, unsigned buttons, int ly);
+void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
 void x360_hud_tick(void);
 void x360_hud_attacked(void *unit);
 #define BUTTON_BACK 0x0020u                 /* XInput's Back */
@@ -917,7 +917,7 @@ static void order(void) {
         x360_inventory_toggle();
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
-    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, ly); return; }
+    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {

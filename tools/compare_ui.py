@@ -25,16 +25,23 @@ def strip(name):
     return name[len(PREFIX):] if name and name.startswith(PREFIX) else name
 
 
+def base(w):
+    """The base name without a leading layout instance number the 360's dump kept ("103Base")."""
+    name = w.get("base_name") or ""
+    stripped = name.lstrip("0123456789")
+    return stripped.lstrip("_") if stripped and stripped != name else name
+
+
 def flatten(windows, under=None):
     """[(window, parent base_name)] of the shown windows, in tree order."""
     out = []
 
     def walk(w, parent, inside):
-        inside = inside or under is None or w.get("base_name") == under
+        inside = inside or under is None or base(w) == under
         if inside and w.get("shown"):
             out.append((w, parent))
         for c in w.get("children", []):
-            walk(c, w.get("base_name"), inside)
+            walk(c, base(w), inside)
 
     for w in windows:
         walk(w, None, False)
@@ -44,8 +51,8 @@ def flatten(windows, under=None):
 def index(flat):
     by_pair, by_name = {}, {}
     for w, parent in flat:
-        by_pair.setdefault((w["base_name"], parent), []).append(w)
-        by_name.setdefault(w["base_name"], []).append(w)
+        by_pair.setdefault((base(w), parent), []).append(w)
+        by_name.setdefault(base(w), []).append(w)
     return by_pair, by_name
 
 
@@ -73,26 +80,58 @@ def differences(ref, pc, tolerance):
     return out
 
 
+def auto_named(name):
+    """A name CEGUI made up (a layout's unnamed window: "i_135", "17"): matched by place."""
+    return name.isdigit() or (name.startswith("i_") and name[2:].isdigit())
+
+
+def visible_rank(w):
+    """PC keeps its own windows of the same names drawn transparent: the visible one first."""
+    return (0 if (w.get("effective_alpha") or 0) > 0.01 else 1, 0 if w.get("name", "").startswith("x360") else 1)
+
+
 def compare(ref_dump, pc_dump, under=None, tolerance=1.0, show_extra=False):
-    """[line] of the differences between two dumps (dicts)."""
+    """[line] of the differences between two dumps (dicts). Named windows are matched by base name
+    (and their parent's); the unnamed children of a matched pair are matched in order."""
     ref_flat = flatten(ref_dump["windows"], under)
     pc_flat = flatten(pc_dump["windows"], under)
     pc_pair, pc_name = index(pc_flat)
     _, ref_name = index(ref_flat)
-    used, lines = set(), []
+    used, lines, pairs = set(), [], []
     for w, parent in ref_flat:
-        name = w["base_name"]
+        name = base(w)
+        if auto_named(name):
+            continue
         cands = [c for c in pc_pair.get((name, parent), []) if id(c) not in used]
         if not cands and len(ref_name.get(name, [])) == 1:
-            cands = [c for c in pc_name.get(name, []) if id(c) not in used][:1] if len(pc_name.get(name, [])) == 1 else []
+            cands = [c for c in pc_name.get(name, []) if id(c) not in used]
         if not cands:
             lines.append(f"{parent}/{name}: missing on PC")
             continue
-        match = cands[0]
+        match = sorted(cands, key=visible_rank)[0]
         used.add(id(match))
+        pairs.append((w, match))
         lines += [f"{parent}/{name}: {d}" for d in differences(w, match, tolerance)]
+
+    def unnamed(ref, pc, path):
+        pk = [c for c in pc.get("children", []) if c.get("shown") and auto_named(base(c)) and id(c) not in used]
+        for c in ref.get("children", []):
+            if not (c.get("shown") and auto_named(base(c))):
+                continue
+            same = pk   # in order (the 360's dumps name every type DefaultWindow)
+            if not same:
+                lines.append(f"{path}/{c['base_name']}: missing on PC")
+                continue
+            m = same[0]
+            pk.remove(m)
+            used.add(id(m))
+            lines.extend(f"{path}/{c['base_name']}: {d}" for d in differences(c, m, tolerance))
+            unnamed(c, m, f"{path}/{c['base_name']}")
+
+    for ref, pc in pairs:
+        unnamed(ref, pc, ref["base_name"])
     if show_extra:
-        lines += [f"{parent}/{w['base_name']}: only on PC" for w, parent in pc_flat if id(w) not in used]
+        lines += [f"{parent}/{base(w)}: only on PC" for w, parent in pc_flat if id(w) not in used]
     return lines
 
 
