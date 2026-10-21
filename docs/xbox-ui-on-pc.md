@@ -2089,3 +2089,20 @@ line now reads to `+0x440`). Each step names what to look at; the log is `x360_u
 5. **Regressions:** the NPC dialog's A/B still press Accept/Ok/Decline (its press code was made
    common with the tip and the modal); the inventory's B, LT/RT still close and change pages
    when the mapping is not open.
+
+**The QA in three runs (the mods agent's recipe, 2026-10-21).** The console commands named are in
+GOG's executable's command table (LEVELUP, SKILLPOINTS, MONEY, ITEM, CHAMPION, UNIT, KILLALL,
+AIFREEZE); `GOD`, `CHAMPION SKELETON` and `UNIT FISHING HOLE` were seen working on the 360's
+console (the recomp), not yet on GOG. The proxy runs `console=` at the first opening of the
+inventory (section 13), so each run's batch is one.
+- **A. Tips, a new hero, no console** (the seen tips are kept per character, inferred): create a
+  hero and enter the town: TIP_WELCOME; the first attack, the first inventory, stats or stash give
+  more. B on one, Y on another (step 2). Also step 5's regressions.
+- **B. Town, on a copy of `variety`** (already marked by the console): `console=LEVELUP;LEVELUP;
+  LEVELUP;SKILLPOINTS 5;MONEY 20000;ITEM <the gem's name>,2` (the gem's shown name; if the
+  console wants the unit's `NAME`, it is in `socketables/GEM_AMETHYST_01`). Learn an active and
+  a passive skill by hand, map them (step 1); socket a gem in the unique sword (a unique: the
+  unique bases carry `SOCKETS`) and take it out at the Gem Recoverer and the Destroyer;
+  enchant; buy from the Gambler; talk to the guide NPC and the quest robot NPC (step 4, `dialog_markup=1`).
+- **C. Mine, on `mine-level1`:** `console=GOD;KILLALL;CHAMPION SKELETON;AIFREEZE;UNIT FISHING
+  HOLE`: the champion's gold target bar, then kill it and fish (step 3).
