@@ -4904,12 +4904,28 @@ static void dialog_tick(void) {
     static unsigned last_search;
     unsigned now = GetTickCount(), buttons, pressed;
     char v[2048];
+    static char quest_prefix[48], plain_prefix[48];
+    static void *plain_text;
+    const char *active;
     if (qd_failed) return;
-    if (!pc_qd_text_frame && now - last_search > 250) { last_search = now; pc_qd_text_frame = find_pc_dialog(); }
-    if (!pc_qd_text_frame) return;
+    /* PC has two NPC dialogs: questdialogmenu (a portrait, rewards) and dialogmenu (Title,
+     * DialogText, Ok, Accept, Decline; run A: an NPC with a quest opened it). The 360's image
+     * names only questdialogmenu.uilayout (its one NPC dialog layout loaded, 0x820CF924), so
+     * the 360's is shown over either; dialogmenu's DialogText is found as the one with a Title
+     * beside it (the quest dialog's has none). */
+    if ((!pc_qd_text_frame || !plain_text) && now - last_search > 250) {
+        static const char *const plain_needs[] = {"Title", 0};
+        last_search = now;
+        if (!pc_qd_text_frame && (pc_qd_text_frame = find_pc_dialog()) != 0)
+            copy(quest_prefix, sizeof quest_prefix, pc_qd_prefix, 0);
+        if (!plain_text) plain_text = find_pc_by_suffix("DialogText", plain_needs, plain_prefix, sizeof plain_prefix);
+    }
     /* PC closes its dialog by taking it off the GUI sheet (it stays "visible"): open while its
      * Frame is visible and under the sheet. */
-    if (!pc_attached(pc_qd_prefix, "Frame")) { if (qd_shown) qd_show(0); qd_last = 0; return; }
+    active = pc_qd_text_frame && pc_attached(quest_prefix, "Frame") ? quest_prefix
+           : plain_text && pc_attached(plain_prefix, "Frame") ? plain_prefix : 0;
+    if (!active) { if (qd_shown) qd_show(0); qd_last = 0; return; }
+    if (!qd_shown) copy(pc_qd_prefix, sizeof pc_qd_prefix, active, 0);
     if (!qd_root) {
         RECT r;
         HWND hw = active_window();
