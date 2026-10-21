@@ -129,8 +129,8 @@ static char out_dir[400];
 /* The texts the 360's code puts in its screens, read by the converter from the user's 360 image
  * into OUT/x360_strings.txt (tools/convert_x360_ui.py --image): key=value lines, UTF-8. The
  * repository holds only the keys; a key not found gives "". */
-static char texts[16384];
-static const char *text_key[160], *text_value[160];
+static char texts[65536];                   /* the 360 code's texts and both games' tips (--pc-pak) */
+static const char *text_key[400], *text_value[400];
 static int texts_count, texts_loaded;
 
 static void load_texts(void) {
@@ -147,7 +147,7 @@ static void load_texts(void) {
     ReadFile(f, texts, sizeof texts - 1, &got, 0);
     CloseHandle(f);
     texts[got] = 0;
-    for (line = texts; *line && texts_count < 160;) {
+    for (line = texts; *line && texts_count < 400;) {
         char *end = line, *eq = 0;
         while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
         if (*end) *end++ = 0;
@@ -166,6 +166,21 @@ const char *x360_text(const char *key) {
         if (!*a && !*b) return text_value[i];
     }
     return "";
+}
+
+/* The key, past `prefix`, of the first text equal to `value` ("pctip." and PC's tip text give
+ * its TIP_ID); 0 if none. */
+const char *x360_text_key_of(const char *prefix, const char *value) {
+    int i;
+    if (!texts_loaded) load_texts();
+    for (i = 0; i < texts_count; i++) {
+        const char *k = text_key[i], *p = prefix, *a = text_value[i], *b = value;
+        while (*p && *k == *p) k++, p++;
+        if (*p) continue;
+        while (*a && *a == *b) a++, b++;
+        if (!*a && !*b) return k;
+    }
+    return 0;
 }
 
 

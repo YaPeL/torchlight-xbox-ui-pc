@@ -552,6 +552,33 @@ class ImageStringsTest(unittest.TestCase):
             convert_x360_ui.STRINGS.update(saved)
 
 
+def synthetic_adm(strings, root):
+    """A Runic .adm: strings {id: text}; root (name id, [(key id, type, value)], children)."""
+    out = bytearray(struct.pack("<II", 1, len(strings)))
+    for i, text in strings.items():
+        out += struct.pack("<II", i, len(text)) + text.encode("utf-16-le")
+
+    def node(n):
+        name, props, children = n
+        b = bytearray(struct.pack("<II", name, len(props)))
+        for key, kind, value in props:
+            b += struct.pack("<II", key, kind) + struct.pack("<Q" if kind == 6 else "<I", value)
+        b += struct.pack("<I", len(children))
+        for c in children:
+            b += node(c)
+        return b
+    return bytes(out + node(root))
+
+
+class ContextTipsTest(unittest.TestCase):
+    def test_tips(self):
+        strings = {1: "GLOBALS", 2: "CONTEXTTIPS", 3: "TIP_A", 4: "Press A", 5: "OTHER", 6: "TIP_B", 7: "Push B",
+                   8: "BIG"}
+        root = (1, [(5, 1, 7), (8, 6, 1 << 40)], [(5, [(3, 8, 4)], []), (2, [(3, 8, 4), (6, 8, 7), (5, 1, 3)], [])])
+        raw = synthetic_adm(strings, root)
+        self.assertEqual(convert_x360_ui.context_tips(raw), {"TIP_A": "Press A", "TIP_B": "Push B"})
+
+
 def two_section_pe(code, data, code_rva=0x1000, data_rva=0x9000):
     """A minimal PE32 with a .text and a .data section (no imports or exports)."""
     head = bytearray(0x200)

@@ -797,6 +797,17 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
                 x360_log("pad: A: talk to ");
                 x360_log(class_of(any_candidate));
                 x360_log("\r\n");
+                {
+                    /* A test aid: a UI dump 1.5 s later, to see which of PC's menus opened
+                     * (talk-1, talk-2, ...). */
+                    static int talks;
+                    char name[16] = "talk-";
+                    void x360_dump_after(const char *name, unsigned ms);
+                    talks++;
+                    name[5] = (char)('0' + talks % 10);
+                    name[6] = 0;
+                    x360_dump_after(name, 1500);
+                }
                 /* approachAI measures to the target item first if one is set: clear it. */
                 ((void_fn)GOG_STOP_PATHING)(hero, 0);
                 ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);

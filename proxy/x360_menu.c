@@ -5297,6 +5297,22 @@ static void tip_tick(void) {
     read_prop(win_of(pc_tip_prefix, "Title"), "Text", v, sizeof v);
     text(win_of(TIP_PREFIX, "Title"), v);
     read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", v, sizeof v);
+    {
+        /* The 360's text of the same tip (its GLOBALS' CONTEXTTIPS, written for the pad: the
+         * converter's --pc-pak), found by PC's text; PC's when there is none (TIP_HOWTOATTACK). */
+        const char *x360_text_key_of(const char *prefix, const char *value);
+        const char *id = x360_text_key_of("pctip.", v);
+        char key[48];
+        static const char *logged = (const char *)1;
+        if (id) {
+            copy(key, sizeof key, "tip.", id);
+            if (x360_text(key)[0]) copy(v, sizeof v, x360_text(key), 0);
+        }
+        if (id != logged) {
+            logged = id;
+            x360_log("x360 tip: "); x360_log(id ? id : "PC's text not among PC's tips"); x360_log("\r\n");
+        }
+    }
     text(win_of(TIP_PREFIX, "Dialog"), v);
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
@@ -5386,9 +5402,24 @@ int x360_overlay_open(void) {
     return tip_shown || modal_shown || qd_shown || GetTickCount() - overlay_closed_at < 300;
 }
 
+/* A test aid: a UI dump `ms` after a call (proxy/pad.c asks for one after A talks to a unit, to see
+ * which of PC's menus opened); taken from the frame tick, which runs under PC's dialogs too. */
+static char dump_after_name[32];
+static unsigned dump_after_at;
+void x360_dump_after(const char *name, unsigned ms) {
+    copy(dump_after_name, sizeof dump_after_name, name, 0);
+    dump_after_at = GetTickCount() + ms;
+}
+
 void x360_frame_tick(void) {
     static int logged;
     if (!find_world()) return;
+    if (dump_after_at && (int)(GetTickCount() - dump_after_at) >= 0) {
+        void x360_ui_dump_now(const char *name);
+        dump_after_at = 0;
+        x360_ui_dump_now(dump_after_name);
+        x360_log("x360: dumped the UI after a talk\r\n");
+    }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }

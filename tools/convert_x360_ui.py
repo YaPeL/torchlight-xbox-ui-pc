@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Xbox 360 interface's files, converted from the user's 360 `pak.zip` for the PC game.
 
-convert_x360_ui.py PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE]
+convert_x360_ui.py PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]
                                writes OUT/media/ui/x360/ and OUT/x360_ui_report.json
 
 --image IMAGE: the user's decrypted 360 executable (its image at 0x82000000, as their recomp
@@ -9,6 +9,11 @@ tools write it): the texts the 360's code puts in its screens (not in its layout
 names, the bars' buttons, the stances...) are read from it at the addresses in STRINGS and written
 to OUT/x360_strings.txt (key=value, UTF-8), which the proxy loads; the repository holds only the
 keys and the addresses.
+
+--pc-pak PCPAK: the user's PC `Pak.zip`. The context tips (`media/GLOBALS.DAT.adm`, its
+CONTEXTTIPS: TIP_WELCOME, TIP_STASH, ...) of both games are written to OUT/x360_strings.txt as
+`tip.ID` (the 360's text, written for the pad) and `pctip.ID` (PC's), so that the proxy shows the
+360's text of the tip PC opens.
 
 --prompts playstation3|playstation4|playstation5|playstation|nintendo draws the pad prompts (a_button,
 left_bumper, start_button, the sticks, the d-pad, the help screen's controller...) with
@@ -319,12 +324,74 @@ def image_strings(image):
     return out
 
 
+def adm_tree(raw):
+    """A Runic .adm file: (its string table {id: text}, its root (name, [(key, type, value)], children)).
+    Keys and names are given as their strings; a string value (type 8) stays its id."""
+    import struct
+    count = struct.unpack_from("<I", raw, 4)[0]
+    o, table = 8, {}
+    for _ in range(count):
+        i, n = struct.unpack_from("<II", raw, o)
+        o += 8
+        table[i] = raw[o:o + 2 * n].decode("utf-16-le")
+        o += 2 * n
+
+    def node(o):
+        name, n = struct.unpack_from("<II", raw, o)
+        o += 8
+        props = []
+        for _ in range(n):
+            key, kind = struct.unpack_from("<II", raw, o)
+            o += 8
+            fmt = "<Q" if kind == 6 else "<I"
+            props.append((table.get(key, key), kind, struct.unpack_from(fmt, raw, o)[0]))
+            o += struct.calcsize(fmt)
+        n = struct.unpack_from("<I", raw, o)[0]
+        o += 4
+        children = []
+        for _ in range(n):
+            o, child = node(o)
+            children.append(child)
+        return o, (table.get(name, name), props, children)
+    return table, node(o)[1]
+
+
+def context_tips(raw):
+    """{TIP_ID: text} of a GLOBALS.DAT.adm's CONTEXTTIPS node."""
+    table, root = adm_tree(raw)
+    out = {}
+
+    def walk(n):
+        name, props, children = n
+        if name == "CONTEXTTIPS":
+            for key, kind, value in props:
+                if kind == 8 and value in table:
+                    out[str(key)] = table[value].replace("\r", " ").replace("\n", " ")
+        for c in children:
+            walk(c)
+    walk(root)
+    return out
+
+
+def globals_of(pak):
+    with zipfile.ZipFile(pak) as z:
+        for i in z.infolist():
+            if i.filename.lower() == "media/globals.dat.adm":
+                return z.read(i)
+    raise ValueError(f"{pak} has no media/GLOBALS.DAT.adm")
+
+
 def main():
     args = sys.argv[1:]
     image = None
     if "--image" in args:
         i = args.index("--image")
         image = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
+    pc_pak = None
+    if "--pc-pak" in args:
+        i = args.index("--pc-pak")
+        pc_pak = args[i + 1] if i + 1 < len(args) else ""
         del args[i:i + 2]
     style, swap = "xbox", False
     if "--swap-confirm-cancel" in args:
@@ -352,13 +419,20 @@ def main():
             f.write(data)
     with open(os.path.join(dest, "x360_ui_report.json"), "w") as f:
         json.dump(report, f, indent=1)
+    texts = {}
     if image:
         with open(image, "rb") as f:
             texts = image_strings(f.read())
-        with open(os.path.join(dest, "x360_strings.txt"), "w", encoding="utf-8") as f:
-            f.write("".join(f"{k}={v}\n" for k, v in sorted(texts.items())))
         missing = sorted(set(STRINGS) - set(texts))
         print(f"{len(texts)} texts of the 360's code into x360_strings.txt" + (f"; not found: {', '.join(missing)}" if missing else ""))
+    if pc_pak:
+        tips, pc_tips = context_tips(globals_of(pak)), context_tips(globals_of(pc_pak))
+        texts.update({f"tip.{k}": v for k, v in tips.items()})
+        texts.update({f"pctip.{k}": v for k, v in pc_tips.items()})
+        print(f"{len(tips)} tips of the 360's, {len(pc_tips)} of PC's, {len(set(tips) & set(pc_tips))} in both")
+    if texts:
+        with open(os.path.join(dest, "x360_strings.txt"), "w", encoding="utf-8") as f:
+            f.write("".join(f"{k}={v}\n" for k, v in sorted(texts.items())))
     unknown = sorted({s for v in report["layouts"].values() for s in v["unknown_imagesets"]})
     print(f"{len(out)} files into {os.path.join(dest, DEST)}: {len(report['layouts'])} layouts, "
           f"{len(report['imagesets'])} imagesets, {len(report['fonts'])} fonts")

@@ -2106,3 +2106,28 @@ inventory (section 13), so each run's batch is one.
   enchant; buy from the Gambler; talk to the guide NPC and the quest robot NPC (step 4, `dialog_markup=1`).
 - **C. Mine, on `mine-level1`:** `console=GOD;KILLALL;CHAMPION SKELETON;AIFREEZE;UNIT FISHING
   HOLE`: the champion's gold target bar, then kill it and fish (step 3).
+
+**Run A (2026-10-21, the user with the 8BitDo; a new hero, slot 1).** Steam's folders UNCHANGED.
+- The tip shows as the 360's. B closed it **and** attacked (`pad.c` sent the hotbar key 3 too):
+  fixed in `410b9f2` (no world action while a 360 tip, modal or dialog has the pad, nor 0.3 s
+  after it closes), not run yet.
+- Y: the log shows PC's `ShowTips` pressed, then `Ok`, and `settings.txt` was saved with
+  `SHOW TIPS :0`: PC's own option went off. A tip still showed after it. PC queues its tips
+  (`CGameUI` `0x55f570`: shown if the hero has not seen it, `+0x9c7` + the tip's index, and the
+  setting `[0xf60d2c]` is 1, then pushed to `+0x16dc`). Opening the stash opens PC's inventory,
+  so TIP_INVENTORY and TIP_STASH are queued together and show one after the other on closing:
+  the second was already queued. That is PC's queue. Whether the 360's Y also drops a queued tip
+  was not read.
+- The tip's text spoke of the keyboard (PC's). The 360's GLOBALS has the same tips
+  (CONTEXTTIPS, 24 in each game, 23 in both) written for the pad: the converter's `--pc-pak`
+  writes `tip.ID` and `pctip.ID` into `x360_strings.txt`, and the proxy shows the 360's text of
+  the tip whose PC text PC set (TIP_HOWTOATTACK, PC's only, stays PC's). Not run yet.
+- TIP_INVENTORY did not show at the 360 inventory's first opening: PC requests it (one of the 24
+  callers of `0x55f570`, by index) when PC's own inventory opens, which the 360's does not open.
+  It showed with the stash. Whether the 360 requests it from its inventory was not read.
+- An NPC with a quest showed PC's dialog, not the 360's, and the pad kept attacking. The log has
+  no `x360 dialog` line: the 360's dialog never loaded. Not explained yet; a UI dump 1.5 s after
+  each A on a unit (`talk-N`) was added to see which of PC's menus opened.
+- The inventory: B closes, LT/RT change pages. The font's `+0x424` byte now reads 1 in the
+  X360_ fonts too (the font diff); the names' gold is for run B.
+
