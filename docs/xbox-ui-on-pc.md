@@ -2055,3 +2055,27 @@ code. The layouts, imagesets and fonts do carry over (section 5).
 start without a running Steam. If `steam_appid.txt` does not make it start, the Steam test stops
 there and the user decides. Starting Steam would mean the real client near the user's prefix, and
 that is outside this plan.
+
+## 17. QA of the work written without the game (2026-10-21)
+
+Everything below was written with the game closed and is not run yet. One session on GOG checks
+it: the proxy built at `43efb49` or later installed, `steam_guard.py snapshot` before and `verify`
+after, and `dialog_markup=1` added to `x360_ui.ini` for step 4 (`font_diff=1` stays: its log
+line now reads to `+0x440`). Each step names what to look at; the log is `x360_ui.log`.
+
+1. **Skills mapping:** open the inventory, RT to Skills, select a learned active skill, X: the
+   overlay `skillsmap_xenon` shows (its place against the page is not known). Release B: the
+   overlay closes, the sound plays, B's icon on the page's set and the HUD is the skill. Then
+   close and press B in play: the skill fires. Repeat for Y, LT, RT; X on a passive or unlearned
+   skill does nothing; X again, Start or Back close the overlay.
+2. **Tip:** a first-time tip (a new character's first town, or the first closing of a shop or the
+   stash): the 360's tip over PC's, with PC's title and text; B closes it; Y on another turns the
+   tips off (none shows again).
+3. **Fishing:** the ripples gone under the 360's ring; A before a bite: the result is the 360's
+   modal ("Fishing", the text, A Ok); A closes it, and does not start another cast.
+4. **The names' gold:** an NPC dialog whose text has a name (the guide NPC, the quest NPC): the name in gold
+   (`dialog_markup=1`). If it is not, the log's `font diff` lines at `+0x424` say whether the
+   byte took.
+5. **Regressions:** the NPC dialog's A/B still press Accept/Ok/Decline (its press code was made
+   common with the tip and the modal); the inventory's B, LT/RT still close and change pages
+   when the mapping is not open.
