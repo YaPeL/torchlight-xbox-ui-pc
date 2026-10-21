@@ -15,6 +15,7 @@ import compare_installs  # noqa: E402
 import compare_ui  # noqa: E402
 import convert_x360_ui  # noqa: E402
 import layout_windows  # noqa: E402
+import port_addresses  # noqa: E402
 import send_input  # noqa: E402
 import steam_guard  # noqa: E402
 from pe_info import PE  # noqa: E402
@@ -549,3 +550,71 @@ class ImageStringsTest(unittest.TestCase):
         finally:
             convert_x360_ui.STRINGS.clear()
             convert_x360_ui.STRINGS.update(saved)
+
+
+def two_section_pe(code, data, code_rva=0x1000, data_rva=0x9000):
+    """A minimal PE32 with a .text and a .data section (no imports or exports)."""
+    head = bytearray(0x200)
+    head[0:2] = b"MZ"
+    struct.pack_into("<I", head, 0x3C, 0x40)
+    head[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HHI", head, 0x44, 0x14C, 2, 1)
+    struct.pack_into("<H", head, 0x40 + 20, 224)
+    opt = 0x40 + 24
+    struct.pack_into("<H", head, opt, 0x10B)
+    struct.pack_into("<I", head, opt + 28, 0x400000)
+    struct.pack_into("<I", head, opt + 92, 16)
+    sec = opt + 224
+    raw = 0x200
+    for i, (name, rva, body) in enumerate(((b".text", code_rva, code), (b".data", data_rva, data))):
+        o = sec + 40 * i
+        head[o:o + 8] = name.ljust(8, b"\0")
+        struct.pack_into("<IIII", head, o + 8, len(body), rva, len(body), raw)
+        raw += len(body)
+    return bytes(head) + bytes(code) + bytes(data)
+
+
+class PortAddressesTest(unittest.TestCase):
+    def builds(self):
+        import random
+        rng = random.Random(3)
+
+        def filler(n):
+            return bytes(rng.randrange(256) for _ in range(n))
+
+        def function(callee_rel, data_va):
+            # push ebp; mov ebp,esp; mov eax,[data]; call rel32; add eax,7; pop ebp; ret, then a body.
+            return (b"\x55\x8b\xec\xa1" + struct.pack("<I", data_va) + b"\xe8" + struct.pack("<i", callee_rel)
+                    + b"\x83\xc0\x07\x5d\xc3" + bytes(range(40, 80)))
+        gog_code = filler(0x300) + function(0x1234, 0x409010) + filler(0x300)
+        other_code = filler(0x500) + function(-0x88, 0x40a020) + filler(0x200)
+        gog = port_addresses.Image(two_section_pe(gog_code, bytes(0x40)))
+        other = port_addresses.Image(two_section_pe(other_code, bytes(0x40), data_rva=0xa000))
+        return gog, other
+
+    def test_code_address(self):
+        gog, other = self.builds()
+        there, how = port_addresses.port(gog, other, 0x401300)
+        self.assertEqual(there, 0x401500, how)
+        there, _ = port_addresses.port(gog, other, 0x401308)  # the call, inside the function
+        self.assertEqual(there, 0x401508)
+
+    def test_data_address(self):
+        gog, other = self.builds()
+        there, how = port_addresses.port(gog, other, 0x409010)
+        self.assertEqual(there, 0x40a020, how)
+
+    def test_missing(self):
+        gog, other = self.builds()
+        there, _ = port_addresses.port(gog, other, 0x401000)  # filler only GOG has
+        self.assertIsNone(there)
+
+    def test_source_addresses(self):
+        with tempfile.TemporaryDirectory() as d:
+            write(os.path.join(d, "a.c"), "f(0x40c8f0); g(0x2d8); h(0x82381D18); k(0x5dc320);")
+            write(os.path.join(d, "b.h"), "0x40aaaa")
+            self.assertEqual(port_addresses.source_addresses(d), [0x40c8f0, 0x5dc320])
+
+
+if __name__ == "__main__":
+    unittest.main()
