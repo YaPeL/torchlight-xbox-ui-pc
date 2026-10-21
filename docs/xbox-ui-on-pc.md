@@ -464,7 +464,8 @@ player's death handling (it goes on to `DESTROY_ON_DEATH`), after a check of a f
 **[read: the disassembly; that it is the hardcore death inferred]** The confirmations met in
 play are other screens' own windows: deleting a character is `characterload.layout`'s
 `DeleteConfirm`; "Exit to Title" and "Quit Game" ask nothing. So the modal is seen in play only
-at that death.
+at that death. *(Corrected 2026-10-21: the fishing's result is this modal too, "Fishing" with
+Ok, `screens/gog/fishing-catch.png`; its show path there was not traced.)*
 
 **Input and screenshots under Xwayland.**
 - X11's XTest does not move the pointer in this Xwayland (24.1; GNOME). `send_input.exe`
@@ -1563,8 +1564,19 @@ and closes; the other buttons do nothing. The 360's layout shows B "Close" and Y
 open (its `Frame` shown and under the sheet, found by `ShowTips`), the 360's is shown over it
 with PC's `Title` and `Dialog`, and PC's is made transparent (as the NPC dialog). B presses PC's
 `Ok`; Y presses `ShowTips` when it is selected, then `Ok`, so PC's own controls turn the option
-off. No catalog capture has a tip, so the QA compares it by eye. The modal (`modalmenu`) is left
-as PC's: PC shows it only at a hardcore death (section 8).
+off. No catalog capture has a tip, so the QA compares it by eye.
+
+**PC's modal as the 360's (written 2026-10-21, not run yet).** The fishing's result ("Fishing",
+"You caught …", Ok) is PC's `modalmenu.layout`, the same names as the 360's (`Title`, `Dialog`,
+`Ok`, `Accept`, `Decline`). The 360's `CModalMenu` (loaded by `sub_823532D0`; pad
+`sub_82353758` on `GamepadButtonDown`): A (5) sends the menu's command 9 when its window `+272`
+is visible, else 10; B (6) sends 8 (the menu's virtual `+36`). **[read]** **Written**
+(`modal_tick`): PC's modal is found as the only PC layout with `Accept`, `Ok` and `Dialog`
+(combine, enchant, dialog and quest dialog lack one of them); while its `Frame` is shown, the
+360's is over it with PC's texts and buttons shown as PC's. A presses PC's `Accept` when shown,
+else `Ok`; B its `Decline` when shown. The 360 sends B's command also with `Ok` alone: what that
+does was not read, so B does nothing then. To check in the QA: that A on the fishing result
+does not also reach the fishing menu.
 
 **The Quest page** (`menus/12`): `questmenu_xenon` as `CQuestMenuXenon`: the quests of the player's
 quest manager (GOG `+0x7b4`, list `+0xc`, count `+0x10`) with a name (`0x59f180`) and details
@@ -1907,7 +1919,8 @@ its upper left is kept.
   Command 0xe is the catch: run 41, A shown as PC's "You caught nothing!" when pressed before a
   bite.
 - **Open:**
-  - PC's ripples still show under the 360's ring.
+  - PC's ripples: the 360 has none (its layout has no such window and its code names only
+    `FishingRing`); made transparent each frame (written 2026-10-21, not run yet).
   - The result ("You caught …") is PC's window.
   - B (cancel) is untested.
 - **Tested:** `screens/gog/fishing-1`, `fishing-catch.png`; the label "A helm" with the
@@ -1959,7 +1972,7 @@ what they still lack. The screens done are in section 14.
    target is not read.
 6. **The merchant's screen sides** keep PC's panels (PC narrows the world's viewport; stopped
    after two tries), and PC's first-time Tips show after closing a shop.
-7. **Fishing:** PC's ripples under the 360's ring, and PC's result window. A (catch) is tested:
+7. **Fishing:** PC's result window (the ripples made transparent, not run yet). A (catch) is tested:
    PC's catch command, `fishing-catch.png`. B (cancel) is untested. A catch timed to a bite is for
    the user to play: it takes reflexes.
 8. **Smaller:**

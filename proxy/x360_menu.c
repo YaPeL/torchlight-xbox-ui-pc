@@ -4755,9 +4755,10 @@ static unsigned qd_last, qd_prev_buttons;
 static float qd_T, qd_t;
 unsigned x360_pad_buttons(void);
 
-/* The first window under the GUI sheet whose name ends in `suffix`, not of the proxy's layouts;
- * its name's prefix (PC's layouts' counter, "20_") into prefix_out. */
-static void *find_pc_by_suffix(const char *suffix, char *prefix_out, unsigned size) {
+/* The first window under the GUI sheet whose name ends in `suffix`, not of the proxy's layouts,
+ * whose layout also has the windows `needs` (a list ended by 0, or none); its name's prefix (PC's
+ * layouts' counter, "20_") into prefix_out. */
+static void *find_pc_by_suffix(const char *suffix, const char *const *needs, char *prefix_out, unsigned size) {
     typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
     static name_fn gn;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *stack[256];
@@ -4777,7 +4778,9 @@ static void *find_pc_by_suffix(const char *suffix, char *prefix_out, unsigned si
             if (i == n) {
                 for (i = 0; i < len - n; i++) prefix_out[i] = name[i];
                 prefix_out[len - n] = 0;
-                return v;
+                unsigned q = 0;
+                while (needs && needs[q] && win_of(prefix_out, needs[q])) q++;
+                if (!needs || !needs[q]) return v;
             }
         }
         nc = child_count(v, 0);
@@ -4787,7 +4790,7 @@ static void *find_pc_by_suffix(const char *suffix, char *prefix_out, unsigned si
 }
 
 /* PC's quest dialog's DialogTextFrame. */
-static void *find_pc_dialog(void) { return find_pc_by_suffix("DialogTextFrame", pc_qd_prefix, sizeof pc_qd_prefix); }
+static void *find_pc_dialog(void) { return find_pc_by_suffix("DialogTextFrame", 0, pc_qd_prefix, sizeof pc_qd_prefix); }
 
 /* Whether PC's window prefix+name is visible, and its Frame shown and still under the GUI sheet
  * (PC closes its menus by taking them off the sheet: they stay "visible"). */
@@ -5179,6 +5182,10 @@ static void fishing_tick(void) {
         move_to_front(fish_root, 0);
         x360_log("x360 fishing: shown over PC's\r\n");
     }
+    /* PC's ripples: the 360's layout has none and its code names only FishingRing (its image's
+     * one fishing window name); kept transparent each frame, in case PC animates their alpha. */
+    if (pc_window("FishingRipples")) prop(pc_window("FishingRipples"), "Alpha", "0");
+    if (pc_window("FishingRipples2")) prop(pc_window("FishingRipples2"), "Alpha", "0");
     player = *(unsigned char **)(*(unsigned char **)(m + 0x1c) + 0x1c);
     {
         float f = 0.2f * x87_sin(*(float *)(player + 0x7a0)) + *(float *)(player + 0x79c), size;
@@ -5249,7 +5256,7 @@ static void tip_tick(void) {
     unsigned now = GetTickCount(), buttons, pressed;
     char v[2048];
     if (tip_failed) return;
-    if (!pc_tip && now - last_search > 250) { last_search = now; pc_tip = find_pc_by_suffix("ShowTips", pc_tip_prefix, sizeof pc_tip_prefix); }
+    if (!pc_tip && now - last_search > 250) { last_search = now; pc_tip = find_pc_by_suffix("ShowTips", 0, pc_tip_prefix, sizeof pc_tip_prefix); }
     if (!pc_tip) return;
     if (!pc_attached(pc_tip_prefix, "Frame")) {
         if (tip_shown) {
@@ -5294,12 +5301,83 @@ static void tip_tick(void) {
     } else if (pressed & 0x2000) press_pc(pc_tip_prefix, "Ok");          /* B */
 }
 
+/* ---- PC's modal (the 360's CModalMenu, modalmenu.layout) ----
+ * PC's modalmenu.layout and the 360's have the same names (Title, Dialog, Ok, Accept, Decline);
+ * PC shows it at a hardcore death and for the fishing's result ("Fishing", fishing-catch.png).
+ * The 360's (loaded by sub_823532D0, its pad sub_82353758 on GamepadButtonDown): A (5) sends the menu's command 9 when its window +272 is visible, else 10;
+ * B (6) sends 8 (the menu's virtual +36); PC's CModalMenu keeps Ok, Accept, Decline (+0x6c..+0x74).
+ * Here, over PC's (made transparent, as the tip): A presses PC's Accept when shown, else its Ok;
+ * B its Decline when shown (the 360 sends 8 also when it is not; what that does with Ok alone
+ * is not read). The buttons shown as PC's. */
+#define MODAL_PREFIX "x360modal_"
+static void *modal_root;
+static char pc_modal_prefix[48];
+static int modal_failed, modal_shown;
+
+static void modal_tick(void) {
+    static unsigned last_search, prev;
+    static void *pc_modal;
+    unsigned now = GetTickCount(), buttons, pressed;
+    char v[2048];
+    if (modal_failed) return;
+    /* PC's modal: of PC's layouts with an Accept (combine, dialog, enchant, quest dialog), the
+     * only one with Ok and Dialog too. */
+    if (!pc_modal && now - last_search > 250) {
+        static const char *const needs[] = {"Ok", "Dialog", 0};
+        last_search = now;
+        pc_modal = find_pc_by_suffix("Accept", needs, pc_modal_prefix, sizeof pc_modal_prefix);
+    }
+    if (!pc_modal) return;
+    if (!pc_attached(pc_modal_prefix, "Frame")) {
+        if (modal_shown) {
+            modal_shown = 0;
+            set_visible(modal_root, 0, 0);
+            prop(win_of(pc_modal_prefix, "Frame"), "Alpha", "1");
+        }
+        return;
+    }
+    if (!modal_root) {
+        RECT r;
+        HWND hw = active_window();
+        modal_root = load("media/ui/x360/modalmenu.layout", MODAL_PREFIX);
+        if (!modal_root) { modal_failed = 1; return; }
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(modal_root, k, 0);
+        pass_mouse(modal_root);
+        set_visible(modal_root, 0, 0);
+    }
+    if (!modal_shown) {
+        RECT r;
+        HWND hw = active_window();
+        if (hw && GetClientRect(hw, &r) && r.bottom > r.top)
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+        modal_shown = 1;
+        set_visible(modal_root, 0, 1);
+        prop(win_of(pc_modal_prefix, "Frame"), "Alpha", "0");
+        move_to_front(modal_root, 0);
+        prev = x360_pad_buttons();
+    }
+    read_prop(win_of(pc_modal_prefix, "Title"), "Text", v, sizeof v);
+    text(win_of(MODAL_PREFIX, "Title"), v);
+    read_prop(win_of(pc_modal_prefix, "Dialog"), "Text", v, sizeof v);
+    text(win_of(MODAL_PREFIX, "Dialog"), v);
+    show(win_of(MODAL_PREFIX, "Ok"), pc_shown_in(pc_modal_prefix, "Ok"));
+    show(win_of(MODAL_PREFIX, "Accept"), pc_shown_in(pc_modal_prefix, "Accept"));
+    show(win_of(MODAL_PREFIX, "Decline"), pc_shown_in(pc_modal_prefix, "Decline"));
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~prev;
+    prev = buttons;
+    if (pressed & 0x1000) press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok");   /* A */
+    if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) press_pc(pc_modal_prefix, "Decline");   /* B */
+}
+
 void x360_frame_tick(void) {
     static int logged;
     if (!find_world()) return;
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
+    __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
     __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
