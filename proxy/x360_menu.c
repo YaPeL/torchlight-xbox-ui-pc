@@ -2499,6 +2499,8 @@ static void stats_commit(void);
 static void skills_load(void);
 static void quest_load(void);
 static void *skills_root, *quest_root;
+static void *skillmap_root;   /* the Skills page's mapping overlay, and whether it is open */
+static int sk_map;
 static void *stats_root, *journal_root;
 static void hide_info(void);
 static void update_info(void);
@@ -2622,6 +2624,7 @@ void x360_inventory_toggle(void) {
     if (stats_root) set_visible(stats_root, 0, inventory_open && page == 1);
     if (journal_root) set_visible(journal_root, 0, inventory_open && page == 1);
     if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
+    if (sk_map && !(inventory_open && page == 2)) { sk_map = 0; show(skillmap_root, 0); }
     if (quest_root) set_visible(quest_root, 0, inventory_open && page == 3);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     /* The columns' places by the menu: the inventory's 299 and 602; a stash's 0, 303 and 606
@@ -3426,6 +3429,88 @@ static void skills_move(int dx, int dy) {
     skills_fill();
 }
 
+/* The mapping of a skill to B, Y, LT or RT (X on the page). The 360: X (sub_823827F8, code 7)
+ * opens it for a selected skill that is not passive (+0x38 != 4) and has an effective rank (+0xa8,
+ * GOG 0x5d7d40 computes it): the help box hidden, the overlay skillsmap_xenon shown
+ * (sub_823825F0(1)); X again closes it. With it open the sticks, A, B's close and LT/RT's tabs do
+ * nothing; on the release of B, Y, LT or RT (the GamepadButtonUp handler, sub_82382C58) the skill
+ * goes in that button's slot (sub_82382720: the same tests and +0x43 == 0 with +0x45 set; the
+ * slot's skill GUID from the skill's +0x180, the slot's item cleared; the sound 30), and the
+ * overlay closes; if the skill cannot go, the overlay stays. PC's own placing (GOG 0x540601, the
+ * same tests and the sound 0x1e) is called: 0x40c8f0 with the slot. The slots are those the pad
+ * fires (proxy/pad.c: B the hotbar key 3, Y 4, LT 5, RT 6; PC's SkillSlotN has the ID N-1,
+ * GOG 0x562953); the 360's are B 4, Y 3, LT 5, RT 6, or 7, 2, 8, 9 with its second set, which
+ * this port does not have. The overlay's slots show the HUD's icons, as the page's SkillSet1. */
+#define SKILLMAP_PREFIX "x360skm_"
+#define GOG_SET_SKILL_HOTKEY 0x0040c8f0   /* thiscall (the player), slot, GUID low, high; ret 0xc */
+#define GOG_SKILL_RANK_NOW 0x005d7d40     /* the skill's effective rank, into its +0xa8 */
+typedef void (__fastcall *set_hotkey_fn)(void *unit, void *edx, int slot, unsigned lo, unsigned hi);
+static int skill_mappable(unsigned char *sk) {
+    if (!sk || *(int *)(sk + 0x38) == 4) return 0;
+    ((void_fn)GOG_SKILL_RANK_NOW)(sk, 0);
+    return *(unsigned *)(sk + 0xa8) > 0;
+}
+
+static void skillmap_fill(void) {
+    static const char *const slot[4] = {"SkillSlot4", "SkillSlot5", "SkillSlot6", "SkillSlot7"};
+    int j;
+    for (j = 0; j < 4; j++) {
+        char name[32], image[128];
+        void *src, *dst, *icon;
+        copy(name, sizeof name, "icon_", slot[j]);
+        src = win_of(HUD_PREFIX_SK, name);
+        copy(name, sizeof name, "Map", slot[j]);
+        dst = win_of(SKILLMAP_PREFIX, name);
+        if (!dst) continue;
+        copy(name, sizeof name, "icon_Map", slot[j]);
+        icon = win_of(SKILLMAP_PREFIX, name);
+        if (!icon && (icon = create_window(SKILLMAP_PREFIX, name, "ceguiWidget/StaticImage")) != 0) {
+            add_child(dst, 0, icon);
+            prop(icon, "UnifiedAreaRect", "{{0,0},{0,0},{1,0},{1,0}}");
+        }
+        image[0] = 0;
+        if (src) read_prop(src, "Image", image, sizeof image);
+        if (icon) { prop(icon, "Image", image); show(icon, image[0] != 0); }
+    }
+}
+
+static void skillmap_show(int on) {
+    sk_map = on && skillmap_root;
+    if (!skillmap_root) return;
+    show(skillmap_root, sk_map);
+    show(win_of(SKILLMAP_PREFIX, "MapSkillSet1"), 1);
+    show(win_of(SKILLMAP_PREFIX, "MapSkillSet2"), 0);
+    skills_fill();
+    if (sk_map) { skillmap_fill(); show(win_of(SKILLS_PREFIX, "HelpSkillDialog"), 0); }
+}
+
+static int skillmap_assign(int slot) {
+    unsigned char *sk = (unsigned char *)selected_skill();
+    if (!skill_mappable(sk) || *(sk + 0x43) || !*(sk + 0x45)) return 0;
+    ((set_hotkey_fn)GOG_SET_SKILL_HOTKEY)(hero, 0, slot, *(unsigned *)(sk + 0x180), *(unsigned *)(sk + 0x184));
+    if (ui && *(void **)(ui + GOG_UI_SOUNDS))
+        ((play_sound_at_fn)GOG_PLAY_SOUND_AT)(*(void **)(ui + GOG_UI_SOUNDS), 0, 0x1e, 0, 0.0f, 0.0f, 0);
+    return 1;
+}
+
+/* With the overlay open: B, Y, LT, RT on their release; X closes. Returns 1 while it is open. */
+static int skillmap_pad(unsigned pressed, unsigned buttons) {
+    static const struct { unsigned bit; int slot; } keys[] = {
+        {0x2000, 2}, {0x8000, 3}, {0x10000, 4}, {0x20000, 5},
+    };
+    static unsigned last;
+    unsigned released = last & ~buttons, i;
+    last = buttons;
+    if (!sk_map) return 0;
+    if (pressed & 0x4000) { skillmap_show(0); return 1; }
+    if (pressed & 0x0030) { skillmap_show(0); return 0; }      /* Start, Back: as without it */
+    for (i = 0; i < 4; i++) {
+        if (pressed & keys[i].bit) skills_fill();        /* the 360's press: the help box redrawn */
+        if ((released & keys[i].bit) && skillmap_assign(keys[i].slot)) { skillmap_show(0); break; }
+    }
+    return 1;
+}
+
 static void skills_pad(unsigned pressed, int lx, int ly) {
     static int held;
     int dx = (pressed & 0x0008) || (lx > 500 && !held) ? 1 : (pressed & 0x0004) || (lx < -500 && !held) ? -1 : 0;
@@ -3439,6 +3524,7 @@ static void skills_pad(unsigned pressed, int lx, int ly) {
             skills_fill();
         }
     }
+    if ((pressed & 0x4000) && skill_mappable((unsigned char *)selected_skill())) skillmap_show(1);   /* X */
 }
 
 static void skills_load(void) {
@@ -3455,6 +3541,13 @@ static void skills_load(void) {
     move_by(skills_root, 1, 0);
     move_by(skills_root, -1, 0);
     plain_markup(skills_root, 0);
+    skillmap_root = load("media/ui/x360/skillsmap_xenon.layout", SKILLMAP_PREFIX);
+    if (skillmap_root) {
+        scale_tree(skillmap_root, k, 0);
+        add_child(skills_root, 0, skillmap_root);
+        plain_markup(skillmap_root, 0);
+        show(skillmap_root, 0);
+    }
     read_prop(win_of(SKILLS_PREFIX, "HelpSkillDialog"), "UnifiedAreaRect", value, sizeof value);
     if (parse_rect(value, v)) help_width = v[5] - v[1];
     /* What the 360's page keeps hidden (the catalog's menus/11): the second skill set and the
@@ -4045,6 +4138,7 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (!inventory_open || !find_world()) return;
     triggers_tick();
     if (petcmd_open) { petcmd_pad(pressed, lx); return; }
+    if (skillmap_pad(pressed, buttons)) return;               /* the Skills page's mapping open */
     if (pressed & 0x2000) {                                            /* B */
         if (shop) shop_close();
         else x360_inventory_toggle();

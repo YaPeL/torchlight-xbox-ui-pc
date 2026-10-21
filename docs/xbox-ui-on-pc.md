@@ -1521,27 +1521,37 @@ paragraph in its colour. **Not done:** X, mapping a skill to LT/RT/Y/B (read bel
 written); the 360's requirement line ("Right hand requires : melee Weapon", built by
 `sub_823B07C8` from its own strings, which PC does not have).
 
-**The Skills page's mapping (X), read 2026-10-21, not written.** The page's input,
-`sub_823827F8`, switches on Runic's button code (section 10b): **[read]**
-- X (7): with the overlay `+1952` hidden, and a selected skill (`sub_8235E830`) whose `+56` is
-  not 4 and `+168` is 0, it hides the help box `+1956` and opens the mapping, `sub_823825F0(1)`:
-  the overlay is shown and the four slot windows of the tree (`+1920`: `+1584` LT, `+1588` RT,
-  `+1592` Y, `+1596` B) go to alpha 0.5. With the overlay shown, X closes it,
-  `sub_823825F0(0)`: alpha 1.0, and `sub_8235EBB8` redraws the four slot icons (`+1600..+1612`)
-  from the player's hotkey GUIDs at `+2136`, `+2144`, `+2152`, `+2160`, slots 3-6 of ten 8-byte
-  slots from `+2112` (B 3, Y 4, LT 5, RT 6: the pad's hotbar keys in `pad.c`).
-- B (6), Y (8), RT (9), LT (11), with the overlay shown: `sub_8235EAD8(tree, code)` sets the
-  pressed button's slot window to alpha 1.0 and the others to 0.5, then `sub_82381D18` redraws the
-  help box. Hidden: B closes the page, LT/RT change tabs, Y does nothing.
-- The sticks (17-24) move in the tree only with the overlay hidden (`sub_823817C0`); A (5)
-  learns only with it hidden.
-- **Not found: where the slot is written.** `sub_8235EAD8` only sets alphas (and calls a
-  `dynamic_cast` on `+176` whose result it drops); `sub_82381D18` writes no slot; the stores to
-  `+2112..+2184` are the player's creation and load (`0x822CEE68`, `0x822D0358`, `0x822D0B50`,
-  `0x822FE470`). Two searches failed (the functions above, then indexed stores to the array);
-  stopped here. On PC the means is `0x40c8f0`, thiscall(player, slot, guid lo, guid hi), with the
-  skill's GUID at `+0x180`/`+0x184` (PC's assign at `0x540601`); when the 360 writes (at the
-  press or at the close) is the open point.
+**The Skills page's mapping (X), read and written 2026-10-21, not run yet.** The page's input,
+`sub_823827F8` (`GamepadButtonDown`), switches on Runic's button code (section 10b); a second
+handler, `sub_82382C58`, takes `GamepadButtonUp` (both subscribed in `sub_82381268`). **[read]**
+- X (7): with the overlay `+1952` (`skillsmap_xenon.layout`) hidden, and a selected skill
+  (`sub_8235E830`) not passive (`+56 != 4`) with an effective rank (`sub_823AE2A0`, then
+  `+168 > 0`), it hides the help box `+1956` and opens the mapping, `sub_823825F0(1)`. With the
+  overlay shown, X closes it, `sub_823825F0(0)`, and `sub_8235EBB8` redraws the slot icons from
+  the player's hotkey GUIDs (ten 8-byte slots from `+2112`).
+- B (6), Y (8), RT (9), LT (11) pressed, with the overlay shown: `sub_8235EAD8` sets alphas on
+  the tree's `PressButtonLT/RT/Y/B` (named in `sub_8235AEF0`; found only in
+  `charskillsmenu_xenon.layout`, which no path in the image names, so on this page the lookups
+  are likely empty), then `sub_82381D18` redraws the help box. With it hidden: B closes the page,
+  LT/RT change tabs, Y does nothing; the sticks move and A learns only with it hidden.
+- **Released** (`sub_82382C58`), with the overlay shown: the slot is B 4, Y 3, LT 5, RT 6, or
+  B 7, Y 2, LT 8, RT 9 when the flag `[[menu+168]+6032]+5220` is set (the second set).
+  `sub_82382720(menu, slot)` checks the skill as X does plus `+67 == 0` and `+69` set, writes its
+  GUID (`+384`) into the slot and, if it is not -1, clears the slot's item (`+2192`), plays the
+  sound 30 and redraws; on success the overlay closes, else it stays.
+- PC's `0x540601` (the drop of a skill on a hotbar slot) is the same function: the same tests
+  (`0x5d7d40`, `+0xa8`, `+0x43`, `+0x45`), `0x40c8f0` (thiscall player, slot, GUID lo, hi; it
+  clears the item slot the same way) and the sound `0x1e` through `0x5366f0` with no node. PC's
+  `SkillSlotN` has the ID N-1 (`0x562953`), the slot index.
+
+**Written** (`skills_pad`, `skillmap_pad` in `proxy/x360_menu.c`): X opens `skillsmap_xenon` over
+the page for a skill that passes, with `MapSkillSet1` shown and `MapSkillSet2` hidden (this port
+has one set). Its `MapSkillSlot4..7` get the HUD's icons, as the page's `SkillSet1` does: that
+fill is ours, the 360's fill of these slots was not read. B, Y, LT and RT on their release call
+`0x40c8f0` with the slot the pad fires for that button (`pad.c`: B 2, Y 3, LT 4, RT 5, PC's keys
+3-6), not the 360's numbers, so that the button then casts the skill. Then the sound 30 and the
+overlay closes; X, Start or Back close it too. To check in the QA: the overlay's place, and that
+the skill on B/Y/LT/RT fires from that button in play.
 
 **The Quest page** (`menus/12`): `questmenu_xenon` as `CQuestMenuXenon`: the quests of the player's
 quest manager (GOG `+0x7b4`, list `+0xc`, count `+0x10`) with a name (`0x59f180`) and details
@@ -1954,7 +1964,7 @@ what they still lack. The screens done are in section 14.
 
 **Earlier lists** (sections 11-13) still open:
 - The converter must decrypt the player's XEX itself.
-- The Skills page's requirement line and its X (the mapping read in section 14, its slot write not found).
+- The Skills page's requirement line; its X (the mapping) is written, not run (section 14).
 - The target bar's size, checked here only for the enemy.
 
 ## 16. The Steam test: plan (for the user's approval, 2026-10-21)

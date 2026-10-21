@@ -20,9 +20,8 @@ the 360's (`docs/xbox-ui-on-pc.md`, sections 14 and 15). What comes next, in the
 4. **Whirlpool ("remolino"):** what this item refers to was not written down when the project
    paused. The near candidates are PC's fishing ripples under the 360's ring (section 15, item 7)
    and the town portal's swirl. Confirm with the user before working on it.
-5. **Skills on B/Y/LT/RT:** the HUD shows them, but they were not tried with skills assigned
-   (section 9). The 360's mapping on the Skills page (X, then the button) is read in section 14;
-   where it writes the slot was not found (stopped after two searches).
+5. **Skills on B/Y/LT/RT:** the HUD shows them; the 360's mapping on the Skills page (X, then the
+   button, assigned on its release) is written and not run yet (section 14).
 6. **Steam and Epic:** only once the port works on GOG (the user's decision, 2026-10-21). A
    draft plan for Steam is in section 16; its first offline tool, `tools/port_addresses.py`, is
    written and tested on synthetic data, not run against another build.
