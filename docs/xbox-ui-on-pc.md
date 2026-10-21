@@ -1960,6 +1960,11 @@ what they still lack. The screens done are in section 14.
    - Create the X360_ fonts with the function PC loads its own with (near GOG `0x55fc60`, the one
      that sets the triggers) instead of the scheme, then apply `match_spacing`. Whatever else that
      path does is then inherited.
+   - **Read 2026-10-21:** that path (GOG `0x55fc5e`-`0x55fd26`) sets `Serif` on a window, gets
+     the font, sets the triggers `|c` and `|u`, and then **sets the font's byte `+0x424` to 1**.
+     The diff read `+0x200..+0x400` only, so it missed it. Written: `set_colour_triggers` now
+     sets `+0x424` as PC does, and the diff reads to `+0x440`. Not run yet; to check in the QA
+     with `dialog_markup=1` (the names in gold).
 2. **The quest reward item's icon** in the dialog. Written, not run yet: PC draws the icon in a
    window under its `ItemSlotN` (`icon__N`; the dump of the quest NPC's offer), so the first image under
    PC's slot is copied to the 360's. Its sockets come from PC's overlay over that slot

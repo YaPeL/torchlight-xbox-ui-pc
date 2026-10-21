@@ -431,6 +431,10 @@ static void set_colour_triggers(void *font) {
     string_ctor(&s, 0, "|u");
     for (i = 0; i < sizeof v.b; i++) v.b[i] = s.bytes[i];
     off(font, 0, v);
+    /* Then PC sets the font's byte +0x424 to 1 (GOG 0x55fd26, after the two triggers; one class
+     * for PC's fonts and the X360_ ones: the vtable is the same, the font diff). The diff read
+     * only +0x200..+0x400, so it did not see it: likely the switch that turns the markup on. */
+    *((unsigned char *)font + 0x424) = 1;
 }
 
 /* A diagnosis of the colour markup (docs 15, item 1): PC's SerifBig and the converted
@@ -449,7 +453,7 @@ static void font_diff(void) {
     string_ctor(&n, 0, "X360_SerifBig"); __try { b = get_font(fm, 0, &n); } __except (1) { b = 0; } string_dtor(&n, 0);
     if (!a || !b) { x360_log("x360 font diff: a font missing\r\n"); return; }
     x360_log("x360 font diff: PC's vtable "); x360_log_num(*(long *)a); x360_log(", X360_'s "); x360_log_num(*(long *)b); x360_log("\r\n");
-    for (i = 0x200 / 4; i < 0x400 / 4; i++) {
+    for (i = 0x200 / 4; i < 0x440 / 4; i++) {
         unsigned va = ((unsigned *)a)[i], vb = ((unsigned *)b)[i];
         if (va != vb) {
             x360_log("x360 font diff: +"); x360_log_num((long)(i * 4)); x360_log(" PC "); x360_log_num((long)va);
