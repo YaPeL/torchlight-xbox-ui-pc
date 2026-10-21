@@ -1959,6 +1959,10 @@ what they still lack. The screens done are in section 14.
 
 ## 16. The Steam test: plan (for the user's approval, 2026-10-21)
 
+**On hold (the user's decision, 2026-10-21):** adapting the port to Steam, and to the Epic
+version, is thought about only once the interface port works on GOG. Until then this plan is a
+draft, and `tools/port_addresses.py` is not run against another build.
+
 Nothing here has been done; each phase starts only with the user's OK. Section 4's precautions
 hold throughout, and `tools/steam_guard.py snapshot` runs before each phase that reads Steam's
 folders, `verify` after it (UNCHANGED, or stop and tell the user).
