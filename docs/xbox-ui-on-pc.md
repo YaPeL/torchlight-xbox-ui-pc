@@ -740,6 +740,16 @@ whether it is attacking. **[read: the runs]**
   same default, 10.0, which the hero's data does not override in either pak. So the 360's turning
   in place when the stick spins fast comes from something else (when the hero starts walking while
   it turns); not found yet. **[read]**
+- **The spin in place, again (2026-10-21; the user's "remolino": on the 360 a fast spin of the
+  stick turns the hero in place, on PC it walks a spiral).** The 360's stick path read whole:
+  `sub_8221B8E8` (the per-frame move: no destination during a skill, stops on release),
+  `sub_8221C730` (a destination at once if the point equals the current one, else on the 0.1 s
+  timer) and `sub_8221C838` (the point: the stick, 2.0 units, turned by the camera; past a 0.1
+  dead zone) call `setDestination` (`sub_8228F8C8`, *(OT)*) as `proxy/pad.c` does. No test of the
+  angle between the facing and the stick there. So the difference, if any, is in the engine's
+  walking step (shared code whose two builds were not compared) or in timing. Not found; set
+  aside, as the user allowed. The mods agent was asked whether it knows where the 360 decides
+  to walk or only turn.
 
 **The target choice, the 360's rule (2026-10-15, after the user: "lo tengo muy cerca y no me hace
 el highlight; a veces me hace el highlight pero le pega a otro").**

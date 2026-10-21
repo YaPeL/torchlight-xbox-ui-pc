@@ -18,9 +18,9 @@ the 360's (`docs/xbox-ui-on-pc.md`, sections 14 and 15). What comes next, in the
 3. **Modal windows:** PC's tips as the 360's `tipmenu` (B closes, Y turns them off) and PC's
    modal (the fishing's result, the hardcore death) as the 360's `modalmenu` (A accepts or
    oks, B declines): written, not run yet (section 14).
-4. **Whirlpool ("remolino"):** what this item refers to was not written down when the project
-   paused. The near candidates are PC's fishing ripples under the 360's ring (section 15, item 7)
-   and the town portal's swirl. Confirm with the user before working on it.
+4. **Whirlpool ("remolino"):** the user's description: on the 360 a fast spin of the stick turns
+   the hero in place, on PC it walks a spiral. The 360's stick path matches the port's (section
+   9e); set aside unless the mods agent knows where the 360's engine decides to turn in place.
 5. **Skills on B/Y/LT/RT:** the HUD shows them; the 360's mapping on the Skills page (X, then the
    button, assigned on its release) is written and not run yet (section 14).
 6. **Steam and Epic:** only once the port works on GOG (the user's decision, 2026-10-21). A
