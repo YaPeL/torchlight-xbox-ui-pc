@@ -2483,6 +2483,7 @@ static void show_doll(int on) {
 }
 
 static void *hud_root, *pet_hud_root;
+static unsigned overlay_closed_at;     /* when a tip, modal or NPC dialog of the 360's last closed */
 static int qd_shown;                         /* the 360's NPC dialog is shown (its section, at the end) */
 static int shop_closing;
 static int is_ours(void *w) {
@@ -4890,6 +4891,7 @@ static void qd_press(const char *name) { press_pc(pc_qd_prefix, name); }
 static void qd_show(int on) {
     if (on == qd_shown) return;
     qd_shown = on;
+    if (!on) overlay_closed_at = GetTickCount();
     set_visible(qd_root, 0, on && !x360_dialog_pc);
     prop(win_of(pc_qd_prefix, "Frame"), "Alpha", on && !x360_dialog_pc ? "0" : "1");
     if (hud_root) set_visible(hud_root, 0, !on);
@@ -5265,6 +5267,7 @@ static void tip_tick(void) {
     if (!pc_attached(pc_tip_prefix, "Frame")) {
         if (tip_shown) {
             tip_shown = 0;
+            overlay_closed_at = GetTickCount();
             set_visible(tip_root, 0, 0);
             prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
         }
@@ -5335,6 +5338,7 @@ static void modal_tick(void) {
     if (!pc_attached(pc_modal_prefix, "Frame")) {
         if (modal_shown) {
             modal_shown = 0;
+            overlay_closed_at = GetTickCount();
             set_visible(modal_root, 0, 0);
             prop(win_of(pc_modal_prefix, "Frame"), "Alpha", "1");
         }
@@ -5373,6 +5377,13 @@ static void modal_tick(void) {
     prev = buttons;
     if (pressed & 0x1000) press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok");   /* A */
     if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) press_pc(pc_modal_prefix, "Decline");   /* B */
+}
+
+/* Whether a tip, modal or NPC dialog of the 360's has the pad (or closed less than 0.3 s ago, so
+ * the press that closed it does not reach the world too): the 360's handlers keep the buttons they
+ * get (sub_823589A0 and sub_82353758 return 1), so proxy/pad.c does not act in the world then. */
+int x360_overlay_open(void) {
+    return tip_shown || modal_shown || qd_shown || GetTickCount() - overlay_closed_at < 300;
 }
 
 void x360_frame_tick(void) {
