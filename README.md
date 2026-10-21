@@ -21,8 +21,10 @@ the 360's (`docs/xbox-ui-on-pc.md`, sections 14 and 15). What comes next, in the
    paused. The near candidates are PC's fishing ripples under the 360's ring (section 15, item 7)
    and the town portal's swirl. Confirm with the user before working on it.
 5. **Skills on B/Y/LT/RT:** the HUD shows them, but they were not tried with skills assigned
-   (section 9).
-6. **The Steam test**, last, with a plan the user approves (section 4).
+   (section 9). The 360's mapping on the Skills page (X, then the button) is read in section 14;
+   where it writes the slot was not found (stopped after two searches).
+6. **The Steam test**, last: the plan is written for the user's approval (section 16); its
+   first offline tool, `tools/port_addresses.py`, is written and tested.
 7. **QA with the 8BitDo pad** (the user's controller), the whole flow played.
 
 Section 15 of the doc has the full list of what is left (first: the gold of names in the
@@ -37,6 +39,7 @@ dialogs, stopped after three tries, its next steps written there).
 - `tools/build_proxy.py`: builds the proxy `CEGUIBase.dll` (`proxy/cegui_proxy.c`) from the user's DLL.
 - `tools/grab_window.py`: a screenshot of the game's window.
 - `tools/send_input.py`: mouse and keyboard input for the game, from inside its Wine prefix.
+- `tools/port_addresses.py`: GOG's addresses found in another build of `Torchlight.exe`, offline.
 - `tools/steam_guard.py`: hash snapshot and verify of the Steam folders that must not change.
 - `tools/run_gog.sh`: runs the GOG copy through Proton's script in a prefix of its own.
 - `tools/check_no_game_files.py`: run by CI; fails if a game file type is committed.

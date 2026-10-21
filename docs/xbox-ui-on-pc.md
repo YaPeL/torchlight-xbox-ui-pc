@@ -1517,9 +1517,31 @@ Next Level with the next rank's and its required level (`0x5d5c00`); the help bo
 `0x484ff0`); A learns as `sub_8235E9D0` through PC's `0x488430` and `0x5de550`. The texts carry the
 360's colour marks (`|cAARRGGBB` .. `|u`, the data's own); PC's CEGUI writes them as they are, so a
 whole marked text becomes plain text and colour, and a description gets one StaticText per
-paragraph in its colour. **Not done:** X (mapping a skill to LT/RT/Y/B: `sub_823825F0` opens it,
-the slots the hotbar's); the 360's requirement line ("Right hand requires : melee Weapon", built by
+paragraph in its colour. **Not done:** X, mapping a skill to LT/RT/Y/B (read below, not
+written); the 360's requirement line ("Right hand requires : melee Weapon", built by
 `sub_823B07C8` from its own strings, which PC does not have).
+
+**The Skills page's mapping (X), read 2026-10-21, not written.** The page's input,
+`sub_823827F8`, switches on Runic's button code (section 10b): **[read]**
+- X (7): with the overlay `+1952` hidden, and a selected skill (`sub_8235E830`) whose `+56` is
+  not 4 and `+168` is 0, it hides the help box `+1956` and opens the mapping, `sub_823825F0(1)`:
+  the overlay is shown and the four slot windows of the tree (`+1920`: `+1584` LT, `+1588` RT,
+  `+1592` Y, `+1596` B) go to alpha 0.5. With the overlay shown, X closes it,
+  `sub_823825F0(0)`: alpha 1.0, and `sub_8235EBB8` redraws the four slot icons (`+1600..+1612`)
+  from the player's hotkey GUIDs at `+2136`, `+2144`, `+2152`, `+2160`, slots 3-6 of ten 8-byte
+  slots from `+2112` (B 3, Y 4, LT 5, RT 6: the pad's hotbar keys in `pad.c`).
+- B (6), Y (8), RT (9), LT (11), with the overlay shown: `sub_8235EAD8(tree, code)` sets the
+  pressed button's slot window to alpha 1.0 and the others to 0.5, then `sub_82381D18` redraws the
+  help box. Hidden: B closes the page, LT/RT change tabs, Y does nothing.
+- The sticks (17-24) move in the tree only with the overlay hidden (`sub_823817C0`); A (5)
+  learns only with it hidden.
+- **Not found: where the slot is written.** `sub_8235EAD8` only sets alphas (and calls a
+  `dynamic_cast` on `+176` whose result it drops); `sub_82381D18` writes no slot; the stores to
+  `+2112..+2184` are the player's creation and load (`0x822CEE68`, `0x822D0358`, `0x822D0B50`,
+  `0x822FE470`). Two searches failed (the functions above, then indexed stores to the array);
+  stopped here. On PC the means is `0x40c8f0`, thiscall(player, slot, guid lo, guid hi), with the
+  skill's GUID at `+0x180`/`+0x184` (PC's assign at `0x540601`); when the 360 writes (at the
+  press or at the close) is the open point.
 
 **The Quest page** (`menus/12`): `questmenu_xenon` as `CQuestMenuXenon`: the quests of the player's
 quest manager (GOG `+0x7b4`, list `+0xc`, count `+0x10`) with a name (`0x59f180`) and details
@@ -1932,5 +1954,54 @@ what they still lack. The screens done are in section 14.
 
 **Earlier lists** (sections 11-13) still open:
 - The converter must decrypt the player's XEX itself.
-- The Skills page's requirement line and its X.
+- The Skills page's requirement line and its X (the mapping read in section 14, its slot write not found).
 - The target bar's size, checked here only for the enemy.
+
+## 16. The Steam test: plan (for the user's approval, 2026-10-21)
+
+Nothing here has been done; each phase starts only with the user's OK. Section 4's precautions
+hold throughout, and `tools/steam_guard.py snapshot` runs before each phase that reads Steam's
+folders, `verify` after it (UNCHANGED, or stop and tell the user).
+
+**Why a plan is needed:** the proxy calls about 150 addresses of GOG's `Torchlight.exe` (152
+constants in `proxy/*.c`; the CGameUI menus, the player's hotbar, the shops' actions, the pad's
+movement). Steam's executable is another build (17685 against GOG's 17870, section 5), so none of
+those addresses holds there as it is. With GOG's addresses the proxy would call into the wrong
+code. The layouts, imagesets and fonts do carry over (section 5).
+
+**Phase A, offline (reads Steam's install once, writes nothing there):**
+1. Copy Steam's `Torchlight.exe` and `CEGUIBase.dll` to a folder outside the repository
+   (`~/torchlight-steam/bin/`), with steam_guard around the copy. After that, only the copies are
+   read.
+2. `tools/port_addresses.py GOG_EXE STEAM_EXE --source proxy`: for each GOG address, the one
+   place in Steam's build with the same bytes, once call displacements and in-image values are
+   masked. Checked on GOG against itself: 152 of 152 map to themselves, all code. Every
+   address it does not find, or finds by a short window, is located by hand in Steam's build,
+   from its callers.
+3. The struct offsets (CGameUI `+0x2d8..+0x31c`, the player's `+0x860`, the menus' fields) are
+   compared through the code that uses them: a site matched byte for byte keeps the offsets
+   written in it. An offset used only by the proxy is checked against a Steam site reading it.
+4. The proxy gets one address table per build, chosen at load from `Torchlight.exe`'s PE
+   timestamp. On an unknown build it hooks nothing and only the converted layouts load, so a
+   wrong table cannot run. The CEGUIBase proxy is built from Steam's DLL, exports by name; the
+   one import that differs (`UVector2(UDim, UDim)`) is forwarded like the rest.
+5. Tests for the table choice, on synthetic PE headers. Committed: the table of addresses (they
+   are numbers, not game files); not the copies.
+
+**Phase B, one run (the user's approval, and the agents told before and after):**
+1. A prefix of its own (`~/torchlight-steam/compat`), never `compatdata/41500`. The game folder
+   is copied into `~/torchlight-steam/game/`, so the proxy never lands in Steam's install. The
+   test save comes from GOG's prefix (the mine save), not from the user's Steam saves.
+2. Steam closed (checked with `pgrep`, not assumed), Steam Cloud off for the game, and a
+   `steam_appid.txt` with 41500 next to the copied executable, so Steamworks does not restart the
+   game through Steam (`SteamAPI_RestartApp`, which would open it in the real prefix). The run
+   script refuses `compatdata/41500` as `run_gog.sh` does, and runs without `steam` on the PATH.
+3. If the game exits at once, or Steam starts: stop, `verify`, tell the user. No second try
+   without a new plan.
+4. The checks, short: the HUD, the inventory and Skills pages, a shop, an NPC dialog, a label,
+   pad movement. Then quit, `verify` (UNCHANGED), and say "done".
+
+**What may go wrong, known now:** Steam's executable needs `steam_api.dll` and may refuse to
+start without a running Steam. If `steam_appid.txt` does not make it start, the Steam test stops
+there and the user decides. Starting Steam would mean the real client near the user's prefix, and
+that is outside this plan.
