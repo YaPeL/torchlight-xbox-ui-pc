@@ -1973,8 +1973,13 @@ what they still lack. The screens done are in section 14.
 3. **The object label of the candidate.** It is matched by text and, of several of one name, by
    the screen's centre (not the 360's rule). Next: project the candidate's position.
 4. **The object label's background**, darker in the 360 (its frame's pixels are 720-row ones).
-5. **Target bars:** the champion's and the pet's or NPC's are not compared; the rule for a dead
-   target is not read.
+5. **Target bars:** the champion's and the pet's or NPC's are not compared. The rule for a dead
+   target, read 2026-10-21 (`sub_821A83C8`, about `0x821A9200`): the unit is the one under the
+   cursor if it is of type 104, else the player's virtual `+460` (the one attacked); the bar is
+   shown if it is of type 167 and its state is not `MIMICIDLE` (`sub_822801D0`). There is no
+   test of death there, so a dead unit keeps its bar, empty, while it is the target: as the port
+   does (the attacked unit for 3 s). The types 104 and 167 are not checked here: whether PC's
+   `ISA` (`0x480760`) numbers them the same was not verified.
 6. **The merchant's screen sides** keep PC's panels (PC narrows the world's viewport; stopped
    after two tries), and PC's first-time Tips show after closing a shop.
 7. **Fishing:** PC's result window (the ripples made transparent, not run yet). A (catch) is tested:
