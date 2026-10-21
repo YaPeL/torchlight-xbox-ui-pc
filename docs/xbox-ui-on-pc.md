@@ -1553,6 +1553,19 @@ fill is ours, the 360's fill of these slots was not read. B, Y, LT and RT on the
 overlay closes; X, Start or Back close it too. To check in the QA: the overlay's place, and that
 the skill on B/Y/LT/RT fires from that button in play.
 
+**PC's tips as the 360's (written 2026-10-21, not run yet).** Both builds have a `CTipMenu`:
+the 360's loads `media/ui/tipmenu.uilayout` (`sub_823587C8`, which finds `Title` and `Dialog`
+and subscribes `sub_823589A0` to `GamepadButtonDown`). **[read]** Its pad: B (6) closes (the
+menu's virtual +28); Y (8) calls the settings' `sub_821FA030(.., 0)` (the tips off), saves them
+and closes; the other buttons do nothing. The 360's layout shows B "Close" and Y "Disable Tips"
+(its own texts). PC's `tipmenu.layout` has `Frame`, `Title`, `Dialog`, `Ok` and the checkbox
+`ShowTips` (section 8). **Written** (`tip_tick`, from the frame listener): while PC's tip is
+open (its `Frame` shown and under the sheet, found by `ShowTips`), the 360's is shown over it
+with PC's `Title` and `Dialog`, and PC's is made transparent (as the NPC dialog). B presses PC's
+`Ok`; Y presses `ShowTips` when it is selected, then `Ok`, so PC's own controls turn the option
+off. No catalog capture has a tip, so the QA compares it by eye. The modal (`modalmenu`) is left
+as PC's: PC shows it only at a hardcore death (section 8).
+
 **The Quest page** (`menus/12`): `questmenu_xenon` as `CQuestMenuXenon`: the quests of the player's
 quest manager (GOG `+0x7b4`, list `+0xc`, count `+0x10`) with a name (`0x59f180`) and details
 (`0x5ea120`), six rows with Quest Complete (`isComplete` *(OT)*, `0x5e9200`), the title, details

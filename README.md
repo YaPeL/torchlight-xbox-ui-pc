@@ -15,8 +15,9 @@ the 360's (`docs/xbox-ui-on-pc.md`, sections 14 and 15). What comes next, in the
 1. **Transmuter:** done and tested with one recipe; what remains is in section 15.
 2. **Shop (merchant):** PC's panels at the screen's sides, and PC's first-time Tips after
    closing.
-3. **Modal windows:** PC's modal windows (Tips, the fishing result "You caught …", confirmations)
-   are still PC's; the 360 has `modalmenu.layout` and `tipmenu.layout`.
+3. **Modal windows:** PC's tips are shown as the 360's `tipmenu` (B closes, Y turns them off;
+   written, not run yet, section 14). PC's modal proper appears only at a hardcore death and is
+   left as PC's; the fishing result is still PC's.
 4. **Whirlpool ("remolino"):** what this item refers to was not written down when the project
    paused. The near candidates are PC's fishing ripples under the 360's ring (section 15, item 7)
    and the town portal's swirl. Confirm with the user before working on it.

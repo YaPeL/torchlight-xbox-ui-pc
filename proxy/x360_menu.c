@@ -4755,14 +4755,13 @@ static unsigned qd_last, qd_prev_buttons;
 static float qd_T, qd_t;
 unsigned x360_pad_buttons(void);
 
-/* PC's quest dialog's DialogTextFrame: the first window under the GUI sheet named
- * "...DialogTextFrame" not of the proxy's layouts. */
-static void *find_pc_dialog(void) {
+/* The first window under the GUI sheet whose name ends in `suffix`, not of the proxy's layouts;
+ * its name's prefix (PC's layouts' counter, "20_") into prefix_out. */
+static void *find_pc_by_suffix(const char *suffix, char *prefix_out, unsigned size) {
     typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
     static name_fn gn;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *stack[256];
     int sp = 0;
-    const char *suffix = "DialogTextFrame";
     unsigned n = length(suffix);
     if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
     if (!sheet || !gn) return 0;
@@ -4772,12 +4771,12 @@ static void *find_pc_dialog(void) {
         const char *name = c_str(gn(v, 0), 0);
         unsigned len = length(name), c, nc;
         if (name[0] == 'x' && name[1] == '3' && name[2] == '6' && name[3] == '0') continue;
-        if (len > n && len - n < sizeof pc_qd_prefix) {
+        if (len > n && len - n < size) {
             unsigned i = 0;
             while (i < n && name[len - n + i] == suffix[i]) i++;
             if (i == n) {
-                for (i = 0; i < len - n; i++) pc_qd_prefix[i] = name[i];
-                pc_qd_prefix[len - n] = 0;
+                for (i = 0; i < len - n; i++) prefix_out[i] = name[i];
+                prefix_out[len - n] = 0;
                 return v;
             }
         }
@@ -4787,13 +4786,46 @@ static void *find_pc_dialog(void) {
     return 0;
 }
 
-static int pc_shown(const char *name) {
+/* PC's quest dialog's DialogTextFrame. */
+static void *find_pc_dialog(void) { return find_pc_by_suffix("DialogTextFrame", pc_qd_prefix, sizeof pc_qd_prefix); }
+
+/* Whether PC's window prefix+name is visible, and its Frame shown and still under the GUI sheet
+ * (PC closes its menus by taking them off the sheet: they stay "visible"). */
+static int pc_shown_in(const char *prefix, const char *name) {
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
     static vis_fn vis;
-    void *w = win_of(pc_qd_prefix, name);
+    void *w = win_of(prefix, name);
     if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
     return w && vis && vis(w, 0, 0);
 }
+
+static int pc_attached(const char *prefix, const char *name) {
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    static parent_fn gp;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *w = win_of(prefix, name);
+    int depth = 0;
+    if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    for (; w && gp && depth < 32; w = gp(w, 0), depth++) if (w == sheet) return pc_shown_in(prefix, name);
+    return 0;
+}
+
+/* A left click at the centre of PC's window prefix+name (the mouse PC's own buttons take). */
+static void press_pc(const char *prefix, const char *name) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    static pixel_rect_fn6 rect_of;
+    void x360_inject_left(int down, float x, float y);
+    void *w = win_of(prefix, name);
+    rect6 r;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!w || !rect_of) return;
+    rect_of(w, 0, &r);
+    x360_inject_left(1, (r.left + r.right) * 0.5f, (r.top + r.bottom) * 0.5f);
+    x360_inject_left(0, (r.left + r.right) * 0.5f, (r.top + r.bottom) * 0.5f);
+    x360_log("x360: pressed PC's "); x360_log(prefix); x360_log(name); x360_log("\r\n");
+}
+
+static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
 
 /* The first non-empty Image of w or a window under it. */
 static void first_image_under(void *w, char *out, unsigned size) {
@@ -4846,20 +4878,7 @@ static void qd_mirror_text(const char *name) {
 }
 
 /* A left click on PC's button (its centre, the mouse injected into CEGUI). */
-static void qd_press(const char *name) {
-    typedef struct { float top, bottom, left, right; } rect6;
-    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
-    static pixel_rect_fn6 rect_of;
-    void x360_inject_left(int down, float x, float y);
-    void *w = win_of(pc_qd_prefix, name);
-    rect6 r;
-    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
-    if (!w || !rect_of) return;
-    rect_of(w, 0, &r);
-    x360_inject_left(1, (r.left + r.right) * 0.5f, (r.top + r.bottom) * 0.5f);
-    x360_inject_left(0, (r.left + r.right) * 0.5f, (r.top + r.bottom) * 0.5f);
-    x360_log("x360 dialog: pressed PC's "); x360_log(name); x360_log("\r\n");
-}
+static void qd_press(const char *name) { press_pc(pc_qd_prefix, name); }
 
 static void qd_show(int on) {
     if (on == qd_shown) return;
@@ -4881,15 +4900,7 @@ static void dialog_tick(void) {
     if (!pc_qd_text_frame) return;
     /* PC closes its dialog by taking it off the GUI sheet (it stays "visible"): open while its
      * Frame is visible and under the sheet. */
-    {
-        typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
-        static parent_fn gp;
-        void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *w = win_of(pc_qd_prefix, "Frame");
-        int depth = 0, attached = 0;
-        if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
-        for (; w && gp && depth < 32; w = gp(w, 0), depth++) if (w == sheet) { attached = 1; break; }
-        if (!attached || !pc_shown("Frame")) { if (qd_shown) qd_show(0); qd_last = 0; return; }
-    }
+    if (!pc_attached(pc_qd_prefix, "Frame")) { if (qd_shown) qd_show(0); qd_last = 0; return; }
     if (!qd_root) {
         RECT r;
         HWND hw = active_window();
@@ -5218,12 +5229,78 @@ static void add_frame_listener(void) {
     x360_log("x360 menu: frame listener added\r\n");
 }
 
+/* ---- PC's tips (the 360's CTipMenu, tipmenu.layout) ----
+ * Both builds have a CTipMenu (the 360's loads media/ui/tipmenu.uilayout, sub_823587C8). PC's
+ * (tipmenu.layout: Frame, Title, Dialog, Ok, ShowTips) is shown after a screen's first closing and
+ * in town at a new game. The 360's window is shown over PC's while that is open (as the NPC
+ * dialog, PC's made transparent), Title and Dialog as PC's. Its pad (sub_823589A0, on
+ * GamepadButtonDown): B (6) closes it (the menu's virtual +28); Y (8) turns the tips off (the
+ * settings' sub_821FA030 with 0, then saved) and closes it; the other buttons do nothing. Here B
+ * presses PC's Ok, and Y presses PC's ShowTips when it is selected, then Ok: PC's own controls
+ * turn the option off and close. */
+#define TIP_PREFIX "x360tip_"
+static void *tip_root;
+static char pc_tip_prefix[48];
+static int tip_failed, tip_shown;
+
+static void tip_tick(void) {
+    static unsigned last_search, prev;
+    static void *pc_tip;
+    unsigned now = GetTickCount(), buttons, pressed;
+    char v[2048];
+    if (tip_failed) return;
+    if (!pc_tip && now - last_search > 250) { last_search = now; pc_tip = find_pc_by_suffix("ShowTips", pc_tip_prefix, sizeof pc_tip_prefix); }
+    if (!pc_tip) return;
+    if (!pc_attached(pc_tip_prefix, "Frame")) {
+        if (tip_shown) {
+            tip_shown = 0;
+            set_visible(tip_root, 0, 0);
+            prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
+        }
+        return;
+    }
+    if (!tip_root) {
+        RECT r;
+        HWND hw = active_window();
+        tip_root = load("media/ui/x360/tipmenu.layout", TIP_PREFIX);
+        if (!tip_root) { tip_failed = 1; return; }
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(tip_root, k, 0);
+        pass_mouse(tip_root);
+        set_visible(tip_root, 0, 0);
+    }
+    if (!tip_shown) {
+        RECT r;
+        HWND hw = active_window();
+        if (hw && GetClientRect(hw, &r) && r.bottom > r.top)   /* the 360's spacing, as the dialog's */
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+        tip_shown = 1;
+        set_visible(tip_root, 0, 1);
+        prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "0");
+        move_to_front(tip_root, 0);
+        prev = x360_pad_buttons();      /* a button held from before does not act */
+    }
+    read_prop(win_of(pc_tip_prefix, "Title"), "Text", v, sizeof v);
+    text(win_of(TIP_PREFIX, "Title"), v);
+    read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", v, sizeof v);
+    text(win_of(TIP_PREFIX, "Dialog"), v);
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~prev;
+    prev = buttons;
+    if (pressed & 0x8000) {                                              /* Y: tips off */
+        read_prop(win_of(pc_tip_prefix, "ShowTips"), "Selected", v, sizeof v);
+        if (v[0] == 'T' || v[0] == 't') press_pc(pc_tip_prefix, "ShowTips");
+        press_pc(pc_tip_prefix, "Ok");
+    } else if (pressed & 0x2000) press_pc(pc_tip_prefix, "Ok");          /* B */
+}
+
 void x360_frame_tick(void) {
     static int logged;
     if (!find_world()) return;
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
+    __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }
