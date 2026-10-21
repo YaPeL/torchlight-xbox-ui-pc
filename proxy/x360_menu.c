@@ -4701,6 +4701,50 @@ static int pc_shown(const char *name) {
     return w && vis && vis(w, 0, 0);
 }
 
+/* The first non-empty Image of w or a window under it. */
+static void first_image_under(void *w, char *out, unsigned size) {
+    void *stack[64];
+    int sp = 0;
+    out[0] = 0;
+    if (!w) return;
+    stack[sp++] = w;
+    while (sp > 0 && !out[0]) {
+        void *v = stack[--sp];
+        unsigned c, n = child_count(v, 0);
+        read_prop(v, "Image", out, size);
+        for (c = n; c-- > 0 && sp < 63;) stack[sp++] = child_at(v, 0, c);
+    }
+}
+
+/* The reward slot i's sockets (1-3), from PC's overlay image over that slot (QuestRewardSocketsO's
+ * windows, in the order the dump showed: slot 1, 2, 3 at the slots' places): "one..", "two..". */
+static int pc_reward_sockets(int i) {
+    void *o = pc_window("QuestRewardSocketsO"), *slot = win_of(pc_qd_prefix, i == 1 ? "ItemSlot1" : i == 2 ? "ItemSlot2" : "ItemSlot3");
+    unsigned c, n = o ? child_count(o, 0) : 0;
+    char want[128], have[128], img[96];
+    read_prop(slot, "UnifiedAreaRect", want, sizeof want);
+    for (c = 0; c < n; c++) {
+        void *w = child_at(o, 0, c);
+        read_prop(w, "UnifiedAreaRect", have, sizeof have);
+        {
+            unsigned q = 0;
+            while (want[q] && want[q] == have[q]) q++;
+            if (want[q] || have[q]) continue;            /* not over this slot */
+        }
+        read_prop(w, "Image", img, sizeof img);
+        {
+            const char *p = img;
+            while (*p && !(p[0] == 'i' && p[1] == 'm' && p[2] == 'a' && p[3] == 'g' && p[4] == 'e' && p[5] == ':')) p++;
+            if (*p) p += 6;
+            if (p[0] == 'o' && p[1] == 'n' && p[2] == 'e') return 1;
+            if (p[0] == 't' && p[1] == 'w' && p[2] == 'o') return 2;
+            if (p[0] == 't' && p[1] == 'h' && p[2] == 'r') return 3;
+        }
+        return 0;
+    }
+    return 0;
+}
+
 static void qd_mirror_text(const char *name) {
     char v[160];
     read_prop(win_of(pc_qd_prefix, name), "Text", v, sizeof v);
@@ -4822,8 +4866,21 @@ static void dialog_tick(void) {
             on = pc_shown(bkg);
             items += on;
             show(win_of(QD_PREFIX, bkg), on);
-            read_prop(win_of(pc_qd_prefix, slot), "Image", v, sizeof v);
+            /* PC draws the item's icon in a window under its ItemSlot (icon__N, its child with
+             * the Image: a dump of the quest NPC's offer); the first image under it is the icon. */
+            first_image_under(win_of(pc_qd_prefix, slot), v, sizeof v);
             prop(win_of(QD_PREFIX, slot), "Image", v);
+            {
+                /* Its empty sockets: PC's overlay over the slot (QuestRewardSocketsO, "onesocketglow",
+                 * "twosocketglow"); the 360's EmptySocketN_0 and _1 shown for as many. */
+                char e[24];
+                int n = on ? pc_reward_sockets(i) : 0, q;
+                for (q = 0; q < 2; q++) {
+                    copy(e, sizeof e, "EmptySocket", 0);
+                    e[11] = (char)('0' + i); e[12] = '_'; e[13] = (char)('0' + q); e[14] = 0;
+                    show(win_of(QD_PREFIX, e), q < n);
+                }
+            }
         }
         show(win_of(QD_PREFIX, "ItemHighlight"), 0);
         /* "Rewards" with the stick's prompt when there are items (town/04; not town/13). */

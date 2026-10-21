@@ -1902,8 +1902,11 @@ what they still lack. The screens done are in section 14.
    - Create the X360_ fonts with the function PC loads its own with (near GOG `0x55fc60`, the one
      that sets the triggers) instead of the scheme, then apply `match_spacing`. Whatever else that
      path does is then inherited.
-2. **The quest reward item's icon** in the dialog (an empty slot). Also: its sockets only when
-   it has them.
+2. **The quest reward item's icon** in the dialog. Written, not run yet: PC draws the icon in a
+   window under its `ItemSlotN` (`icon__N`; the dump of the quest NPC's offer), so the first image under
+   PC's slot is copied to the 360's. Its sockets come from PC's overlay over that slot
+   (`QuestRewardSocketsO`: "onesocketglow", "twosocketglow"), shown with the 360's
+   `EmptySocketN_0`/`_1`.
 3. **The object label of the candidate.** It is matched by text and, of several of one name, by
    the screen's centre (not the 360's rule). Next: project the candidate's position.
 4. **The object label's background**, darker in the 360 (its frame's pixels are 720-row ones).
