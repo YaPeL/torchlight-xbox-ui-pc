@@ -687,6 +687,8 @@ typedef void (__fastcall *create_icon_fn)(void *item, void *edx, void *ui, int f
 #define GOG_PLAY_SOUND 0x005368d0
 #define GOG_UNIT_EMITTER 0x230
 #define GOG_UI_SOUNDS 0x13f8
+#define GOG_REQUEST_TIP 0x0055f570     /* CGameUI: a tip by its index, if unseen and tips are on; thiscall, ret 4 */
+typedef void (__fastcall *request_tip_fn)(void *ui, void *edx, int index);
 #define GOG_PLAY_SOUND_AT 0x005366f0
 #define GOG_UNIT_NODE 0x58
 typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
@@ -721,6 +723,8 @@ static int category(void *item) {
 }
 
 static unsigned char *cur_owner;             /* the bag's owner: the hero, the pet, a merchant or a stash */
+static int cur_select;                       /* the list is the gem's item select (the 360's mode 2) */
+static int sock_open;                        /* the gem's item select is open */
 /* A unit's CInventory*; the shared stash's (its chest of type 170) is the game's, kept apart from
  * the characters (PC's stash menu, GOG 0x5aac2d: 0x52dfe0's +0x8). */
 #define GOG_SHARED_STASH 0x00e40900
@@ -820,8 +824,16 @@ static void build_list(int filter) {
             slot = *(int *)(ref + REF_SLOT);
             if (is_tm_slot(slot)) continue;
             if ((slot < EQUIPPED_SLOTS) != (pass == 0)) continue;
-            c = category(item);
-            if (c != filter && c != 6) continue;
+            /* The gem's item select (the 360's list in mode 2 with +388, sub_82369FE8): no
+             * filter; identified equipment (ISA 2) with a free socket (+796; +916 against +924,
+             * GOG's +0x2fc, +0x39c, +0x3a4). */
+            if (cur_select) {
+                unsigned char *e = (unsigned char *)item;
+                if (!isa(e, 2) || !e[GOG_IDENTIFIED] || *(unsigned *)(e + 0x39c) == *(unsigned *)(e + 0x3a4)) continue;
+            } else {
+                c = category(item);
+                if (c != filter && c != 6) continue;
+            }
             if (list_count < MAX_LIST) { list[list_count] = item; list_slot[list_count] = slot; list_count++; }
         }
     }
@@ -1008,8 +1020,10 @@ static int selected[6], top[6];
 #define PET_PREFIX "x360pet_"
 #define SHOP_PREFIX "x360mer_"
 #define GOG_GET_PET_FN 0x0040e720
-static struct { const char *prefix; int is_pet, is_shop, filter, selected[6], top[6]; void *root; } panels[3] = {
-    {PREFIX, 0, 0, 0, {0}, {0}, 0}, {PET_PREFIX, 1, 0, 0, {0}, {0}, 0}, {SHOP_PREFIX, 0, 1, 0, {0}, {0}, 0}};
+#define SOCK_PREFIX "x360sock_"
+static struct { const char *prefix; int is_pet, is_shop, filter, selected[6], top[6]; void *root; int is_select; } panels[4] = {
+    {PREFIX, 0, 0, 0, {0}, {0}, 0, 0}, {PET_PREFIX, 1, 0, 0, {0}, {0}, 0, 0}, {SHOP_PREFIX, 0, 1, 0, {0}, {0}, 0, 0},
+    {SOCK_PREFIX, 0, 0, 0, {0}, {0}, 0, 1}};   /* the gem's item select, in the message housing */
 static int active_panel, focus_panel;
 static unsigned char *shop;                  /* the merchant or the stash while PC's menu of it is open */
 static int at_stash;                         /* shop is a stash's chest (the shared one of type 170) */
@@ -1032,6 +1046,7 @@ static void select_panel(int i) {
     for (j = 0; j < 6; j++) { selected[j] = panels[i].selected[j]; top[j] = panels[i].top[j]; }
     cur_prefix = panels[i].prefix;
     cur_owner = panels[i].is_shop ? shop : panels[i].is_pet ? the_pet() : hero;
+    cur_select = panels[i].is_select;
 }
 #define ROWS 5
 #define ROW_PITCH 92.0f                     /* ItemTray0-4 are 92 pixels apart in the layout */
@@ -1256,7 +1271,9 @@ static void refresh(void) {
     text(win("filtername"), x360_text(is_tm ? "filter.transmute" : filter_name[filter]));
     /* The transmuter's column (sub_82367D38, ISA 134): no tabs, its line of help (the layout's
      * "transmutor", with the Y prompt under the rows) instead. */
-    for (i = 0; i < 6; i++) show(win(tab_window[i]), !is_tm);
+    /* The item select's list has no filter: its tabs and the filter's name hidden. */
+    for (i = 0; i < 6; i++) show(win(tab_window[i]), !is_tm && !cur_select);
+    show(win("filtername"), !cur_select);
     /* The merchant's name (sub_82367D38): the Gambler's (ISA 127, GAMBLER) or a merchant's; at a
      * stash its own (the catalog's town/21, 30). */
     text(win("characterName"), x360_text(is_tm ? "title.transmuter"
@@ -1264,7 +1281,7 @@ static void refresh(void) {
                                                     : isa(cur_owner, 127) ? "title.gambler" : "title.merchant")
                                          : panels[active_panel].is_pet ? "bag.pet" : "bag.mine"));
     /* RB on the focused bag only (the catalog: the bag, the pet's bag, the stash's columns). */
-    show(win("rightbumper"), active_panel == focus_panel && !is_tm);
+    show(win("rightbumper"), active_panel == focus_panel && !is_tm && !cur_select);
     /* At the transmuter the focused bag has LB too (town/05). */
     show(win("leftbumper"), active_panel == focus_panel && at_transmute && !is_tm);
     show(win("transmutor"), is_tm);
@@ -1384,7 +1401,10 @@ static void refresh(void) {
                 label[n++] = ')';
                 label[n] = 0;
             }
-            if (at_enchant) {
+            if (cur_select) {
+                /* The item select (sub_8236C8D0, its mode not 0): A "Insert" only. */
+                a = x360_text("act.insert"); x = ""; y = "";
+            } else if (at_enchant) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
                 a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
@@ -1787,7 +1807,7 @@ static void update_info(void) {
     char name[48];
     void *tray;
     rect6 r;
-    if (!inventory_open || panels[focus_panel].is_pet || !list_count) { hide_info(); return; }
+    if (!inventory_open || panels[focus_panel].is_pet || !list_count || sock_open) { hide_info(); return; }
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     row_name(name, "ItemTray", selected[filter] - top[filter]);
     tray = win(name);
@@ -1942,6 +1962,7 @@ static int identify(unsigned char *item) {
  * with what is there (getComparisonItems, removeEquipment, equip, the old one picked up into the
  * bag or dropped). An equipped item is taken off into the bag (removeEquipment, pickupEquipment);
  * if the bag is full, it goes back. */
+static void sock_begin(unsigned char *gem);
 static void act(void) {
     void *inv = inventory();
     unsigned char *item, *owner = (unsigned char *)cur_owner;   /* the 360's A acts for the bag's owner (+0x174) */
@@ -1949,6 +1970,7 @@ static void act(void) {
     if (!inv || !list_count) return;
     item = (unsigned char *)list[selected[filter]];
     if (!item[GOG_IDENTIFIED]) { identify(item); return; }
+    if (isa(item, 120)) { sock_begin(item); return; }   /* a gem: the item select (sub_8236B240) */
     if (list_slot[selected[filter]] < EQUIPPED_SLOTS) {
         ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
         if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1)) {
@@ -2498,6 +2520,7 @@ void x360_run_console(void);
 
 static int petcmd_open;
 static void petcmd_show(int on);
+static void sock_show(int on);
 static void triggers_reset(void);
 static void stats_load(void);
 static void stats_commit(void);
@@ -2675,7 +2698,12 @@ void x360_inventory_toggle(void) {
     if (inventory_open) move_to_front(master_root, 0);
     hide_pc_ui(inventory_open);
     if (character_root) show_doll(inventory_open && !shop);
-    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); }
+    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); }
+    /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
+     * opens (CInventoryMenuXenon's virtual +28, sub_8236F700 -> sub_82337A10(0): the hero's seen
+     * byte +2471 and the setting, as PC's 0x55f570). PC asks for it when its own inventory opens
+     * (0x57de89), which it does at a shop: there it is left to PC. */
+    if (inventory_open && !shop && ui) ((request_tip_fn)GOG_REQUEST_TIP)(ui, 0, 0);
     x360_log(inventory_open ? "x360 menu: inventory shown\r\n" : "x360 menu: inventory hidden\r\n");
 }
 
@@ -3781,18 +3809,31 @@ static void petcmd_draw(void) {
     text(win_of(PETCMD_PREFIX, "stancetext"), stance >= 0 && stance < 3 ? x360_text(name[stance]) : "");
 }
 
+/* The message housing, shared by the pet's commands and the gem's item select (both in its
+ * "parent"). */
+static int housing_load(void) {
+    if (housing_root) return 1;
+    housing_root = load("media/ui/x360/messagehousing_xenon.layout", HOUSING_PREFIX);
+    if (!housing_root) return 0;
+    scale_tree(housing_root, k, 0);
+    show(win_of(HOUSING_PREFIX, "closebutton"), 0);
+    set_visible(housing_root, 0, 0);
+    return 1;
+}
+static void *sock_top;
+
 static void petcmd_show(int on) {
-    if (on && !housing_root) {
-        housing_root = load("media/ui/x360/messagehousing_xenon.layout", HOUSING_PREFIX);
-        petcmd_root = housing_root ? load("media/ui/x360/petcommands_xenon.layout", PETCMD_PREFIX) : 0;
+    if (on && !petcmd_root) {
+        if (!housing_load()) return;
+        petcmd_root = load("media/ui/x360/petcommands_xenon.layout", PETCMD_PREFIX);
         if (!petcmd_root) return;
-        scale_tree(housing_root, k, 0);
         scale_tree(petcmd_root, k, 0);
         add_child(win_of(HOUSING_PREFIX, "parent"), 0, petcmd_root);
-        show(win_of(HOUSING_PREFIX, "closebutton"), 0);
     }
-    if (!housing_root) return;
+    if (!housing_root || !petcmd_root) return;
     petcmd_open = on;
+    set_visible(petcmd_root, 0, on);
+    if (sock_top && on) show(sock_top, 0);
     if (on) petcmd_draw();
     /* No Info card under it (the catalog's menus/09); back on closing. */
     if (on) hide_info(); else update_info();
@@ -3828,6 +3869,126 @@ static void petcmd_pad(unsigned pressed, int lx) {
         ((send_to_town_fn)GOG_SEND_TO_TOWN)(pet, 0, level_);
         x360_log("x360 menu: the pet goes to town\r\n");
         petcmd_show(0);
+    }
+}
+
+/* ---- the gem's item select (A on a gem) ----
+ * The 360's A on a gem (sub_8236AA48 -> sub_8236B240), for a gem in the hero's or the pet's bag
+ * (its +492 against theirs): CMessageItemSelectXenon (vtable 0x820D1904, the global UI's +6292)
+ * opens (sub_8237ADF0 with 1: the sound 22) in messagehousing_xenon (sub_8237A770), holding a
+ * CInventoryMenuXenon of the hero (sub_8237ACD8: its +384 = 2, +388 = 1) that lists the hero's
+ * identified equipment with a free socket (sub_82369FE8); its bar has A "Insert" only
+ * (sub_8236C8D0, 0x820D1070). Its pad (sub_8237AAF0): A keeps the selected item (+48) and closes;
+ * B and the other buttons close with none (sub_8237ADF0 with 0: the sound 66). The inventory then
+ * (sub_8236ECC0 -> sub_8236EDD8) sockets the gem in it: the gem out of its bag (sub_822E3218),
+ * sub_822BAEF0 (GOG's 0x4b9510, CEquipment's sockets list: +0x3a0 grows while +0x39c is larger),
+ * sub_822B5F78 (GOG 0x4c01b0), the owner's inventory recomputed (sub_822E0F08, sub_822E17A8,
+ * sub_822E0648: GOG 0x4e7c80, 0x4e9110, 0x4e75d0), a sound; the list then shows the item's
+ * category with it selected. With no item: the sound 24. PC's own socketing (a gem dropped on an
+ * item, GOG 0x54f474-0x54f5d7) calls the same: playDropSound, 0x4b9510, 0x4c01b0, the UI's
+ * sound 0x17, the owner's inventory's three; its gem was taken out of the bag when picked up. */
+#define GOG_ADD_SOCKETABLE 0x004b9510   /* thiscall (the item), the gem; ret 4 */
+#define GOG_SOCKETS_CHANGED 0x004c01b0  /* thiscall (the item) */
+#define GOG_INV_RECOMPUTE_1 0x004e7c80  /* thiscall (CInventory), as after PC's socketing */
+#define GOG_INV_RECOMPUTE_2 0x004e9110
+#define GOG_INV_RECOMPUTE_3 0x004e75d0
+typedef void (__fastcall *add_socketable_fn)(void *item, void *edx, void *gem);
+static unsigned char *sock_gem;
+static void *sock_gem_bag;
+
+static void sock_draw(void) {
+    int f = focus_panel;
+    focus_panel = 3;          /* drawn as the focused list */
+    select_panel(3);
+    refresh();
+    focus_panel = f;
+    select_panel(f);
+}
+
+static void sock_show(int on) {
+    if (on && !sock_top) {
+        void *root;
+        if (!housing_load()) return;
+        root = load("media/ui/x360/inventorymenu_xenon.layout", SOCK_PREFIX);
+        if (!root) return;
+        scale_tree(root, k, 0);
+        panels[3].root = root;
+        sock_top = win_of(SOCK_PREFIX, "TopFrame");
+        if (!sock_top) return;
+        add_child(win_of(HOUSING_PREFIX, "parent"), 0, sock_top);
+        set_visible(root, 0, 0);
+        select_panel(3); clear_samples(); select_panel(focus_panel);
+    }
+    if (!sock_top) return;
+    sock_open = on;
+    if (petcmd_root && on) set_visible(petcmd_root, 0, 0);
+    show(sock_top, on);
+    if (on) { panels[3].selected[0] = panels[3].top[0] = 0; sock_draw(); hide_info(); }
+    else update_info();
+    set_visible(housing_root, 0, on);
+    if (on) move_to_front(housing_root, 0);
+    shop_sound(on ? 22 : 66);
+    x360_log(on ? "x360 menu: the gem's item select shown\r\n" : "x360 menu: the gem's item select hidden\r\n");
+}
+
+/* A on a gem in the focused bag (the hero's or the pet's). */
+static void sock_begin(unsigned char *gem) {
+    sock_gem = gem;
+    sock_gem_bag = inventory();
+    sock_show(1);
+}
+
+static void sock_finish(unsigned char *target) {
+    unsigned char *gem = sock_gem;
+    void *bag = sock_gem_bag, *inv = hero ? *(void **)(hero + GOG_INVENTORY) : 0;
+    sock_gem = 0; sock_gem_bag = 0;
+    sock_show(0);
+    if (!target || !gem || !bag || !inv || *(unsigned *)(target + 0x39c) == *(unsigned *)(target + 0x3a4)) {
+        shop_sound(24);
+        x360_log("x360 inv: socket: no item\r\n");
+        refresh_all();
+        return;
+    }
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, gem);
+    ((ptr_fn)GOG_DROP_SOUND)(gem, 0, *(void **)(hero + 0x58));
+    ((add_socketable_fn)GOG_ADD_SOCKETABLE)(target, 0, gem);
+    ((void_fn)GOG_SOCKETS_CHANGED)(target, 0);
+    shop_sound(0x17);
+    ((void_fn)GOG_INV_RECOMPUTE_1)(inv, 0);
+    ((void_fn)GOG_INV_RECOMPUTE_2)(inv, 0);
+    ((void_fn)GOG_INV_RECOMPUTE_3)(inv, 0);
+    x360_log("x360 inv: socket: the gem is in the item\r\n");
+    /* The list on the item's category, the item selected (sub_8236EDD8). */
+    if (panels[focus_panel].is_pet) { focus_panel = 0; select_panel(0); }
+    filter = category(target);
+    if (filter > 5) filter = 0;
+    build_list(filter);
+    {
+        int i;
+        for (i = 0; i < list_count; i++) if (list[i] == target) { selected[filter] = i; break; }
+    }
+    refresh_all();
+}
+
+static void sock_pad(unsigned pressed, int ly) {
+    static int held;
+    int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
+    held = ly > 500 || ly < -500;
+    if (pressed & 0x1000) {                                              /* A: Insert */
+        unsigned char *t;
+        select_panel(3); build_list(0);
+        t = list_count ? (unsigned char *)list[selected[0]] : 0;
+        select_panel(focus_panel);
+        sock_finish(t);
+        return;
+    }
+    /* B and the others close it with none; X and Y go to the list (sub_8236A810), not done. */
+    if (pressed & ~(0x0001u | 0x0002u | 0x0004u | 0x0008u | 0x4000u | 0x8000u)) { sock_finish(0); return; }
+    if (dir) {
+        select_panel(3); build_list(0);
+        if (selected[0] + dir >= 0 && selected[0] + dir < list_count) { selected[0] += dir; shop_sound(67); }
+        select_panel(focus_panel);
+        sock_draw();
     }
 }
 
@@ -4161,6 +4322,7 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (!inventory_open || !find_world()) return;
     triggers_tick();
     if (petcmd_open) { petcmd_pad(pressed, lx); return; }
+    if (sock_open) { sock_pad(pressed, ly); return; }
     if (skillmap_pad(pressed, buttons)) return;               /* the Skills page's mapping open */
     if (pressed & 0x2000) {                                            /* B */
         if (shop) shop_close();

@@ -1838,6 +1838,34 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no
   socketed item with gems.
 
+**Socketing a gem** (A on a gem in the bag; the 360's `CMessageItemSelectXenon`). **[read; not run]**
+- **The 360.** A on a gem (`sub_8236AA48` -> `sub_8236B240`, for a gem in the hero's or the pet's
+  bag) opens the global UI's `+6292`, a `CMessageItemSelectXenon` (vtable `0x820D1904`), with the
+  gem in its `+44` (`sub_8237ADF0` with 1: the sound 22). It is shown in
+  `messagehousing_xenon` (`sub_8237A770`) and holds a `CInventoryMenuXenon` of the hero
+  (`sub_8237ACD8`: `+384` = 2, `+388` = 1) whose list (`sub_82369FE8`) takes, with no filter, the
+  identified equipment (ISA 2, `+796`) with a free socket (`+916` against `+924`). Its bar has A
+  only, `act.insert` (`sub_8236C8D0` when `+384` is not 0; the string `0x820D1070`). Its pad
+  (`sub_8237AAF0`, the codes 5 to 24): A keeps the selected item (`+48`) and closes; X and Y go
+  to the list's `sub_8236A810`; B and the others close with none (`sub_8237ADF0` with 0: the
+  sound 66). The inventory menu then (`sub_8236ECC0` -> `sub_8236EDD8`) takes the gem out of its
+  bag (`sub_822E3218`), puts it in the item (`sub_822BAEF0`: the sockets list `+920` grows while
+  `+916` is larger), `sub_822B5F78`, recomputes the owner's inventory (`sub_822E0F08`,
+  `sub_822E17A8`, `sub_822E0648`) and plays a sound; the list shows the item's category with it
+  selected. With no item: the sound 24.
+- **PC's own** (a gem dropped on an item, GOG `0x54f474`-`0x54f5d7`): a gem (ISA `0x78`) on an
+  identified item (`+0x2fc`) with a free socket (`+0x39c` minus `+0x3a4`): `playDropSound`,
+  `0x4b9510` (the item's sockets list `+0x3a0`; the same test), `0x4c01b0`, the UI's sound
+  `0x17`, the owner's inventory's `0x4e7c80`, `0x4e9110`, `0x4e75d0` (the owner's `+0x404`,
+  `0x54e56d`). The gem was taken out of the bag when it was picked up.
+- **Here** (`sock_begin`, `sock_pad`, `sock_finish`): a fourth list (`x360sock_`, the bag's
+  layout again) in the message housing's `parent`, drawn by the bag's code with the select's
+  rule and A `act.insert`; the tabs and the filter's name hidden (the list has no filter; what the
+  360 shows there is not read: the mods agent is capturing it). A: the gem taken out of its bag
+  (`removeEquipment`), then PC's calls above in its order; the list on the item's category with
+  it selected. B, the triggers, the bumpers, Start and Back close with the sound 24. Up and down
+  move (the sound 67). X and Y do nothing (the 360's `sub_8236A810` with the select is not read).
+
 **NPC dialogs** (`town/04`, `13`, `14`, `27`-`29`, the quest offer `42`; the 360's
 `CQuestDialogMenu`, vtable `0x820010BC`).
 - **PC's side.** PC's `CQuestDialogMenu` (vtable `0xab7ff0`) shows a layout whose windows have the
@@ -1911,7 +1939,12 @@ and is hidden in every catalog capture.
 - **Two of the same name** (three "Chest" were lit in one dump): only the one nearest the
   screen's centre, where the hero is, is lit. **This is not the 360's rule**, an approximation.
   PC keeps no link from the label to its unit (a pool of windows). Open: project the
-  candidate's position instead.
+  candidate's position instead. Read 2026-10-22: PC places a label (GOG `0x55a9c6`-`0x55a9e9`)
+  with the unit's `getPosition` (`0x510eb0`) and CGameUI's `0x541800` (thiscall; the output, the
+  position, a view-projection Matrix4 by value built just before from the camera, a float;
+  `ret 0x4c`), which scales by the screen's size at CGameUI's `+0x13e0`-`+0x13e8`. Doing the
+  same needs that matrix built as PC builds it (`0x55a999`: 16 words from `ebp-0x37c`); not
+  written without a run to check it.
 - **Open:** the 360's label background is darker (its StaticShared frame, also in 720-row
   pixels).
 - **Tested** (GOG, run 40; the user walked the hero): "A staff" on an item on the ground and
@@ -1973,8 +2006,8 @@ what they still lack. The screens done are in section 14.
    - **Read 2026-10-21:** that path (GOG `0x55fc5e`-`0x55fd26`) sets `Serif` on a window, gets
      the font, sets the triggers `|c` and `|u`, and then **sets the font's byte `+0x424` to 1**.
      The diff read `+0x200..+0x400` only, so it missed it. Written: `set_colour_triggers` now
-     sets `+0x424` as PC does, and the diff reads to `+0x440`. Not run yet; to check in the QA
-     with `dialog_markup=1` (the names in gold).
+     sets `+0x424` as PC does, and the diff reads to `+0x440`. **Run B (2026-10-22): done**,
+     the quest NPC's target name shows in gold.
 2. **The quest reward item's icon** in the dialog. Written, not run yet: PC draws the icon in a
    window under its `ItemSlotN` (`icon__N`; the dump of the quest NPC's offer), so the first image under
    PC's slot is copied to the 360's. Its sockets come from PC's overlay over that slot
@@ -2004,9 +2037,9 @@ what they still lack. The screens done are in section 14.
    - The card's price at the merchant is 3 pixels off (town/07).
 
 **Untested for want of the means in the save:**
-- An enchantment (300 gold needed, 100 in the save).
-- Removing gems (no socketed item).
-- The Gambler's purchase and selling from the pet's bag.
+- An enchantment: done in run B.
+- Removing gems (no socketed item; socketing with the pad is written since, not run).
+- The Gambler's purchase: done in run B. Selling from the pet's bag: not tried.
 
 **Earlier lists** (sections 11-13) still open:
 - The converter must decrypt the player's XEX itself.
@@ -2106,6 +2139,10 @@ inventory (section 13), so each run's batch is one.
   enchant; buy from the Gambler; talk to the guide NPC and the quest robot NPC (step 4, `dialog_markup=1`).
 - **C. Mine, on `mine-level1`:** `console=GOD;KILLALL;CHAMPION SKELETON;AIFREEZE;UNIT FISHING
   HOLE`: the champion's gold target bar, then kill it and fish (step 3).
+- **B2. Town again, on the save as run B left it** (no console; the two amethysts and the unique sword are in the bag): A on a gem, the item select, A on the sword; then the gem pages
+  (Recover, Destroy). Map a skill and see the page's set change at once; enchant and see PC's
+  inventory close; the first talk to an NPC (no flash of PC's dialog); the log's timings of the
+  first opening. Can follow C in the same session.
 
 **Run A (2026-10-21, the user with the 8BitDo; a new hero, slot 1).** Steam's folders UNCHANGED.
 - The tip shows as the 360's. B closed it **and** attacked (`pad.c` sent the hotbar key 3 too):
@@ -2159,3 +2196,15 @@ inventory (section 13), so each run's batch is one.
 - No sound at all: the prefix's audio drivers fail (`winepulse.drv`/`winealsa.drv`: "Unable to
   load UNIX functions"); this machine has no 32-bit libpulse/libasound, and `run_gog.sh` runs
   Proton outside the Steam Linux Runtime. Not the proxy.
+
+**After run B (offline, 2026-10-22).**
+- TIP_INVENTORY: the 360's inventory asks for it when it opens (`CInventoryMenuXenon`'s virtual
+  `+28`, `sub_8236F700` -> `sub_82337A10(0)`). `sub_82337A10` is the 360's tip request (the
+  hero's seen byte `+2471` plus the index, the setting at 1, pushed to the UI's `+6072`), PC's
+  `0x55f570`. Index 0 is TIP_INVENTORY in both games' CONTEXTTIPS (the 360's list has
+  TIP_SKILLS at 8 and no TIP_HOWTOATTACK, so other indices differ). The port now asks for it on
+  opening, but at a shop, where PC's own inventory asks. Not run yet.
+- Y on a tip and the queue: the 360 pops its queue (`sub_821A83C8`, the UI's `+6072`) without
+  reading the setting again, so a tip queued before Y still shows, as in PC. Run A's tip after Y
+  is the 360's behaviour too.
+- Socketing a gem with the pad: section 14 (the gem goblins). Not run yet.
