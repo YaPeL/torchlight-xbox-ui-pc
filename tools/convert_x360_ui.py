@@ -269,6 +269,11 @@ STRINGS = {
     "act.unequip": 0x820D0FB0, "act.equip": 0x820D0FA4, "act.use": 0x820D0F9C, "act.learn": 0x820D1080,
     "act.drop": 0x820D0F90, "act.swap": 0x820D0F84, "act.identify": 0x820D1014, "act.buy": 0x820D0F48,
     "act.sell": 0x820D0F50, "act.socket": 0x820D1060, "act.insert": 0x820D1070, "filter.insert": 0x820D0C54,
+    # The skill's description (sub_823B07C8, sub_823B0230, sub_823AFDB0).
+    "skill.mana": 0x820D4568, "skill.cooldown": 0x820D457C, "skill.seconds": 0x820D4590,
+    "req.dual": 0x820D44E0, "req.both": 0x820D4500, "req.right": 0x820D453C, "req.weapon": 0x820BE144,
+    "req.weapons": 0x820D0BE0, "wt.melee1": 0x820D4420, "wt.melee2": 0x820D4448, "wt.melee": 0x820D446C,
+    "wt.ranged1": 0x820D4478, "wt.ranged2": 0x820D44A4, "wt.ranged": 0x820D44C8, "wt.any": 0x820D44D8,
     "compare.enable": 0x820D0FEC, "compare.disable": 0x820D0FC0,
     "filter.0": 0x820D0BE0, "filter.1": 0x820C0CB4, "filter.2": 0x820D0BF0, "filter.3": 0x820D0C00,
     "filter.4": 0x820D0C1C, "filter.5": 0x820D0C34,

@@ -3188,6 +3188,102 @@ typedef unsigned char (__fastcall *use_point_fn)(void *unit, void *edx);
 static int sk_tab, sk_row, sk_col, sk_spells;
 static float help_width;
 
+/* ---- the skill's description as the 360 writes it (sub_823B07C8) ----
+ * For the rank's data (the rank, or the effective one +0xa8 for -1/0; the ranks' vector +0x64,
+ * their count +0x68; else +0x5c, as GOG 0x5d8c60): a cooldown line when the cooldown is over 0
+ * (sub_823C0A60, GOG 0x5df280: +0x70 for a player, else +0x6c) "|cFF9180FF" cooldown ": " "%.1f"
+ * " " seconds "|u \n"; a mana line when the cost (+0x4c) is over 0: the data's own text (the 360's
+ * +288, GOG's +0xe8, as PC's tooltip 0x5d8d80), "\n|cFF9180FF" mana ": " the cost "|u\n"; the
+ * weapon requirement (sub_823B0230) "|cFF9180FF" .. "|u \n"; the rank's effects (GOG 0x5d8c60, the
+ * 360's sub_823C0AE0); a closing "\n". The requirement, from the first rank's data (+0x5c):
+ * REQUIREMENT_RIGHT +8, REQUIREMENT_LEFT +0xc, DUELWIELD_REQUIRED +0x10 (GOG's loader near
+ * 0x5dfb72): with the dual flag, the dual line and "\n"; then, with the dual flag and both hands
+ * the same, req.both ": " the type " " req.weapons, else (with any hand) req.right ": " the type
+ * " " req.weapon. The type's name (sub_823AFDB0): melee (60) single (9), two-handed (10) or plain;
+ * ranged (35 or 163) the same; else any (the hierarchy's test, GOG 0x5fe190 as 0x480760 calls it).
+ * The 360's capture test/04: "|cFF9180FFRight hand requires : melee Weapon|u \n" then the
+ * effects. */
+static char *put_str(char *p, char *end, const char *t) {
+    while (*t && p < end) *p++ = *t++;
+    return p;
+}
+
+static char *put_num(char *p, char *end, float v, int decimals) {
+    char b[24], *q = put_float(b, decimals == 1 ? v + 0.05f : v);   /* three decimals; one rounded */
+    *q = 0;
+    q = b;
+    while (*q && *q != '.') q++;
+    if (*q == '.') {
+        if (decimals == 1) q[2] = 0;
+        else {   /* as an ostream's default: no trailing zeros */
+            char *z = q + 4;
+            while (z > q && (z[-1] == '0' || z[-1] == '.')) { z--; if (*z == '.') { *z = 0; break; } *z = 0; }
+        }
+    }
+    return put_str(p, end, b);
+}
+
+static int type_is(int type, int of) {
+    typedef unsigned char (__fastcall *type_isa_fn)(void *hierarchy, void *edx, int type, int of);
+    void *h = hero ? *(void **)(hero + 0x60) : 0;
+    return h && ((type_isa_fn)0x005fe190)(h, 0, type, of) != 0;
+}
+
+static const char *weapon_type_name(int t) {
+    if (type_is(t, 60)) return x360_text(type_is(t, 9) ? "wt.melee1" : type_is(t, 10) ? "wt.melee2" : "wt.melee");
+    if (type_is(t, 35) || type_is(t, 163))
+        return x360_text(type_is(t, 9) ? "wt.ranged1" : type_is(t, 10) ? "wt.ranged2" : "wt.ranged");
+    return x360_text("wt.any");
+}
+
+static unsigned char *skill_rank_data(unsigned char *sk, int level) {
+    unsigned count = *(unsigned *)(sk + 0x68);
+    unsigned char **ranks = *(unsigned char ***)(sk + 0x64);
+    int i = (level == -1 || level == 0 ? *(int *)(sk + 0xa8) : level) - 1;
+    if (count && ranks && i >= 0 && (unsigned)i < count && ranks[i]) return ranks[i];
+    return count && ranks ? ranks[0] : *(unsigned char **)(sk + 0x5c);
+}
+
+static void skill_desc_360(unsigned char *sk, int level, const char *effects, char *out, unsigned size) {
+    typedef float (__fastcall *cooldown_fn)(void *rank, void *edx);
+    char *p = out, *end = out + size - 1;
+    unsigned char *d = skill_rank_data(sk, level), *first = *(unsigned char **)(sk + 0x5c);
+    float v;
+    *out = 0;
+    if (!first || !d) return;
+    v = ((cooldown_fn)0x005df280)(d, 0);
+    if (v > 0.0f) {
+        p = put_str(p, end, "|cFF9180FF"); p = put_str(p, end, x360_text("skill.cooldown")); p = put_str(p, end, ": ");
+        p = put_num(p, end, v, 1); p = put_str(p, end, " "); p = put_str(p, end, x360_text("skill.seconds"));
+        p = put_str(p, end, "|u \n");
+    }
+    v = *(float *)(d + 0x4c);
+    if (v > 0.0f) {
+        char own[400];
+        if (wstring_utf8_long(d + 0xe8, own, sizeof own)) p = put_str(p, end, own);
+        p = put_str(p, end, "\n|cFF9180FF"); p = put_str(p, end, x360_text("skill.mana")); p = put_str(p, end, ": ");
+        p = put_num(p, end, v, 0); p = put_str(p, end, "|u\n");
+    }
+    {
+        int right = *(int *)(first + 8), left = *(int *)(first + 0xc), dual = first[0x10] != 0;
+        if (dual || right || left) {
+            p = put_str(p, end, "|cFF9180FF");
+            if (dual) { p = put_str(p, end, x360_text("req.dual")); p = put_str(p, end, "\n"); }
+            if (dual && right && left == right) {
+                p = put_str(p, end, x360_text("req.both")); p = put_str(p, end, ": "); p = put_str(p, end, weapon_type_name(right));
+                p = put_str(p, end, " "); p = put_str(p, end, x360_text("req.weapons"));
+            } else {
+                p = put_str(p, end, x360_text("req.right")); p = put_str(p, end, ": "); p = put_str(p, end, weapon_type_name(right));
+                p = put_str(p, end, " "); p = put_str(p, end, x360_text("req.weapon"));
+            }
+            p = put_str(p, end, "|u \n");
+        }
+    }
+    p = put_str(p, end, effects);
+    if (p > out && p[-1] != '\n') p = put_str(p, end, "\n");
+    *p = 0;
+}
+
 static void **skill_list(unsigned *count) {
     unsigned char *mgr = hero ? *(unsigned char **)(hero + GOG_SKILL_MANAGER) : 0;
     *count = mgr ? *(unsigned *)(mgr + 0x40) : 0;
@@ -3379,8 +3475,9 @@ static void skills_fill(void) {
         wctor(ws, 0, empty);
         __try { ((skill_desc_fn)0x5d8c60)(sel, 0, ws, hero, -1); } __except (1) {}
         {
-            char desc[600];
-            if (!wstring_utf8_long(ws, desc, sizeof desc)) desc[0] = 0;
+            char eff[600], desc[1000];
+            if (!wstring_utf8_long(ws, eff, sizeof eff)) eff[0] = 0;
+            skill_desc_360(sel, -1, eff, desc, sizeof desc);
             rich_text(win_of(SKILLS_PREFIX, "SkillDescriptionText"), SKILLS_PREFIX, "SkillDescriptionText", desc);
         }
         wdtor(ws, 0);
@@ -3388,13 +3485,14 @@ static void skills_fill(void) {
          * below its maximum; else nothing. */
         {
             int eff = *(int *)(sel + 0xa8);
-            char desc[600];
+            char effects[600], desc[1000];
             desc[0] = 0;
             if (eff > 0 && eff < m) {
                 wctor(ws, 0, empty);
                 __try { ((skill_desc_fn)0x5d8c60)(sel, 0, ws, hero, eff + 1); } __except (1) {}
-                if (!wstring_utf8_long(ws, desc, sizeof desc)) desc[0] = 0;
+                if (!wstring_utf8_long(ws, effects, sizeof effects)) effects[0] = 0;
                 wdtor(ws, 0);
+                skill_desc_360(sel, eff + 1, effects, desc, sizeof desc);
             }
             show(win_of(SKILLS_PREFIX, "NextLevelHeader"), eff > 0 && eff < m);
             /* "Requires Level" N: the level the next rank asks (GOG 0x5d5c00, the 360's sub_823ADE08). */
@@ -5360,6 +5458,11 @@ static void labels_tick(void) {
     unsigned i, n;
     char want[96];
     unsigned char *cand = (unsigned char *)x360_pad_candidate();
+    /* The candidate's label: PC's label loop (GOG 0x55a8db-0x55b248, over the level's units) keeps
+     * each unit's label window at its +0x198 (made if 0 at 0x55a9ef, placed by setPosition at
+     * 0x55b21b after the projection 0x541800), so the label is the candidate's own, not one found
+     * by its text and the screen's centre. */
+    void *cand_label = cand ? *(void **)(cand + 0x198) : 0;
     if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
     if (!set_look) set_look = (set_str_fn)need("?setLookNFeel@Window@CEGUI@@UAEXABVString@2@@Z");
     if (!sheet || !get_type || !set_look) return;
@@ -5419,6 +5522,11 @@ static void labels_tick(void) {
                 }
             }
             read_prop(w, "Text", t, sizeof t);
+            if (cand_label) {   /* the candidate's own label: exact */
+                if (pass == 0) continue;
+                on = w == cand_label;
+                goto write_state;
+            }
             on = want[0] && t[0] && length(t) == length(want);
             if (on) { unsigned q; for (q = 0; t[q]; q++) if (t[q] != want[q]) { on = 0; break; } }
             /* Two of the same name (two chests): only the one nearest the screen's centre, where
@@ -5436,6 +5544,7 @@ static void labels_tick(void) {
                 if (pass == 0) { if (d < best_d) { best_d = d; best = w; } continue; }
                 on = w == best;
             } else if (pass == 0) continue;
+        write_state:
             {
                 /* The state written only when it changes (a window's last, by its pointer). */
                 static void *seen[64];

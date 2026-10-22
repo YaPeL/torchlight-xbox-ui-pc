@@ -2054,8 +2054,12 @@ what they still lack. The screens done are in section 14.
    PC's slot is copied to the 360's. Its sockets come from PC's overlay over that slot
    (`QuestRewardSocketsO`: "onesocketglow", "twosocketglow"), shown with the 360's
    `EmptySocketN_0`/`_1`.
-3. **The object label of the candidate.** It is matched by text and, of several of one name, by
-   the screen's centre (not the 360's rule). Next: project the candidate's position.
+3. **The object label of the candidate.** It was matched by text and, of several of one name, by
+   the screen's centre. **2026-10-22:** PC's label loop (GOG `0x55a8db`-`0x55b248`, over the
+   level's units) keeps each unit's label window at the unit's `+0x198` (made when 0 at
+   `0x55a9ef`, placed with setPosition at `0x55b21b` after the projection `0x541800`), so the
+   label enabled is now the candidate's own window; the text match is kept only for a candidate
+   without one. No projection needed. Not run yet.
 4. **The object label's background**, darker in the 360 (its frame's pixels are 720-row ones).
 5. **Target bars:** the champion's and the pet's or NPC's are not compared. The rule for a dead
    target, read 2026-10-21 (`sub_821A83C8`, about `0x821A9200`): the unit is the one under the
@@ -2085,6 +2089,16 @@ what they still lack. The screens done are in section 14.
 **Earlier lists** (sections 11-13) still open:
 - The converter must decrypt the player's XEX itself.
 - The Skills page's requirement line; its X (the mapping) is written, not run (section 14).
+  **2026-10-22:** the description is now built as the 360's `sub_823B07C8`: the cooldown line
+  (`sub_823C0A60`, GOG `0x5df280`: the rank's `+0x70` for a player, else `+0x6c`), the mana line
+  (the rank's `+0x4c`, after the rank's own text, the 360's `+288`, GOG's `+0xe8` as PC's tooltip
+  `0x5d8d80` reads it), the weapon requirement (`sub_823B0230`: the first rank's
+  REQUIREMENT_RIGHT `+8`, REQUIREMENT_LEFT `+0xc`, DUELWIELD_REQUIRED `+0x10`, GOG's loader near
+  `0x5dfb72`; the type's name by `sub_823AFDB0`: melee 60 or ranged 35/163, single 9 or two-handed
+  10, else any, tested with GOG `0x5fe190`), then the effects (GOG `0x5d8c60`), each line in
+  `|cFF9180FF` .. `|u`. The 360's capture `test/04` ("Right hand requires : melee Weapon",
+  then the effects) is the check. The texts are the 360's (`skill.*`, `req.*`, `wt.*`). Not run
+  yet.
 - The target bar's size, checked here only for the enemy.
 
 ## 16. The Steam test: plan (for the user's approval, 2026-10-21)
