@@ -958,7 +958,10 @@ the right one 21-24): **[read]**
   its own filter (the mods agent saw RB switch My Bag and Pet Bag on the 360). **The port now
   does this**: LB/RB the column, the left stick's left and right the filter (past the ends the
   column, as before), at the merchant's menu too (`sub_8237A0A8` sends 19 and 20 to the filter
-  the same way; its RB and LB cases were not aligned exactly). Not run yet. **Unconfirmed:** the
+  the same way; its RB and LB cases were not aligned exactly). Not run yet. **Confirmed on the
+  360 (the mods agent, 2026-10-22, with the stick's keystrokes): one push right is one filter
+  step (Weapons, Armor, Jewelry, Miscellaneous, Socketables); RB/LB switch My Bag and Pet Bag.**
+  Earlier: the
   mods agent's scripted left stick (four pushes right, two builds) did not change the 360's
   filter either; but its script driver sends no `VK_PAD_LTHUMB_*` keystrokes (the mods agent read
   its `PadKeystrokes`: buttons, d-pad and triggers only), so that test says nothing of codes
@@ -1894,8 +1897,12 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   `0x54e56d`). The gem was taken out of the bag when it was picked up.
 - **Here** (`sock_begin`, `sock_pad`, `sock_finish`): a fourth list (`x360sock_`, the bag's
   layout again) in the message housing's `parent`, drawn by the bag's code with the select's
-  rule and A `act.insert`; the tabs and the filter's name hidden (the list has no filter; what the
-  360 shows there is not read: the mods agent is capturing it). A: the gem taken out of its bag
+  rule and A `act.insert`. **Compared with the 360's capture** (the mods agent, 2026-10-22:
+  `in-game/10-gems-tab`, `11-gem-socket-select`, `12-gem-socketed`): the select is the bag's
+  layout over the bag's column, 18.34 rows (of 720) higher; no tabs; the filter's line reads
+  "Insert Into" (`filter.insert`, `0x820D0C54`); "My Bag", the bag's count, no gold; A "Insert";
+  the housing's own "Close" (B) under it. All done so. After A the bag shows the item's filter
+  (Armor) with it focused, and the gem is gone from the bag (46 to 45), as written. A: the gem taken out of its bag
   (`removeEquipment`), then PC's calls above in its order; the list on the item's category with
   it selected. B, the triggers, the bumpers, Start and Back close with the sound 24. Up and down
   move (the sound 67). X and Y do nothing (the 360's `sub_8236A810` with the select is not read).

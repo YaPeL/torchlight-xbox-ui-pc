@@ -1268,12 +1268,12 @@ static void refresh(void) {
                                                                   : "set:X360_widgets image:framea");
     show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
     show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
-    text(win("filtername"), x360_text(is_tm ? "filter.transmute" : filter_name[filter]));
+    /* The item select's filter line reads "Insert Into" (the catalog's in-game/11; 0x820D0C54). */
+    text(win("filtername"), x360_text(cur_select ? "filter.insert" : is_tm ? "filter.transmute" : filter_name[filter]));
     /* The transmuter's column (sub_82367D38, ISA 134): no tabs, its line of help (the layout's
      * "transmutor", with the Y prompt under the rows) instead. */
     /* The item select's list has no filter: its tabs and the filter's name hidden. */
     for (i = 0; i < 6; i++) show(win(tab_window[i]), !is_tm && !cur_select);
-    show(win("filtername"), !cur_select);
     /* The merchant's name (sub_82367D38): the Gambler's (ISA 127, GAMBLER) or a merchant's; at a
      * stash its own (the catalog's town/21, 30). */
     text(win("characterName"), x360_text(is_tm ? "title.transmuter"
@@ -1299,7 +1299,7 @@ static void refresh(void) {
         text(win("playergoldtext"), buf);
         /* The bag's gold, but at a menu of mode 7, 8, 9 or 10 (sub_82367D38, 0x82368620: the
          * stashes and the two gem pages; town/21, 02, 03). */
-        show(win("playergoldwin"), cur_owner == hero && !at_stash && at_enchant != 0x19 && at_enchant != 0x1a);
+        show(win("playergoldwin"), cur_owner == hero && !at_stash && at_enchant != 0x19 && at_enchant != 0x1a && !cur_select);
         if (inv) {
             void **refs = *(void ***)(inv + INV_REFS);
             unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;
@@ -3833,6 +3833,7 @@ static void petcmd_show(int on) {
     if (!housing_root || !petcmd_root) return;
     petcmd_open = on;
     set_visible(petcmd_root, 0, on);
+    if (on) show(win_of(HOUSING_PREFIX, "closebutton"), 0);
     if (sock_top && on) show(sock_top, 0);
     if (on) petcmd_draw();
     /* No Info card under it (the catalog's menus/09); back on closing. */
@@ -3923,7 +3924,25 @@ static void sock_show(int on) {
     sock_open = on;
     if (petcmd_root && on) set_visible(petcmd_root, 0, 0);
     show(sock_top, on);
-    if (on) { panels[3].selected[0] = panels[3].top[0] = 0; sock_draw(); hide_info(); }
+    /* The housing's own "Close" (B) shows with the item select (in-game/11), not with the pet's
+     * commands. */
+    show(win_of(HOUSING_PREFIX, "closebutton"), on);
+    if (on) {
+        /* Over the bag's column, 18.34 rows (of 720) higher (in-game/11: its TopFrame at 497.97,
+         * 64.22 against the bag's 497.72, 82.56). */
+        typedef struct { float top, bottom, left, right; } rect6;
+        typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+        static pixel_rect_fn6 rect_of;
+        void *bag = win_of(PREFIX, "TopFrame");
+        if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+        if (bag && rect_of) {
+            rect6 b, t;
+            fresh_rects(bag); fresh_rects(sock_top);
+            rect_of(bag, 0, &b); rect_of(sock_top, 0, &t);
+            move_by(sock_top, b.left - t.left, b.top - 18.34f * k * 768.0f / 720.0f - t.top);
+        }
+        panels[3].selected[0] = panels[3].top[0] = 0; sock_draw(); hide_info();
+    }
     else update_info();
     set_visible(housing_root, 0, on);
     if (on) move_to_front(housing_root, 0);
