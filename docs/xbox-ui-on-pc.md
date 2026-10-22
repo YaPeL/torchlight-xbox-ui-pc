@@ -2131,3 +2131,31 @@ inventory (section 13), so each run's batch is one.
 - The inventory: B closes, LT/RT change pages. The font's `+0x424` byte now reads 1 in the
   X360_ fonts too (the font diff); the names' gold is for run B.
 
+
+**Run B (2026-10-22, town, the variety copy with the console).** Steam's folders UNCHANGED.
+- Dialogs: the 360's over PC's for every NPC (quest and plain); the names' gold shows (a quest
+  NPC's target name, `+0x424` read). An NPC whose text has no colour markup shows it white, as
+  written. The first talk showed PC's dialog for a moment: PC's was looked for every 250 ms; it
+  is now looked for at every frame for 10 s after the pad's A on a unit
+  (`x360_dialog_expect`). Not run yet.
+- Tips: the 360's texts (TIP_LEVELUP, TIP_MANALOW, TIP_SOCKETABLE, TIP_ENCHANT); B closes them
+  without attacking.
+- Skills mapping: assigning works; the same skill can sit on two buttons, and there is no way to
+  clear a button, as the 360 (`sub_82382720` writes the slot only; no clearing path). The page's
+  set at the bottom kept the old icon until the cursor moved: PC marks its hotbar changed after
+  placing a skill (GOG `0x540623`, CGameUI `+0x13d0` = 1), which the port did not; now set, and
+  the page filled again 100 ms later, as the 360 redraws the page at once (its `+1920`'s slot
+  8). Not run yet.
+- Enchanting: done; PC closed its enchant menu but left its own inventory open (its doll
+  rendered there, the 360's doll empty): PC's inventory is now closed when PC closes the enchant
+  menu by itself. Not run yet.
+- The Gambler: the 360's page, X buys (the item revealed on buying). PC's merchant and
+  inventory frames still show beside the 360's frame (known, the shop's sides).
+- Gems: socketing with the pad is not ported (A on a gem shows `act.socket` and does nothing);
+  PC's inventory did not take a mouse click either, so the gem goblins' removing is still
+  untested.
+- The first opening of the 360's inventory was slow: it runs the console (`console=`) and loads
+  the frame's layouts; both are now timed in the log.
+- No sound at all: the prefix's audio drivers fail (`winepulse.drv`/`winealsa.drv`: "Unable to
+  load UNIX functions"); this machine has no 32-bit libpulse/libasound, and `run_gog.sh` runs
+  Proton outside the Steam Linux Runtime. Not the proxy.

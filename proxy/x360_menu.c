@@ -2536,7 +2536,12 @@ static void set_page(int p);
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
     if (inventory_open && shop && !shop_closing) { shop_close(); return; }
-    x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
+    {
+        /* Run B: the first opening was slow; its two parts timed (the console, the layouts). */
+        unsigned t0 = GetTickCount();
+        x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
+        if (GetTickCount() - t0 > 50) { x360_log("x360 menu: console ms "); x360_log_num((int)(GetTickCount() - t0)); x360_log("\r\n"); }
+    }
     {
         RECT r;
         HWND w = active_window();
@@ -2544,6 +2549,7 @@ void x360_inventory_toggle(void) {
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
     }
     if (!inventory_root && !inventory_failed) {
+        unsigned t0 = GetTickCount();
         master_root = load("media/ui/x360/mastermenu_xenon.layout", MASTER);
         inventory_root = master_root ? load("media/ui/x360/inventorymenu_xenon.layout", PREFIX) : 0;
         panels[0].root = inventory_root;
@@ -2554,6 +2560,7 @@ void x360_inventory_toggle(void) {
         /* The enchanter's panel in the same place (town/06: its column at the frame's left). */
         ench_root = inventory_root ? load("media/ui/x360/enchantermenu_xenon.layout", ENCH_PREFIX) : 0;
         character_root = inventory_root ? load("media/ui/x360/charactermenu_xenon.layout", CHR_PREFIX) : 0;
+        x360_log("x360 menu: the frame's layouts ms "); x360_log_num((int)(GetTickCount() - t0)); x360_log("\r\n");
         if (!inventory_root) inventory_failed = 1;
         else {
             RECT r;
@@ -3449,6 +3456,8 @@ static void skills_move(int dx, int dy) {
 #define SKILLMAP_PREFIX "x360skm_"
 #define GOG_SET_SKILL_HOTKEY 0x0040c8f0   /* thiscall (the player), slot, GUID low, high; ret 0xc */
 #define GOG_SKILL_RANK_NOW 0x005d7d40     /* the skill's effective rank, into its +0xa8 */
+#define GOG_UI_HOTBAR_CHANGED 0x13d0       /* CGameUI's byte: its hotbar slots are redrawn */
+static unsigned skillmap_refill_at;
 typedef void (__fastcall *set_hotkey_fn)(void *unit, void *edx, int slot, unsigned lo, unsigned hi);
 static int skill_mappable(unsigned char *sk) {
     if (!sk || *(int *)(sk + 0x38) == 4) return 0;
@@ -3495,6 +3504,11 @@ static int skillmap_assign(int slot) {
     ((set_hotkey_fn)GOG_SET_SKILL_HOTKEY)(hero, 0, slot, *(unsigned *)(sk + 0x180), *(unsigned *)(sk + 0x184));
     if (ui && *(void **)(ui + GOG_UI_SOUNDS))
         ((play_sound_at_fn)GOG_PLAY_SOUND_AT)(*(void **)(ui + GOG_UI_SOUNDS), 0, 0x1e, 0, 0.0f, 0.0f, 0);
+    /* PC then marks its hotbar changed (GOG 0x540623, CGameUI's +0x13d0), which redraws its
+     * slots; the 360 redraws the page at once (sub_82382720, its +1920's slot 8). The HUD mirrors
+     * PC's slots, and the page's set is filled again once they have the new icon. */
+    if (ui) *(ui + GOG_UI_HOTBAR_CHANGED) = 1;
+    skillmap_refill_at = GetTickCount();
     return 1;
 }
 
@@ -3506,6 +3520,7 @@ static int skillmap_pad(unsigned pressed, unsigned buttons) {
     static unsigned last;
     unsigned released = last & ~buttons, i;
     last = buttons;
+    if (skillmap_refill_at && GetTickCount() - skillmap_refill_at > 100) { skillmap_refill_at = 0; skills_fill(); }
     if (!sk_map) return 0;
     if (pressed & 0x4000) { skillmap_show(0); return 1; }
     if (pressed & 0x0030) { skillmap_show(0); return 0; }      /* Start, Back: as without it */
@@ -4128,6 +4143,9 @@ void x360_shop_tick(void) {
         at_transmute = 0;
         at_enchant = 0;
         tm_shop = 0;
+        /* PC closes its inventory with the merchant's menu, not with the enchant menu it closes
+         * after an enchanting (run B: its inventory stayed open, over the 360's doll). */
+        pc_inventory_close();
     }
 }
 
@@ -4900,6 +4918,11 @@ static void qd_show(int on) {
     x360_log(on ? "x360 dialog: shown over PC's\r\n" : "x360 dialog: hidden\r\n");
 }
 
+/* The pad's A on an NPC (proxy/pad.c): PC's dialog is looked for at every frame for a while,
+ * not every 250 ms (run B: PC's showed for a moment the first time). */
+static unsigned dialog_expected_at;
+void x360_dialog_expect(void) { dialog_expected_at = GetTickCount(); }
+
 static void dialog_tick(void) {
     static unsigned last_search;
     unsigned now = GetTickCount(), buttons, pressed;
@@ -4913,7 +4936,7 @@ static void dialog_tick(void) {
      * names only questdialogmenu.uilayout (its one NPC dialog layout loaded, 0x820CF924), so
      * the 360's is shown over either; dialogmenu's DialogText is found as the one with a Title
      * beside it (the quest dialog's has none). */
-    if ((!pc_qd_text_frame || !plain_text) && now - last_search > 250) {
+    if ((!pc_qd_text_frame || !plain_text) && (now - last_search > 250 || now - dialog_expected_at < 10000)) {
         static const char *const plain_needs[] = {"Title", 0};
         last_search = now;
         if (!pc_qd_text_frame && (pc_qd_text_frame = find_pc_dialog()) != 0)

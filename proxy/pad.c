@@ -808,6 +808,10 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
                     name[6] = 0;
                     x360_dump_after(name, 1500);
                 }
+                {
+                    void x360_dialog_expect(void);
+                    x360_dialog_expect();
+                }
                 /* approachAI measures to the target item first if one is set: clear it. */
                 ((void_fn)GOG_STOP_PATHING)(hero, 0);
                 ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
