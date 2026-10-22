@@ -952,8 +952,13 @@ the right one 21-24): **[read]**
   67; past the first, `sub_823702E0`, the column before), 20 `sub_823653C8(list, 1)` (past the
   last, the next column); 17 and 18 move the row (`sub_8236A488`). This contradicts the line
   above and the port (LB/RB change the filter; the layout shows the RB icon by the filter's
-  name). Whether the master frame or Runic's input turns the bumpers into 19/20 is not read: the
-  mods agent's capture of the gem tab (2026-10-22) is to show which input changed it.
+  name). Runic's codes come from XInput's keys (`sub_822DF308`, its table at `0x822DF334`):
+  `VK_PAD_RSHOULDER` 10, `LSHOULDER` 12, `LTHUMB_LEFT` 19, `LTHUMB_RIGHT` 20, `RTHUMB_LEFT` 23,
+  `RTHUMB_RIGHT` 24. RB and LB go to `0x823702BC`: `sub_823702E0(menu, 0)`, the other column with
+  its own filter (the mods agent saw RB switch My Bag and Pet Bag on the 360). **The port now
+  does this**: LB/RB the column, the left stick's left and right the filter (past the ends the
+  column, as before), at the merchant's menu too (`sub_8237A0A8` sends 19 and 20 to the filter
+  the same way; its RB and LB cases were not aligned exactly). Not run yet.
 What A, X and Y do to the item (equip, drop, compare: the layout's `ToggleItemCompare` and the
 help texts) is not read yet: it is the first task of the slice. **[read: the dispatch; the
 actions not yet]**
@@ -1008,7 +1013,8 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
 **What the 360 does (read in the image):**
 - **Buttons** (`sub_8236FEF0`, `sub_8236A810`): d-pad left/right toggle item compare (below); A acts
   (`sub_8236AA48`); X sells (`sub_8236AD18`, in a shop); Y drops (`sub_82369E80`) or transmutes;
-  RB/LB the filter (`sub_8236A488`: 0 to 5, past the ends the housing's next screen); B closes.
+  the left stick's left and right the filter (0 to 5, past the ends the other column; RB/LB the
+  column: corrected 2026-10-22, below); B closes.
 - **The list** (`sub_82369FE8`): the owner's inventory references, the equipped ones first, then
   the others, both from the last to the first; an item is listed when its category equals the
   filter or is 6. **The category** (`sub_82369C48`, unit types of `UNITTYPES.HIE`, the same 162

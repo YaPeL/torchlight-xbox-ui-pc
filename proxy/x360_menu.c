@@ -4354,30 +4354,46 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         next_repeat = now + (next_repeat ? 120 : 350);
         refresh_all();
     }
-    /* LB/RB: the filter; past the ends, the column before or after, round (sub_8236A488,
-     * sub_823702E0). */
-    /* The transmuter's column has no filters: LB and RB go straight to the next column. */
-    if ((pressed & (0x0100 | 0x0200)) && at_transmute && panels[focus_panel].is_shop) {
-        focus_panel = column_panel((panel_column(focus_panel) + (pressed & 0x0100 ? columns() - 1 : 1)) % columns());
-        select_panel(focus_panel); filter = pressed & 0x0100 ? 5 : 0;
-        refresh_all();
-        pressed &= ~(0x0100u | 0x0200u);
-    }
-    if (pressed & 0x0100) {                                            /* LB */
-        if (filter > 0) filter--;
-        else if (panels[1].root) {
-            focus_panel = column_panel((panel_column(focus_panel) + columns() - 1) % columns());
-            select_panel(focus_panel); filter = 5; show_doll(1);
+    /* The 360's inventory (sub_8236FEF0; its jump table 0x8236FFE4, Runic's codes from XInput's
+     * keys, sub_822DF308): RB and LB (10, 12) change the column without the filter
+     * (sub_823702E0 with 0); the left stick's left and right (19, 20) change the filter, and past
+     * the first or the last go to the column before or after with the last or the first filter
+     * (0x82370180, sub_823653C8, sub_823702E0). The merchant's menu (sub_8237A0A8) sends the same
+     * codes the same way. The transmuter's column has no filters: the stick goes to the next
+     * column. */
+    {
+        static int lx_held;
+        int fdir = !lx_held && lx > 500 ? 1 : !lx_held && lx < -500 ? -1 : 0;
+        lx_held = lx > 500 || lx < -500;
+        if (pressed & (0x0100 | 0x0200)) {                                /* LB, RB: the column */
+            if (panels[1].root || shop) {
+                focus_panel = column_panel((panel_column(focus_panel) + (pressed & 0x0100 ? columns() - 1 : 1)) % columns());
+                select_panel(focus_panel); show_doll(1);
+                shop_sound(67);
+                refresh_all();
+            }
         }
-        refresh_all();
-    }
-    if (pressed & 0x0200) {                                            /* RB */
-        if (filter < 5) filter++;
-        else if (panels[1].root) {
-            focus_panel = column_panel((panel_column(focus_panel) + 1) % columns());
-            select_panel(focus_panel); filter = 0; show_doll(1);
+        if (fdir && at_transmute && panels[focus_panel].is_shop) {
+            focus_panel = column_panel((panel_column(focus_panel) + (fdir < 0 ? columns() - 1 : 1)) % columns());
+            select_panel(focus_panel); filter = fdir < 0 ? 5 : 0;
+            refresh_all();
+        } else if (fdir < 0) {                                             /* the stick left */
+            if (filter > 0) filter--;
+            else if (panels[1].root) {
+                focus_panel = column_panel((panel_column(focus_panel) + columns() - 1) % columns());
+                select_panel(focus_panel); filter = 5; show_doll(1);
+            }
+            shop_sound(67);
+            refresh_all();
+        } else if (fdir > 0) {                                             /* the stick right */
+            if (filter < 5) filter++;
+            else if (panels[1].root) {
+                focus_panel = column_panel((panel_column(focus_panel) + 1) % columns());
+                select_panel(focus_panel); filter = 0; show_doll(1);
+            }
+            shop_sound(67);
+            refresh_all();
         }
-        refresh_all();
     }
     if (pressed & 0x000c) { compare_on = !compare_on; refresh_all(); } /* d-pad left or right: item compare */
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
