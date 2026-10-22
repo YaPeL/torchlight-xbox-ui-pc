@@ -958,7 +958,11 @@ the right one 21-24): **[read]**
   its own filter (the mods agent saw RB switch My Bag and Pet Bag on the 360). **The port now
   does this**: LB/RB the column, the left stick's left and right the filter (past the ends the
   column, as before), at the merchant's menu too (`sub_8237A0A8` sends 19 and 20 to the filter
-  the same way; its RB and LB cases were not aligned exactly). Not run yet.
+  the same way; its RB and LB cases were not aligned exactly). Not run yet. **Unconfirmed:** the
+  mods agent's scripted left stick (four pushes right, two builds) did not change the 360's
+  filter either; whether its scripting makes the `VK_PAD_LTHUMB_*` keystrokes is not known.
+  Two readings of the filter's input have now been contradicted or left open: stopped here until
+  a run with a real pad (the owner's guided capture, or run B2).
 What A, X and Y do to the item (equip, drop, compare: the layout's `ToggleItemCompare` and the
 help texts) is not read yet: it is the first task of the slice. **[read: the dispatch; the
 actions not yet]**
