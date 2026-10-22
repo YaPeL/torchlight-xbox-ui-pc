@@ -825,7 +825,7 @@ static void build_list(int filter) {
             if (is_tm_slot(slot)) continue;
             if ((slot < EQUIPPED_SLOTS) != (pass == 0)) continue;
             /* The gem's item select (the 360's list in mode 2 with +388, sub_82369FE8): no
-             * filter; identified equipment (ISA 2) with a free socket (+796; +916 against +924,
+             * filter; identified items (ISA 2, ITEM) with a free socket (+796; +916 against +924,
              * GOG's +0x2fc, +0x39c, +0x3a4). */
             if (cur_select) {
                 unsigned char *e = (unsigned char *)item;

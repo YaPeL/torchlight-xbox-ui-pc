@@ -1844,7 +1844,7 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   gem in its `+44` (`sub_8237ADF0` with 1: the sound 22). It is shown in
   `messagehousing_xenon` (`sub_8237A770`) and holds a `CInventoryMenuXenon` of the hero
   (`sub_8237ACD8`: `+384` = 2, `+388` = 1) whose list (`sub_82369FE8`) takes, with no filter, the
-  identified equipment (ISA 2, `+796`) with a free socket (`+916` against `+924`). Its bar has A
+  identified items (ISA 2, ITEM; `+796`) with a free socket (`+916` against `+924`). Its bar has A
   only, `act.insert` (`sub_8236C8D0` when `+384` is not 0; the string `0x820D1070`). Its pad
   (`sub_8237AAF0`, the codes 5 to 24): A keeps the selected item (`+48`) and closes; X and Y go
   to the list's `sub_8236A810`; B and the others close with none (`sub_8237ADF0` with 0: the
@@ -2021,8 +2021,8 @@ what they still lack. The screens done are in section 14.
    cursor if it is of type 104, else the player's virtual `+460` (the one attacked); the bar is
    shown if it is of type 167 and its state is not `MIMICIDLE` (`sub_822801D0`). There is no
    test of death there, so a dead unit keeps its bar, empty, while it is the target: as the port
-   does (the attacked unit for 3 s). The types 104 and 167 are not checked here: whether PC's
-   `ISA` (`0x480760`) numbers them the same was not verified.
+   does (the attacked unit for 3 s). The types are the same in both games: `UNITTYPES.HIE` has
+   the same 162 IDs in both paks (read 2026-10-22: 2 ITEM, 104 NPC, 167 MIMIC).
 6. **The merchant's screen sides** keep PC's panels (PC narrows the world's viewport; stopped
    after two tries), and PC's first-time Tips show after closing a shop.
 7. **Fishing:** PC's result window (the ripples made transparent, not run yet). A (catch) is tested:
