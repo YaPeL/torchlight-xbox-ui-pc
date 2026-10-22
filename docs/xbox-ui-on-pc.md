@@ -1531,6 +1531,20 @@ whole marked text becomes plain text and colour, and a description gets one Stat
 paragraph in its colour. **Not done:** X, mapping a skill to LT/RT/Y/B (read below, not
 written); the 360's requirement line ("Right hand requires : melee Weapon", built by
 `sub_823B07C8` from its own strings, which PC does not have).
+**Read 2026-10-22 (not written):** the 360's description (`sub_823B07C8`) is, in order, a
+cooldown line (`|cFF9180FF` "Cooldown" ": " the value as `%.1f` " " "seconds" `|u \n`), a mana
+cost line (`\n|cFF9180FF` "Mana Cost" ": " the value `|u\n`), the requirement line in
+`|cFF9180FF` .. `|u \n`, then the effects (`sub_823C0AE0`, PC's `0x5d8c60` here). The
+requirement (`sub_823B0230`, from the skill's `+92`, GOG's CSkill `+0x5c`: the right hand's unit
+type `+8`, the left's `+0xc`, dual wield `+0x10`, as PC's own test at `0x5d5760`): "Dual wield
+only" and a new line when dual; then, when both hands ask the same type, "Right and left hands
+require " ": " the type's name " " "Weapons", else "Right hand requires " ": " the name " "
+"Weapon"; nothing when neither asks. The type's name (`sub_823AFDB0`, by the type hierarchy,
+PC's `0x5fe190` on a unit's `+0x60`): MELEE (60) is "single handed melee" when ONE HANDED (9),
+"two-handed melee" when TWO HANDED (10), else "melee"; RANGED WEAPON (35) or
+ITEMCATEGORYRANGED (163) the same with "ranged"; else "any". The strings are the 360's
+(`0x820D4420`-`0x820D45D8`, `0x820BE144`, `0x820D0BE0`); PC has none of them. The cooldown and
+mana values' sources were not read yet (`sub_823A62C8`, the skill's fields).
 
 **The Skills page's mapping (X), read and written 2026-10-21, not run yet.** The page's input,
 `sub_823827F8` (`GamepadButtonDown`), switches on Runic's button code (section 10b); a second
