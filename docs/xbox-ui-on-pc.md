@@ -960,7 +960,9 @@ the right one 21-24): **[read]**
   column, as before), at the merchant's menu too (`sub_8237A0A8` sends 19 and 20 to the filter
   the same way; its RB and LB cases were not aligned exactly). Not run yet. **Unconfirmed:** the
   mods agent's scripted left stick (four pushes right, two builds) did not change the 360's
-  filter either; whether its scripting makes the `VK_PAD_LTHUMB_*` keystrokes is not known.
+  filter either; but its script driver sends no `VK_PAD_LTHUMB_*` keystrokes (the mods agent read
+  its `PadKeystrokes`: buttons, d-pad and triggers only), so that test says nothing of codes
+  19/20. The reading stands; it waits for a real pad.
   Two readings of the filter's input have now been contradicted or left open: stopped here until
   a run with a real pad (the owner's guided capture, or run B2).
 What A, X and Y do to the item (equip, drop, compare: the layout's `ToggleItemCompare` and the
