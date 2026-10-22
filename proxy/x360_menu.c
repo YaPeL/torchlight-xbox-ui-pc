@@ -1350,13 +1350,29 @@ static void refresh(void) {
                                                             : "set:X360_widgets1 image:item_tray");
         prop(tray, "Alpha", idx == selected[filter] ? "1.0"
                             : list_slot[idx] < EQUIPPED_SLOTS ? "0.9" : "0.6");
-        /* The details (sub_82368980); the quality and the sockets are not filled yet, so hidden as
-         * the 360 hides each when it has no text. */
+        /* The details (sub_82368980); the quality is not filled yet, so hidden as the 360 hides
+         * it when it has no text. */
         fill_details(row, (unsigned char *)list[idx]);
         row_name(name, "Quality", row); show(win(name), 0);
         compare_arrow(row, (unsigned char *)list[idx], list_slot[idx] < EQUIPPED_SLOTS);
-        row_name(name, "socket0_", row); show(win(name), 0);
-        row_name(name, "socket1_", row); show(win(name), 0);
+        /* The sockets (sub_82368980, 0x823697F8): the row's two marks, the filled ones first
+         * (socket_full, the image 17), then the empty (socket_empty, 16), the rest hidden; the
+         * item's sockets +916 and the filled +924 on the 360, PC's +0x39c and +0x3a4 (0x4b9510).
+         * Unidentified items show theirs too (in-game/11, town/02). */
+        {
+            unsigned char *e = (unsigned char *)list[idx];
+            /* Read on what can be socketed only (weapons, armour, trinkets: ISA 8, 13, 39). */
+            int equipment = isa(e, 8) || isa(e, 13) || isa(e, 39);
+            unsigned total = equipment ? *(unsigned *)(e + 0x39c) : 0, filled = equipment ? *(unsigned *)(e + 0x3a4) : 0, q;
+            for (q = 0; q < 2; q++) {
+                void *w;
+                row_name(name, q ? "socket1_" : "socket0_", row);
+                w = win(name);
+                if (q < filled) prop(w, "Image", "set:X360_widgets1 image:socket_full");
+                else if (q < total) prop(w, "Image", "set:X360_widgets1 image:socket_empty");
+                show(w, q < total && total <= 8);
+            }
+        }
     }
     /* The gold icons of the rows have generated names (i_506, ...): hidden with their text's parent. */
     {
@@ -1433,9 +1449,11 @@ static void refresh(void) {
                 else a = "";
             } else {
                 /* The bar as in the 360's screenshots: A by the item (Unequip, Equip, Use, Learn
-                 * for a spell), Y Drop, X Swap (to the pet's bag); no Info. */
+                 * for a spell, Socket for a gem: in-game/10), Y Drop, X Swap (to the pet's bag);
+                 * no Info. */
                 a = label[0] ? label : x360_text(equipped ? "act.unequip"
                                                  : isa(item, 129) ? "act.learn"
+                                                 : isa(item, 120) ? "act.socket"
                                                  : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "act.use" : "act.equip");
                 x = x360_text("act.swap"); y = x360_text("act.drop");
             }
@@ -2554,17 +2572,10 @@ static void page_titles(void) {
     show(win_of(MASTER, "ToggleItemCompare"), page == 0);
 }
 
-static void shop_close(void);
-static void set_page(int p);
-void x360_inventory_toggle(void) {
-    if (!find_world()) return;
-    if (inventory_open && shop && !shop_closing) { shop_close(); return; }
-    {
-        /* Run B: the first opening was slow; its two parts timed (the console, the layouts). */
-        unsigned t0 = GetTickCount();
-        x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
-        if (GetTickCount() - t0 > 50) { x360_log("x360 menu: console ms "); x360_log_num((int)(GetTickCount() - t0)); x360_log("\r\n"); }
-    }
+/* The frame's layouts, loaded once: at the first opening, or before it when the game is entered
+ * (x360_frame_tick, the 360's HUD shown): run B2 timed the frame's layouts at 394 ms at the first
+ * opening, plus the pages'. */
+static void frame_load(void) {
     {
         RECT r;
         HWND w = active_window();
@@ -2640,9 +2651,36 @@ void x360_inventory_toggle(void) {
         }
     }
     if (!inventory_root) return;
-    stats_load();
-    skills_load();
-    quest_load();
+    {
+        unsigned t0 = GetTickCount();
+        int first = !stats_root;
+        stats_load();
+        skills_load();
+        quest_load();
+        if (first) { x360_log("x360 menu: the pages' layouts ms "); x360_log_num((int)(GetTickCount() - t0)); x360_log("\r\n"); }
+    }
+    /* Loaded before the first opening: kept hidden until it (the opening sets each one's). */
+    if (!inventory_open) {
+        void *const roots[] = {master_root, inventory_root, panels[1].root, panels[2].root, ench_root,
+                               character_root, stats_root, journal_root, skills_root, quest_root};
+        unsigned i;
+        for (i = 0; i < sizeof roots / sizeof roots[0]; i++) if (roots[i]) set_visible(roots[i], 0, 0);
+    }
+}
+
+static void shop_close(void);
+static void set_page(int p);
+void x360_inventory_toggle(void) {
+    if (!find_world()) return;
+    if (inventory_open && shop && !shop_closing) { shop_close(); return; }
+    {
+        /* Run B: the first opening was slow; its two parts timed (the console, the layouts). */
+        unsigned t0 = GetTickCount();
+        x360_run_console();   /* test runs: console= commands, once, at the first opening (the level is loaded) */
+        if (GetTickCount() - t0 > 50) { x360_log("x360 menu: console ms "); x360_log_num((int)(GetTickCount() - t0)); x360_log("\r\n"); }
+    }
+    frame_load();
+    if (!inventory_root) return;
     inventory_open = !inventory_open;
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
@@ -3940,6 +3978,19 @@ static void sock_show(int on) {
             fresh_rects(bag); fresh_rects(sock_top);
             rect_of(bag, 0, &b); rect_of(sock_top, 0, &t);
             move_by(sock_top, b.left - t.left, b.top - 18.34f * k * 768.0f / 720.0f - t.top);
+            /* The housing's Close under it, centred (in-game/11: closebutton at 548.13, 649.81
+             * of 720, 50.16 right of the TopFrame's left and 585.59 below its top; the layout
+             * leaves it at the parent's corner). */
+            {
+                void *close = win_of(HOUSING_PREFIX, "closebutton");
+                rect6 c;
+                float s = k * 768.0f / 720.0f;
+                if (close) {
+                    fresh_rects(sock_top); fresh_rects(close);
+                    rect_of(sock_top, 0, &t); rect_of(close, 0, &c);
+                    move_by(close, t.left + 50.16f * s - c.left, t.top + 585.59f * s - c.top);
+                }
+            }
         }
         panels[3].selected[0] = panels[3].top[0] = 0; sock_draw(); hide_info();
     }
@@ -5107,6 +5158,9 @@ static void qd_show(int on) {
     if (on == qd_shown) return;
     qd_shown = on;
     if (!on) overlay_closed_at = GetTickCount();
+    /* A button held from before does not act (run B2: the A that talked, held, accepted the
+     * quest at once), as the tip and the modal. */
+    if (on) qd_prev_buttons = x360_pad_buttons();
     set_visible(qd_root, 0, on && !x360_dialog_pc);
     prop(win_of(pc_qd_prefix, "Frame"), "Alpha", on && !x360_dialog_pc ? "0" : "1");
     if (hud_root) set_visible(hud_root, 0, !on);
@@ -5648,8 +5702,14 @@ void x360_dump_after(const char *name, unsigned ms) {
 }
 
 void x360_frame_tick(void) {
-    static int logged;
+    static int logged, preloaded;
     if (!find_world()) return;
+    /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the
+     * in-game sheet), not at the first Back (run B2: the user asked for no wait there). */
+    if (!preloaded && hud_root) {
+        preloaded = 1;
+        __try { frame_load(); } __except (1) { x360_log("x360 menu: exception loading the frame\r\n"); }
+    }
     if (dump_after_at && (int)(GetTickCount() - dump_after_at) >= 0) {
         void x360_ui_dump_now(const char *name);
         dump_after_at = 0;

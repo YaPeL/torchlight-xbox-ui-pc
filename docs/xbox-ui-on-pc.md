@@ -2250,3 +2250,31 @@ inventory (section 13), so each run's batch is one.
   reading the setting again, so a tip queued before Y still shows, as in PC. Run A's tip after Y
   is the 360's behaviour too.
 - Socketing a gem with the pad: section 14 (the gem goblins). Not run yet.
+
+**Run B2 (2026-10-22, town, the save as run B left it, no console).** Steam's folders UNCHANGED.
+- Gems, as the 360's captures (in-game/10-12, town/02-03): A on a gem opened the item select
+  (Insert Into, A Insert, no gold, over the bag) listing the unique sword; A socketed it
+  (Sockets 1/1, its effect added, the gem gone, Weapons selected); B closed the select with none.
+  The Destroyer kept the sword and took the gem (Sockets 0/1); the Recoverer destroyed the sword
+  and gave the gem back; both results showed in the 360's modal.
+- The inventory's input: LB/RB change the column, the left stick's left and right the filter.
+- The skill set at the page's bottom changed at once; the first talk showed no PC dialog; pet
+  commands (Start) and the pet to town worked; the enchanter itself was left for a later run.
+- The first opening: the frame's layouts took 394 ms (the console under 50 ms).
+- Differences found, fixed after the run (not run yet):
+  - A on a gem read Equip: the 360's bar shows Socket (in-game/10);
+  - the housing's Close sat at the screen's corner: placed under the select as in-game/11
+    (closebutton at 548.13, 649.81 of 720, 50.16 right of the select's TopFrame and 585.59 below
+    its top);
+  - the rows' socket marks: the 360 (`sub_82368980`, `0x823697F8`) shows the row's
+    `socket0_`/`socket1_`, the filled ones first (`socket_full`), then the empty
+    (`socket_empty`), from the item's sockets (+916) and filled (+924); PC's `+0x39c` and
+    `+0x3a4` (`0x4b9510`), read for weapons, armour and trinkets;
+  - A held from the talk accepted the quest at once: the dialog now ignores a button held from
+    before it showed, as the tip and the modal already did;
+  - the frame's and the pages' layouts are loaded when the game is entered (the 360's HUD up),
+    not at the first Back (the user's request).
+- Open: a dark rectangle wider than the modal's parchment (the gem goblins' result, the pet's
+  return): PC's modal is transparent whole (its root is `Frame`), so it may be the 360's
+  `FrameB`; a 360 capture was asked for. The bottom row's card reaches the screen's bottom over
+  the frame's Close: the card is kept on the screen only; where the 360 puts it is not read yet.
