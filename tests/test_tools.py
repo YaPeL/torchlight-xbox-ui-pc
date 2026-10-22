@@ -235,6 +235,10 @@ class ConvertX360Test(unittest.TestCase):
             '<GUILayout><Window Type="DefaultWindow" Name="R"><Window Type="DefaultWindow" Name="S">'
             '<Property Name="Image" Value="set:widgets6 image:b" /></Window></Window></GUILayout>',
         "media/UI/hud.layout": "<GUILayout />",
+        "media/UI/interactivemenu.layout":
+            '<GUILayout><Window Type="DefaultWindow" Name="Root"><Window Type="ceguiWidget/StaticImage" '
+            'Name="TopBar"><Property Name="Image" Value="set:Loading image:background" /></Window>'
+            '</Window></GUILayout>',
         "media/models/other.dds": b"not UI",
     }
 
@@ -252,7 +256,7 @@ class ConvertX360Test(unittest.TestCase):
         d = convert_x360_ui.DEST
         self.assertEqual(sorted(out), sorted(d + n for n in [
             "BRLNSDB.TTF", "Serif.font", "ceguiWidgets.looknfeel", "ceguiWidgets.scheme", "loading.dds",
-            "loading.imageset", "modalmenu.layout", "skills.layout", "widgets1.dds", "widgets1.imageset"]))
+            "loading.imageset", "interactivemenu.layout", "modalmenu.layout", "skills.layout", "widgets1.dds", "widgets1.imageset"]))
         scheme = text[d + "ceguiWidgets.scheme"]
         self.assertIn('<GUIScheme Name="X360_newHud">', scheme)
         self.assertIn('<Imageset Name="X360_Loading" Filename="media/ui/x360/loading.imageset" />', scheme)
@@ -274,6 +278,8 @@ class ConvertX360Test(unittest.TestCase):
                          '<Property name="Font" value="X360_Serif" /></Falagard>')
         self.assertIn('Value="set:X360_widgets1 image:a"', text[d + "modalmenu.layout"])
         self.assertIn('Value="set:widgets6 image:b"', text[d + "skills.layout"], "unknown sets are left")
+        self.assertIn('Value="set:X360_Loading image:background"', text[d + "interactivemenu.layout"],
+                      "a .layout of EXTRA_LAYOUTS is converted; hud.layout is not")
         self.assertEqual(out[d + "loading.dds"], b"DDS synthetic 2")
         self.assertEqual(report["layouts"]["skills.layout"], {"windows": 2, "unknown_imagesets": ["widgets6"]})
         self.assertEqual(report["imagesets"], {"widgets1": "X360_widgets1", "Loading": "X360_Loading"})

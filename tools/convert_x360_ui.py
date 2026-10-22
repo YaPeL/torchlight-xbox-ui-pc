@@ -201,15 +201,21 @@ def convert(files):
     scheme = retag(scheme, "LookNFeel", looknfeel)
     report["scheme"] = put(basename(SCHEME.replace("ceguiwidgets", "ceguiWidgets")), scheme.encode(codec))
 
-    # The layouts.
-    for path in sorted(p for p in files if p.endswith(".uilayout")):
+    # The layouts: every .uilayout, and the few the 360 keeps as .layout that the port shows
+    # (EXTRA_LAYOUTS).
+    for path in sorted(p for p in files if p.endswith(".uilayout") or basename(p).lower() in EXTRA_LAYOUTS):
         text, enc = decode(files[path])
         text, unknown = rename_sets(text, names)
         text = rename_fonts(text, fonts)
-        name = basename(path)[: -len(".uilayout")] + ".layout"
+        name = basename(path)[: -len(".uilayout")] + ".layout" if path.endswith(".uilayout") else basename(path).lower()
         put(name, text.encode(enc))
         report["layouts"][name] = {"windows": len(re.findall(r"<Window\b", text)), "unknown_imagesets": unknown}
     return out, report
+
+
+# The 360's CInteractiveMenu: two bars at the screen's top and bottom (set:Loading image:background),
+# shown while a modal or an NPC dialog is open (sub_82343DF8).
+EXTRA_LAYOUTS = {"interactivemenu.layout"}
 
 
 def apply_prompts(out, report, icons):
@@ -241,7 +247,8 @@ def read_pak(path):
     wanted = (".uilayout", ".scheme", ".looknfeel", ".imageset", ".font", ".dds", ".ttf", ".tga", ".png")
     with zipfile.ZipFile(path) as z:
         return {i.filename.lower(): z.read(i) for i in z.infolist()
-                if i.filename.lower().startswith("media/ui/") and i.filename.lower().endswith(wanted)}
+                if i.filename.lower().startswith("media/ui/")
+                and (i.filename.lower().endswith(wanted) or basename(i.filename).lower() in EXTRA_LAYOUTS)}
 
 
 def inside(path, root):

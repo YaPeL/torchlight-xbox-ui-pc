@@ -2290,3 +2290,13 @@ inventory (section 13), so each run's batch is one.
     shows black bars top and bottom (0-108, 972-1080) while it is up: not ported.
   - The card: at the selected row's top, pushed up from row 5 on so that it ends 36 rows (of 720)
     above the screen's bottom (1026 of 1080), past the frame's bottom (in-game/17, 18). Ported.
+- The bars at the screen's top and bottom (in-game/16, town/04): the 360's `CInteractiveMenu`
+  (its layout `media/UI/interactivemenu.layout`, a `.layout` in the 360's pak: `TopBar` and
+  `BottomBar`, 10 % each, `set:Loading image:background`, AlwaysOnTop; the mods agent's reading).
+  Built by `sub_82352E30` (from `sub_823392E8`, kept at the UI's `+992`). `sub_82343DF8` shows
+  it when the UI's `+5612` is 1 and hides it at 0, hiding the HUD (`+60`) meanwhile; `+5612`
+  counts the open menus whose `setOpen` (the virtual `+0x1c`) adds or takes one: CModalMenu
+  (`sub_82353528`), CQuestDialogMenu (`sub_82355668`), CDieMenu (`sub_8235F2E8`),
+  CSettingsMenuXenon (`sub_823807E8`), CLeaderboardsMenuXenon (`sub_82372480`) and one more
+  (`sub_82304928`). The converter now takes that layout (`EXTRA_LAYOUTS`), and the proxy shows the
+  bars while the 360's modal or NPC dialog shows, with the 360's HUD hidden. Not run yet.

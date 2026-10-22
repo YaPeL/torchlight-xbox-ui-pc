@@ -5720,6 +5720,36 @@ static void modal_tick(void) {
     if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) press_pc(pc_modal_prefix, "Decline");   /* B */
 }
 
+/* ---- the bars at the screen's top and bottom (the 360's CInteractiveMenu, interactivemenu.layout:
+ * TopBar and BottomBar, 10 % each, set:Loading image:background) ----
+ * The 360 counts its open modal, NPC dialog, death, settings and leaderboards menus (each one's
+ * setOpen, the virtual +0x1c, adds or takes one at the UI's +5612: CModalMenu sub_82353528,
+ * CQuestDialogMenu sub_82355668, ...) and sub_82343DF8 shows the bars when the count is 1 and hides
+ * them at 0, hiding its HUD (the UI's +60) while they show (town/04, in-game/16). Of those the port
+ * shows the modal and the NPC dialog. */
+#define BARS_PREFIX "x360bars_"
+static void bars_tick(void) {
+    static void *root;
+    static int failed, on;
+    int want = modal_shown || qd_shown;
+    if (failed || want == on) return;
+    if (!root) {
+        RECT r;
+        HWND hw = active_window();
+        root = load("media/ui/x360/interactivemenu.layout", BARS_PREFIX);
+        if (!root) { failed = 1; return; }
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(root, k, 0);
+        pass_mouse(root);
+    }
+    on = want;
+    set_visible(root, 0, on);
+    if (on) move_to_front(root, 0);
+    if (hud_root) set_visible(hud_root, 0, !on);
+    if (pet_hud_root) set_visible(pet_hud_root, 0, !on);
+    x360_log(on ? "x360 bars: shown\r\n" : "x360 bars: hidden\r\n");
+}
+
 /* PC's modal taken without showing it (the gem goblins' result, written in their page as the
  * 360 does): its Dialog's text, then its Ok pressed. */
 int x360_modal_take(char *out, unsigned size) {
@@ -5766,6 +5796,7 @@ void x360_frame_tick(void) {
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
     __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
+    __try { bars_tick(); } __except (1) { x360_log("x360 bars: exception\r\n"); }
     __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
