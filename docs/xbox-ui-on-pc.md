@@ -946,6 +946,14 @@ the right one 21-24): **[read]**
 - B and Back: close; RB and LB: one function (the filters, by the layout's bumpers); RT, LT: the
   housing's tabs;
 - the left stick up and down: the row selection; left and right: two other functions.
+- **Re-read 2026-10-22 (the jump table at `0x8236FFE4`, index = code - 3):** RB (10) and LB (12)
+  go to `0x823702BC`, which does nothing; the filter is changed by codes 19 and 20 (the left
+  stick's left and right by the table above): 19 the list's `+296` minus 1 (wrapping, the sound
+  67; past the first, `sub_823702E0`, the column before), 20 `sub_823653C8(list, 1)` (past the
+  last, the next column); 17 and 18 move the row (`sub_8236A488`). This contradicts the line
+  above and the port (LB/RB change the filter; the layout shows the RB icon by the filter's
+  name). Whether the master frame or Runic's input turns the bumpers into 19/20 is not read: the
+  mods agent's capture of the gem tab (2026-10-22) is to show which input changed it.
 What A, X and Y do to the item (equip, drop, compare: the layout's `ToggleItemCompare` and the
 help texts) is not read yet: it is the first task of the slice. **[read: the dispatch; the
 actions not yet]**
