@@ -2170,7 +2170,8 @@ inventory (section 13), so each run's batch is one.
 - **B2. Town again, on the save as run B left it** (no console; the two amethysts and the unique sword are in the bag): A on a gem, the item select, A on the sword; then the gem pages
   (Recover, Destroy). Map a skill and see the page's set change at once; enchant and see PC's
   inventory close; the first talk to an NPC (no flash of PC's dialog); the log's timings of the
-  first opening. Can follow C in the same session.
+  first opening. In the inventory and at a merchant: LB/RB change the column, the left stick's
+  left and right the filter (changed 2026-10-22). Can follow C in the same session.
 
 **Run A (2026-10-21, the user with the 8BitDo; a new hero, slot 1).** Steam's folders UNCHANGED.
 - The tip shows as the 360's. B closed it **and** attacked (`pad.c` sent the hotbar key 3 too):
