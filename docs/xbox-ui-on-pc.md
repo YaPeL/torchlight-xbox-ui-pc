@@ -2274,7 +2274,19 @@ inventory (section 13), so each run's batch is one.
     before it showed, as the tip and the modal already did;
   - the frame's and the pages' layouts are loaded when the game is entered (the 360's HUD up),
     not at the first Back (the user's request).
-- Open: a dark rectangle wider than the modal's parchment (the gem goblins' result, the pet's
-  return): PC's modal is transparent whole (its root is `Frame`), so it may be the 360's
-  `FrameB`; a 360 capture was asked for. The bottom row's card reaches the screen's bottom over
-  the frame's Close: the card is kept on the screen only; where the 360 puts it is not read yet.
+- The mods agent's 360 captures after the run (in-game/13-18):
+  - The gem goblins have no modal on the 360: the result is written in their page, yellow, in
+    `getsocketresult` (357,700 to 721,924 at 1080) under the help text, and the page stays open;
+    the next A clears it (in-game/14). PC shows it in its modal (`0x54cad0`, from the act's gem
+    branch, `0x57c3cc`-`0x57c411`), which closes PC's menus. The port now takes the modal's text,
+    presses its Ok and opens PC's enchant menu again with the goblin's type (CEnchantMenu
+    `0x575990`, thiscall (open, type): its `setOpen` `0x576540` passes 0x15; the type is its
+    `+0x90`). Not run yet.
+  - The pet's return is a modal on the 360 too (in-game/16): title "Pet", the text, A OK, over a
+    translucent dark rectangle of `FrameB`'s size (585,177 to 1335,764), so run B2's dark
+    rectangle is the 360's. No parchment on the 360: the parchment with chains in run B2's photos
+    stood at the gem goblins' stall in the world (its chains show above the shop's frame too), to
+    be confirmed by the UI dump now taken 0.5 s after each modal shows (`modal-N`). The 360 also
+    shows black bars top and bottom (0-108, 972-1080) while it is up: not ported.
+  - The card: at the selected row's top, pushed up from row 5 on so that it ends 36 rows (of 720)
+    above the screen's bottom (1026 of 1080), past the frame's bottom (in-game/17, 18). Ported.

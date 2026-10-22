@@ -1636,7 +1636,10 @@ static void show_info(void *item, float y, float list_left) {
          * 3 more, not explained) */
         x = r.left + 15.6f * k;
     }
-    if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom;
+    /* The card's bottom kept 36 rows (of 720) above the screen's bottom: the 360's dumps
+     * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends
+     * at 1026 of 1080, past the frame's bottom). */
+    if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom - 36.0f * (float)cr.bottom / 720.0f;
     if (compare_on && inv && list_slot[selected[filter]] >= EQUIPPED_SLOTS)
         ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
     if (first == item) first = 0;
@@ -1850,6 +1853,7 @@ static void update_info(void) {
  * other pages (getsocket, destroysocket, retire, enchantshrine) stay hidden. */
 #define ENCH_PREFIX "x360ench_"
 static void *ench_root;
+static char gem_result[512];             /* the gem goblins' last result, shown in their page */
 static void ench_fill(unsigned char *item) {
     char buf[160], *p;
     /* The gem pages (the 360's sub_82360EC0, its modes 3 and 2): the goblin of type 132 (PC's
@@ -1862,9 +1866,10 @@ static void ench_fill(unsigned char *item) {
         show(win_of(ENCH_PREFIX, "retire"), 0);
         show(win_of(ENCH_PREFIX, "getsocket"), get);
         show(win_of(ENCH_PREFIX, "destroysocket"), !get);
-        /* The result lines start empty (the 360's catalog: town/02, 03); the layout has a sample. */
-        text(win_of(ENCH_PREFIX, "getsocketresult"), "");
-        text(win_of(ENCH_PREFIX, "destroysocketresult"), "");
+        /* The result lines start empty (the 360's catalog: town/02, 03; the layout has a sample)
+         * and hold the last result until the next A (in-game/14). */
+        text(win_of(ENCH_PREFIX, "getsocketresult"), get ? gem_result : "");
+        text(win_of(ENCH_PREFIX, "destroysocketresult"), get ? "" : gem_result);
         show(win_of(ENCH_PREFIX, get ? "pressbuttongetsocket" : "pressbuttondestroysocket"), has_gems(item));
         return;
     }
@@ -2290,7 +2295,24 @@ static void enchant(void) {
         x360_log("x360 enchanter: A: not placed\r\n");
         return;
     }
+    gem_result[0] = 0;
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    if (at_enchant == 0x19 || at_enchant == 0x1a) {
+        /* The 360 writes the gem goblins' result in their page, yellow, and stays open
+         * (in-game/14: getsocketresult, "The gems within the ... are destroyed!"; no modal). PC
+         * shows it in its modal (0x54cad0, from the act's gem branch, 0x57c3cc-0x57c411), which
+         * closes PC's menus: its text is taken, its Ok pressed, and PC's enchant menu opened
+         * again with the goblin's type (CEnchantMenu 0x575990: thiscall (open, type), its
+         * setOpen 0x576540 passing 0x15). Not run yet. */
+        typedef void (__fastcall *open_type_fn)(void *self, void *edx, int open, int type);
+        int x360_modal_take(char *out, unsigned size);
+        if (x360_modal_take(gem_result, sizeof gem_result)) x360_log("x360 enchanter: the gem result taken from PC's modal\r\n");
+        if (!m[ENCHANT_OPEN]) {
+            ((open_type_fn)0x00575990)(m, 0, 1, at_enchant);
+            x360_log(m[ENCHANT_OPEN] ? "x360 enchanter: PC's enchant menu opened again\r\n"
+                                     : "x360 enchanter: PC's enchant menu did not open again\r\n");
+        }
+    }
     got = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT);
     if (got) {
         ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, got);
@@ -4321,6 +4343,7 @@ void x360_shop_tick(void) {
             if (inventory_open) x360_inventory_toggle();
             shop = *(unsigned char **)(en + ENCHANT_OWNER);
             at_enchant = mode;
+            gem_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
@@ -5622,6 +5645,7 @@ static void tip_tick(void) {
  * Here, over PC's (made transparent, as the tip): A presses PC's Accept when shown, else its Ok;
  * B its Decline when shown (the 360 sends 8 also when it is not; what that does with Ok alone
  * is not read). The buttons shown as PC's. */
+void x360_dump_after(const char *name, unsigned ms);
 #define MODAL_PREFIX "x360modal_"
 static void *modal_root;
 static char pc_modal_prefix[48];
@@ -5670,6 +5694,17 @@ static void modal_tick(void) {
         prop(win_of(pc_modal_prefix, "Frame"), "Alpha", "0");
         move_to_front(modal_root, 0);
         prev = x360_pad_buttons();
+        {
+            /* A test aid: a UI dump 0.5 s after it shows (modal-1, ...): run B2 showed a
+             * parchment with chains behind the 360's modal, which the 360 has not (in-game/16);
+             * PC's modalmenu.layout is transparent whole, so the dump shows what draws it. */
+            static int modals;
+            char name[16] = "modal-";
+            modals++;
+            name[6] = (char)('0' + modals % 10);
+            name[7] = 0;
+            x360_dump_after(name, 500);
+        }
     }
     read_prop(win_of(pc_modal_prefix, "Title"), "Text", v, sizeof v);
     text(win_of(MODAL_PREFIX, "Title"), v);
@@ -5683,6 +5718,17 @@ static void modal_tick(void) {
     prev = buttons;
     if (pressed & 0x1000) press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok");   /* A */
     if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) press_pc(pc_modal_prefix, "Decline");   /* B */
+}
+
+/* PC's modal taken without showing it (the gem goblins' result, written in their page as the
+ * 360 does): its Dialog's text, then its Ok pressed. */
+int x360_modal_take(char *out, unsigned size) {
+    static const char *const needs[] = {"Ok", "Dialog", 0};
+    if (!pc_modal_prefix[0]) find_pc_by_suffix("Accept", needs, pc_modal_prefix, sizeof pc_modal_prefix);
+    if (!pc_modal_prefix[0] || !pc_attached(pc_modal_prefix, "Frame")) return 0;
+    read_prop(win_of(pc_modal_prefix, "Dialog"), "Text", out, size);
+    press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok");
+    return 1;
 }
 
 /* Whether a tip, modal or NPC dialog of the 360's has the pad (or closed less than 0.3 s ago, so
