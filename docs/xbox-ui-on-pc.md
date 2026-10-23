@@ -3133,7 +3133,8 @@ release is made of, makes only the artifacts.
   wrong published); a mirror beside the runtime's would avoid it.
 - **Pinned (the GPU agent's review, item 9):** every action by its commit's SHA (the major version
   in a comment); LLVM 21 is Ubuntu 26.04's own clang-21, lld-21 and llvm-21 at 1:21.1.8-6ubuntu1
-  (the release pocket, the owner's machine's version), in an `ubuntu:26.04` container, in both
+  (the release pocket, the owner's machine's version; every package of llvm-toolchain-21 held at
+  that version by an apt preference), in an `ubuntu:26.04` container, in both
   workflows: no script downloaded and run, and the proxies' SHA-256 printed in the log are a local
   build's. Both workflows declare `contents: read`; only the draft job writes, on a pushed tag. The
   container images stay pinned by tag.
