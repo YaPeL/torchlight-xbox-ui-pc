@@ -3023,5 +3023,5 @@ Here:
   menu, the load and play, no frame with PC's orbs; the owner saw none.
 - **PC's modal's board** (a 3D sign, CModalMenu `+0x38`) was hidden only while the 360's modal
   showed: its fall before it and its rise after it were seen (the pet's return). It is now kept
-  hidden always, the 360's modal showing every one of PC's modals. Not run yet.
+  hidden always, the 360's modal showing every one of PC's modals. QA run 49: the pet's return, no board falling nor rising (the owner).
 
