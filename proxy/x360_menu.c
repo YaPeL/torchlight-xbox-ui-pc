@@ -6910,6 +6910,11 @@ typedef int (__fastcall *load_put_fn)(void *inv, void *edx, void *item, int slot
 #define LOAD_ASIDE_MAX 64
 static struct { void *item, *owner, *inv; int slot; } load_aside[LOAD_ASIDE_MAX];
 static int load_aside_count, load_moved, load_stopped;
+/* A load the player asked for: set when a menu out of play gives way to none (Continue, Load, a
+ * new game pressed), cleared when a menu shows again or play is left. The title's own loads of the
+ * last character, before its menu shows or after leaving play, are not the player's: left to PC
+ * (their copy is not saved: QA run 29). */
+static int load_armed;
 
 static void log_item_name(void *item) {
     char name[96];
@@ -6947,6 +6952,11 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
     int r = put(inv, 0, item, slot, flag), to;
     if (r || !inv || !item || slot < EQUIPPED_SLOTS) return r;
     owner = *(unsigned char **)((unsigned char *)inv + 0x14);   /* CInventory's owner (0x4e953f reads it) */
+    if (!load_armed) {
+        x360_log("x360 load: the title's load: "); log_item_name(item); x360_log(" from slot "); x360_log_num(slot);
+        x360_log(" left to PC (that copy is not saved)\r\n");
+        return r;
+    }
     if (!owner || !(isa(owner, 28) || isa(owner, 87))) {
         x360_log("x360 load: PC drops "); log_item_name(item); x360_log(" from slot "); x360_log_num(slot);
         x360_log(owner ? " (a unit not of type 28 or 87)\r\n" : " (no owner)\r\n");
@@ -7007,6 +7017,9 @@ static void load_aside_tick(void) {
     static int frames_ready, pet_logged;
     int k, left = 0, need_pet = 0;
     unsigned char *pet = the_pet();
+    static int was_in_play;
+    if (was_in_play && !hud_in_play) load_armed = 0;   /* play left: the title's load may follow */
+    was_in_play = hud_in_play;
     if (!hud_in_play) { frames_ready = 0; return; }   /* the title or a load: the units may be the title's */
     if (pet && !pet_logged) { pet_logged = 1; x360_log("x360 load: the pet is there, "); x360_log_num(frames_ready); x360_log(" frames into play\r\n"); }
     if (frames_ready < 1000000) frames_ready++;
@@ -7046,6 +7059,12 @@ static void load_aside_tick(void) {
     }
     if (!left) { load_aside_count = 0; return; }
     load_stopped = 1;
+    for (k = 0; k < load_aside_count; k++) {
+        if (!load_aside[k].item) continue;
+        x360_log("x360 load: fits nowhere: "); log_item_name(load_aside[k].item);
+        x360_log(isa(load_aside[k].owner, 87) ? " (the pet's) from slot " : " (the hero's) from slot ");
+        x360_log_num(load_aside[k].slot); x360_log("\r\n");
+    }
     x360_log("x360 load: "); x360_log_num(left); x360_log(" item(s) fit nowhere: the game stops, unsaved\r\n");
     stop_unsaved(" item(s) of this character do not fit in its bag or its pet's with the bag chosen at install.\n\n"
                  "The game stops now, without saving: nothing is lost. Install again with the other bag, load "
@@ -7406,6 +7425,8 @@ static void pc_menus_nav_tick(void) {
         int found = 0;
         nav_focus = 0;
         for (i = 0; i < nav_count; i++) if (nav_list[i] == was) { nav_focus = i; found = 1; }
+        if (!in_play && n_before > 0 && nav_count == 0) load_armed = 1;   /* a menu gave way: the player's load (the load hook) */
+        else if (nav_count > 0 && !in_play) load_armed = 0;
         if (nav_count != n_before) {
             typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
             static str_fn gn;
