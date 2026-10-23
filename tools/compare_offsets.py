@@ -11,6 +11,7 @@ builds) are listed in order. The two lists are aligned (difflib); a function who
 "same", else the differing offsets are printed. With --all, the matching ones are printed too.
 """
 import argparse
+import bisect
 import difflib
 import os
 import re
@@ -66,6 +67,13 @@ def disassemble(path, start, end):
     return instructions(r.stdout)
 
 
+def next_called(image, va):
+    """The first call target after va (a function start for sure; the padding heuristic's are not)."""
+    calls = sorted(image.calls())
+    i = bisect.bisect_right(calls, va)
+    return calls[i] if i < len(calls) else va + 0x4000
+
+
 def compare(a, b):
     """The differences between two field offset lists: [(kind, a's, b's)]."""
     sm = difflib.SequenceMatcher(a=a, b=b, autojunk=False)
@@ -97,8 +105,9 @@ def main(argv=None):
     for g, o, status in read_table(a.table):
         if not (gog.in_code(g) and g in set(gog.starts()) and other.in_code(o)):
             continue
-        gi = function_body(disassemble(a.gog, g, g + 0x4000))
-        oi = function_body(disassemble(a.other, o, o + 0x4000))
+        # Up to the first int3, or the next call target when a function ends without padding.
+        gi = function_body(disassemble(a.gog, g, min(g + 0x4000, next_called(gog, g))))
+        oi = function_body(disassemble(a.other, o, min(o + 0x4000, next_called(other, o))))
         ga, oa = field_offsets(gi), field_offsets(oi)
         diffs = compare(ga, oa)
         if not diffs:
