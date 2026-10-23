@@ -2826,3 +2826,17 @@ the folder's files with the hashes they had before. The owner's decision: Epic i
 its executable being the one played on GOG. A copy outside Legendary's, Heroic's or the launcher's
 lists is not found by `install.py list`; it is given with `--game`.
 
+## 20. The 360's bag on the hero (QA run 25, 2026-10-23)
+
+The installer's two runs on GOG's folder (PC's bag, then the 360's): the converted interface and
+the proxy identical to the repository's; the saves untouched, backed up (identical copies) with
+the 360's bag; `save_folders` raised a TypeError when called without a home (fixed, tested). Run
+25 with `bag=360` and the owner's test hero: the pet's bag 0/50, but the hero's still PC's (82
+slots, sections from 19, 40, 61), no item lost. The patch covered the unit ctor's branch of kind
+0x57 only, which is the pet's; the hero takes the ctor's last branch (`0x49f8ee`, one section of
+21) and its own ctor `0x4dbc40` adds the types 1 and 2 with 21 each (`0x4dbc8d`, `0x4dbc9c`). The
+patch now makes both pushes 50 and leaves the four adds out (any other unit of the last branch
+gets 50 too, as every unit with a bag on the 360). Steam: `0x49d752`, `0x4d925f` (verified) and
+`0x4d926e` (checked: the next call, `push 0x15; push 2; call 0x4e7370`, Steam's addSection, read in
+its disassembly). Not run yet.
+

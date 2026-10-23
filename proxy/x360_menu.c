@@ -6837,10 +6837,13 @@ static void pc_bars_off(void) {
  * bytes made "xor al, al; ret"; put back when it closes). */
 /* bag=360 in x360_ui.ini (an install option, the user's): the hero's and the pet's bag as the
  * 360's. The 360 gives a unit with a bag one section of 50 slots for every item (sub_822883F0:
- * sub_822E0308 with 50, but 0 for type 170); PC gives the unit kind 0x57 (hero, pet) three of 21
- * (0x49f85f: CInventory 0x4e9820 with 21, its first section from slot 19; 0x49f880, 0x49f88f:
- * addSection (OT) 0x4e9a00 for the types 1 and 2 with 21 each). Patched at load, before any unit:
- * 50 for the first, the two adds left out (their 8 bytes of arguments taken off the stack). An item
+ * sub_822E0308 with 50, but 0 for type 170). PC's unit ctor 0x49f700 gives the kind 0x57 (the pet)
+ * three of 21 (0x49f85f: CInventory 0x4e9820 with 21, its first section from slot 19; 0x49f880,
+ * 0x49f88f: addSection (OT) 0x4e9a00 for the types 1 and 2 with 21 each), the kinds 0x29 and 0x80
+ * 42, 0xaa none, any other one of 21 (0x49f8ee); the hero's ctor 0x4dbc40 runs it, then adds the
+ * types 1 and 2 with 21 each itself (0x4dbc8d, 0x4dbc9c). Patched at load, before any unit: 50 for
+ * the two first sections of 21, the four adds left out (their 8 bytes of arguments taken off the
+ * stack). An item
  * of no section's type goes to the first (0x4e8410), as on the 360. Saves keep slot numbers: items
  * past the 50 are lost with it on, and placed oddly with it off again (the user's choice). */
 #define GOG_ADD_SECTION 0x004e9a00   /* addSection (OT), the two calls' target */
@@ -6848,21 +6851,34 @@ static int calls_add_section(const unsigned char *c) {
     return c[0] == 0xe8 && (unsigned)(unsigned long)(c + 5) + *(const unsigned *)(c + 1) == GOG_ADD_SECTION;
 }
 void x360_bag_patch(void) {
-    static const unsigned char size_at[2] = {0x6a, 0x15};                   /* push 21 */
     static const unsigned char skip[5] = {0x83, 0xc4, 0x08, 0x90, 0x90};   /* add esp,8 */
-    unsigned char *a = (unsigned char *)0x0049f85f, *c1 = (unsigned char *)0x0049f880, *c2 = (unsigned char *)0x0049f88f;
+    /* The pushes of 21 made 50: the pet's branch (kind 0x57) and the other units' (the hero's,
+     * whose ctor 0x4dbc40 runs the base 0x49f700 then adds its own two sections: QA run 25 found
+     * the hero still at 82 slots, 19 40 61, with the pet at 50). The four addSection calls left
+     * out: the pet's two and the hero's two. */
+    unsigned char *size[2] = {(unsigned char *)0x0049f85f, (unsigned char *)0x0049f8ee};
+    unsigned char *calls[4] = {(unsigned char *)0x0049f880, (unsigned char *)0x0049f88f,
+                               (unsigned char *)0x004dbc8d, (unsigned char *)0x004dbc9c};
     unsigned long old;
-    unsigned i, span = (unsigned)(c2 + 5 - a);
-    for (i = 0; i < 2; i++) if (a[i] != size_at[i]) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
-    if (c2 <= a || span > 0x40 || !calls_add_section(c1) || !calls_add_section(c2)) {
-        x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n");
-        return;
+    unsigned i, k;
+    for (i = 0; i < 2; i++)
+        if (size[i][0] != 0x6a || size[i][1] != 0x15) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
+    for (i = 0; i < 4; i++)
+        if (!calls_add_section(calls[i]) || calls[i][-2] != 0x6a || calls[i][-1] != (i & 1 ? 2 : 1)) {
+            x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n");
+            return;
+        }
+    for (i = 0; i < 2; i++) {
+        if (!VirtualProtect(size[i], 2, 0x40, &old)) return;
+        size[i][1] = 50;
+        VirtualProtect(size[i], 2, old, &old);
     }
-    if (!VirtualProtect(a, span, 0x40, &old)) return;
-    a[1] = 50;
-    for (i = 0; i < 5; i++) { c1[i] = skip[i]; c2[i] = skip[i]; }
-    VirtualProtect(a, span, old, &old);
-    x360_log("x360 bag: the 360's bag (one section of 50)\r\n");
+    for (i = 0; i < 4; i++) {
+        if (!VirtualProtect(calls[i], 5, 0x40, &old)) return;
+        for (k = 0; k < 5; k++) calls[i][k] = skip[k];
+        VirtualProtect(calls[i], 5, old, &old);
+    }
+    x360_log("x360 bag: the 360's bag (one section of 50), the hero's and the pet's\r\n");
 }
 
 static void side_panels_test(int off) {
