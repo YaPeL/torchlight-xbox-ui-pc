@@ -6725,7 +6725,9 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
     type = c_str(get_type(w, 0), 0);
     if (type && depth > 0) {
         unsigned k = length(type);
-        if (k >= 6 && type[k - 6] == 'B' && type[k - 5] == 'u' && type[k - 4] == 't' && type[k - 3] == 't' && type[k - 2] == 'o' && type[k - 1] == 'n') {
+        /* Buttons, and edit boxes (A clicks one: its caret, the keyboard types the name). */
+        if ((k >= 6 && type[k - 6] == 'B' && type[k - 5] == 'u' && type[k - 4] == 't' && type[k - 3] == 't' && type[k - 2] == 'o' && type[k - 1] == 'n')
+            || (k >= 7 && type[k - 7] == 'E' && type[k - 6] == 'd' && type[k - 5] == 'i' && type[k - 4] == 't' && type[k - 3] == 'b' && type[k - 2] == 'o' && type[k - 1] == 'x')) {
             nav_list[nav_count++] = w;
             return;
         }
@@ -6879,18 +6881,39 @@ static void pc_menus_nav_tick(void) {
     } else for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
     if (!nav_count) return;
     {
-        /* Back (up, left) and on (down, right): the d-pad, or the left stick held (repeating). PC's
-         * main menu is a row, its pause menu a column (QA run 13). */
+        /* A direction (1 up, 2 down, 3 left, 4 right): the d-pad, or the left stick held (its
+         * stronger axis, repeating). */
         int ly = x360_pad_ly(), lx = x360_pad_lx();
-        int stick = ly > 500 || lx < -500 ? -1 : ly < -500 || lx > 500 ? 1 : 0;
-        if (pressed & (0x0001 | 0x0004)) dir = -1;
-        else if (pressed & (0x0002 | 0x0008)) dir = 1;
+        int stick = (ly > 500 || ly < -500 || lx > 500 || lx < -500)
+                        ? ((ly < 0 ? -ly : ly) >= (lx < 0 ? -lx : lx) ? (ly > 0 ? 1 : 2) : (lx < 0 ? 3 : 4)) : 0;
+        if (pressed & 0x0001) dir = 1;
+        else if (pressed & 0x0002) dir = 2;
+        else if (pressed & 0x0004) dir = 3;
+        else if (pressed & 0x0008) dir = 4;
         else if (stick && (stick != held_dir || (int)(now - next_repeat) >= 0)) { dir = stick; next_repeat = now + (stick != held_dir ? 400 : 180); }
         held_dir = stick;
     }
     if (dir) {
-        nav_focus = (nav_focus + (dir > 0 ? 1 : nav_count - 1)) % nav_count;
-        nav_point( (r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+        /* The nearest window that way (its centre's distance along it, plus twice the distance across:
+         * PC's main menu is a row, its pause menu a column, its character creation two columns and its
+         * name boxes, QA runs 13-15); none that way, the farthest the other way on the same line
+         * (around). */
+        float fx = (r[nav_focus].left + r[nav_focus].right) * 0.5f, fy = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
+        float best = 1e30f, wrap = -1e30f;
+        int pick = -1, around = -1;
+        for (i = 0; i < nav_count; i++) {
+            float x = (r[i].left + r[i].right) * 0.5f - fx, y = (r[i].top + r[i].bottom) * 0.5f - fy;
+            float along = dir == 1 ? -y : dir == 2 ? y : dir == 3 ? -x : x;
+            float across = dir <= 2 ? (x < 0 ? -x : x) : (y < 0 ? -y : y);
+            if (i == nav_focus) continue;
+            if (along > 4.0f) { if (along + 2.0f * across < best) { best = along + 2.0f * across; pick = i; } }
+            else if (along < -4.0f && across < 40.0f && -along - 2.0f * across > wrap) { wrap = -along - 2.0f * across; around = i; }
+        }
+        if (pick < 0) pick = around;
+        if (pick >= 0) {
+            nav_focus = pick;
+            nav_point((r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+        }
     }
     if (pressed & 0x1000) {
         float x = (r[nav_focus].left + r[nav_focus].right) * 0.5f, y = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
