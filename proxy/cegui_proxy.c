@@ -190,11 +190,11 @@ static int starts(const char *s, const char *prefix) {
 }
 
 /* prompts=auto|xbox|playstation|playstation3|playstation4|playstation5|nintendo (proxy/setup.c);
- * update_check=0 turns the release check off. */
+ * bag=360 makes the hero's and pet's bag the 360's (x360_bag_patch, proxy/x360_menu.c). */
 static char prompts_setting[24] = "auto";
-static int update_check = 1;
+static int bag_360;
 void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
-void x360_update_start(const char *dir);
+void x360_bag_patch(void);
 
 static void read_config(void) {
     char path[520], text[1024], *line;
@@ -233,7 +233,7 @@ static void read_config(void) {
         if (starts(line, "pad_file=") && length(line + 9) < sizeof pad_file) memcpy(pad_file, line + 9, length(line + 9) + 1);
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
         if (starts(line, "prompts=") && length(line + 8) < sizeof prompts_setting) memcpy(prompts_setting, line + 8, length(line + 8) + 1);
-        if (starts(line, "update_check=0")) update_check = 0;
+        if (starts(line, "bag=360")) bag_360 = 1;
         if (starts(line, "console=") && length(line + 8) < sizeof x360_console_commands)
             memcpy(x360_console_commands, line + 8, length(line + 8) + 1);
         line = end;
@@ -591,13 +591,7 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
         open_log();
         read_config();
         if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct, !pad_old_face, pad_log);
-        if (update_check && mode_scheme) {
-            char dir[520];
-            DWORD n = GetModuleFileNameA(module, dir, 500);
-            while (n && dir[n - 1] != '\\' && dir[n - 1] != '/') n--;
-            dir[n] = 0;
-            x360_update_start(dir);   /* a thread: it starts once the loader is done */
-        }
+        if (bag_360 && mode_scheme) x360_bag_patch();   /* before any unit is made */
     }
     return 1;
 }

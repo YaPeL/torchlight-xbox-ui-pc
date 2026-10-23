@@ -6778,6 +6778,30 @@ static void pc_bars_off(void) {
  * whole around it, and the strips PC leaves out keep the last picture of PC's panels (QA runs 1, 2:
  * the merchant's sides). While the 360's frame is open at a shop, 0x541090 answers no (its first
  * bytes made "xor al, al; ret"; put back when it closes). */
+/* bag=360 in x360_ui.ini (an install option, the user's): the hero's and the pet's bag as the
+ * 360's. The 360 gives a unit with a bag one section of 50 slots for every item (sub_822883F0:
+ * sub_822E0308 with 50, but 0 for type 170); PC gives the unit kind 0x57 (hero, pet) three of 21
+ * (0x49f85f: CInventory 0x4e9820 with 21, its first section from slot 19; 0x49f880, 0x49f88f:
+ * addSection (OT) 0x4e9a00 for the types 1 and 2 with 21 each). Patched at load, before any unit:
+ * 50 for the first, the two adds left out (their 8 bytes of arguments taken off the stack). An item
+ * of no section's type goes to the first (0x4e8410), as on the 360. Saves keep slot numbers: items
+ * past the 50 are lost with it on, and placed oddly with it off again (the user's choice). */
+void x360_bag_patch(void) {
+    static const unsigned char size_at[2] = {0x6a, 0x15};
+    static const unsigned char call1[5] = {0xe8, 0x7b, 0xa1, 0x04, 0x00}, call2[5] = {0xe8, 0x6c, 0xa1, 0x04, 0x00};
+    static const unsigned char skip[5] = {0x83, 0xc4, 0x08, 0x90, 0x90};   /* add esp,8 */
+    unsigned char *a = (unsigned char *)0x0049f85f, *c1 = (unsigned char *)0x0049f880, *c2 = (unsigned char *)0x0049f88f;
+    unsigned long old;
+    unsigned i;
+    for (i = 0; i < 2; i++) if (a[i] != size_at[i]) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
+    for (i = 0; i < 5; i++) if (c1[i] != call1[i] || c2[i] != call2[i]) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
+    if (!VirtualProtect(a, 0x40, 0x40, &old)) return;
+    a[1] = 50;
+    for (i = 0; i < 5; i++) { c1[i] = skip[i]; c2[i] = skip[i]; }
+    VirtualProtect(a, 0x40, old, &old);
+    x360_log("x360 bag: the 360's bag (one section of 50)\r\n");
+}
+
 static void side_panels_test(int off) {
     /* Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
      * (the other's, +8); 0x549b70, both, calls them (QA run 10: with only the first patched the world
