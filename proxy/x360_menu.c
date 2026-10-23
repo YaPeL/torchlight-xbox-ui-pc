@@ -6555,7 +6555,7 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
         node_vis = ogre ? (node_visible_fn)GetProcAddress(ogre, "?setVisible@SceneNode@Ogre@@UAEX_N0@Z") : 0;
         parent_scene_node = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParentSceneNode@MovableObject@Ogre@@UBEPAVSceneNode@2@XZ") : 0;
         node_parent = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParent@Node@Ogre@@UBEPAV12@XZ") : 0;
-        entity_vtable = ogre ? GetProcAddress(ogre, "??_7Entity@Ogre@@6B@") : 0;
+        entity_vtable = ogre ? GetProcAddress(ogre, "??_7Entity@Ogre@@6BShadowCaster@1@@")   /* the vtable at offset 0: MovableObject derives from ShadowCaster first (QA run 9: the board was refused under 6B@) */ : 0;
     }
     if (!set_vis || !entity_vtable || !menu) return;
     __try {
