@@ -1949,7 +1949,7 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   diagnosis). With the same text, the window drawn in PC's SerifBig (`dialog_font=SerifBig`)
   showed the name in gold, and in the converted X360_SerifBig the markup came out as text. But
   PC's font breaks the lines elsewhere than the 360 (its letters narrower), so the 360's font is
-  kept and the markup taken out (`dialog_markup=1` keeps it). **Open, high priority:** the names'
+  kept and the markup taken out (`dialog_markup=1` keeps it; since 2026-10-23 it is kept by default, `dialog_markup=0` takes it out: the installer's ini has no such key, and with the old default the names' gold, seen in QA run B, was lost). **Open, high priority:** the names'
   gold with the 360's font. **Stopped after two tries:** (1) PC's SerifBig draws the gold but
   breaks the lines elsewhere; (2) PC sets `Font::setColourTrigger("|c")` and
   `setColourUnTrigger("|u")` on its fonts (GOG `0x55fcf0`, `0x55fd1d`, this build's own exports);

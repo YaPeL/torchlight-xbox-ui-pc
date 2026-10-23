@@ -484,7 +484,11 @@ def do_install(args):
                 print(f"saves backed up: {b}")
         out = convert_all(pak, image, os.path.join(game, "Pak.zip"), game)
     write_ini(game, out, bag)
-    build_proxy.install(game, proxy_dll(build, game, args.get("dll")))
+    proxy = proxy_dll(build, game, args.get("dll"))
+    build_proxy.install(game, proxy)
+    built = os.path.dirname(proxy)
+    if os.path.basename(built).startswith("x360ui-build-") and os.path.dirname(built) == game:
+        shutil.rmtree(built)                    # the proxy built here is in place: its folder not kept
     ask.info("Installed. Start Torchlight with a pad connected."
              + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
     return 0

@@ -5604,7 +5604,10 @@ static void hud_tick(void) {
 int x360_dialog_fast_scroll = 10;
 int x360_dump_targets;                       /* x360_ui.ini dump_targets=1: a dump at the first target of each kind */
 int x360_dialog_pc;                          /* x360_ui.ini dialog_pc=1: PC's dialog left visible (a diagnosis) */
-int x360_dialog_markup = 0;                  /* x360_ui.ini dialog_markup=0: the colour markup taken out */
+/* The 360's colour markup kept (the names in gold, QA run B with the font's +0x424 set); x360_ui.ini
+ * dialog_markup=0 takes it out (the words kept). It was off by default until 2026-10-23, so an
+ * installer's ini without the key lost the gold. */
+int x360_dialog_markup = 1;
 char x360_dialog_font[32];                   /* x360_ui.ini dialog_font=NAME: the text's font */
 #define QD_PREFIX "x360qd_"
 static void *qd_root, *pc_qd_text_frame;
