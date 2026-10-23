@@ -1946,7 +1946,8 @@ static char ench_result[512];            /* the last result of the enchanter or 
  * pops 0x3c) is called by the enchant act itself (0x57a800, at 0x57b6c9 and its other branches),
  * yet showed seconds later (QA runs 6, 20: after its 3D sign's fall). Hooked: during the act its
  * text is taken there and then for the 360's page and PC's modal not opened, the result at once as
- * the 360's (the user, QA run 20). Its first 7 bytes (push -1; push imm32) run from a copy. */
+ * the 360's (the user, QA run 20). Its first instructions (GOG's push -1; push imm32, 7 bytes;
+ * Steam's mov eax, fs:[0]; push -1, 8 bytes) run from a copy. */
 typedef struct { void *al; union { unsigned short buf[8]; unsigned short *ptr; } bx; unsigned size, res; } msvc_wstring;
 static int ench_acting;
 static unsigned char modal_tramp[16];
@@ -1977,24 +1978,38 @@ static void __fastcall modal_show_hook(void *gui, void *edx, msvc_wstring title,
     }
     ((orig_fn)(void *)modal_tramp)(gui, edx, title, body, x);
 }
+/* The function's first instructions, which the hook moves to the copy: they differ between the
+ * builds, whose exception frames are set up in another order (GOG's: push -1; push the handler;
+ * Steam's: mov eax, fs:[0]; push -1; then push the handler). The handler's address is checked too. */
+#define GOG_MODAL_HANDLER 0x0070ced2   /* the modal function's exception handler (its push imm32) */
+#ifdef X360_TARGET_STEAM
+static const unsigned char modal_want[9] = {0x64, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x6a, 0xff, 0x68};
+#define MODAL_MOVED 8                  /* mov eax, fs:[0]; push -1 */
+#else
+static const unsigned char modal_want[3] = {0x6a, 0xff, 0x68};
+#define MODAL_MOVED 7                  /* push -1; push the handler */
+#endif
 static void modal_hook_install(void) {
-    static const unsigned char want[7] = {0x6a, 0xff, 0x68, 0xd2, 0xce, 0x70, 0x00};
     static int done;
     unsigned char *f = (unsigned char *)0x0054cad0;
     unsigned long old;
     unsigned i;
     if (done) return;
     done = 1;
-    for (i = 0; i < 7; i++) if (f[i] != want[i]) { x360_log("x360 menu: PC's modal function not as expected, left\r\n"); return; }
-    for (i = 0; i < 7; i++) modal_tramp[i] = f[i];
-    modal_tramp[7] = 0xe9;
-    *(int *)(modal_tramp + 8) = (int)(f + 7) - (int)(modal_tramp + 12);
+    for (i = 0; i < sizeof modal_want; i++) if (f[i] != modal_want[i]) break;
+    if (i < sizeof modal_want || *(unsigned *)(f + sizeof modal_want) != GOG_MODAL_HANDLER) {
+        x360_log("x360 menu: PC's modal function not as expected, left\r\n");
+        return;
+    }
+    for (i = 0; i < MODAL_MOVED; i++) modal_tramp[i] = f[i];
+    modal_tramp[MODAL_MOVED] = 0xe9;
+    *(int *)(modal_tramp + MODAL_MOVED + 1) = (int)(f + MODAL_MOVED) - (int)(modal_tramp + MODAL_MOVED + 5);
     if (!VirtualProtect(modal_tramp, sizeof modal_tramp, 0x40, &old)) return;
-    if (!VirtualProtect(f, 7, 0x40, &old)) return;
+    if (!VirtualProtect(f, MODAL_MOVED, 0x40, &old)) return;
     f[0] = 0xe9;
     *(int *)(f + 1) = (int)(void *)modal_show_hook - (int)(f + 5);
-    f[5] = f[6] = 0x90;
-    VirtualProtect(f, 7, old, &old);
+    for (i = 5; i < MODAL_MOVED; i++) f[i] = 0x90;
+    VirtualProtect(f, MODAL_MOVED, old, &old);
     x360_log("x360 menu: PC's modal hooked (the enchanter's result)\r\n");
 }
 static unsigned ench_pending;             /* when an act was done whose result PC's modal has yet to show */
@@ -6786,19 +6801,25 @@ static void pc_bars_off(void) {
  * 50 for the first, the two adds left out (their 8 bytes of arguments taken off the stack). An item
  * of no section's type goes to the first (0x4e8410), as on the 360. Saves keep slot numbers: items
  * past the 50 are lost with it on, and placed oddly with it off again (the user's choice). */
+#define GOG_ADD_SECTION 0x004e9a00   /* addSection (OT), the two calls' target */
+static int calls_add_section(const unsigned char *c) {
+    return c[0] == 0xe8 && (unsigned)(unsigned long)(c + 5) + *(const unsigned *)(c + 1) == GOG_ADD_SECTION;
+}
 void x360_bag_patch(void) {
-    static const unsigned char size_at[2] = {0x6a, 0x15};
-    static const unsigned char call1[5] = {0xe8, 0x7b, 0xa1, 0x04, 0x00}, call2[5] = {0xe8, 0x6c, 0xa1, 0x04, 0x00};
+    static const unsigned char size_at[2] = {0x6a, 0x15};                   /* push 21 */
     static const unsigned char skip[5] = {0x83, 0xc4, 0x08, 0x90, 0x90};   /* add esp,8 */
     unsigned char *a = (unsigned char *)0x0049f85f, *c1 = (unsigned char *)0x0049f880, *c2 = (unsigned char *)0x0049f88f;
     unsigned long old;
-    unsigned i;
+    unsigned i, span = (unsigned)(c2 + 5 - a);
     for (i = 0; i < 2; i++) if (a[i] != size_at[i]) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
-    for (i = 0; i < 5; i++) if (c1[i] != call1[i] || c2[i] != call2[i]) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
-    if (!VirtualProtect(a, 0x40, 0x40, &old)) return;
+    if (c2 <= a || span > 0x40 || !calls_add_section(c1) || !calls_add_section(c2)) {
+        x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n");
+        return;
+    }
+    if (!VirtualProtect(a, span, 0x40, &old)) return;
     a[1] = 50;
     for (i = 0; i < 5; i++) { c1[i] = skip[i]; c2[i] = skip[i]; }
-    VirtualProtect(a, 0x40, old, &old);
+    VirtualProtect(a, span, old, &old);
     x360_log("x360 bag: the 360's bag (one section of 50)\r\n");
 }
 
