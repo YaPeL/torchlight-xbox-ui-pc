@@ -220,7 +220,7 @@ class ConvertCppTest(unittest.TestCase):
         with __import__("zipfile").ZipFile(pak, "w") as z:
             for name, data in files.items():
                 z.writestr(name, data)
-        pc = os.path.join(root, "Pak.zip")
+        pc = os.path.join(root, "pc_pak.zip")
         pc_tips = {1: "CONTEXTTIPS", 2: "TIP_WELCOME", 3: "PC's welcome", 6: "ROOT"}
         with __import__("zipfile").ZipFile(pc, "w") as z:
             z.writestr("media/GLOBALS.DAT.adm", _adm(pc_tips, (6, [], [(1, [(2, 8, 3)], [])])))
