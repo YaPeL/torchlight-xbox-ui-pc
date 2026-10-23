@@ -955,6 +955,10 @@ static void order(void) {
     }
     if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
+    if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
+        void x360_automap_cycle(void);
+        x360_automap_cycle();
+    }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {

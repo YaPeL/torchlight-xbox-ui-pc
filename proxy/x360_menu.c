@@ -6176,6 +6176,21 @@ static void pc_menus_guard(void) {
     if (closed && inventory_open && doll_shown >= 0) { doll_shown = -1; show_doll(page < 2); }
 }
 
+/* R3: the 360 cycles its map with RS, the corner minimap, the overlay over the play area, none, and
+ * round (in-game/31-33; GUITOGGLEAUTOMAP). PC's KEYMAP_AUTOMAP does the same three (CGameUI's update
+ * at 0x55d380: unless CGameUI's +0x173d, 0x4ee7c0 on its +0x20, whose automap +0x160, by its +0x3c
+ * shown and +0x65 overlay, goes corner -> overlay (0x4ea910 with 1) -> off (0x4ea6b0 with 0) ->
+ * corner, keeping the state in the setting [0xf60c94]): called for R3. */
+void x360_automap_cycle(void) {
+    typedef void (__fastcall *self_fn)(void *self, void *edx);
+    void *holder;
+    if (!find_world() || !ui) return;
+    holder = *(void **)(ui + 0x20);
+    if (!holder || ui[0x173d]) return;
+    __try { ((self_fn)0x004ee7c0)(holder, 0); x360_log("x360: R3, the map's next state\r\n"); }
+    __except (1) { x360_log("x360: R3, the map's toggle threw\r\n"); }
+}
+
 void x360_frame_tick(void) {
     static int logged, preloaded;
     if (!find_world()) return;

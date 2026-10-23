@@ -2460,3 +2460,13 @@ inventory (section 13), so each run's batch is one.
   `0x5efa20` returns it) takes each off with `0x482710` (the unit, the name) and puts the one of
   the NPC's state back. The port takes them off the unit A talked to when the 360's dialog shows,
   and calls that update when it closes.
+- **The map's three states on R3** (in-game/31-33, the mods agent's captures: RS cycles the
+  corner minimap, the overlay over the play area, none, and round). PC's KEYMAP_AUTOMAP does the
+  same three: CGameUI's update (`0x55d380`) calls `0x4ee7c0` on CGameUI's `+0x20` (unless
+  `+0x173d`), whose automap (`+0x160`), by its `+0x3c` (shown) and `+0x65` (overlay), goes corner
+  -> overlay (`0x4ea910` with 1) -> off (`0x4ea6b0` with 0) -> corner, the state kept in the
+  setting `[0xf60c94]`. The pad's R3 (XInput 0x0080) calls it in play. Written, not run.
+- The map's look differs: the 360's explored area is a light, opaque grey with a thin rim, PC's a
+  translucent grey with a lighter outline. The textures are the same files in both paks
+  (`media/sharedtextures/automap*.dds`, same sizes), so the difference is in CAutomap's drawing
+  (the 360's `sub_822E3A30` builds its quads, `sub_822E50C0` renders the level's map). Open.
