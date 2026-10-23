@@ -1698,10 +1698,11 @@ static void show_info(void *item, float y, float list_left) {
         rect6 r;
         fresh_rects(pet_top);
         rect_of(pet_top, 0, &r);
-        /* 22 pixels at 1080 into the column (the catalog: 103Base at 1194.6 over the pet's
-         * TopFrame at 1172.7 in menus/08, 1196.1 over 1174.1 in town/05; town/07's merchant card is
-         * 3 more, not explained) */
-        x = r.left + 15.6f * k;
+        /* 22 pixels at 1080 into the third column (the catalog: 103Base at 1194.6 over the pet's
+         * TopFrame at 1172.7 in menus/08, 18 and 10, 1196.1 over 1174.1 in town/05), 25.1 into the
+         * middle one (the merchant's card over the bag: 773.1 over 748.0 in town/01, 07, 09-11,
+         * 18, 36-38) */
+        x = r.left + (panel_column(focus_panel) + 1 == 1 ? 17.85f : 15.6f) * k;
     }
     /* The card's bottom kept 36 rows (of 720) above the screen's bottom: the 360's dumps
      * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends

@@ -2079,7 +2079,10 @@ what they still lack. The screens done are in section 14.
      `0x820AA2C0`, its `+0x10C` 10.0; the mods agent's static reading, 2026-10-23).
    - The gold hidden at the gem pages is not seen in a run.
    - The identify scroll's card text is PC's mouse text (the item's data, unchanged).
-   - The card's price at the merchant is 3 pixels off (town/07).
+   - The card's place at the merchant: 25.1 pixels into the middle column (the bag's), against 22
+     into the third, in every one of the catalog's merchant captures (town/01, 07, 09-11, 18,
+     36-38) and the inventory's and transmuter's (menus/08, in-game/10, 18, town/05). Ported by
+     column (2026-10-23), not run.
 
 **Untested for want of the means in the save:**
 - An enchantment: done in run B.
