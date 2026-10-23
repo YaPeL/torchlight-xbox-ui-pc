@@ -2374,7 +2374,7 @@ inventory (section 13), so each run's batch is one.
     the price and the chance go up after each try; the item's new name shows in the bag.
 - Fixed after the run (not run yet):
   - The results of the enchanter and the gem goblins: the act marks a result pending; the frame
-    tick (`enchant_result_tick`) waits up to 6 s (2 s until QA run 6) for PC's modal, takes its text (line breaks
+    tick (`enchant_result_tick`) waits up to 20 s (2 s until QA run 6, 6 s until QA run 20) for PC's modal, takes its text (line breaks
     flowed), presses its Ok, opens PC's enchant menu again with its type (`0x575990`) and closes
     PC's inventory; the shop tick does not close the 360's page meanwhile, and the 360's modal is
     not shown for it. The enchanter's text goes in `resultofenchant`.
