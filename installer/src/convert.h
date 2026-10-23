@@ -28,6 +28,12 @@ struct ConvertOptions {
 // (with an image or a PC pak) x360_strings.txt; returns the lines Python prints.
 std::vector<std::string> convert_ui(const ConvertOptions& opt);
 
+// How many of the 360 code's texts read from an image (convert_x360_ui.image_strings), and how
+// many there are: the installer takes an image with half of them as Torchlight's.
+size_t count_image_strings(const Bytes& image);
+size_t strings_count();
+// Whether a zip holds an entry of that name, lowercase-compared as install.is_x360_pak does.
+bool zip_has_name(const std::string& zip_path, const std::string& lower_name);
 // For tests: the 360 code's texts' keys and addresses (STRINGS, then STRINGS_UTF8 as "utf8:KEY").
 std::vector<std::pair<std::string, uint32_t>> strings_table();
 // For tests.

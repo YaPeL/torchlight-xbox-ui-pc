@@ -29,8 +29,37 @@ add_custom_command(
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
   DEPENDS ${PROMPT_PNGS} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake)
 
+# proxy/cegui_exports.txt (the real DLL's check) and the release's proxies (optional), built in.
+set(X360UI_PROXY_GOG "" CACHE FILEPATH "GOG's proxy CEGUIBase.dll to build into the installer")
+set(X360UI_PROXY_STEAM "" CACHE FILEPATH "Steam's proxy CEGUIBase.dll to build into the installer")
+set(EXPORTS_TXT ${CMAKE_CURRENT_SOURCE_DIR}/../proxy/cegui_exports.txt)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp
+  COMMAND ${CMAKE_COMMAND} -DFILE=${EXPORTS_TXT} -DNAME=kCeguiExports -DTEXT=1 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake
+  DEPENDS ${EXPORTS_TXT} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake)
+foreach(which GOG STEAM)
+  if(which STREQUAL "GOG")
+    set(name kProxyGog)
+  else()
+    set(name kProxySteam)
+  endif()
+  set(deps ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake)
+  if(X360UI_PROXY_${which})
+    list(APPEND deps ${X360UI_PROXY_${which}})
+  endif()
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/proxy_${which}.cpp
+    COMMAND ${CMAKE_COMMAND} -DFILE=${X360UI_PROXY_${which}} -DNAME=${name} -DOUT=${CMAKE_CURRENT_BINARY_DIR}/proxy_${which}.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake
+    DEPENDS ${deps})
+endforeach()
+
 add_library(x360ui_core STATIC src/stfs.cpp src/lzx.cpp src/xex.cpp src/pytext.cpp src/prompts.cpp src/convert.cpp
-            ${CMAKE_CURRENT_BINARY_DIR}/prompts_data.cpp)
+            src/game.cpp src/install.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/prompts_data.cpp ${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/proxy_GOG.cpp ${CMAKE_CURRENT_BINARY_DIR}/proxy_STEAM.cpp)
+if(WIN32)
+  target_link_libraries(x360ui_core PUBLIC comdlg32 shell32 advapi32)
+endif()
 target_include_directories(x360ui_core PUBLIC src)
 target_link_libraries(x360ui_core PUBLIC tiny_aes miniz)
 # fit_icon computes in doubles as Python does: no fused multiply-add.
@@ -40,7 +69,13 @@ else()
   target_compile_options(x360ui_core PRIVATE -ffp-contract=off)
 endif()
 
-add_executable(x360ui-install src/main.cpp)
+if(WIN32)
+  # asInvoker: Windows never redirects a write it refuses (no VirtualStore); UAC is asked by the
+  # installer itself, only when the game's folder needs it.
+  add_executable(x360ui-install src/main.cpp src/x360ui-install.rc)
+else()
+  add_executable(x360ui-install src/main.cpp)
+endif()
 target_link_libraries(x360ui-install PRIVATE x360ui_core)
 if(NOT MSVC AND NOT APPLE)
   # Linux: libstdc++ and libgcc inside the executable, so the AppImage needs only the system's libc.

@@ -564,6 +564,17 @@ void dict_set(std::vector<std::pair<U32, U32>>& d, const U32& k, const U32& v) {
 
 }  // namespace
 
+size_t count_image_strings(const Bytes& image) { return image_strings(image).size(); }
+size_t strings_count() { return sizeof kStrings / sizeof kStrings[0]; }
+
+bool zip_has_name(const std::string& zip_path, const std::string& lower_name) {
+  Zip z(zip_path);
+  auto is = [&](const std::string& low) { return low == lower_name; };
+  for (unsigned i = 0; i < z.count(); i++)
+    if (is(lower_for_filter(z.name(i), is))) return true;
+  return false;
+}
+
 std::vector<std::pair<std::string, uint32_t>> strings_table() {
   std::vector<std::pair<std::string, uint32_t>> out;
   for (const Str& s : kStrings) out.push_back({s.key, s.addr});
