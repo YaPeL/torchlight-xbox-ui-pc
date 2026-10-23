@@ -49,6 +49,45 @@ class InstallerCppTest(unittest.TestCase):
             with open(out, "rb") as f:
                 self.assertEqual(f.read(), aes128.cbc_decrypt(key, iv, data))
 
+    def test_lzx_as_python_on_random_streams(self):
+        """Seeded random streams, biased to valid block headers (verbatim, aligned, uncompressed),
+        through both decoders: the same bytes, or both an error."""
+        import random
+        from lzx_decompress import LZXDecoder
+        rng = random.Random(1234)
+        same = 0
+        with tempfile.TemporaryDirectory() as d:
+            for k in range(300):
+                bits, size = rng.choice((15, 16, 17)), rng.randint(1, 20000)
+                head = rng.choice((0x1, 0x2, 0x3)) << 5        # after the E8 bit: the block type
+                data = bytes([rng.randrange(256), head | rng.randrange(32)]) + bytes(rng.randrange(256) for _ in range(rng.randint(8, 3000)))
+                src, out = os.path.join(d, "in"), os.path.join(d, "out")
+                with open(src, "wb") as f:
+                    f.write(data)
+                try:
+                    want = LZXDecoder(bits).decompress(data, size)
+                except Exception:
+                    want = None
+                r = subprocess.run([BINARY, "dev", "lzx", str(bits), str(size), src, out], capture_output=True)
+                if want is None:
+                    self.assertNotEqual(r.returncode, 0, f"stream {k}: Python failed, C++ did not")
+                else:
+                    self.assertEqual(r.returncode, 0, f"stream {k}: {r.stderr!r}")
+                    with open(out, "rb") as f:
+                        self.assertEqual(f.read(), want, f"stream {k}")
+                    same += 1
+        self.assertGreater(same, 50)   # enough streams decode for the test to mean something
+
+    def test_stfs_names_with_a_nul_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            pkg = os.path.join(d, "pkg")
+            with open(pkg, "wb") as f:
+                f.write(stfs_package({"pak.zip\0": b"bad", "pak.zip": b"good"}))
+            r = subprocess.run([BINARY, "dev", "stfs", pkg, os.path.join(d, "out")], capture_output=True)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertFalse(os.path.exists(os.path.join(d, "out", "pak.zip")) and
+                             open(os.path.join(d, "out", "pak.zip"), "rb").read() == b"bad")
+
     def test_refuses_what_is_not_a_package(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "x")

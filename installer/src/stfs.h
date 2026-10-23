@@ -2,6 +2,7 @@
 // tools/stfs.py, the same layout read (see that file's notes) and the same results.
 #pragma once
 #include <cstdint>
+#include <ostream>
 #include <fstream>
 #include <string>
 #include <vector>

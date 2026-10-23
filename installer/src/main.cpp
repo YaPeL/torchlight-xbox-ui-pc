@@ -3,15 +3,18 @@
 //   x360ui-install dev stfs PACKAGE [OUT [NAME..]]   as tools/stfs.py
 //   x360ui-install dev xex-dump IN.xex OUT.bin       as tools/xex/xex_dump.py
 //   x360ui-install dev aes-cbc KEY IV IN OUT         AES-128 CBC decryption (hex KEY and IV), for tests
+//   x360ui-install dev lzx WINDOW_BITS SIZE IN OUT   one LZX stream decoded, for tests
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "paths.h"
 #include "stfs.h"
+#include "lzx.h"
 #include "xex.h"
 
 using namespace x360ui;
@@ -29,10 +32,22 @@ void write_file(const std::string& path, const Bytes& data) {
   f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
 }
 
-std::string lower(std::string s) {
-  for (char& c : s)
-    if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+std::string lower(std::string s) {   // as stfs.cpp's (Python's lower() on Latin-1 names)
+  for (size_t i = 0; i < s.size(); i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (c >= 'A' && c <= 'Z') s[i] = char(c - 'A' + 'a');
+    else if (c == 0xC3 && i + 1 < s.size()) {
+      unsigned char d = (unsigned char)s[i + 1];
+      if (d >= 0x80 && d <= 0x9E && d != 0x97) s[i + 1] = char(d + 0x20);
+      i++;
+    }
+  }
   return s;
+}
+
+void print_line(const std::string& s) {   // the whole string, a NUL too (as Python prints it)
+  std::fwrite(s.data(), 1, s.size(), stdout);
+  std::fputc('\n', stdout);
 }
 
 Bytes hex(const std::string& s) {
@@ -47,13 +62,16 @@ int dev_stfs(const std::vector<std::string>& a) {
   while (!magic.empty() && magic.back() == ' ') magic.pop_back();
   std::printf("%s title %08X type %08X, %zu files\n", magic.c_str(), p.title_id, p.content_type, p.files.size());
   if (a.size() == 1) {
-    for (const auto& e : p.files) std::printf("%12u %s\n", e.size, e.path.c_str());
+    for (const auto& e : p.files) {
+      std::printf("%12u ", e.size);
+      print_line(e.path);
+    }
     return 0;
   }
   std::set<std::string> names;
   for (size_t i = 2; i < a.size(); i++) names.insert(lower(a[i]));
   for (const auto& e : p.files)
-    if (names.empty() || names.count(lower(e.path))) std::printf("%s\n", p.extract(e, a[1]).c_str());
+    if (names.empty() || names.count(lower(e.path))) print_line(p.extract(e, a[1]));
   return 0;
 }
 
@@ -68,6 +86,11 @@ int dev_xex(const std::vector<std::string>& a) {
   return 0;
 }
 
+int dev_lzx(const std::vector<std::string>& a) {   // WINDOW_BITS SIZE IN OUT: tools/xex/lzx_decompress.py's LZXDecoder
+  write_file(a[3], LzxDecoder(std::stoi(a[0])).decompress(read_file(a[2]), size_t(std::stoul(a[1]))));
+  return 0;
+}
+
 int dev_aes(const std::vector<std::string>& a) {
   const Bytes key = hex(a[0]), iv = hex(a[1]);
   if (key.size() != 16 || iv.size() != 16) throw Error("KEY and IV are 32 hex digits");
@@ -79,7 +102,8 @@ int usage() {
   std::fprintf(stderr,
                "x360ui-install dev stfs PACKAGE [OUT [NAME..]]\n"
                "x360ui-install dev xex-dump IN.xex OUT.bin\n"
-               "x360ui-install dev aes-cbc KEY IV IN OUT\n");
+               "x360ui-install dev aes-cbc KEY IV IN OUT\n"
+               "x360ui-install dev lzx WINDOW_BITS SIZE IN OUT\n");
   return 2;
 }
 }  // namespace
@@ -93,6 +117,7 @@ int main(int argc, char** argv) {
       if (cmd == "stfs") return dev_stfs(rest);
       if (cmd == "xex-dump" && rest.size() == 2) return dev_xex(rest);
       if (cmd == "aes-cbc" && rest.size() == 4) return dev_aes(rest);
+      if (cmd == "lzx" && rest.size() == 4) return dev_lzx(rest);
     }
     return usage();
   } catch (const std::exception& e) {

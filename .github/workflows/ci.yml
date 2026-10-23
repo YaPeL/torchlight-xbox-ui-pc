@@ -41,6 +41,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Build
         run: |
           cmake -S installer -B build-installer -DCMAKE_BUILD_TYPE=Release
@@ -52,4 +55,4 @@ jobs:
         run: |
           bin=build-installer/x360ui-install
           [ -f "$bin" ] || bin=build-installer/Release/x360ui-install.exe
-          X360UI_INSTALLER="$PWD/$bin" python3 -m unittest tests.test_installer_cpp -v
+          X360UI_INSTALLER="$PWD/$bin" python -m unittest tests.test_installer_cpp -v

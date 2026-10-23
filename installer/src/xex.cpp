@@ -30,26 +30,26 @@ XexImage xex_dump(const Bytes& xex) {
   const uint32_t pe_offset = be32(xex, 8), sec_info = be32(xex, 16);
   uint32_t ffi = 0, base = 0;
   for (uint32_t i = 0, n = be32(xex, 20); i < n; i++) {
-    const uint32_t key = be32(xex, 24 + i * 8), value = be32(xex, 28 + i * 8);
+    const uint32_t key = be32(xex, 24 + size_t(i) * 8), value = be32(xex, 28 + size_t(i) * 8);
     if (key >> 8 == kOptFileFormatInfo)
       ffi = value;
     else if (key >> 8 == kOptImageBase)
       base = value;
   }
-  if (be16(xex, ffi + 6) != kCompressionNormal) throw Error("only Normal (LZX) compression is supported");
-  const uint32_t image_size = be32(xex, sec_info + kSecImageSizeOffset);
+  if (be16(xex, size_t(ffi) + 6) != kCompressionNormal) throw Error("only Normal (LZX) compression is supported");
+  const uint32_t image_size = be32(xex, size_t(sec_info) + kSecImageSizeOffset);
   Bytes data = slice(xex, pe_offset, xex.size());
   data.resize(data.size() + (16 - data.size() % 16) % 16, 0);
-  if (be16(xex, ffi + 4) == kEncryptionNormal) {
-    Bytes enc_key = slice(xex, sec_info + kSecAesKeyOffset, 16);
+  if (be16(xex, size_t(ffi) + 4) == kEncryptionNormal) {
+    Bytes enc_key = slice(xex, size_t(sec_info) + kSecAesKeyOffset, 16);
     if (enc_key.size() != 16) throw Error("read past the end of the data");
     const Bytes file_key = aes128_cbc_decrypt(kRetailKey, kBlankIv, enc_key);
     data = aes128_cbc_decrypt(file_key.data(), kBlankIv, std::move(data));
   }
   // The block chain is in the data: each block starts with {next block's size (4), its SHA-1
   // (20)} then {u16 size, bytes} chunks up to a size of 0; they make one LZX stream.
-  const uint32_t window_size = be32(xex, ffi + 8);
-  uint32_t block_size = be32(xex, ffi + 12);
+  const uint32_t window_size = be32(xex, size_t(ffi) + 8);
+  uint32_t block_size = be32(xex, size_t(ffi) + 12);
   Bytes stream;
   size_t pos = 0;
   while (block_size) {

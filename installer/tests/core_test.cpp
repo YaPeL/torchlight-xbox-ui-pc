@@ -3,7 +3,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "lzx.h"
 #include "stfs.h"

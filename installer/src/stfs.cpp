@@ -24,9 +24,18 @@ std::string latin1_to_utf8(const uint8_t* p, size_t n) {
   return out;
 }
 
+// Python's str.lower() on a name read as Latin-1 (and kept as UTF-8): ASCII and Latin-1's
+// capitals (U+00C0-U+00DE but U+00D7).
 std::string lower_ascii(std::string s) {
-  for (char& c : s)
-    if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+  for (size_t i = 0; i < s.size(); i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (c >= 'A' && c <= 'Z') s[i] = char(c - 'A' + 'a');
+    else if (c == 0xC3 && i + 1 < s.size()) {               // U+00C0-U+00FF: C3 80-BF
+      unsigned char d = (unsigned char)s[i + 1];
+      if (d >= 0x80 && d <= 0x9E && d != 0x97) s[i + 1] = char(d + 0x20);
+      i++;
+    }
+  }
   return s;
 }
 }  // namespace
@@ -183,7 +192,8 @@ std::string StfsPackage::extract(const StfsEntry& e, const std::string& dest) {
   for (std::string p; std::getline(ss, p, '/');) parts.push_back(p);
   if (e.path.empty() || e.path.back() == '/') parts.push_back("");
   for (const auto& p : parts)
-    if (p.empty() || p == "." || p == ".." || p.find('\\') != std::string::npos || p.find(':') != std::string::npos)
+    if (p.empty() || p == "." || p == ".." || p.find('\\') != std::string::npos || p.find(':') != std::string::npos ||
+        p.find('\0') != std::string::npos)   // Python refuses an embedded NUL; a path here would end at it
       throw Error("a name that would leave the folder: '" + e.path + "'");
   std::filesystem::path path = fs_path(dest);
   for (const auto& p : parts) path /= fs_path(p);
