@@ -8,6 +8,7 @@ if(MSVC)
   # One executable, no runtime DLL to ship.
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   add_compile_options(/W4 /utf-8)
+  add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
 else()
   add_compile_options(-Wall -Wextra)
 endif()
