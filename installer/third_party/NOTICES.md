@@ -8,9 +8,9 @@
   build), so both are taken as derived from it: **libmspack**, https://github.com/kyz/libmspack,
   `libmspack/mspack/lzxd.c` with `lzx.h` and `readhuff.h`,
   (C) 2003-2023 Stuart Caie (the LZX method by Jonathan Forbes and Tomi Poutanen, adapted by
-  Microsoft), under the GNU Lesser General Public License 2.1 (`LGPL-2.1.txt`, beside this file).
-  It was LGPL-2.1; this copy is under GPL-3.0 (`LICENSE`), as the LGPL-2.1's section 3 allows, and
-  its source is this repository's at the release's tag. The Python file itself comes from
+  Microsoft), originally under the GNU Lesser General Public License 2.1 (`LGPL-2.1.txt`, beside
+  this file); this copy is under GPL-3.0 (`LICENSE`), as its section 3 allows, and its source is
+  this repository's at the release's tag. The Python file itself comes from
   https://github.com/sp00nznet/360tools (`tools/lzx_decompress.py`), MIT License:
 
   > Copyright (c) 2026 sp00nznet

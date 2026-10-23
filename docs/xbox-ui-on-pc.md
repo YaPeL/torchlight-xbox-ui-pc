@@ -3032,7 +3032,8 @@ Python installer kept until the C++ one gives the same files byte for byte, then
 `installer/` (CMake, C++17):
 - `src/stfs.cpp`: tools/stfs.py's reading, step for step (its generator's next-block reads
   included, so a damaged package fails the same way).
-- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, its notice in
+- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, and derived from libmspack's LZX
+  decoder, originally LGPL-2.1, under GPL-3.0 per its section 3: the notices in
   `installer/third_party/NOTICES.md`), Python's integers as 64-bit ones.
 - `src/xex.cpp`: tools/xex/xex_dump.py; AES-128 CBC by tiny-AES-c (The Unlicense, commit
   `23856752`, one code path on every system, CBC only).
