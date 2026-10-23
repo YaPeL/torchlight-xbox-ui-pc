@@ -1252,6 +1252,22 @@ static int bag_section(void *inv, void *item) {
     return ((of_int_fn)0x004e84a0)(inv, 0, ((of_item_fn)0x004e8410)(inv, 0, item));
 }
 
+/* An item of a filter's category in a bag (0 for none). */
+static void *of_category(void *bag, int filter) {
+    unsigned char *inv = (unsigned char *)bag;
+    void **refs;
+    unsigned n, i;
+    if (!inv) return 0;
+    refs = *(void ***)(inv + INV_REFS);
+    n = *(unsigned *)(inv + INV_REFS + 4);
+    for (i = 0; i < n; i++) {
+        unsigned char *ref = (unsigned char *)refs[i];
+        void *item = ref ? *(void **)(ref + REF_ITEM) : 0;
+        if (item && category(item) == filter) return item;
+    }
+    return 0;
+}
+
 static void refresh(void) {
     int row, i, counts[6];
     char name[48], buf[200];
@@ -1329,10 +1345,11 @@ static void refresh(void) {
             int first = starts ? starts[0] : EQUIPPED_SLOTS;
             int nsec = starts ? (int)((*(int **)(inv + INV_PANE_STARTS + 4)) - starts) : 0, end = *(long *)(inv + INV_SLOTS);
             /* PC's bag (three sections of 21, bag=pc): the focused item's section, as the one that
-             * fills up (a pick-up looks for a slot in its item's section only, 0x4e85b0); the 360's
-             * one bag (bag=360), or an empty tab, the whole bag. */
-            if (nsec > 1 && !is_tm && list_count) {
-                int sec = bag_section(inv, list[selected[filter]]);
+             * fills up (a pick-up looks for a slot in its item's section only, 0x4e85b0); on an
+             * empty tab, the section of an item of the tab's category in the hero's bag (the
+             * pet's tab empty); the 360's one bag (bag=360), or no such item, the whole bag. */
+            if (nsec > 1 && !is_tm) {
+                int sec = bag_section(inv, list_count ? list[selected[filter]] : of_category(owner_bag(hero), filter));
                 if (sec >= 0 && sec < nsec) {
                     first = starts[sec];
                     end = sec + 1 < nsec ? starts[sec + 1] : end;
