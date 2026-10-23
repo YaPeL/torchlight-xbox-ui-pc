@@ -31,3 +31,28 @@ jobs:
           python3 tools/build_proxy.py build "$RUNNER_TEMP/gog"
           python3 tools/build_proxy.py build "$RUNNER_TEMP/steam" --target steam
           sha256sum "$RUNNER_TEMP"/gog/CEGUIBase.dll "$RUNNER_TEMP"/steam/CEGUIBase.dll
+  installer:
+    # The C++ installer (installer/): built and tested on Linux and Windows, then checked against the
+    # Python tools on synthetic data (tests/test_installer_cpp.py).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          cmake -S installer -B build-installer -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-installer --config Release --parallel
+      - name: C++ tests
+        run: ctest --test-dir build-installer -C Release --output-on-failure
+      - name: Against the Python tools
+        shell: bash
+        run: |
+          bin=build-installer/x360ui-install
+          [ -f "$bin" ] || bin=build-installer/Release/x360ui-install.exe
+          X360UI_INSTALLER="$PWD/$bin" python -m unittest tests.test_installer_cpp -v
