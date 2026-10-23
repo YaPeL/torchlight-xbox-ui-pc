@@ -4513,7 +4513,14 @@ static void howto_show(int on) {
  * Game, used with the mouse), the user's choice for the first beta (2026-10-23: the 360's pause
  * menu with PC's screens behind it left a window with no way out). Its setOpen (the virtual +0x1c)
  * opens and closes it; PC pauses the game under it. */
-static unsigned char *pc_pause_menu(void) { return ui ? *(unsigned char **)(ui + 0x2e8) : 0; }
+static unsigned char *pc_pause_menu(void) {
+    unsigned char *m;
+    /* Only in play: at the title CGameUI is not whole and its +0x2e8 is not a menu (QA run 4: the
+     * game closed at the main menu when this was asked there). */
+    if (!find_world() || !ui) return 0;
+    m = *(unsigned char **)(ui + 0x2e8);
+    return m && *(unsigned *)m == 0x00ab7d78 ? m : 0;   /* COptionsMenu's vtable (its RTTI) */
+}
 static int pc_pause_open(void) {
     typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
     unsigned char *m = pc_pause_menu();
