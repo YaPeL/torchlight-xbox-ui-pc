@@ -4987,6 +4987,9 @@ static void *pc_window(const char *name) {
 #define HUD_PREFIX "x360hud_"
 #define PETHUD_PREFIX "x360pethud_"
 static void *pc_hud_root;
+/* In play: PC's HUD is up (the main menu has a hero and a level loaded behind it, but no HUD). */
+static int hud_in_play;
+int x360_in_play(void) { return hud_in_play; }
 
 /* A bar of the 360's HUD filled as PC's own of the same name: PC shrinks the bar (a clipping
  * window) from its top, or for experience from its right, and moves its image ("...Sub") the
@@ -5326,8 +5329,10 @@ static void hud_tick(void) {
     if (!resolve() || !pc_window("PlayerHealthRoot")) {
         if (hud_root) show(hud_root, 0);
         if (pet_hud_root) show(pet_hud_root, 0);
+        hud_in_play = 0;
         return;
     }
+    hud_in_play = 1;
     if (!hud_root) {
         HWND w = active_window();
         RECT r;
@@ -6577,18 +6582,24 @@ static void boards_tick(void) {
  * BottomBar) shown with its settings (QA run 5): made transparent; the port shows the 360's where
  * the 360 does. */
 static void pc_bars_off(void) {
-    static char prefix[64];
-    static unsigned last;
-    static const char *const needs[] = {"BottomBar", "Root", 0};
+    /* By CGameUI's CInteractiveMenu itself (+0x318, vtable 0xab731c; its root window at +0xc,
+     * checked by its name), not by the windows' names: PC's main menu frame has windows of the
+     * same names (QA run 7: the main menu made transparent). */
+    typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+    static name_fn gn;
+    unsigned char *m;
     void *root;
-    if (!prefix[0]) {
-        if (GetTickCount() - last < 1000) return;
-        last = GetTickCount();
-        if (!find_pc_by_suffix("TopBar", needs, prefix, sizeof prefix)) { prefix[0] = 0; return; }
-        x360_log("x360 bars: PC's found, made transparent\r\n");
-    }
-    root = win_of(prefix, "Root");
-    if (!root) { prefix[0] = 0; return; }
+    const char *nm;
+    unsigned n;
+    if (!ui || !find_world()) return;
+    m = *(unsigned char **)(ui + 0x318);
+    if (!m || *(unsigned *)m != 0x00ab731c) return;
+    root = *(void **)(m + 0xc);
+    if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!root || !gn) return;
+    nm = c_str(gn(root, 0), 0);
+    n = nm ? length(nm) : 0;
+    if (n < 4 || nm[n - 4] != 'R' || nm[n - 3] != 'o' || nm[n - 2] != 'o' || nm[n - 1] != 't') return;
     prop(root, "Alpha", "0");
 }
 

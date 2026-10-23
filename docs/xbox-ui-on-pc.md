@@ -2607,3 +2607,10 @@ stash. Found:
   `+0x60` times 28.5 (`0xaba60c`), while `+0x64` is set and `+0x6c` is not. The pad moves it by the
   right stick's y (up in), 12 per second at full tilt (a first value; the 360's rate asked of the
   mods agent), outside its dead zone. Not run.
+
+**QA run 7 (2026-10-23).** Steam's folders UNCHANGED. The main menu was not drawn and its
+background hero took the pad: PC's bars were looked up by their windows' names (TopBar,
+BottomBar, Root), and PC's main menu frame has windows of those names, so it was made
+transparent. Now CGameUI's CInteractiveMenu itself (`+0x318`, vtable `0xab731c`, its root at
+`+0xc`, checked by its name) is. And the pad does nothing out of play (no PC HUD: the main menu
+has a hero and a level loaded behind it).

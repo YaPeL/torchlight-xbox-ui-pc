@@ -965,6 +965,11 @@ static void order(void) {
     /* PC's merchant menu, opened by talking to a merchant, shows as the 360's shop
      * (proxy/x360_menu.c). */
     x360_shop_tick();
+    {
+        /* Not in play (the main menu, whose hero walked under the pad: QA run 7). */
+        int x360_in_play(void);
+        if (!x360_in_play()) return;
+    }
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
