@@ -189,6 +189,13 @@ static int starts(const char *s, const char *prefix) {
     return 1;
 }
 
+/* prompts=auto|xbox|playstation|playstation3|playstation4|playstation5|nintendo (proxy/setup.c);
+ * update_check=0 turns the release check off. */
+static char prompts_setting[24] = "auto";
+static int update_check = 1;
+void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
+void x360_update_start(const char *dir);
+
 static void read_config(void) {
     char path[520], text[1024], *line;
     DWORD n = GetModuleFileNameA(self_module, path, 500), got = 0;
@@ -225,6 +232,8 @@ static void read_config(void) {
         }
         if (starts(line, "pad_file=") && length(line + 9) < sizeof pad_file) memcpy(pad_file, line + 9, length(line + 9) + 1);
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
+        if (starts(line, "prompts=") && length(line + 8) < sizeof prompts_setting) memcpy(prompts_setting, line + 8, length(line + 8) + 1);
+        if (starts(line, "update_check=0")) update_check = 0;
         if (starts(line, "console=") && length(line + 8) < sizeof x360_console_commands)
             memcpy(x360_console_commands, line + 8, length(line + 8) + 1);
         line = end;
@@ -328,6 +337,9 @@ static void load_x360(void *scheme_manager) {
     put(exists(rgm, 0, world_group, &probe) ? "yes\r\n" : "no\r\n");
     std_dtor(&probe, 0);
 
+    /* The pad's prompts: the converted folder of the connected pad's style, if there is one
+     * (here, not in DllMain: the HID enumeration loads setupapi.dll). */
+    x360_prompt_folder(out_dir, sizeof out_dir, prompts_setting);
     std_ctor(&location, 0, out_dir);
     std_ctor(&filesystem, 0, "FileSystem");
     std_ctor(&probe, 0, "media/ui/x360/ceguiWidgets.scheme");
@@ -578,6 +590,13 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
         open_log();
         read_config();
         if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct, !pad_old_face, pad_log);
+        if (update_check && mode_scheme) {
+            char dir[520];
+            DWORD n = GetModuleFileNameA(module, dir, 500);
+            while (n && dir[n - 1] != '\\' && dir[n - 1] != '/') n--;
+            dir[n] = 0;
+            x360_update_start(dir);   /* a thread: it starts once the loader is done */
+        }
     }
     return 1;
 }
