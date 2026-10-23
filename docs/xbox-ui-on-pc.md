@@ -3047,3 +3047,22 @@ Python installer kept until the C++ one gives the same files byte for byte, then
   extracts its 57 files identical to stfs.py's; `dev xex-dump` writes the image identical to
   xex_dump.py's (22 806 528 bytes, base 0x82000000), in 0.3 s against 17 s.
 
+**Batch 3: the converter** (`installer/src/convert.cpp`, `prompts.cpp`, `pytext.cpp`):
+tools/convert_x360_ui.py and tools/pad_prompts.py ported step for step. Their image code is their
+own and is ported as it is: the PNG decoder (miniz's inflate for zlib's), the DDS decoder and
+encoder in integers, the icon's fitting in doubles in Python's order (no fused multiply-add,
+Python's round half to even). The re patterns are matched by hand (`pytext.cpp`) with Python's
+rules; where Python decides `\w`, `\b` or re.I by Unicode tables on a character outside ASCII the
+C++ stops (NonAscii) instead of guessing; the same for `str.isprintable` outside Latin-1's signs and common punctuation, for `int()` on any character outside ASCII or past 18 digits, for `str.isprintable` only where Python asks it (a text under 100 characters), and for a zip entry's name outside ASCII that a filter would take (or one in cp437, without the UTF-8 flag, an Info-ZIP Unicode Path field (0x7075) taken as zipfile 3.12+ takes it: its UTF-8 name when its version is 1 and its CRC is the raw name's (the owner's 360 pak has 3 035 such entries); every entry's name checked when the zip opens, as zipfile does (a corrupt extra field, a flagged name not UTF-8: the zip refused), the records read from the archive's start (data before it allowed). Not matched: zipfile's check, on reading, that the local header's name is the central one's; a name flagged UTF-8 that is not stops, as Python refuses the zip). A short DDS stops as Python's struct.error does; a 32-bit mask wider than 8 bits gives Python's ValueError text in the report. Files written in text mode take the system's line end,
+as Python's. The 360 code's text addresses (`convert_strings.inc`) are generated from STRINGS
+and compared with it by a test. The icons of `data/prompts` are built into the executable.
+- Against the owner's copy (2026-10-23): the six variants (xbox, playstation3, 4, 5, nintendo,
+  nintendo-swapped) converted with the image and PC's pak, every file of each the same bytes as
+  the Python converter's (the layouts, imagesets, looknfeel, scheme, textures with the icons,
+  the report and x360_strings.txt); no NonAscii stop; 0.6 s against 1.2 s (run again after each review's fixes, the last on 2026-10-23: the same).
+- `tests/test_installer_cpp.py`: a synthetic 360 pak (ARGB, DXT1, DXT3 and DXT5 textures with
+  prompt images, the label's look, UTF-16 and UTF-8 with a BOM, tips and item .adm files, a PC
+  pak, an image with texts) converted by both for the six variants, every file compared; the
+  NonAscii stop; the strings table. CI runs them on Linux and Windows, each against its own
+  Python (line ends).
+
