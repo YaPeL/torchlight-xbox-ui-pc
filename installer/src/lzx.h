@@ -1,6 +1,7 @@
 // LZX decompression as used by Xbox 360 XEX2 files: the C++ port of tools/xex/lzx_decompress.py
-// (from https://github.com/sp00nznet/360tools, MIT License, Copyright (c) 2026 sp00nznet; the
-// notice in third_party/NOTICES.md), the same algorithm step for step.
+// (from https://github.com/sp00nznet/360tools, MIT License, Copyright (c) 2026 sp00nznet), derived
+// from libmspack's LZX decoder ((C) 2003-2023 Stuart Caie, originally LGPL-2.1; under GPL-3.0 per
+// its section 3; the notices in third_party/NOTICES.md), the same algorithm step for step.
 #pragma once
 #include <cstdint>
 #include <vector>

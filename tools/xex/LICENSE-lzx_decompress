@@ -1,4 +1,7 @@
-lzx_decompress.py is under the MIT License:
+sp00nznet's notice for lzx_decompress.py (MIT License). The file also derives from libmspack's LZX
+decoder (lzxd.c with lzx.h and readhuff.h, (C) 2003-2023 Stuart Caie, originally LGPL-2.1), so this
+copy is under GPL-3.0 per the LGPL-2.1's section 3: see tools/xex/README.md.
+
 
 MIT License
 
