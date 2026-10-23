@@ -3047,3 +3047,22 @@ Python installer kept until the C++ one gives the same files byte for byte, then
   extracts its 57 files identical to stfs.py's; `dev xex-dump` writes the image identical to
   xex_dump.py's (22 806 528 bytes, base 0x82000000), in 0.3 s against 17 s.
 
+**Batch 3: the converter** (`installer/src/convert.cpp`, `prompts.cpp`, `pytext.cpp`):
+tools/convert_x360_ui.py and tools/pad_prompts.py ported step for step. Their image code is their
+own and is ported as it is: the PNG decoder (miniz's inflate for zlib's), the DDS decoder and
+encoder in integers, the icon's fitting in doubles in Python's order (no fused multiply-add,
+Python's round half to even). The re patterns are matched by hand (`pytext.cpp`) with Python's
+rules; where Python decides `\w`, `\b` or re.I by Unicode tables on a character outside ASCII the
+C++ stops (NonAscii) instead of guessing. Files written in text mode take the system's line end,
+as Python's. The 360 code's text addresses (`convert_strings.inc`) are generated from STRINGS
+and compared with it by a test. The icons of `data/prompts` are built into the executable.
+- Against the owner's copy (2026-10-23): the six variants (xbox, playstation3, 4, 5, nintendo,
+  nintendo-swapped) converted with the image and PC's pak, every file of each the same bytes as
+  the Python converter's (the layouts, imagesets, looknfeel, scheme, textures with the icons,
+  the report and x360_strings.txt); no NonAscii stop; 0.6 s against 1.2 s.
+- `tests/test_installer_cpp.py`: a synthetic 360 pak (ARGB, DXT1, DXT3 and DXT5 textures with
+  prompt images, the label's look, UTF-16 and UTF-8 with a BOM, tips and item .adm files, a PC
+  pak, an image with texts) converted by both for the six variants, every file compared; the
+  NonAscii stop; the strings table. CI runs them on Linux and Windows, each against its own
+  Python (line ends).
+

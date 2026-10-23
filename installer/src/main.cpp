@@ -4,6 +4,8 @@
 //   x360ui-install dev xex-dump IN.xex OUT.bin       as tools/xex/xex_dump.py
 //   x360ui-install dev aes-cbc KEY IV IN OUT         AES-128 CBC decryption (hex KEY and IV), for tests
 //   x360ui-install dev lzx WINDOW_BITS SIZE IN OUT   one LZX stream decoded, for tests
+//   x360ui-install dev convert PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]
+//                                                    as tools/convert_x360_ui.py
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -14,6 +16,7 @@
 
 #include "paths.h"
 #include "stfs.h"
+#include "convert.h"
 #include "lzx.h"
 #include "xex.h"
 
@@ -43,6 +46,8 @@ Bytes hex(const std::string& s) {
   for (size_t i = 0; i + 1 < s.size(); i += 2) out.push_back(uint8_t(std::stoi(s.substr(i, 2), nullptr, 16)));
   return out;
 }
+
+int usage();
 
 int dev_stfs(const std::vector<std::string>& a) {
   StfsPackage p(a[0]);
@@ -79,6 +84,24 @@ int dev_lzx(const std::vector<std::string>& a) {   // WINDOW_BITS SIZE IN OUT: t
   return 0;
 }
 
+int dev_convert(std::vector<std::string> a) {
+  ConvertOptions o;
+  for (size_t i = 0; i < a.size();) {
+    if (a[i] == "--swap-confirm-cancel") { o.swap_confirm_cancel = true; a.erase(a.begin() + long(i)); continue; }
+    if ((a[i] == "--prompts" || a[i] == "--image" || a[i] == "--pc-pak") && i + 1 < a.size()) {
+      (a[i] == "--prompts" ? o.style : a[i] == "--image" ? o.image : o.pc_pak) = a[i + 1];
+      a.erase(a.begin() + long(i), a.begin() + long(i) + 2);
+      continue;
+    }
+    i++;
+  }
+  if (a.size() != 2) return usage();
+  o.pak = a[0];
+  o.out = a[1];
+  for (const std::string& line : convert_ui(o)) std::printf("%s\n", line.c_str());
+  return 0;
+}
+
 int dev_aes(const std::vector<std::string>& a) {
   const Bytes key = hex(a[0]), iv = hex(a[1]);
   if (key.size() != 16 || iv.size() != 16) throw Error("KEY and IV are 32 hex digits");
@@ -91,7 +114,8 @@ int usage() {
                "x360ui-install dev stfs PACKAGE [OUT [NAME..]]\n"
                "x360ui-install dev xex-dump IN.xex OUT.bin\n"
                "x360ui-install dev aes-cbc KEY IV IN OUT\n"
-               "x360ui-install dev lzx WINDOW_BITS SIZE IN OUT\n");
+               "x360ui-install dev lzx WINDOW_BITS SIZE IN OUT\n"
+               "x360ui-install dev convert PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]\n");
   return 2;
 }
 }  // namespace
@@ -99,13 +123,18 @@ int usage() {
 int main(int argc, char** argv) {
   std::vector<std::string> args(argv + 1, argv + argc);
   try {
-    if (args.size() >= 3 && args[0] == "dev") {
+    if (args.size() >= 2 && args[0] == "dev") {
       const std::string cmd = args[1];
       std::vector<std::string> rest(args.begin() + 2, args.end());
-      if (cmd == "stfs") return dev_stfs(rest);
+      if (cmd == "stfs" && !rest.empty()) return dev_stfs(rest);
       if (cmd == "xex-dump" && rest.size() == 2) return dev_xex(rest);
       if (cmd == "aes-cbc" && rest.size() == 4) return dev_aes(rest);
       if (cmd == "lzx" && rest.size() == 4) return dev_lzx(rest);
+      if (cmd == "convert") return dev_convert(rest);
+      if (cmd == "strings-table") {
+        for (const auto& [k, a] : strings_table()) std::printf("%s=0x%08X\n", k.c_str(), a);
+        return 0;
+      }
     }
     return usage();
   } catch (const std::exception& e) {
