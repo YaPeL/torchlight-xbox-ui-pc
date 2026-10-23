@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
   # A pull request that changes what the release is made of runs it all but the draft.
   pull_request:
-    paths: ["installer/**", "packaging/**", "proxy/**", "data/prompts/**", "tools/build_proxy.py", "tools/cegui_exports.py",
+    paths: ["installer/**", "packaging/**", "proxy/**", "data/prompts/**", "tools/**",
             "tests/release_fixture.py", "tests/test_installer_cpp.py", "tests/test_tools.py", "LICENSE",
             ".github/workflows/release.yml"]
 permissions:

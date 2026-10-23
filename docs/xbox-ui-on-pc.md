@@ -3128,6 +3128,9 @@ release is made of, makes only the artifacts.
   source (`fuse-3.15.0.tar.xz`, `type2-runtime-8f39b89.tar.gz`, `packaging/linux/get_sources.sh`,
   pinned by SHA-256) and `SHA256SUMS` of all, in a draft release that the owner reads before
   publishing (the README's support claims stay as played).
+- **The type2-runtime source** is GitHub's archive of that commit, pinned by its SHA-256: GitHub
+  does not promise those bytes stay the same, and if they change the release job stops (nothing
+  wrong published); a mirror beside the runtime's would avoid it.
 - **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
   printed in the log, to compare with a local build), the actions by major version and the
   container images by tag.

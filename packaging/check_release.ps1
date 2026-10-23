@@ -13,7 +13,7 @@ function Tree($dir) {  # every folder and file (hidden ones too), with the files
   }
 }
 function Hash($file) { (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash }
-foreach ($tool in "python", "python3", "py", "clang", "clang-cl", "cl", "gcc", "g++", "cc") {
+foreach ($tool in "python", "python3", "py", "clang", "clang-cl", "cl", "gcc", "g++", "cc", "c++") {
   if (Get-Command $tool -ErrorAction SilentlyContinue) { Fail "$tool is on this machine" }
 }
 $env:USERPROFILE = Join-Path $Fixture "home"
@@ -23,9 +23,6 @@ $saves = Join-Path $Fixture "prefix\drive_c\users\me\AppData\Roaming\runic games
 # Windows' own layout: the game outside any drive_c, its saves in %APPDATA% (a copy of GOG's game).
 $winGame = Join-Path $Fixture "Program Files (x86)\GOG Galaxy\Games\Torchlight"
 $winSaves = Join-Path $env:APPDATA "runic games\torchlight\save"
-New-Item -ItemType Directory -Force -Path (Split-Path $winGame), $winSaves | Out-Null
-Copy-Item -LiteralPath (Join-Path $Fixture "prefix\drive_c\GOG Games\Torchlight") -Destination $winGame -Recurse
-Copy-Item -LiteralPath (Join-Path $saves "0.svt") -Destination $winSaves
 function CheckBackups($store, $savesDir) {
   if ((Get-Content -Raw -LiteralPath (Join-Path $savesDir "0.svt")) -ne "a synthetic save") { Fail "${store}: the save was changed" }
   $found = @(Get-ChildItem -LiteralPath (Split-Path $savesDir) -Directory | Where-Object { $_.Name -like "save-backup-*" })
@@ -54,6 +51,10 @@ $out = & $Installer list 2>&1 | Out-String
 if ($LASTEXITCODE -eq 0 -or $out -notmatch "No PC Torchlight found.") { Fail "list: $out" }
 One "gog" (Join-Path $Fixture "prefix\drive_c\GOG Games\Torchlight") $GogProxy "360" @()
 CheckBackups "gog" $saves
+# Made only now: the first run must not have backed these saves up already (%APPDATA% is always looked at).
+New-Item -ItemType Directory -Force -Path (Split-Path $winGame), $winSaves | Out-Null
+Copy-Item -LiteralPath (Join-Path $Fixture "prefix\drive_c\GOG Games\Torchlight") -Destination $winGame -Recurse
+Copy-Item -LiteralPath (Join-Path $saves "0.svt") -Destination $winSaves
 One "gog-windows" $winGame $GogProxy "360" @()
 CheckBackups "gog-windows" $winSaves
 One "steam" (Join-Path $Fixture "steam\Torchlight") $SteamProxy "pc" @("--experimental")
