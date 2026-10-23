@@ -5515,6 +5515,22 @@ static void labels_tick(void) {
     if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
     if (!set_look) set_look = (set_str_fn)need("?setLookNFeel@Window@CEGUI@@UAEXABVString@2@@Z");
     if (!sheet || !get_type || !set_look) return;
+    /* The 360 labels the items on the floor near the hero, all of them (in-game/20, 25); PC only
+     * the one under the mouse, or all while its show-items key (KEYMAP_SHOWITEMS, Alt) is down or
+     * its "TOGGLE DROPPED ITEMS" action is on (CGameUI's update 0x5578e0, its label loop at
+     * 0x55a942: the key's state against the toggle's). The toggle's state is the input object's
+     * (CGameUI +0x3c) entry [0xf60c90] of its vector at +0x80 (0x5c53d0), 1 when on (0x557af8):
+     * set on, so the pad's player sees them as on the 360. */
+    if (ui) {
+        unsigned char *inp = *(unsigned char **)(ui + 0x3c);
+        int idx = *(int *)0x00f60c90;
+        int **vec = inp ? (int **)(inp + 0x80) : 0;
+        static int logged_toggle;
+        if (vec && vec[0] && vec[1] > vec[0] && idx >= 0 && idx < vec[1] - vec[0] && vec[0][idx] != 1) {
+            vec[0][idx] = 1;
+            if (logged_toggle < 3) { x360_log("x360 labels: PC's dropped items toggle set on\r\n"); logged_toggle++; }
+        }
+    }
     want[0] = 0;
     if (cand && !wstring_utf8(cand + GOG_UNIT_LABEL_NAME, want, sizeof want))
         if (!wstring_utf8(cand + GOG_ITEM_NAME, want, sizeof want)) want[0] = 0;
@@ -5598,14 +5614,25 @@ static void labels_tick(void) {
                 /* The state written only when it changes (a window's last, by its pointer). */
                 static void *seen[64];
                 static signed char state[64];
+                static char own[64][12];          /* PC's colour for the label (its rarity's), as first seen */
                 unsigned q, slot = 64;
                 for (q = 0; q < 64; q++) if (seen[q] == w) { slot = q; break; }
-                if (slot == 64) for (q = 0; q < 64; q++) if (!seen[q]) { slot = q; seen[q] = w; state[q] = -1; break; }
-                if (slot == 64) { slot = (unsigned)(GetTickCount() & 63); seen[slot] = w; state[slot] = -1; }
+                if (slot == 64) for (q = 0; q < 64; q++) if (!seen[q]) { slot = q; seen[q] = w; state[q] = -1; own[q][0] = 0; break; }
+                if (slot == 64) { slot = (unsigned)(GetTickCount() & 63); seen[slot] = w; state[slot] = -1; own[slot][0] = 0; }
+                if (state[slot] == -1) {
+                    char c[32];
+                    read_prop(w, "TextColour", c, sizeof c);
+                    copy(own[slot], sizeof own[slot], c, 0);
+                }
                 if (state[slot] != on) {
+                    /* The 360 (in-game/07, 20, 25): A only on the label of what A would take; a
+                     * label of a colour of its own (a unique's gold) keeps it either way, a plain
+                     * one is white for the candidate and grey (FFCCCCCC) otherwise. */
+                    int plain = !own[slot][0] || (own[slot][2] == 'F' && own[slot][3] == 'F' && own[slot][4] == 'F' && own[slot][5] == 'F'
+                                                  && own[slot][6] == 'F' && own[slot][7] == 'F') || (own[slot][2] == 'C' && own[slot][3] == 'C');
                     state[slot] = (signed char)on;
                     prop(w, "Disabled", on ? "False" : "True");
-                    prop(w, "TextColour", on ? "FFFFFFFF" : "FFCCCCCC");
+                    prop(w, "TextColour", !plain ? own[slot] : on ? "FFFFFFFF" : "FFCCCCCC");
                 }
             }
         }

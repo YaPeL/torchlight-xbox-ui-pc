@@ -2400,3 +2400,15 @@ inventory (section 13), so each run's batch is one.
   - Floor items: with Alt PC shows their labels (the user); the 360 shows the candidate's
     (in-game/20). Asked the mods agent whether the 360 shows the others too, and whether its
     inventory closes after a town portal scroll.
+- The mods agent's captures 25-27:
+  - 25, three items dropped together: all three labelled, overlapping, no spreading; only the one
+    A would take has the A; each keeps its own colour (a unique's gold FFDBAE12), a plain one
+    white as the candidate and grey (FFCCCCCC) otherwise; after A the next one gets the A.
+  - 26-27, a town portal scroll used from the bag: the inventory is closed 0.3 s after A. Whether
+    any use closes it (a potion) was asked.
+- The floor labels, fixed (not run yet): PC labels the items on the floor only under the mouse,
+  or all while KEYMAP_SHOWITEMS (Alt) is down or its "TOGGLE DROPPED ITEMS" action is on
+  (CGameUI's update `0x5578e0`; the loop's test at `0x55a942`). The toggle's state is the entry
+  `[0xf60c90]` of the vector at `+0x80` of CGameUI's `+0x3c` (`0x5c53d0`), 1 when on
+  (`0x557af8`); the port sets it on. The labels keep PC's colour when it is not plain; plain ones
+  white as the candidate, grey otherwise.
