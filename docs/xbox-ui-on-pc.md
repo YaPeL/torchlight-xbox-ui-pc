@@ -3163,7 +3163,10 @@ without the flag after a switch is out there.
 **Two games found (the GPU agent's review, a low point; 2026-10-23).** With more than one
 supported game and no `--game`, both installers list them; on the console or in windows each is
 offered in turn (the first by default) and the one taken is installed or uninstalled; `--yes`
-takes the first and prints which, so a run without a console still says where it went. Test:
+takes the first and prints which, so a run without a console still says where it went;
+uninstall offers only the games that have the mod. A question's default is the window's too
+(tkinter's `default`, MessageBox's second button, zenity's `--default-cancel`), and zenity shows
+texts as they are (`--no-markup`: a path with `&` or `<`). Test:
 `test_two_games_shown_and_chosen` (both installers, the same lines). The elevated run passes
 `--game` (no second question). The junction risk (the elevated run writes backups into folders the
 first run names, which a junction could redirect) stays documented as low: UAC is not a security

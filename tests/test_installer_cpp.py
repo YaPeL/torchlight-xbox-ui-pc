@@ -595,8 +595,10 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
 
     def test_two_games_shown_and_chosen(self):
-        """Two supported games found: both installers name them; --yes takes the first and says so;
-        on the console a no to the first and a yes to the second installs into the second."""
+        """Two supported games found: both installers name them, in the order they are found (the
+        folders' own order, the same in both); --yes takes the first and says so; on the console a
+        no to the first and a yes to the second installs into the second; a no to both installs
+        nothing; uninstall offers only the game that has the mod."""
         import shutil
         home = os.path.join(self.root, "home2")
         games = [os.path.join(home, n, "p", "x", "drive_c", "GOG Games", "Torchlight") for n in ("a", "b")]
@@ -616,10 +618,19 @@ class InstallCppTest(unittest.TestCase):
             self.assertIn("x360_ui.ini", os.listdir(order[0]), who)                   # --yes: the first
             self.assertNotIn("x360_ui.ini", os.listdir(order[1]), who)
             shutil.rmtree(order[0]); shutil.copytree(self.games["py"][0], order[0])
+            r = subprocess.run(cmd(who) + common, capture_output=True, text=True, env=env, input="n\nn\n")
+            self.assertNotEqual(r.returncode, 0, who)                                  # a no to both
+            self.assertIn("No game chosen", r.stdout + r.stderr, who)
+            self.assertFalse(any("x360_ui.ini" in os.listdir(g) for g in order), who)
             r = subprocess.run(cmd(who) + common, capture_output=True, text=True, env=env, input="n\ny\n")
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            outs[who] += [l for l in r.stdout.split("\n") if "Use " in l]               # the questions, as shown
             self.assertNotIn("x360_ui.ini", os.listdir(order[0]), who)                # no to the first, yes to the second
             self.assertIn("x360_ui.ini", os.listdir(order[1]), who)
+            before = _tree(self.games["py"][0])
+            r = subprocess.run(cmd(who) + ["uninstall", "--console", "--yes"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)               # only the one with the mod offered
+            self.assertEqual(_tree(order[1]), before, who)
         self.assertEqual(outs["cpp"], outs["py"])
         self.assertEqual(len([l for l in outs["py"] if l.startswith("gog: ")]), 2)
 

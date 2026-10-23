@@ -343,7 +343,8 @@ class Ask:
         if self.yes:
             return default
         if self.tk:
-            return self.messagebox.askyesno("Torchlight: the Xbox 360 interface", text)
+            return self.messagebox.askyesno("Torchlight: the Xbox 360 interface", text,
+                                            default="yes" if default else "no")
         try:
             answer = input(f"{text} [{'Y/n' if default else 'y/N'}] ").strip().lower()
         except EOFError:
@@ -448,7 +449,11 @@ def check_real_dll(game, exports_list=cegui_exports.LIST):
         raise SystemExit(f"{real} is not the CEGUIBase.dll this mod is made for ({len(diff)} exports differ).")
 
 
-def pick_game(given, ask=None):
+def has_mod(game):
+    return os.path.isfile(os.path.join(game, "x360_ui.ini")) or os.path.isfile(os.path.join(game, "CEGUIBase_orig.dll"))
+
+
+def pick_game(given, ask=None, installed_only=False):
     if given:
         game = os.path.realpath(given)
         if not is_game(game):
@@ -465,6 +470,8 @@ def pick_game(given, ask=None):
             print(f"{store}: {path}: a build this version does not support yet, left alone.")
     if not supported:
         raise SystemExit("No supported PC Torchlight found; give its folder with --game.")
+    if installed_only and any(has_mod(p) for _, p in supported):   # uninstall: only those with the mod
+        supported = [(s, p) for s, p in supported if has_mod(p)]
     if len(supported) > 1:
         # More than one: each shown, and the player says which (--yes: the first, said so).
         found = f"{len(supported)} supported PC Torchlights were found:\n" + "\n".join(f"{s}: {p}" for s, p in supported)
@@ -526,7 +533,7 @@ def do_install(args):
 
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
-    game, _ = pick_game(args.get("game"), ask)
+    game, _ = pick_game(args.get("game"), ask, installed_only=True)
     backups = []
     if read_ini(game).get("bag", "pc") == "360":
         if not args.get("anyway") and ask.yes_no(
