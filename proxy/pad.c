@@ -969,6 +969,13 @@ static void order(void) {
     }
     pressed = buttons & ~prev_buttons;
     prev_buttons = buttons;
+    {
+        /* Buttons PC's menus used (proxy/x360_menu.c, pc_menus_nav_tick) are left out until let go:
+         * a B that closed PC's settings in play also cast the skill (QA run 20). */
+        extern unsigned x360_pad_eaten;
+        x360_pad_eaten &= buttons;
+        pressed &= ~x360_pad_eaten;
+    }
     auto_pickup(hero, level);
     x360_hud_tick();
     /* PC's merchant menu, opened by talking to a merchant, shows as the 360's shop
@@ -977,7 +984,11 @@ static void order(void) {
     {
         /* Not in play (the main menu, whose hero walked under the pad: QA run 7). */
         int x360_in_play(void);
+        int x360_pc_menu_up(void);
         if (!x360_in_play()) return;
+        /* PC's settings over the game (opened from its pause menu, which closes): the pad is
+         * theirs (QA run 20: A and B there also acted in the world). */
+        if (x360_pc_menu_up()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */

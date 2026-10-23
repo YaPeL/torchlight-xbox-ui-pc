@@ -4662,6 +4662,8 @@ int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); 
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
 static int x360_pc_settings_up;   /* PC's settings shown (pc_menus_nav_tick) */
+int x360_pc_menu_up(void) { return x360_pc_settings_up; }
+unsigned x360_pad_eaten;          /* buttons PC's menus used, kept from the play pad until let go (proxy/pad.c) */
 void x360_pause_pad(unsigned pressed, int ly) {
     static int held;
     int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
@@ -7117,6 +7119,8 @@ static void pc_menus_nav_tick(void) {
         }
     }
     if (!nav_count) { nav_editing = 0; return; }
+    /* A, B, X, Y: the settings' (in play); PC's pause menu's B stays x360_pause_pad's. */
+    if (settings) x360_pad_eaten |= pressed & (0x1000 | 0x2000 | 0x4000 | 0x8000);
     {
         /* A direction (1 up, 2 down, 3 left, 4 right): the d-pad, or the left stick held (its
          * stronger axis, repeating). */
