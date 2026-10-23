@@ -716,6 +716,8 @@ static int find_world(void) {
 
 static int isa(void *unit, int type) { return ((isa_fn)GOG_ISA)(unit, 0, type) != 0; }
 static int usable_now(unsigned char *item, unsigned char *user);
+static void *unit_property(unsigned char *item, const unsigned short *key_text);
+static int unit_name(unsigned char *item, char *out, unsigned size);
 
 /* The 360's category of an item (sub_82369C48): 0 weapons, 1 armour, 2 jewellery, 3 potions and
  * scrolls, 4 gems, 5 fish, 6 any. Unit types: WEAPON 8, ARMOR 13, RING 17, NECKLACE 24, POTION 33,
@@ -1550,6 +1552,19 @@ static void *descendant_ending(void *w, const char *suffix) {
     }
     return 0;
 }
+static void *desc_prop;                    /* PC's DESCRIPTION given the 360's text for a card */
+static unsigned char desc_saved[28];       /* its own text meanwhile (a VC9 std::wstring) */
+static void *(__fastcall *desc_assign)(void *self, void *edx, const unsigned short *text);
+static const unsigned short *(__fastcall *desc_cstr)(const void *self, void *edx);
+static void desc_restore(void) {
+    wstr_ctor_fn wc;
+    wstr_dtor_fn wd;
+    if (!desc_prop) return;
+    if (desc_assign && desc_cstr) desc_assign(desc_prop, 0, desc_cstr(desc_saved, 0));
+    if (wstring_functions(&wc, &wd)) wd(desc_saved, 0);
+    desc_prop = 0;
+}
+
 static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     void *root, *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
     unsigned char *t = card(i);
@@ -1571,6 +1586,48 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
         saved31 = mm[0x31];
         mm[0x31] = 0;
     }
+    /* The 360's description where PC's differs (the converter's desc.<unit name>, "~" and the
+     * 360's text, empty when it has none: PC's mouse texts, as the identify scroll's
+     * "Right-click to use..."): PC's own DESCRIPTION property is given that text for the call,
+     * so that PC lays the card out with it, and put back after it. */
+    {
+        typedef void *(__fastcall *wassign_fn)(void *self, void *edx, const unsigned short *text);
+        typedef void *(__fastcall *wcopy_fn)(void *self, void *edx, const void *other);
+        typedef const unsigned short *(__fastcall *wcstr_fn)(const void *self, void *edx);
+        static const unsigned short key_desc[] = {'D', 'E', 'S', 'C', 'R', 'I', 'P', 'T', 'I', 'O', 'N', 0};
+        static wassign_fn wassign;
+        static wcopy_fn wcopy;
+        static wcstr_fn wcstr;
+        char name[96], key[112];
+        const char *desc;
+        if (!wassign) {
+            void *m = GetModuleHandleA("msvcp90.dll");
+            wassign = m ? (wassign_fn)GetProcAddress(m, "?assign@?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAEAAV12@PB_W@Z") : 0;
+            wcopy = m ? (wcopy_fn)GetProcAddress(m, "??0?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QAE@ABV01@@Z") : 0;
+            wcstr = m ? (wcstr_fn)GetProcAddress(m, "?c_str@?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@QBEPB_WXZ") : 0;
+        }
+        desc_prop = 0;
+        if (wassign && wcopy && wcstr && unit_name((unsigned char *)item, name, sizeof name)) {
+            copy(key, sizeof key, "desc.", name);
+            desc = x360_text(key);
+            if (desc[0] == '~' && (desc_prop = unit_property((unsigned char *)item, key_desc))) {
+                static unsigned short wide[600];
+                const unsigned char *u = (const unsigned char *)desc + 1;
+                unsigned n = 0;
+                while (*u && n < 599) {   /* UTF-8 to UTF-16 (the BMP) */
+                    unsigned c = *u++;
+                    if (c >= 0xe0 && u[0] && u[1]) { c = (c & 0x0f) << 12 | (u[0] & 0x3f) << 6 | (u[1] & 0x3f); u += 2; }
+                    else if (c >= 0xc0 && u[0]) { c = (c & 0x1f) << 6 | (u[0] & 0x3f); u++; }
+                    wide[n++] = (unsigned short)c;
+                }
+                wide[n] = 0;
+                wcopy(desc_saved, 0, desc_prop);
+                wassign(desc_prop, 0, wide);
+            }
+        }
+        desc_assign = wassign;
+        desc_cstr = wcstr;
+    }
     __try {
         /* The card's character is the item's owner: for a merchant's item PC writes the price it
          * asks (its tooltip, GOG 0x546c9f: a character other than the hero, of type 41), as the
@@ -1578,11 +1635,13 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
         ((show_tooltip_fn)GOG_SHOW_EQUIPMENT_TOOLTIP)(ui, 0, i == 0 && panels[focus_panel].is_shop && shop && !at_transmute ? shop : hero,
                                                       item, t, cmp1, cmp2);
     } __except (1) {
+        desc_restore();
         x360_log("x360 inv: showEquipmentTooltip threw\r\n");
         if (saved31 >= 0) (*(unsigned char **)(ui + GOG_MERCHANT_MENU_UI))[0x31] = (unsigned char)saved31;
         return 0;
     }
     if (saved31 >= 0) (*(unsigned char **)(ui + GOG_MERCHANT_MENU_UI))[0x31] = (unsigned char)saved31;
+    desc_restore();
     root = card_root(i);
     if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
     /* The 360's card names the item in its SerifBig (the catalog's 103ItemName); PC's layout has
@@ -2011,32 +2070,41 @@ void x360_inventory_toggle(void);
  * DESCRIPTION is at 0x4854dd; 0xd5d9a4 the empty default). */
 static int unit_named(unsigned char *item, const char *key);
 static int town_portal_scroll(unsigned char *item) { return unit_named(item, "item.townportal"); }
-static int unit_named(unsigned char *item, const char *text_key) {
-    typedef const void *(__fastcall *prop_str_fn)(void *bag, void *edx, const void *key, const void *dflt);
-    static const unsigned short key_name[] = {'N', 'A', 'M', 'E', 0};
+/* A property of the item's unit data (PC's property bag at +0x178, read by 0x5c0190 as the item's
+ * DESCRIPTION is at 0x4854dd; 0xd5d9a4 the empty default): its std::wstring, or 0 when the unit
+ * has none (the default is never handed out). */
+static void *unit_property(unsigned char *item, const unsigned short *key_text) {
+    typedef void *(__fastcall *prop_str_fn)(void *bag, void *edx, const void *key, const void *dflt);
     wstr_ctor_fn wctor;
     wstr_dtor_fn wdtor;
     unsigned char key[32];
+    void *bag = *(void **)(item + 0x178), *r = 0;   /* GOG_ITEM_TEMPLATE */
+    if (!bag || !wstring_functions(&wctor, &wdtor)) return 0;
+    wctor(key, 0, key_text);
+    __try { r = ((prop_str_fn)0x005c0190)(bag, 0, key, (const void *)0x00d5d9a4); } __except (1) { r = 0; }
+    wdtor(key, 0);
+    return r == (void *)0x00d5d9a4 ? 0 : r;
+}
+
+/* The item's unit name (its NAME), in UTF-8. */
+static int unit_name(unsigned char *item, char *out, unsigned size) {
+    static const unsigned short key_name[] = {'N', 'A', 'M', 'E', 0};
+    void *r = unit_property(item, key_name);
+    out[0] = 0;
+    return r && wstring_utf8((const unsigned char *)r, out, size);
+}
+
+static int unit_named(unsigned char *item, const char *text_key) {
     char name[96];
     const char *want = x360_text(text_key);
-    void *bag = *(void **)(item + 0x178);   /* GOG_ITEM_TEMPLATE */
-    int yes = 0;
-    unsigned n;
-    if (!bag || !want[0] || !wstring_functions(&wctor, &wdtor)) return 0;
-    wctor(key, 0, key_name);
-    __try {
-        const void *r = ((prop_str_fn)0x005c0190)(bag, 0, key, (const void *)0x00d5d9a4);
-        if (r && wstring_utf8((const unsigned char *)r, name, sizeof name)) {
-            unsigned w = length(want);
-            n = length(name);
-            while (n && name[n - 1] == ' ') n--;   /* the 360's text ends in spaces */
-            while (w && want[w - 1] == ' ') w--;
-            yes = n == w;
-            for (n = 0; yes && n < w; n++) if (want[n] != name[n]) yes = 0;
-        }
-    } __except (1) { yes = 0; }
-    wdtor(key, 0);
-    return yes;
+    unsigned n, w = length(want);
+    if (!want[0] || !unit_name(item, name, sizeof name)) return 0;
+    n = length(name);
+    while (n && name[n - 1] == ' ') n--;   /* the 360's text ends in spaces */
+    while (w && want[w - 1] == ' ') w--;
+    if (n != w) return 0;
+    for (n = 0; n < w; n++) if (want[n] != name[n]) return 0;
+    return 1;
 }
 
 /* Whether the item can be used now, as the 360's sub_822B9DA8 tells its bag (its Use prompt and

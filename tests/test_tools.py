@@ -566,6 +566,34 @@ class LabelFrameTest(unittest.TestCase):
         self.assertLess(label.find("labelframe"), label.find("<StateImagery"))
 
 
+class ItemDescriptionsTest(unittest.TestCase):
+    def unit(self, path, name, desc):
+        strings = {1: "UNIT", 2: "NAME", 3: name, 4: "DESCRIPTION"}
+        props = [(2, 5, 3)]
+        if desc is not None:
+            strings[5] = desc
+            props.append((4, 8, 5))
+        return path, synthetic_adm(strings, (1, props, []))
+
+    def pak(self, d, name, units):
+        p = os.path.join(d, name)
+        with zipfile.ZipFile(p, "w") as z:
+            for path, raw in units:
+                z.writestr(path, bytes(raw))
+        return p
+
+    def test_only_differing_descriptions_with_the_360s_text(self):
+        with tempfile.TemporaryDirectory() as d:
+            x3 = self.pak(d, "x3.zip", [self.unit("media/units/items/a.dat.adm", "Scroll A", None),
+                                        self.unit("media/units/items/b.dat.adm", "Fish B", "Feed it"),
+                                        self.unit("media/units/items/c.dat.adm", "Same C", "Same text")])
+            pc = self.pak(d, "pc.zip", [self.unit("media/units/items/A.DAT.adm", "Scroll A", "Click to use"),
+                                        self.unit("media/units/items/b.dat.adm", "Fish B", "Click to feed it"),
+                                        self.unit("media/units/items/c.dat.adm", "Same C", "Same text")])
+            self.assertEqual(convert_x360_ui.item_descriptions(x3, pc),
+                             {"desc.Scroll A": "~", "desc.Fish B": "~Feed it"})
+
+
 class ImageStringsTest(unittest.TestCase):
     def test_reads_the_texts_at_their_addresses(self):
         image = bytearray(0x200)

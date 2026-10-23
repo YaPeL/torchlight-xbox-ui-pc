@@ -129,8 +129,8 @@ static char out_dir[400];
 /* The texts the 360's code puts in its screens, read by the converter from the user's 360 image
  * into OUT/x360_strings.txt (tools/convert_x360_ui.py --image): key=value lines, UTF-8. The
  * repository holds only the keys; a key not found gives "". */
-static char texts[65536];                   /* the 360 code's texts and both games' tips (--pc-pak) */
-static const char *text_key[400], *text_value[400];
+static char texts[196608];                   /* the 360 code's texts and both games' tips (--pc-pak) */
+static const char *text_key[1200], *text_value[1200];
 static int texts_count, texts_loaded;
 
 static void load_texts(void) {
@@ -147,7 +147,7 @@ static void load_texts(void) {
     ReadFile(f, texts, sizeof texts - 1, &got, 0);
     CloseHandle(f);
     texts[got] = 0;
-    for (line = texts; *line && texts_count < 400;) {
+    for (line = texts; *line && texts_count < 1200;) {
         char *end = line, *eq = 0;
         while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
         if (*end) *end++ = 0;

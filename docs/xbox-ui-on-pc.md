@@ -2470,3 +2470,15 @@ inventory (section 13), so each run's batch is one.
   translucent grey with a lighter outline. The textures are the same files in both paks
   (`media/sharedtextures/automap*.dds`, same sizes), so the difference is in CAutomap's drawing
   (the 360's `sub_822E3A30` builds its quads, `sub_822E50C0` renders the level's map). Open.
+- **The corner map's overlay** (the mods agent): `media/sharedtextures/automapoverlay.dds`
+  differs between the paks, the 360's only a faint rim, PC's with its bronze corner and zoom
+  buttons; the other automap textures are the same bytes. The converter copies the 360's into
+  the output folder (`SHARED_FILES`), which the proxy adds to Ogre's world group after PC's
+  archives; whether Ogre then takes it over PC's is for the next run.
+- **The cards' descriptions** as the 360's: of the items in both paks, 203 have a DESCRIPTION
+  that differs (PC's mouse texts: "Right-click to ...", 171 reworded and 32 with none on the
+  360, as the identify scroll). The converter writes `desc.<unit name>` ("~" and the 360's
+  text) into x360_strings.txt (`item_descriptions`; the units' .adm read with their 8-byte
+  value types 3 and 7, `adm_tree(wide=)`); the proxy gives PC's DESCRIPTION property that text
+  for the tooltip call and puts its own back after it, so PC lays the card out with it. The
+  texts file's limits were raised (1200 lines, 192 KB).

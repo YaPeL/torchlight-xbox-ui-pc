@@ -388,9 +388,50 @@ def image_strings(image):
     return out
 
 
-def adm_tree(raw):
+# Files of the 360's pak used as they are in place of PC's of the same path: the corner map's
+# overlay (the 360's has only the thin rim; PC's adds its bronze corner with the zoom buttons,
+# in-game/31; the mods agent's comparison). The proxy adds the output folder to Ogre's group after
+# PC's archives.
+SHARED_FILES = ("media/sharedtextures/automapoverlay.dds",)
+
+
+def shared_files(pak):
+    """{path: bytes} of SHARED_FILES from the 360's pak."""
+    with zipfile.ZipFile(pak) as z:
+        names = {n.lower(): n for n in z.namelist()}
+        return {p: z.read(names[p]) for p in SHARED_FILES if p in names}
+
+
+def unit_texts(raw, keys=("NAME", "DESCRIPTION")):
+    """{key: text} of a unit's .adm (its root's properties): strings (5) and translated ones (8)."""
+    table, root = adm_tree(raw, wide=(3, 7))
+    return {k: table.get(v, "") for k, kind, v in root[1] if k in keys and kind in (5, 8)}
+
+
+def item_descriptions(pak, pc_pak):
+    """{"desc.<unit name>": "~" + the 360's description} for the items both paks have whose
+    description differs: the 360's, empty when it has none (PC's mouse texts, as the identify scroll's, have no counterpart there)."""
+    out = {}
+    with zipfile.ZipFile(pak) as z3, zipfile.ZipFile(pc_pak) as zp:
+        n3 = {n.lower(): n for n in z3.namelist() if n.lower().startswith("media/units/items/") and n.lower().endswith(".adm")}
+        for n in zp.namelist():
+            low = n.lower()
+            if low not in n3:
+                continue
+            try:
+                pc, x3 = unit_texts(zp.read(n)), unit_texts(z3.read(n3[low]))
+            except Exception:
+                continue
+            name = pc.get("NAME", "")
+            if name and "=" not in name and pc.get("DESCRIPTION") and pc.get("DESCRIPTION") != x3.get("DESCRIPTION", ""):
+                out["desc." + name] = "~" + x3.get("DESCRIPTION", "").replace("\n", " ").replace("\r", " ")
+    return out
+
+
+def adm_tree(raw, wide=(6,)):
     """A Runic .adm file: (its string table {id: text}, its root (name, [(key, type, value)], children)).
-    Keys and names are given as their strings; a string value (type 8) stays its id."""
+    Keys and names are given as their strings; a string value (type 8) stays its id. `wide`: the
+    value types 8 bytes long (the units' files: 3 and 7, their type 6 a 4-byte one)."""
     import struct
     count = struct.unpack_from("<I", raw, 4)[0]
     o, table = 8, {}
@@ -407,7 +448,7 @@ def adm_tree(raw):
         for _ in range(n):
             key, kind = struct.unpack_from("<II", raw, o)
             o += 8
-            fmt = "<Q" if kind == 6 else "<I"
+            fmt = "<Q" if kind in wide else "<I"
             props.append((table.get(key, key), kind, struct.unpack_from(fmt, raw, o)[0]))
             o += struct.calcsize(fmt)
         n = struct.unpack_from("<I", raw, o)[0]
@@ -489,7 +530,15 @@ def main():
             texts = image_strings(f.read())
         missing = sorted(set(STRINGS) - set(texts))
         print(f"{len(texts)} texts of the 360's code into x360_strings.txt" + (f"; not found: {', '.join(missing)}" if missing else ""))
+    for rel, data in shared_files(pak).items():
+        p = os.path.join(dest, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(data)
     if pc_pak:
+        descs = item_descriptions(pak, pc_pak)
+        texts.update(descs)
+        print(f"{len(descs)} item descriptions of the 360's where PC's differ")
         tips, pc_tips = context_tips(globals_of(pak)), context_tips(globals_of(pc_pak))
         texts.update({f"tip.{k}": v for k, v in tips.items()})
         texts.update({f"pctip.{k}": v for k, v in pc_tips.items()})
