@@ -5989,7 +5989,7 @@ static void fishing_tick(void) {
     int open = m && m[0x18] && *(unsigned char **)(m + 0x1c) && *(unsigned char **)(*(unsigned char **)(m + 0x1c) + 0x1c);
     unsigned buttons, pressed;
     if (!open) {
-        if (fish_shown) { fish_shown = 0; set_visible(fish_root, 0, 0); x360_log("x360 fishing: hidden\r\n"); }
+        if (fish_shown) { fish_shown = 0; set_visible(fish_root, 0, 0); overlay_closed_at = GetTickCount(); x360_log("x360 fishing: hidden\r\n"); }
         return;
     }
     if (!fish_root) {
@@ -6397,7 +6397,8 @@ int x360_modal_take(char *out, unsigned size) {
  * the press that closed it does not reach the world too): the 360's handlers keep the buttons they
  * get (sub_823589A0 and sub_82353758 return 1), so proxy/pad.c does not act in the world then. */
 int x360_overlay_open(void) {
-    return tip_shown || modal_shown || qd_shown || GetTickCount() - overlay_closed_at < 300;
+    /* The fishing too (QA run 8: B that cancelled it also fired the skill mapped to B). */
+    return tip_shown || modal_shown || qd_shown || fish_shown || GetTickCount() - overlay_closed_at < 300;
 }
 
 /* A test aid: a UI dump `ms` after a call (proxy/pad.c asks for one after A talks to a unit, to see
