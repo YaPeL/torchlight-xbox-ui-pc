@@ -2,6 +2,7 @@
 """Installs the Xbox 360 interface into the user's PC Torchlight, from the user's own 360 package.
 
     install.py [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]
+               [--experimental]
     install.py uninstall [--game DIR] [--yes] [--console]
     install.py list
 
@@ -200,6 +201,10 @@ def read_360_copy(source, work):
     extracted folder; raises SystemExit with the user's message when they are not there."""
     pak, xex, image = os.path.join(work, "pak.zip"), os.path.join(work, "default.xex"), None
     if os.path.isfile(source):
+        with open(source, "rb") as f:
+            if f.read(4) not in stfs.MAGICS:
+                source = os.path.dirname(source)   # a file of an extracted folder: the folder
+    if os.path.isfile(source):
         try:
             pkg = stfs.Package(source)
         except (OSError, ValueError) as e:
@@ -212,8 +217,11 @@ def read_360_copy(source, work):
                 entry = pkg.find(name)
                 if not entry:
                     raise SystemExit(f"The package has no {name}.")
-                with open(dest, "wb") as f:
-                    pkg.read(entry, f)
+                try:
+                    with open(dest, "wb") as f:
+                        pkg.read(entry, f)
+                except ValueError as e:
+                    raise SystemExit(f"Cannot read {name} from the package: {e}")
     elif os.path.isdir(source):
         found = {}
         for dirpath, _, files in os.walk(source):
@@ -240,7 +248,7 @@ def read_360_copy(source, work):
         with open(xex, "rb") as f:
             try:
                 _, data = xex_dump.dump(f.read())
-            except (ValueError, struct.error, IndexError) as e:
+            except Exception as e:   # the decompressor's own errors too: a damaged file
                 raise SystemExit(f"Cannot decrypt default.xex: {e}")
         image = os.path.join(work, "default.bin")
         with open(image, "wb") as f:
@@ -268,8 +276,10 @@ def save_folders(game, home=None):
     if os.path.basename(up) == "drive_c":
         roots.append(up)
         beside = os.path.dirname(os.path.dirname(up))          # the folder holding the prefix
-        for depth in ("*", "*/*"):
-            roots += glob.glob(os.path.join(beside, depth, "drive_c"))
+        # Not when that is the home or above it (~/.wine: every prefix of the home, the review).
+        if not os.path.realpath(home).startswith(os.path.realpath(beside)):
+            for depth in ("*", "*/*"):
+                roots += glob.glob(os.path.join(beside, depth, "drive_c"))
     for root in roots:
         found += glob.glob(os.path.join(root, "users", "*", tail))
     return [p for p in dict.fromkeys(os.path.realpath(p) for p in found) if os.path.isdir(p)
@@ -431,9 +441,10 @@ def do_install(args):
     if build not in PROXY_FILES:
         raise SystemExit(f"{game}: a build this version does not support yet.")
     print(f"the game: {game} ({build} build)")
-    if build in EXPERIMENTAL and not ask.yes_no(
+    if build in EXPERIMENTAL and not (args.get("experimental") or Ask(args.get("console")).yes_no(
             f"This game's build ({build}) is supported experimentally: the mod was ported to it offline "
-            "and has not been played on it yet. Install anyway?", default=True):
+            "and has not been played on it yet. Install anyway?", default=False)):
+        print("not installed (an experimental build needs a yes, or --experimental)")
         return 1
     source = args.get("package") or args.get("x360_dir") or ask.file(
         "Your Torchlight Xbox LIVE Arcade package (or a file in a folder extracted from it)")
@@ -447,7 +458,14 @@ def do_install(args):
         print(f"the 360 copy: {source}")
         backups = []
         if bag == "360":
-            backups = back_up_saves(save_folders(game))
+            folders = save_folders(game)
+            if not folders and not ask.yes_no(
+                    "No save folder of this game was found to back up (a Steam install's saves are in "
+                    "Steam's prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves "
+                    "yourself first.\n\nUse the 360's bag without a backup?", default=False):
+                bag = "pc"
+                print("PC's bag kept")
+            backups = back_up_saves(folders)
             for b in backups:
                 print(f"saves backed up: {b}")
         out = convert_all(pak, image, os.path.join(game, "Pak.zip"), game)
@@ -467,7 +485,8 @@ def do_uninstall(args):
             "will be placed oddly or lost. The backups made at install are kept (their names end in "
             "-backup-<date>).\n\nUninstall anyway?", default=True):
         return 1
-    build_proxy.remove(game)
+    if not build_proxy.remove(game):
+        raise SystemExit("CEGUIBase.dll is not the proxy nor the real one; nothing removed")
     for folder in converted_folders(game) + glob.glob(os.path.join(game, "x360ui-build-*")) + glob.glob(
             os.path.join(game, "x360ui-work-*")):
         shutil.rmtree(folder, ignore_errors=True)
@@ -495,7 +514,7 @@ def parse(argv):
     args, i = {"command": "install"}, 0
     if argv and argv[0] in ("install", "uninstall", "list"):
         args["command"], argv = argv[0], argv[1:]
-    flags = {"--yes": "yes", "--console": "console"}
+    flags = {"--yes": "yes", "--console": "console", "--experimental": "experimental"}
     values = {"--game": "game", "--package": "package", "--x360-dir": "x360_dir", "--bag": "bag", "--dll": "dll"}
     while i < len(argv):
         a = argv[i]

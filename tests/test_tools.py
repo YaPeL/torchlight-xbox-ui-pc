@@ -155,6 +155,29 @@ class BuildProxyTest(unittest.TestCase):
             self.assertEqual(Path(dll).read_bytes(), b"MZ synthetic real")
             self.assertFalse(os.path.exists(os.path.join(game, "CEGUIBase_orig.dll")))
 
+    def test_install_after_a_file_check_and_with_the_dll_missing(self):
+        with tempfile.TemporaryDirectory() as game, tempfile.TemporaryDirectory() as built:
+            dll, orig = os.path.join(game, "CEGUIBase.dll"), os.path.join(game, "CEGUIBase_orig.dll")
+            proxy = os.path.join(built, "CEGUIBase.dll")
+            write(proxy, b"MZ synthetic proxy CEGUIBase_orig.x")
+            # A store's file check put the real DLL back beside the kept one: install again works.
+            write(dll, b"MZ synthetic real")
+            write(orig, b"MZ synthetic real")
+            build_proxy.install(game, proxy)
+            self.assertTrue(build_proxy.is_proxy(dll))
+            self.assertEqual(Path(orig).read_bytes(), b"MZ synthetic real")
+            # The proxy's place empty: uninstall puts the real one back.
+            os.remove(dll)
+            self.assertTrue(build_proxy.remove(game))
+            self.assertEqual(Path(dll).read_bytes(), b"MZ synthetic real")
+            self.assertFalse(os.path.exists(orig))
+            # Not a proxy: refused.
+            other = os.path.join(built, "other.dll")
+            write(other, b"MZ something else")
+            with self.assertRaises(SystemExit):
+                build_proxy.install(game, other)
+            self.assertEqual(Path(dll).read_bytes(), b"MZ synthetic real")
+
     def test_install_refuses_two_real_dlls(self):
         with tempfile.TemporaryDirectory() as game:
             write(os.path.join(game, "CEGUIBase.dll"), b"MZ synthetic real")
@@ -695,27 +718,31 @@ class InstallTest(unittest.TestCase):
             self.assertIn("another game", str(e.exception))
 
     def test_backs_up_the_saves_of_the_games_prefix(self):
+        def save_in(prefix):
+            path = os.path.join(prefix, "drive_c", "users", "me", "AppData", "Roaming", "runic games", "torchlight",
+                                "save")
+            os.makedirs(path)
+            return os.path.realpath(path)
         with tempfile.TemporaryDirectory() as home:
-            game = os.path.join(home, "pfx", "drive_c", "GOG Games", "Torchlight")
+            # The install's prefix and a Proton run's own beside it, as ~/torchlight-gog/{prefix,compat/pfx}.
+            game = os.path.join(home, "tl", "prefix", "drive_c", "GOG Games", "Torchlight")
             fake_game(game)
-            save = os.path.join(home, "pfx", "drive_c", "users", "me", "AppData", "Roaming", "runic games",
-                                "torchlight", "save")
-            os.makedirs(save)
-            with open(os.path.join(save, "0.svt"), "w") as f:
+            own, beside = save_in(os.path.join(home, "tl", "prefix")), save_in(os.path.join(home, "tl", "compat", "pfx"))
+            save_in(os.path.join(home, "other", "pfx"))
+            with open(os.path.join(own, "0.svt"), "w") as f:
                 f.write("hero")
-            beside = os.path.join(home, "compat", "pfx", "drive_c", "users", "me", "AppData", "Roaming",
-                                  "runic games", "torchlight", "save")
-            os.makedirs(beside)
-            elsewhere = os.path.join(home, "other", "x", "y", "pfx", "drive_c", "users", "me", "AppData", "Roaming",
-                                     "runic games", "torchlight", "save")
-            os.makedirs(elsewhere)
             folders = install.save_folders(game, home)
-            self.assertEqual(sorted(folders), sorted([os.path.realpath(save), os.path.realpath(beside)]))
+            self.assertEqual(sorted(folders), sorted([own, beside]))
             copies = install.back_up_saves(folders)
-            with open(os.path.join(copies[0], "0.svt")) as f:
+            with open(os.path.join(copies[folders.index(own)], "0.svt")) as f:
                 self.assertEqual(f.read(), "hero")
-            with open(os.path.join(save, "0.svt")) as f:
+            with open(os.path.join(own, "0.svt")) as f:
                 self.assertEqual(f.read(), "hero")
+            # A prefix right in the home (~/.wine): its own saves only, not every prefix of the home.
+            wine_game = os.path.join(home, ".wine", "drive_c", "GOG Games", "Torchlight")
+            fake_game(wine_game)
+            wine = save_in(os.path.join(home, ".wine"))
+            self.assertEqual(install.save_folders(wine_game, home), [wine])
 
     def test_uninstall_removes_what_the_install_wrote(self):
         with tempfile.TemporaryDirectory() as home:
@@ -728,7 +755,7 @@ class InstallTest(unittest.TestCase):
             removed = []
             saved = install.build_proxy.remove
             try:
-                install.build_proxy.remove = lambda g: removed.append(g)
+                install.build_proxy.remove = lambda g: removed.append(g) or True
                 self.assertEqual(install.main(["uninstall", "--game", game, "--yes"]), 0)
             finally:
                 install.build_proxy.remove = saved

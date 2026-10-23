@@ -167,6 +167,11 @@ def target_sources(repo, out, target):
     build, copies under out/src with the addresses substituted (SystemExit if one is missing)."""
     folder = os.path.join(repo, "proxy")
     names = sorted(n for n in os.listdir(folder) if n.endswith(".c"))
+    headers = [n for n in os.listdir(folder) if n.endswith(".h")]
+    if headers and TARGETS[target][1]:
+        # Only the .c files are copied with their addresses replaced (the review: an address in a
+        # header would stay GOG's without a word).
+        raise SystemExit(f"proxy/ has headers ({', '.join(headers)}): substitute them too before building {target}")
     table_name = TARGETS[target][1]
     if not table_name:
         return {n: os.path.join(folder, n) for n in names}
@@ -250,8 +255,19 @@ def build(real_dll, out, target="gog"):
           f"{len(HOOKS)} hooked; and send_input.exe")
 
 
+def same_file(a, b):
+    with open(a, "rb") as fa, open(b, "rb") as fb:
+        return fa.read() == fb.read()
+
+
 def install(game, proxy):
     dll, orig = os.path.join(game, "CEGUIBase.dll"), os.path.join(game, REAL + ".dll")
+    if not is_proxy(proxy):
+        raise SystemExit(f"{proxy} is not the proxy; not installing it")
+    if not os.path.exists(dll) and os.path.exists(orig):
+        shutil.copyfile(orig, dll)              # the proxy's place empty: the real one put back first
+    if os.path.exists(orig) and not is_proxy(dll) and same_file(dll, orig):
+        os.remove(orig)                         # a store's file check put the real DLL back: one copy
     if not os.path.exists(orig):
         if is_proxy(dll):
             raise SystemExit(f"{dll} is a proxy and {orig} is missing: restore the real DLL first")
@@ -263,14 +279,21 @@ def install(game, proxy):
 
 
 def remove(game):
+    """True once the real DLL is in place (put back, or there all along); False if CEGUIBase.dll
+    is something else than the proxy with the real one beside it (then nothing is touched)."""
     dll, orig = os.path.join(game, "CEGUIBase.dll"), os.path.join(game, REAL + ".dll")
+    if os.path.exists(orig) and (not os.path.exists(dll) or same_file(dll, orig)):
+        os.replace(orig, dll)                   # missing or put back by a file check: the real one kept
+        print(f"restored the real CEGUIBase.dll in {game}")
+        return True
     if not os.path.exists(orig):
         print("no proxy installed")
-        return
+        return os.path.exists(dll) and not is_proxy(dll)
     if not is_proxy(dll):
         raise SystemExit(f"{dll} is not the proxy; not touching it")
     os.replace(orig, dll)
     print(f"restored the real CEGUIBase.dll in {game}")
+    return True
 
 
 def status(game):
