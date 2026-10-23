@@ -2936,3 +2936,28 @@ load and save each character); the uninstaller with the 360's bag installed (PC'
 default and `--yes`'s; or uninstall anyway, confirmed or `--anyway`, the saves backed up first);
 the README's "The 360's bag and your saves".
 
+## 22. Nintendo's layout: A and B swapped (2026-10-23)
+
+The owner's request, after the recomp's `swap_confirm_cancel` (the mods agent's reading of its
+`src/mods/pad_prompts`, `src/game_menu/mods_install.cpp`, `src/settings/host_settings`: only A and
+B swapped, X and Y kept; the prompts follow, from a "nintendo-swapped" set of icons; off by default,
+the bottom button confirming as on the 360; its checkbox greyed for Xbox and PlayStation prompts).
+Here:
+- **The setting:** `x360_settings.ini` beside the DLL, `swap_confirm_cancel=1`, the mod's own file
+  (not PC's settings), written when the checkbox changes; removed by uninstall.
+- **The checkbox:** made in PC's settings screen when it shows, of PC's own checkbox type, in the
+  parent of its last checkbox and one row below it; its text says it needs a restart. Enabled only
+  with a Nintendo pad found and no Steam Input pad (the owner's rule; the recomp enables it by the
+  prompts setting). PC's settings pad navigation reaches it as any checkbox.
+- **Which pad:** the HID devices' vendor (Nintendo 057E); Steam Input's virtual pad (Valve 28DE) is
+  noted and the search goes on for a physical one. With Steam Input's pad present the swap is
+  never applied (Steam's own Nintendo layout option swaps already) and the checkbox says to use
+  Steam's option.
+- **The swap:** the pad's A and B bits exchanged where the proxy reads XInput (`pad.c`), so play and
+  every menu see it; active while the setting is on and the pad is Nintendo's, checked again at
+  each pad connection (an Xbox pad connected later is not swapped).
+- **The icons:** the installer converts a sixth folder, `x360ui-nintendo-swapped`
+  (`convert_x360_ui.py --prompts nintendo --swap-confirm-cancel`), chosen at start with the setting
+  on and a Nintendo pad.
+Not run yet. Whether Proton shows the physical pad's HID device beside Steam Input's is not known.
+

@@ -7327,6 +7327,63 @@ static void nav_change(void *w, int kind, int step) {
         accepted(w, 0, args);
     }
 }
+/* Nintendo's layout's checkbox in PC's settings screen (the owner: as the recomp's, enabled only
+ * with a Nintendo pad found and not behind Steam Input; its text says it needs a restart). Made
+ * once per screen below its last checkbox, of PC's own checkbox type, in the same parent; its
+ * state saved to x360_settings.ini when changed (proxy/setup.c). */
+int x360_swap_setting(void);
+void x360_swap_setting_write(int on);
+int x360_pad_is_nintendo(void);
+int x360_pad_steam_input(void);
+static void swap_checkbox_tick(const char *prefix) {
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    typedef unsigned char (__fastcall *is_sel_fn)(const void *self, void *edx);
+    typedef void (__fastcall *set_sel_fn)(void *self, void *edx, unsigned char on);
+    typedef void (__fastcall *set_en_fn)(void *self, void *edx, unsigned char on);
+    static parent_fn parent_of;
+    static is_sel_fn is_sel;
+    static set_sel_fn set_sel;
+    static set_en_fn set_en;
+    static int last_state = -1, enabled;
+    void *box = win_of(prefix, "x360SwapAB"), *last = win_of(prefix, "NetbookMode"), *above = win_of(prefix, "ShowBlood");
+    if (!parent_of) parent_of = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    if (!is_sel) is_sel = (is_sel_fn)need("?isSelected@Checkbox@CEGUI@@QBE_NXZ");
+    if (!set_sel) set_sel = (set_sel_fn)need("?setSelected@Checkbox@CEGUI@@QAEX_N@Z");
+    if (!set_en) set_en = (set_en_fn)need("?setEnabled@Window@CEGUI@@QAEX_N@Z");
+    if (!parent_of || !is_sel || !set_sel || !set_en || !last) return;
+    if (!box) {
+        char a[160], b[160];
+        float va[8], vb[8];
+        void *parent = parent_of(last, 0);
+        if (!parent || !(box = create_window(prefix, "x360SwapAB", "GuiLook/Checkbox"))) {
+            x360_log("x360 prompts: the settings' checkbox not made\r\n");
+            return;
+        }
+        add_child(parent, 0, box);
+        read_prop(last, "UnifiedAreaRect", a, sizeof a);
+        read_prop(above ? above : last, "UnifiedAreaRect", b, sizeof b);
+        if (parse_rect(a, va) && parse_rect(b, vb)) {
+            int i;
+            for (i = 0; i < 8; i++) if (i == 2 || i == 3 || i == 6 || i == 7) va[i] += va[i] - vb[i];   /* one row further down */
+            write_rect(a, va);
+            prop(box, "UnifiedAreaRect", a);
+        }
+        enabled = x360_pad_is_nintendo();
+        text(box, x360_pad_steam_input() ? "Nintendo layout: A confirms, B cancels (Steam Input: use Steam's own option)"
+                                         : "Nintendo layout: A confirms, B cancels (needs a restart)");
+        set_sel(box, 0, (unsigned char)(x360_swap_setting() != 0));
+        set_en(box, 0, (unsigned char)enabled);
+        if (!enabled) prop(box, "Alpha", "0.5");
+        last_state = x360_swap_setting() != 0;
+        x360_log(enabled ? "x360 prompts: the settings' checkbox made\r\n" : "x360 prompts: the settings' checkbox made, disabled (no Nintendo pad)\r\n");
+        return;
+    }
+    if (enabled && (int)(is_sel(box, 0) != 0) != last_state) {
+        last_state = is_sel(box, 0) != 0;
+        x360_swap_setting_write(last_state);
+    }
+}
+
 static void nav_collect(void *w, int depth, int only_under_pause) {
     typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
@@ -7453,6 +7510,7 @@ static void pc_menus_nav_tick(void) {
      * its Destroyer, always there (its CreatePlayer shows once a name is typed: QA run 16). */
     create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
     x360_pc_settings_up = settings;
+    if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     cursor_hook_install();
     if (nav_cursor_off != !(settings || create)) {
         nav_cursor_off = !(settings || create);

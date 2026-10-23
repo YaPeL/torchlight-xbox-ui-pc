@@ -19,7 +19,8 @@ Install, as the recomp's first start does it (its src/game_setup):
    360's changes where a save's items go, so it is asked with a warning, and the saves found are
    backed up first.
 4. The 360's interface converted into the game's folder: x360ui (Xbox prompts) and x360ui-STYLE for
-   playstation3, playstation4, playstation5 and nintendo; x360_ui.ini written (its other lines
+   playstation3, playstation4, playstation5, nintendo and nintendo-swapped (A and B swapped: the
+   proxy's Nintendo layout, set in PC's settings screen); x360_ui.ini written (its other lines
    kept); the proxy CEGUIBase.dll installed, the real one kept as CEGUIBase_orig.dll.
 
 Uninstall puts the real CEGUIBase.dll back and removes what the install wrote (the converted
@@ -54,7 +55,7 @@ import stfs  # noqa: E402
 
 GOG_TIMESTAMP = 0x4FFC6815        # Torchlight.exe of GOG's build 17870, the one the proxy knows
 STEAM_APP = "41500"
-STYLES = ("playstation3", "playstation4", "playstation5", "nintendo")
+STYLES = ("playstation3", "playstation4", "playstation5", "nintendo", "nintendo-swapped")   # the last: A and B swapped
 X360_LAYOUT = "media/ui/mastermenu_xenon.layout"     # a file only the 360's pak has
 X360_TITLE = 0x58410A7E                               # Torchlight's Xbox LIVE Arcade title ID
 X360_CONTENT_TYPE = 0x000D0000                        # an Arcade title's package
@@ -398,7 +399,9 @@ def convert_all(pak, image, pc_pak, game):
         partial = dest + ".partial"
         shutil.rmtree(partial, ignore_errors=True)
         cmd = [sys.executable, script, pak, partial, "--image", image, "--pc-pak", pc_pak]
-        if style != "xbox":
+        if style == "nintendo-swapped":
+            cmd += ["--prompts", "nintendo", "--swap-confirm-cancel"]   # Nintendo's layout (the proxy's setting)
+        elif style != "xbox":
             cmd += ["--prompts", style]
         print(f"converting the 360's interface ({style})")
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
@@ -513,7 +516,7 @@ def do_uninstall(args):
             os.path.join(game, "x360ui-work-*")):
         shutil.rmtree(folder, ignore_errors=True)
         shutil.rmtree(folder + ".partial", ignore_errors=True)
-    for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt"] + [
+    for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt"] + [
             os.path.basename(p) for p in glob.glob(os.path.join(game, "x360_dump_*.json"))]:
         try:
             os.remove(os.path.join(game, name))

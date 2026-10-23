@@ -670,6 +670,8 @@ static void save_root_install(void) {
     put("save_root: SHGetSpecialFolderPathW not imported, not used\r\n");
 }
 
+void *x360_self_module(void) { return self_module; }
+
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
     if (reason == 1) {
         self_module = module;
