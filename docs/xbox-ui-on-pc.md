@@ -2601,3 +2601,9 @@ stash. Found:
     turns the model, not its one camera at (0, 1, 4.5)); a first angle, to measure.
 - Moved to "nice to have, after the first version" (the user, 2026-10-23): the minimap's fill
   (the 360's lighter, opaque grey).
+- **The right stick zooms** (the user: the 360's right stick zooms, as PC's wheel). PC's zoom is
+  its camera controller's (the client's `+0x10`, GOG `0x5e65f0`): the distance `+0x1c`, moved by
+  the wheel times -0.01 or 1 per frame with KEYMAP_ZOOMIN/OUT, kept from 14 (`0xaba608`) to
+  `+0x60` times 28.5 (`0xaba60c`), while `+0x64` is set and `+0x6c` is not. The pad moves it by the
+  right stick's y (up in), 12 per second at full tilt (a first value; the 360's rate asked of the
+  mods agent), outside its dead zone. Not run.

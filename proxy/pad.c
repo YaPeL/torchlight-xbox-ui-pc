@@ -59,6 +59,7 @@ static char pad_file[400];
 
 /* The pad, as last read. */
 static int lx, ly;             /* -1000..1000, y up */
+static int ry;                 /* the right stick's y, the same scale: the camera's zoom */
 static unsigned buttons;       /* XInput mask: A 0x1000, B 0x2000, X 0x4000, Y 0x8000 */
 static unsigned a_pressed_at;  /* GetTickCount of A's last press, for a short synthetic click */
 static unsigned last_poll;
@@ -210,10 +211,11 @@ static void poll(void) {
                 x360_log("\r\n");
                 last_result = result;
             }
-            if (result != 0) { lx = ly = 0; buttons = 0; return; }
+            if (result != 0) { lx = ly = ry = 0; buttons = 0; return; }
         }
         lx = st.lx * 1000 / 32767;
         ly = st.ly * 1000 / 32767;
+        ry = st.ry * 1000 / 32767;
         buttons = st.buttons | (st.lt > 64 ? BUTTON_LT : 0) | (st.rt > 64 ? BUTTON_RT : 0);
     }
     {
@@ -250,6 +252,27 @@ static int stick_active(void) { return lx * lx + ly * ly > DEAD_ZONE * DEAD_ZONE
 static int clicking(void) { return a_pressed_at && GetTickCount() - a_pressed_at < CLICK_MS; }
 
 static void order(void);
+
+/* The right stick zooms the camera, as the 360's (the user; the 360's rate asked of the mods agent).
+ * PC's zoom (its camera controller, the client's +0x10, GOG 0x5e65f0): the distance +0x1c, moved by
+ * the mouse wheel times -0.01 (a notch, 120, is 1.2) or 1 per frame with KEYMAP_ZOOMIN/OUT, kept
+ * from 14 (0xaba608) to +0x60 times 28.5 (0xaba60c), only while +0x64 is set and +0x6c is not.
+ * Up brings it in, as the wheel forward. ZOOM_RATE: distance per second at full tilt (a first value). */
+#define ZOOM_RATE 12.0f
+static void zoom_tick(unsigned char *client) {
+    static unsigned last;
+    unsigned now = GetTickCount();
+    float dt = last ? (float)(now - last) / 1000.0f : 0.0f, z, top;
+    unsigned char *cam = client ? *(unsigned char **)(client + 0x10) : 0;
+    last = now;
+    if (dt > 0.1f) dt = 0.1f;
+    if (!cam || !cam[0x64] || cam[0x6c] || (ry < DEAD_ZONE && ry > -DEAD_ZONE)) return;
+    z = *(float *)(cam + 0x1c) - (float)ry / 1000.0f * ZOOM_RATE * dt;
+    top = *(float *)(cam + 0x60) * *(float *)0x00aba60c;
+    if (z < *(float *)0x00aba608) z = *(float *)0x00aba608;
+    if (top > 0.0f && z > top) z = top;
+    *(float *)(cam + 0x1c) = z;
+}
 
 static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     BOOL r = real_get_cursor_pos(p);
@@ -955,6 +978,7 @@ static void order(void) {
     }
     if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
+    zoom_tick(client);
     if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
         void x360_automap_cycle(void);
         x360_automap_cycle();
