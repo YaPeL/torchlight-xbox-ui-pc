@@ -4509,7 +4509,18 @@ static void howto_show(int on) {
     if (on) { prop(howto_root, "AlwaysOnTop", "True"); move_to_front(howto_root, 0); }
 }
 
-int x360_pause_open(void) { return pause_open || howto_open; }
+/* Start opens PC's own pause menu (COptionsMenu, CGameUI's +0x2e8: Settings, Exit Game, Return to
+ * Game, used with the mouse), the user's choice for the first beta (2026-10-23: the 360's pause
+ * menu with PC's screens behind it left a window with no way out). Its setOpen (the virtual +0x1c)
+ * opens and closes it; PC pauses the game under it. */
+static unsigned char *pc_pause_menu(void) { return ui ? *(unsigned char **)(ui + 0x2e8) : 0; }
+static int pc_pause_open(void) {
+    typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+    unsigned char *m = pc_pause_menu();
+    return m && ((is_open_fn)(*(void ***)m)[0x10 / 4])(m, 0);   /* MENU_IS_OPEN */
+}
+
+int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); }
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
 void x360_pause_pad(unsigned pressed, int ly) {
@@ -4517,6 +4528,18 @@ void x360_pause_pad(unsigned pressed, int ly) {
     int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
     held = ly > 500 || ly < -500;
     if (!resolve()) return;
+    (void)dir;
+    {
+        unsigned char *m = pc_pause_menu();
+        if (m && find_world()) {
+            int open = pc_pause_open();
+            if ((pressed & 0x0010) || (open && (pressed & 0x2000))) {   /* Start; B closes it */
+                ((set_bool_fn)(*(void ***)m)[0x1c / 4])(m, 0, !open);   /* MENU_SET_OPEN */
+                x360_log(open ? "x360 menu: PC's pause menu closed\r\n" : "x360 menu: PC's pause menu opened\r\n");
+            }
+            return;
+        }
+    }
     if (howto_open) {   /* the pause menu hidden under it (the catalog's menus/14), back after */
         if (pressed & 0x2000) { howto_show(0); if (pause_root) set_visible(pause_root, 0, 1); }
         return;

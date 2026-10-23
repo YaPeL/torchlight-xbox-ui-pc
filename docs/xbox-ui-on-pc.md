@@ -2539,3 +2539,9 @@ user's save has a wolf, the 360's a lynx). Found and fixed after it (not run yet
 - Open: the pet's sheet's name is gold (white on the 360), the card's two dividers around an
   empty description, the pet model's three-quarter turn, the minimap's fill (the user: "not
   identical").
+
+**QA run 3 (2026-10-23).** Steam's folders UNCHANGED. The 360's pause menu's Options opened PC's
+settings with a window the pad could not leave. The user's decision for the first beta: Start
+opens PC's own pause menu (COptionsMenu, CGameUI's `+0x2e8`: Settings, Exit Game, Return to
+Game), used with the mouse; Start or B close it; the pad does nothing in the world meanwhile. The
+360's pause menu and walking PC's menus with the pad are left for later.
