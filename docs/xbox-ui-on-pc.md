@@ -2605,8 +2605,11 @@ stash. Found:
   its camera controller's (the client's `+0x10`, GOG `0x5e65f0`): the distance `+0x1c`, moved by
   the wheel times -0.01 or 1 per frame with KEYMAP_ZOOMIN/OUT, kept from 14 (`0xaba608`) to
   `+0x60` times 28.5 (`0xaba60c`), while `+0x64` is set and `+0x6c` is not. The pad moves it by the
-  right stick's y (up in), 12 per second at full tilt (a first value; the 360's rate asked of the
-  mods agent), outside its dead zone. Not run.
+  right stick's y (up in), outside its dead zone. The 360's rule (`sub_821EBA48`, 0x821EBF54; the
+  mods agent): the distance moves by sThumbRY / 32767 times -0.35 per frame (no time step),
+  kept from 14 to 28.5 times the level's multiplier (its camera controller at `0x83559498`:
+  `+0x18` the distance, `+0x5C` the multiplier, `+0x60` enabled, `+0x68` the dialog's zoom); so 21
+  per second at its 60 frames, the port's rate by the clock. The user found it right (QA run 8).
 
 **QA run 7 (2026-10-23).** Steam's folders UNCHANGED. The main menu was not drawn and its
 background hero took the pad: PC's bars were looked up by their windows' names (TopBar,

@@ -257,8 +257,12 @@ static void order(void);
  * PC's zoom (its camera controller, the client's +0x10, GOG 0x5e65f0): the distance +0x1c, moved by
  * the mouse wheel times -0.01 (a notch, 120, is 1.2) or 1 per frame with KEYMAP_ZOOMIN/OUT, kept
  * from 14 (0xaba608) to +0x60 times 28.5 (0xaba60c), only while +0x64 is set and +0x6c is not.
- * Up brings it in, as the wheel forward. ZOOM_RATE: distance per second at full tilt (a first value). */
-#define ZOOM_RATE 12.0f
+ * Up brings it in, as the wheel forward. The 360 (sub_821EBA48 at 0x821EBF54, the mods agent's
+ * static reading): distance += sThumbRY / 32767 * -0.35 each frame, kept from 14 to 28.5 times the
+ * level's multiplier, no time step: 21 per second at its 60 frames, the rate here by the clock (PC's
+ * frame rate is not capped). Its code has no dead zone; the pad's is kept so a resting stick does
+ * not drift the camera. */
+#define ZOOM_RATE 21.0f
 static void zoom_tick(unsigned char *client) {
     static unsigned last;
     unsigned now = GetTickCount();
