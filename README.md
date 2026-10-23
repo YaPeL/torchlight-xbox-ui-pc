@@ -4,6 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-xbox-ui-pc?include_prereleases&sort=semver)](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![GOG](https://img.shields.io/badge/GOG-supported-86328A?logo=gogdotcom&logoColor=white)](#installing)
+[![Epic](https://img.shields.io/badge/Epic-supported%20(GOG's%20build)-313131?logo=epicgames&logoColor=white)](#installing)
 [![Steam](https://img.shields.io/badge/Steam-planned-1b2838?logo=steam&logoColor=white)](#known-limitations)
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
@@ -17,7 +18,7 @@ files from your own copy of the Xbox LIVE Arcade game.
 > your Xbox 360. This project is not affiliated with or endorsed by the owners of Torchlight or by
 > Microsoft.
 
-This is a **beta**, tested on GOG's build under Linux (Proton). See
+This is a **beta**, tested on GOG's build under Linux (Proton); Epic's is the same build. See
 [Known limitations](#known-limitations).
 
 ## Contents
@@ -35,8 +36,8 @@ This is a **beta**, tested on GOG's build under Linux (Proton). See
 
 You need:
 
-- Torchlight for PC, from **GOG** (build 17870, the one GOG sells). Other stores' builds are not
-  supported yet.
+- Torchlight for PC, from **GOG** (build 17870, the one GOG sells) or **Epic** (Epic sells GOG's
+  build: its game files are GOG's, byte for byte). Steam's build is not supported yet.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
 - Python 3. Nothing else: the package is read and its executable decrypted in plain Python
@@ -99,9 +100,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 
 ## Known limitations
 
-- **GOG only.** The proxy uses addresses of GOG's build 17870. Steam sells an older build (17685);
-  most of the addresses are already found in it, and support is planned. Humble and Epic will come
-  after.
+- **GOG and Epic only.** The proxy uses addresses of GOG's build 17870, which Epic sells too. Steam
+  sells an older build (17685): every address is already found in it, and its run is still to
+  come. Humble will come after.
 - **The bag.** With PC's bag (the default) the equipment section holds 21 items; the 360's bag
   is an install option (above), with its effect on saves.
 - Windows-only binaries; on Linux the game runs under Proton or Wine.

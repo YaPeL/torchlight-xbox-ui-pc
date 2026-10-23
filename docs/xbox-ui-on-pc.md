@@ -2861,3 +2861,20 @@ one, fails CI, as does a `.def` or `.lib`.
   their SHA-256. Its first run (2026-10-23) gave the hashes of the local build (Ubuntu's clang
   21.1.8): GOG `54dbc7d4…31d7c62b`, Steam `dfb727c2…9a3617`. `build_proxy.py` takes LLVM 21's tools
   first (`clang-cl-21`, then `clang-cl`).
+
+## 19. Epic's build: GOG's (2026-10-23)
+
+The owner's copy of Epic's Torchlight (downloaded, in `~/Descargas/epic/Torchlight`, read only):
+every game file is GOG's, byte for byte (`Torchlight.exe` with GOG's timestamp `0x4FFC6815`, build
+17870 in its `BuildVer.txt`; the DLLs, `Pak.zip`, music, programs; even GOG's `goggame-*.dll`).
+Epic's folder adds its uninstaller (`unins000.*`), a shortcut and `GameuxInstallHelper.dll`; GOG's
+adds its `goggame-*` data files and `webcache.zip`. Its `CEGUIBase.dll` exports the list
+(`cegui_exports.py check`).
+
+The installer was run on a copy of that folder (the large files linked, `CEGUIBase.dll` copied)
+with the owner's extracted 360 copy: told as GOG's build; the converted interface identical to the
+one GOG's game uses; the proxy identical to the one built from the repository; the uninstall left
+the folder's files with the hashes they had before. The owner's decision: Epic is marked supported,
+its executable being the one played on GOG. A copy outside Legendary's, Heroic's or the launcher's
+lists is not found by `install.py list`; it is given with `--game`.
+
