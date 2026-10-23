@@ -17,10 +17,13 @@ std::string style_of(const std::string& s) { return s == "playstation" ? "playst
 
 uint32_t rd_be32(const Bytes& d, size_t o) { return be32(d, o); }
 uint32_t rd_le32(const Bytes& d, size_t o) {
-  need(d.size(), o, 4);
+  if (o > d.size() || d.size() - o < 4) throw StructError("unpack_from requires a buffer of at least 4 bytes");
   return uint32_t(d[o]) | uint32_t(d[o + 1]) << 8 | uint32_t(d[o + 2]) << 16 | uint32_t(d[o + 3]) << 24;
 }
-uint16_t rd_le16(const Bytes& d, size_t o) { return le16(d, o); }
+uint16_t rd_le16(const Bytes& d, size_t o) {
+  if (o > d.size() || d.size() - o < 2) throw StructError("unpack_from requires a buffer of at least 2 bytes");
+  return le16(d, o);
+}
 
 std::string py_bytes_repr(const std::string& b) {   // repr() of a bytes object, for an error's text
   std::string out = "b'";
@@ -201,6 +204,7 @@ Image decode_dds(const Bytes& data) {
     for (int by = 0; by < (height + 3) / 4; by++) {
       for (int bx = 0; bx < (width + 3) / 4; bx++) {
         const Bytes block = slice(data, pos, size);
+        if (block.size() < size) throw StructError("unpack_from requires a buffer of at least 8 bytes");
         pos += size;
         int alphas[16];
         for (int& a : alphas) a = 255;
@@ -249,8 +253,13 @@ Image decode_dds(const Bytes& data) {
     for (int k = 0; k < 4; k++) shifts[k] = shift_of(masks[k]);
     for (size_t i = 0; i < size_t(width) * size_t(height); i++) {
       const uint32_t v = rd_le32(data, pos + 4 * i);
-      for (int k = 0; k < 3; k++) img.rgba[4 * i + size_t(k)] = uint8_t((v & masks[k]) >> shifts[k]);
-      img.rgba[4 * i + 3] = uint8_t(masks[3] ? (v & masks[3]) >> shifts[3] : 255);
+      uint32_t px[4];
+      for (int k = 0; k < 3; k++) px[k] = (v & masks[k]) >> shifts[k];
+      px[3] = masks[3] ? (v & masks[3]) >> shifts[3] : 255;
+      for (int k = 0; k < 4; k++) {
+        if (px[k] > 255) throw Error("bytes must be in range(0, 256)");   // Python's bytes((r, g, b, a))
+        img.rgba[4 * i + size_t(k)] = uint8_t(px[k]);
+      }
     }
     return img;
   }

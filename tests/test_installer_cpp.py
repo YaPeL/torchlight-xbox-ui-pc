@@ -103,9 +103,6 @@ class InstallerCppTest(unittest.TestCase):
             self.assertIn(b"not an Xbox 360 package", r.stderr)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 def _dds_argb(w, h, seed):
     import random
@@ -263,3 +260,55 @@ class ConvertCppTest(unittest.TestCase):
             r = subprocess.run([BINARY, "dev", "convert", pak, os.path.join(root, "o")], capture_output=True)
             self.assertNotEqual(r.returncode, 0)
             self.assertIn(b"outside ASCII", r.stderr)
+
+    def test_regressions_of_the_review(self):
+        """Inputs where the C++ once differed in silence: a bad UTF-8 lead byte (both refuse), a
+        32-bit DDS with a 16-bit mask (the same message in the report), a Unicode digit (the C++
+        stops)."""
+        import zipfile
+        from test_tools import ConvertX360Test
+        with tempfile.TemporaryDirectory() as root:
+            def pak_with(change):
+                files = dict(ConvertX360Test.FILES)
+                change(files)
+                path = os.path.join(root, "pak.zip")
+                with zipfile.ZipFile(path, "w") as z:
+                    for name, data in files.items():
+                        z.writestr(name, data)
+                return path
+
+            def both(pak, *extra):
+                py = subprocess.run([sys.executable, os.path.join(TOOLS, "convert_x360_ui.py"), pak, os.path.join(root, "py"), *extra], capture_output=True)
+                cpp = subprocess.run([BINARY, "dev", "convert", pak, os.path.join(root, "cpp"), *extra], capture_output=True)
+                return py, cpp
+
+            pak = pak_with(lambda f: f.__setitem__("media/ui/skills.uilayout", b"<GUILayout>\xf5\x80\x80</GUILayout>"))
+            py, cpp = both(pak)
+            self.assertNotEqual(py.returncode, 0)
+            self.assertNotEqual(cpp.returncode, 0)
+
+            def wide_mask(f):
+                d = bytearray(_dds_argb(8, 8, 5))
+                struct.pack_into("<I", d, 92, 0x0000FFFF)
+                f["media/UI/icons2/widgets1.dds"] = bytes(d)
+                f["media/UI/icons2/widgets1.imageset"] = ('<Imageset Name= "widgets1" Imagefile="media/ui/icons2/widgets1.dds">'
+                                                          '<Image Name="a_button" XPos="0" YPos="0" Width="4" Height="4" /></Imageset>')
+            pak = pak_with(wide_mask)
+            py, cpp = both(pak, "--prompts", "nintendo")
+            self.assertEqual((py.returncode, cpp.returncode), (0, 0), cpp.stderr)
+            with open(os.path.join(root, "py", "x360_ui_report.json"), "rb") as a, open(os.path.join(root, "cpp", "x360_ui_report.json"), "rb") as b:
+                self.assertEqual(b.read(), a.read())
+
+            def unicode_digit(f):
+                wide_mask(f)
+                f["media/UI/icons2/widgets1.dds"] = _dds_argb(8, 8, 6)
+                f["media/UI/icons2/widgets1.imageset"] = f["media/UI/icons2/widgets1.imageset"].replace('XPos="0"', 'XPos="\u0661"')
+            pak = pak_with(unicode_digit)
+            py, cpp = both(pak, "--prompts", "nintendo")
+            self.assertEqual(py.returncode, 0)
+            self.assertNotEqual(cpp.returncode, 0)
+            self.assertIn(b"outside ASCII", cpp.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

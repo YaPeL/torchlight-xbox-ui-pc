@@ -3053,7 +3053,7 @@ own and is ported as it is: the PNG decoder (miniz's inflate for zlib's), the DD
 encoder in integers, the icon's fitting in doubles in Python's order (no fused multiply-add,
 Python's round half to even). The re patterns are matched by hand (`pytext.cpp`) with Python's
 rules; where Python decides `\w`, `\b` or re.I by Unicode tables on a character outside ASCII the
-C++ stops (NonAscii) instead of guessing. Files written in text mode take the system's line end,
+C++ stops (NonAscii) instead of guessing; the same for `str.isprintable` outside Latin-1's signs and common punctuation, for `int()` on a digit outside ASCII, and for a zip entry's name outside ASCII that a filter would take (or one in cp437, without the UTF-8 flag). A short DDS stops as Python's struct.error does; a 32-bit mask wider than 8 bits gives Python's ValueError text in the report. Files written in text mode take the system's line end,
 as Python's. The 360 code's text addresses (`convert_strings.inc`) are generated from STRINGS
 and compared with it by a test. The icons of `data/prompts` are built into the executable.
 - Against the owner's copy (2026-10-23): the six variants (xbox, playstation3, 4, 5, nintendo,

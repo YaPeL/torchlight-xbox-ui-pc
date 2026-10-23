@@ -102,7 +102,7 @@ U32 from_utf8(const std::string& s) {
       i++;
       continue;
     }
-    int len = c >= 0xF0 && c <= 0xF4 ? 4 : c >= 0xE0 ? 3 : c >= 0xC2 && c < 0xE0 ? 2 : 0;
+    int len = c >= 0xF0 && c <= 0xF4 ? 4 : c >= 0xE0 && c <= 0xEF ? 3 : c >= 0xC2 && c < 0xE0 ? 2 : 0;
     if (!len || i + len > n) throw Error("UTF-8: invalid start byte or unexpected end");
     char32_t u = len == 2 ? c & 0x1F : len == 3 ? c & 0x0F : c & 0x07;
     for (int k = 1; k < len; k++) {
@@ -162,18 +162,16 @@ bool py_isword(char32_t c) {
   return ascii_alnum(c) || c == '_';
 }
 
-// str.isprintable: ASCII exactly; outside it, printable but for the controls (U+0080-U+009F),
-// the separators and format characters met in texts (U+00A0, U+00AD, U+1680, U+2000-U+200F,
-// U+2028-U+202F, U+205F-U+206F, U+3000, U+FEFF), surrogates, private use (U+E000-U+F8FF) and
-// the noncharacters U+FFFE, U+FFFF. Unassigned code points are not known here (Python says
-// False): the comparison with the Python tools on the owner's data is the check.
+// str.isprintable: ASCII exactly; outside it, only where the answer is known without Unicode's
+// tables: Latin-1's letters and signs (U+00A1-U+00FF, but the soft hyphen U+00AD, not printable)
+// and the common punctuation U+2010-U+2027, U+2030-U+205E (printable). Anything else outside ASCII
+// stops (NonAscii): Python would decide by its tables (the review: unassigned and format
+// characters).
 bool py_isprintable(char32_t c) {
   if (c < 0x80) return c >= 0x20 && c < 0x7F;
-  if (c <= 0xA0 || c == 0xAD || c == 0x1680 || (c >= 0x2000 && c <= 0x200F) || (c >= 0x2028 && c <= 0x202F) ||
-      (c >= 0x205F && c <= 0x206F) || c == 0x3000 || c == 0xFEFF || (c >= 0xD800 && c <= 0xF8FF) || c == 0xFFFE ||
-      c == 0xFFFF)
-    return false;
-  return true;
+  if (c == 0xAD) return false;
+  if ((c >= 0xA1 && c <= 0xFF) || (c >= 0x2010 && c <= 0x2027) || (c >= 0x2030 && c <= 0x205E)) return true;
+  throw NonAscii("str.isprintable() on a character outside the ranges known here");
 }
 
 U32 py_lower_ascii(const U32& s) {
@@ -349,7 +347,8 @@ std::optional<long long> py_int(const U32& s) {
   bool prev_digit = false;
   for (size_t i = b; i < e; i++) {
     if (s[i] == '_' && prev_digit && i + 1 < e && s[i + 1] >= '0' && s[i + 1] <= '9') { prev_digit = false; continue; }
-    if (s[i] < '0' || s[i] > '9') return std::nullopt;   // other Unicode digits: none in the data (NonAscii would be stricter)
+    if (s[i] >= 0x80) throw NonAscii("int() on a character outside ASCII (Python takes Unicode digits)");
+    if (s[i] < '0' || s[i] > '9') return std::nullopt;
     v = v * 10 + (s[i] - '0');
     prev_digit = true;
   }

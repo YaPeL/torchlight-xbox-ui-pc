@@ -140,6 +140,22 @@ std::string basename(std::string p) {
 
 std::string lower_path(const std::string& s) { return u8(py_lower_ascii(u32(s))); }
 
+// An entry's name lowercased for a filter: ASCII lowered; a name outside ASCII stops only when the
+// answer could depend on it (it passes the filter, or holds one of the two characters whose
+// lowercase is ASCII: U+0130, U+212A).
+std::string lower_for_filter(const std::string& s, const std::function<bool(const std::string&)>& passes) {
+  std::string low = s;
+  bool ascii = true;
+  for (char& c : low) {
+    if ((unsigned char)c >= 0x80) ascii = false;
+    else if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+  }
+  if (ascii) return low;
+  if (passes(low) || s.find("\xC4\xB0") != std::string::npos || s.find("\xE2\x84\xAA") != std::string::npos)
+    throw NonAscii("a zip entry's name outside ASCII that a filter takes");
+  return low;
+}
+
 bool ends_with(const std::string& s, const std::string& e) { return s.size() >= e.size() && s.compare(s.size() - e.size(), e.size(), e) == 0; }
 
 
@@ -151,9 +167,19 @@ struct Zip {
   }
   ~Zip() { mz_zip_reader_end(&z); }
   unsigned count() { return mz_zip_reader_get_num_files(&z); }
+  // The entry's name as zipfile gives it: up to a NUL; on Windows its backslashes made slashes.
+  // Python reads a name without the UTF-8 flag as cp437: one with bytes above 127 then stops here.
   std::string name(unsigned i) {
-    char buf[1024];
-    mz_zip_reader_get_filename(&z, i, buf, sizeof buf);
+    std::string buf(mz_zip_reader_get_filename(&z, i, nullptr, 0), '\0');
+    if (!buf.empty()) mz_zip_reader_get_filename(&z, i, &buf[0], unsigned(buf.size()));
+    buf = buf.c_str();
+#ifdef _WIN32
+    std::replace(buf.begin(), buf.end(), '\\', '/');
+#endif
+    mz_zip_archive_file_stat st;
+    if (mz_zip_reader_file_stat(&z, i, &st) && !(st.m_bit_flag & 0x800))
+      for (unsigned char c : buf)
+        if (c >= 0x80) throw NonAscii("a zip entry's name in cp437 (no UTF-8 flag) outside ASCII");
     return buf;
   }
   Bytes read(unsigned i) {
@@ -180,12 +206,15 @@ std::vector<std::pair<std::string, Bytes>> read_pak(const std::string& path) {
   static const char* const wanted[] = {".uilayout", ".scheme", ".looknfeel", ".imageset", ".font", ".dds", ".ttf", ".tga", ".png"};
   Zip z(path);
   std::vector<std::pair<std::string, Bytes>> files;   // dict: a repeated key keeps its place
-  for (unsigned i = 0; i < z.count(); i++) {
-    const std::string low = lower_path(z.name(i));
-    if (low.rfind("media/ui/", 0) != 0) continue;
-    bool ok = kExtraLayouts.count(lower_path(basename(z.name(i)))) > 0;
+  auto wanted_name = [&](const std::string& low) {
+    if (low.rfind("media/ui/", 0) != 0) return false;
+    bool ok = kExtraLayouts.count(basename(low)) > 0;
     for (const char* w : wanted) ok = ok || ends_with(low, w);
-    if (!ok) continue;
+    return ok;
+  };
+  for (unsigned i = 0; i < z.count(); i++) {
+    const std::string low = lower_for_filter(z.name(i), wanted_name);
+    if (!wanted_name(low)) continue;
     Bytes data = z.read(i);
     auto it = std::find_if(files.begin(), files.end(), [&](const auto& f) { return f.first == low; });
     if (it != files.end()) it->second = std::move(data);
@@ -356,12 +385,13 @@ std::vector<std::pair<std::string, std::string>> item_descriptions(const std::st
   std::vector<std::pair<std::string, std::string>> out;
   Zip z3(pak), zp(pc_pak);
   std::map<std::string, std::string> n3;
+  auto item_name = [](const std::string& low) { return low.rfind("media/units/items/", 0) == 0 && ends_with(low, ".adm"); };
   for (unsigned i = 0; i < z3.count(); i++) {
-    const std::string n = z3.name(i), low = lower_path(n);
-    if (low.rfind("media/units/items/", 0) == 0 && ends_with(low, ".adm")) n3[low] = n;
+    const std::string n = z3.name(i), low = lower_for_filter(n, item_name);
+    if (item_name(low)) n3[low] = n;
   }
   for (unsigned i = 0; i < zp.count(); i++) {
-    const std::string n = zp.name(i), low = lower_path(n);
+    const std::string n = zp.name(i), low = lower_for_filter(n, item_name);
     auto it = n3.find(low);
     if (it == n3.end()) continue;
     std::map<std::string, std::string> pc, x3;
@@ -404,8 +434,9 @@ std::vector<std::pair<std::string, std::string>> context_tips(const Bytes& raw) 
 
 Bytes globals_of(const std::string& pak) {
   Zip z(pak);
+  auto is_globals = [](const std::string& low) { return low == "media/globals.dat.adm"; };
   for (unsigned i = 0; i < z.count(); i++)
-    if (lower_path(z.name(i)) == "media/globals.dat.adm") return z.read(i);
+    if (is_globals(lower_for_filter(z.name(i), is_globals))) return z.read(i);
   throw Error(pak + " has no media/GLOBALS.DAT.adm");
 }
 
@@ -710,6 +741,8 @@ std::vector<std::string> convert_ui(const ConvertOptions& opt) {
         report["prompts"][path] = Json::num(count);
       } catch (const NonAscii&) {
         throw;
+      } catch (const StructError&) {
+        throw;   // Python's struct.error: not caught there either
       } catch (const Error& e) {
         report["prompts"][path] = Json::str(e.what());
       }
@@ -738,8 +771,9 @@ std::vector<std::string> convert_ui(const ConvertOptions& opt) {
     Zip z(opt.pak);
     const char* shared = "media/sharedtextures/automapoverlay.dds";
     long found = -1;
+    auto is_shared = [&](const std::string& low) { return low == shared; };
     for (unsigned i = 0; i < z.count(); i++)
-      if (lower_path(z.name(i)) == shared) found = long(i);
+      if (is_shared(lower_for_filter(z.name(i), is_shared))) found = long(i);
     if (found >= 0) write_out(opt.out, shared, z.read(unsigned(z.index_of(z.name(unsigned(found))))));
   }
   if (!opt.pc_pak.empty()) {

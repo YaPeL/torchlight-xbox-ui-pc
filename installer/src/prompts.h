@@ -13,6 +13,11 @@
 
 namespace x360ui {
 
+// Python's struct.error (a short read): not a ValueError, so the converter does not catch it.
+struct StructError : Error {
+  using Error::Error;
+};
+
 struct Image {
   int width = 0, height = 0;
   Bytes rgba;
