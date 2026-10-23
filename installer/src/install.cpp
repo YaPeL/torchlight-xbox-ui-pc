@@ -456,12 +456,13 @@ Bytes ini_text(const fs::path& game, const fs::path& out, const std::string& bag
   if (used) owned.push_back({"bag_360_used", "1"});
   std::set<std::string> keys = {"mode", "out", "pad", "pad_mode", "prompts", "bag", "bag_360_used", "update_check"};
   std::vector<U32> kept;
-  for (const U32& line : ini_lines(game))
+  for (const U32& line : ini_lines(game)) {
     const std::string key = utf8(py_strip(line.substr(0, line.find(U'='))));
     // The proxy's test options (runs on copies): never kept by an install (install.is_test_option).
     const bool test = key == "save_root" || key == "hold_saves" || key == "pad_detect" || key == "console" ||
                       key.rfind("test_", 0) == 0;
     if (!keys.count(key) && !test) kept.push_back(line);
+  }
   std::string t;
   for (const auto& [k, v] : owned) t += k + "=" + v + "\r\n";
   for (const U32& l : kept)
