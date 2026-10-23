@@ -2491,3 +2491,14 @@ inventory (section 13), so each run's batch is one.
   `automapmask.png` in its code (the paks hold `.dds`): if the overlay is loaded by that name,
   the converter's 360 copy (a `.dds`) will not replace it; the next run's look tells. The fill
   is likely the level's automap tiles (`RAUTOMAP_TILE`, `EditorAutomapTiles`), data in the paks.
+
+**QA run 1 (2026-10-23, town and mine).** Steam's folders UNCHANGED. Fine: R3's three map states,
+the floor labels, the town portal scroll closing the bag. Broken and fixed after the run:
+- The pet commands closed as they opened: PC's interface, now hidden every frame, took the
+  housing (a sheet child the port's list did not name). Every window named with an x360 prefix
+  is now the port's.
+- No shop opened in town: a shop's menu opens PC's inventory with it, and the hotkeys' guard
+  closed that inventory before the shop was seen, closing the shop. The guard leaves PC's
+  screens alone while a merchant, enchant, combine or stash menu is open.
+- To see: the mine's entrance from town "drawn from too far" against the 360 (what exactly is
+  asked).

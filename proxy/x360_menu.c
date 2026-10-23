@@ -2699,6 +2699,17 @@ static unsigned overlay_closed_at;     /* when a tip, modal or NPC dialog of the
 static int qd_shown;                         /* the 360's NPC dialog is shown (its section, at the end) */
 static int shop_closing;
 static int is_ours(void *w) {
+    typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+    static name_fn gn;
+    if (w) {
+        /* Every window the port loads is named with an x360 prefix (the housing, the pet commands,
+         * the gem select, the modal, the bars...: QA run 1, the pet commands hidden at once once
+         * PC's interface was hidden every frame). */
+        const char *nm;
+        if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        nm = gn ? c_str(gn(w, 0), 0) : 0;
+        if (nm && nm[0] == 'x' && nm[1] == '3' && nm[2] == '6' && nm[3] == '0') return 1;
+    }
     return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == ench_root || w == character_root || w == petchr_root ||
                  w == card_root(0) || w == card_root(1) || w == card_root(2));   /* the Info cards, PC's tooltips */
 }
@@ -6234,6 +6245,15 @@ static void pc_menus_guard(void) {
     if (!ui) return;
     if (inventory_open) hide_pc_ui(1);
     if (shop) return;
+    /* A shop's menu opens PC's inventory with it (the merchant, enchanter, transmuter, stash): left
+     * to the shop's code (QA run 1: closing it closed the shop before the port saw it). */
+    {
+        static const unsigned shops[] = {0x2d8, 0x2dc, 0x2e0, 0x2e4};
+        for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
+            unsigned char *m = *(unsigned char **)(ui + shops[i]);
+            if (m && ((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) return;
+        }
+    }
     for (i = 0; i < sizeof at / sizeof at[0]; i++) {
         unsigned char *m = *(unsigned char **)(ui + at[i]);
         if (!m || !((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) continue;
