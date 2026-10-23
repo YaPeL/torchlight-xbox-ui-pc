@@ -1,62 +1,138 @@
-# torchlight-xbox-ui-pc
+# Torchlight: the Xbox 360 interface on PC
 
-The Xbox 360 interface of Torchlight in the PC game: a study and tools.
+[![CI](https://github.com/YaPeL/torchlight-xbox-ui-pc/actions/workflows/ci.yml/badge.svg)](https://github.com/YaPeL/torchlight-xbox-ui-pc/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-xbox-ui-pc?include_prereleases&sort=semver)](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![GOG](https://img.shields.io/badge/GOG-supported-86328A?logo=gogdotcom&logoColor=white)](#installing)
+[![Steam](https://img.shields.io/badge/Steam-planned-1b2838?logo=steam&logoColor=white)](#known-limitations)
 
-This project does not include any file of the game, from the Xbox 360 or from PC. To use its tools
-you need your own copies of both versions: the 360 game's data and the PC game's install. The tools
-read those copies and write what they produce into folders outside this repository.
+A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
+version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
+console. It loads as a proxy `CEGUIBase.dll` next to the game and converts the 360's interface
+files from your own copy of the Xbox LIVE Arcade game.
 
-## Paused (2026-10-17)
+> [!IMPORTANT]
+> This repository contains no game files, from the Xbox 360 or from PC. The mod only works with
+> your own copies of both: the PC game installed, and the Torchlight Xbox LIVE Arcade package from
+> your Xbox 360. This project is not affiliated with or endorsed by the owners of Torchlight or by
+> Microsoft.
 
-The project is paused until the recomp is finished. Where it stopped: branch `inventory-x360`, all
-pushed. Every screen of the 360 catalog in scope is ported to the GOG copy and compared against
-the 360's (`docs/xbox-ui-on-pc.md`, sections 14 and 15). What comes next, in the user's list:
+This is a **beta**, tested on GOG's build under Linux (Proton). See
+[Known limitations](#known-limitations).
 
-1. **Transmuter:** done and tested with one recipe; what remains is in section 15.
-2. **Shop (merchant):** PC's panels at the screen's sides, and PC's first-time Tips after
-   closing.
-3. **Modal windows:** PC's tips as the 360's `tipmenu` (B closes, Y turns them off) and PC's
-   modal (the fishing's result, the hardcore death) as the 360's `modalmenu` (A accepts or
-   oks, B declines): written, not run yet (section 14).
-4. **Whirlpool ("remolino"):** the user's description: on the 360 a fast spin of the stick turns
-   the hero in place, on PC it walks a spiral. The 360's stick path matches the port's (section
-   9e); set aside unless the mods agent knows where the 360's engine decides to turn in place.
-5. **Skills on B/Y/LT/RT:** the HUD shows them; the 360's mapping on the Skills page (X, then the
-   button, assigned on its release) is written and not run yet (section 14).
-6. **Steam and Epic:** only once the port works on GOG (the user's decision, 2026-10-21). A
-   draft plan for Steam is in section 16; its first offline tool, `tools/port_addresses.py`, is
-   written and tested on synthetic data, not run against another build.
-7. **QA with the 8BitDo pad** (the user's controller), the whole flow played.
+## Contents
 
-Section 15 of the doc has the full list of what is left (first: the gold of names in the
-dialogs, stopped after three tries, its next steps written there).
-
-- `docs/xbox-ui-on-pc.md`: start at its section 0 (state, how to run GOG, precautions, next steps).
-- `tools/pe_info.py`: sections, imports and exports of an .exe or .dll of the PC install.
-- `tools/compare_installs.py`: the executables and DLLs of two PC installs (GOG, Steam), compared.
-- `tools/layout_windows.py`: the named windows of a CEGUI layout, and which of them another has.
-- `tools/convert_x360_ui.py`: the 360 interface's files (scheme, looknfeel, imagesets, fonts,
-  layouts) converted from the user's 360 `pak.zip` into a folder for the PC game.
-- `tools/build_proxy.py`: builds the proxy `CEGUIBase.dll` (`proxy/cegui_proxy.c`) from the user's DLL.
-- `tools/grab_window.py`: a screenshot of the game's window.
-- `tools/send_input.py`: mouse and keyboard input for the game, from inside its Wine prefix.
-- `tools/port_addresses.py`: GOG's addresses found in another build of `Torchlight.exe`, offline.
-- `tools/steam_guard.py`: hash snapshot and verify of the Steam folders that must not change.
-- `tools/run_gog.sh`: runs the GOG copy through Proton's script in a prefix of its own.
-- `tools/check_no_game_files.py`: run by CI; fails if a game file type is committed.
-
-Tests use synthetic data only.
-
-## License
-
-GPL-3.0 (LICENSE). The code only: no file of either game is in this repository, and the converted
-interface is made from your own copies on your machine. The prompt icons in data/prompts are
-Kenney's "Input Prompts" (CC0; data/prompts/LICENSE.txt).
+- [Installing](#installing)
+- [Playing](#playing)
+- [What works](#what-works)
+- [Known limitations](#known-limitations)
+- [Tools](#tools)
+- [Building](#building)
+- [Credits](#credits)
+- [License](#license)
 
 ## Installing
 
-`python3 tools/install.py` finds the PC game (GOG, Steam, Epic) and your extracted 360 copy, converts
-the 360's interface into the game's folder (one copy per pad style: Xbox, PlayStation 3/4/5,
-Nintendo) and installs the proxy. Only GOG's build 17870 is supported for now; `--list` shows what
-it finds, `--remove` puts the real CEGUIBase.dll back. It needs the 360's decrypted image
-(`default.bin`); without one it uses 360tools' `extract_pe.py` if installed.
+You need:
+
+- Torchlight for PC, from **GOG** (build 17870, the one GOG sells). Other stores' builds are not
+  supported yet.
+- Your Torchlight Xbox LIVE Arcade package (title 58410A7E) or a folder extracted from it.
+- Python 3.
+
+Run `python3 tools/install.py`. It finds the PC game (GOG, Steam and Epic installs, also inside
+Wine and Proton prefixes), converts the 360's interface from your copy into the game's folder (one
+copy per pad style: Xbox, PlayStation 3/4/5 and Nintendo), writes `x360_ui.ini` and installs the
+proxy. The game's real `CEGUIBase.dll` is kept as `CEGUIBase_orig.dll`.
+
+- `--list` prints the games it found and stops.
+- `--remove` puts the real `CEGUIBase.dll` back.
+
+The installer is being reworked to take the XBLA package directly (`tools/stfs.py` and
+`tools/xex/` already read and decrypt it, with nothing beyond Python) and to uninstall cleanly.
+
+## Playing
+
+Start the game with a pad connected. The mouse is hidden, except in PC's settings and character
+creation screens.
+
+| Pad | In play |
+|-----|---------|
+| Left stick | Move |
+| Right stick | Zoom |
+| A | Pick up, talk, use |
+| X | Attack |
+| B, Y, LT, RT | Skills |
+| LB, RB | Health and mana potions |
+| Back | Inventory |
+| Start | Pause menu |
+| Right stick click | The map's three views |
+
+PC's main menu, pause menu, settings, character creation and loading screens are used with the
+pad too: the d-pad or the stick moves between their buttons, A presses, B goes back. On a slider
+or a drop-down, A starts changing it with left and right.
+
+The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nintendo.
+
+## What works
+
+- The HUD: health and mana orbs, the skill and potion slots with their prompts, the experience
+  bar, the 360's minimap with its three views.
+- The inventory: the hero's bag, the pet's, the character sheet, skills, the pet sheet and its
+  commands, using and equipping items, identifying them.
+- Shops: the merchant (buy and sell), the stash, the transmuter, the enchanter and both gem
+  goblins, with the 360's pages and results.
+- NPC dialogs, quest dialogs, tips and messages, as the 360's.
+- Fishing, with the 360's ring.
+- Labels on the floor's items near the hero, as on the 360.
+
+## Known limitations
+
+- **GOG only.** The proxy uses addresses of GOG's build 17870. Steam sells an older build (17685);
+  most of the addresses are already found in it, and support is planned. Humble and Epic will come
+  after.
+- **The bag's size.** PC's bag holds 21 items per section, the 360's more; a larger bag as the
+  360's is being added as an install option.
+- Windows-only binaries; on Linux the game runs under Proton or Wine.
+
+## Tools
+
+- `tools/install.py`: the installer (above).
+- `tools/convert_x360_ui.py`: the 360's interface files (scheme, looks, imagesets, fonts, layouts,
+  texts) converted from your 360 `pak.zip` and decrypted image into a folder for the PC game.
+- `tools/stfs.py`: lists and extracts the files of an Xbox 360 package (CON, LIVE or PIRS).
+- `tools/xex/xex_dump.py`: decrypts and decompresses the 360's `default.xex`.
+- `tools/build_proxy.py`: builds the proxy `CEGUIBase.dll` (`proxy/`) from your game's own DLL.
+- `tools/port_addresses.py`: GOG's addresses found in another build of `Torchlight.exe`, offline.
+- `tools/pe_info.py`, `tools/compare_installs.py`, `tools/layout_windows.py`: reading the PC
+  game's files.
+- `tools/run_gog.sh`, `tools/steam_guard.py`, `tools/grab_window.py`, `tools/send_input.py`:
+  development runs.
+- `tools/check_no_game_files.py`: run by CI; fails if a game file is committed.
+
+How the port is made, screen by screen, with the 360 functions it follows:
+[`docs/xbox-ui-on-pc.md`](docs/xbox-ui-on-pc.md) (start at section 0).
+
+## Building
+
+The proxy is built with `clang-cl` and `lld-link` (LLVM) for 32-bit Windows:
+
+```sh
+python3 tools/build_proxy.py build "<game folder>/CEGUIBase_orig.dll" <output folder>
+python3 tools/build_proxy.py install "<game folder>" <output folder>/CEGUIBase.dll
+```
+
+Tests use synthetic data only: `python3 -m unittest discover -s tests`.
+
+## Credits
+
+- Torchlight is by Runic Games.
+- `tools/xex/lzx_decompress.py` is from [360tools](https://github.com/sp00nznet/360tools) (MIT).
+- The prompt icons in `data/prompts` are Kenney's
+  [Input Prompts](https://kenney.nl/assets/input-prompts) (CC0).
+
+## License
+
+GPL-3.0 ([LICENSE](LICENSE)), for the code. No file of either game is in this repository: the
+converted interface is made from your own copies, on your machine. `tools/xex/lzx_decompress.py`
+keeps its MIT license (`tools/xex/LICENSE-lzx_decompress`).
