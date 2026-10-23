@@ -2485,3 +2485,9 @@ inventory (section 13), so each run's batch is one.
   value types 3 and 7, `adm_tree(wide=)`); the proxy gives PC's DESCRIPTION property that text
   for the tooltip call and puts its own back after it, so PC lays the card out with it. The
   texts file's limits were raised (1200 lines, 192 KB).
+- The map's look, read so far (open): PC's automap code (`0x4ec000`-`0x4ed100`, its quads at
+  `0x4ec599`, its camera at `0x4ece4b`) holds no colour constants, only the camera's distances
+  and angles (5000, -90, -225, 4.0). PC names `media/sharedtextures/automapoverlay.png` and
+  `automapmask.png` in its code (the paks hold `.dds`): if the overlay is loaded by that name,
+  the converter's 360 copy (a `.dds`) will not replace it; the next run's look tells. The fill
+  is likely the level's automap tiles (`RAUTOMAP_TILE`, `EditorAutomapTiles`), data in the paks.
