@@ -3095,3 +3095,29 @@ the C++ one:
   write permission (Linux) and one whose ACL denies writing (Windows, the elevation declined):
   nothing changed.
 
+- **After the reviews.** The elevated run gets the first run's answers, its save folders (that
+  account's, not the administrator's) and its yes to no backup, and writes its result or error to
+  a file the first run shows in a window. Errors are shown in a window whenever the installer
+  runs with its windows. The proxy is checked before the conversion. A rollback that cannot put
+  an original back keeps its undo folder (marked `x360ui-keep.txt`, left by uninstall) and says
+  where it is; leftover undo folders without the mark are removed on uninstall. The ini is read as
+  Python reads it (UTF-8 ignoring errors, universal newlines, Unicode spaces). Backups keep their
+  times, and a second backup in the same second gets a suffix instead of failing.
+
+**Batch 5: the release** (`.github/workflows/release.yml`). A tag `v*` makes a draft release; a
+manual run makes only the artifacts.
+- **Built.** GOG's and Steam's proxies from proxy/cegui_exports.txt (LLVM 21, as CI); the
+  Windows executable (MSVC, static runtime) and the Linux one (Ubuntu 22.04's GCC, libstdc++ and
+  libgcc inside it, so it needs only glibc 2.35 or newer) with both proxies built in. The AppImage
+  (`packaging/linux/make_appimage.sh`) is made by appimagetool 1.9.1 with the type2-runtime
+  `8f39b89`, both pinned by SHA-256 (`packaging/linux/get_tools.sh`); its notices are
+  `packaging/linux/APPIMAGE_NOTICES.md`, inside the image with the installer's.
+- **Checked from the artifacts, where there is no Python or compiler** (the jobs fail if one is
+  there): the AppImage in clean `ubuntu:22.04` and `archlinux:latest` containers
+  (`packaging/check_release.sh`), the executable in a Windows Server Core container
+  (`packaging/check_release.ps1`). On `tests/release_fixture.py`'s synthetic games: GOG's in a
+  Wine prefix with the 360's bag (its save backed up) and Steam's (experimental) with PC's bag;
+  each install puts the release's own proxy in place, each uninstall leaves the folder's hashes as
+  they were; `list` in an empty home finds nothing.
+- **Published.** The two installers, the two proxies and `SHA256SUMS` of the four, in a draft
+  release that the owner reads before publishing (the README's support claims stay as played).
