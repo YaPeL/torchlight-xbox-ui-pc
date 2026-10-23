@@ -155,6 +155,18 @@ def _image_with_strings():
     return bytes(image)
 
 
+def _tree(root, skip=()):
+    """{relative path: bytes} of a folder's files."""
+    out = {}
+    for d, _, files in os.walk(root):
+        for f in files:
+            rel = os.path.relpath(os.path.join(d, f), root)
+            if not rel.startswith(skip):
+                with open(os.path.join(d, f), "rb") as fh:
+                    out[rel] = fh.read()
+    return out
+
+
 @unittest.skipUnless(BINARY and os.path.isfile(BINARY), "X360UI_INSTALLER not set")
 class ConvertCppTest(unittest.TestCase):
     """The converter in C++ against tools/convert_x360_ui.py on a synthetic 360 pak, PC pak and
@@ -349,6 +361,22 @@ class ConvertCppTest(unittest.TestCase):
             run(BINARY, "dev", "convert", pak, os.path.join(root, "cpp"), "--image", img)
             with open(os.path.join(root, "py", "x360_strings.txt"), "rb") as a, open(os.path.join(root, "cpp", "x360_strings.txt"), "rb") as b:
                 self.assertEqual(b.read(), a.read())
+
+    def test_zip_with_data_before_it_as_python(self):
+        """A zip with bytes in front (a self-extractor's shape): its records read from the archive's start."""
+        import zipfile
+        from test_tools import ConvertX360Test
+        with tempfile.TemporaryDirectory() as root:
+            plain = os.path.join(root, "plain.zip")
+            with zipfile.ZipFile(plain, "w") as z:
+                for name, data in ConvertX360Test.FILES.items():
+                    z.writestr(name, data)
+            pak = os.path.join(root, "pak.zip")
+            with open(plain, "rb") as f, open(pak, "wb") as g:
+                g.write(b"\x77" * 777 + f.read())
+            run(sys.executable, os.path.join(TOOLS, "convert_x360_ui.py"), pak, os.path.join(root, "py"))
+            run(BINARY, "dev", "convert", pak, os.path.join(root, "cpp"))
+            self.assertEqual(_tree(os.path.join(root, "cpp")), _tree(os.path.join(root, "py")))
 
     def test_zip_unicode_path_field_as_python(self):
         """An entry whose Info-ZIP Unicode Path field (0x7075, version 1, the raw name's CRC) names

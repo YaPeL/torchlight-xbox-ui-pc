@@ -167,20 +167,20 @@ struct Zip {
   // when that field's version is 1 and its CRC is the raw name's: the UTF-8 name it holds, cut at
   // a NUL. Returns true with that name, false when there is none to use; Error as Python's
   // BadZipFile for a corrupt field.
+  // Bytes of the archive at an offset from its start (miniz's offsets: data before the zip kept out).
+  bool at(uint64_t ofs, void* buf, size_t n) { return mz_zip_read_archive_data(&z, ofs, buf, n) == n; }
   bool unicode_path(uint64_t ofs, const std::string& raw, std::string& out) {
-    std::ifstream f(fs_path(path_), std::ios::binary);
     unsigned char h[46];
-    f.seekg(std::streamoff(ofs));
-    if (!f.read(reinterpret_cast<char*>(h), 46)) return false;
+    if (!at(ofs, h, 46)) return false;
     const unsigned name = h[28] | h[29] << 8, extra = h[30] | h[31] << 8;
     std::vector<unsigned char> x(extra);
-    f.seekg(std::streamoff(ofs + 46 + name));
-    if (extra && !f.read(reinterpret_cast<char*>(x.data()), std::streamsize(extra))) return false;
+    if (extra && !at(ofs + 46 + name, x.data(), extra)) return false;
     bool got = false;
     for (size_t k = 0; k + 4 <= x.size();) {
       const unsigned id = x[k] | x[k + 1] << 8, len = x[k + 2] | x[k + 3] << 8;
+      if (k + 4 + len > x.size()) throw Error("Corrupt extra field");   // zipfile's BadZipFile, for any field
       if (id == 0x7075) {
-        const size_t end = std::min(x.size(), k + 4 + len);
+        const size_t end = k + 4 + len;
         if (end - (k + 4) < 5) throw Error("Corrupt unicode path extra field (0x7075)");
         const unsigned version = x[k + 4];
         const uint32_t crc = uint32_t(x[k + 5]) | uint32_t(x[k + 6]) << 8 | uint32_t(x[k + 7]) << 16 | uint32_t(x[k + 8]) << 24;
@@ -195,23 +195,31 @@ struct Zip {
     }
     return got;
   }
+  std::vector<std::string> names_;
   explicit Zip(const std::string& path) : path_(path) {
     if (!mz_zip_reader_init_file(&z, path.c_str(), 0)) throw Error("cannot read " + path + " as a zip");
+    // zipfile reads every entry's name when it opens the zip: its refusals come here, for all.
+    try {
+      for (unsigned i = 0; i < count(); i++) name(i);
+    } catch (...) {
+      mz_zip_reader_end(&z);
+      throw;
+    }
   }
   ~Zip() { mz_zip_reader_end(&z); }
   unsigned count() { return mz_zip_reader_get_num_files(&z); }
   // The entry's name as zipfile gives it: up to a NUL; on Windows its backslashes made slashes.
   // Python reads a name without the UTF-8 flag as cp437: one with bytes above 127 then stops here.
   std::string name(unsigned i) {
+    if (i < names_.size() && !names_[i].empty()) return names_[i];
     mz_zip_archive_file_stat st0;
     std::string raw;   // the name's bytes in full (the Unicode Path field's CRC is of them)
     if (mz_zip_reader_file_stat(&z, i, &st0)) {
-      std::ifstream f(fs_path(path_), std::ios::binary);
+      const uint64_t rec = z.m_central_directory_file_ofs + st0.m_central_dir_ofs;   // from the archive's start
       unsigned char h[46];
-      f.seekg(std::streamoff(z.m_central_directory_file_ofs + st0.m_central_dir_ofs));   // the record's place in the file
-      if (f.read(reinterpret_cast<char*>(h), 46)) {
+      if (at(rec, h, 46)) {
         raw.resize(size_t(h[28] | h[29] << 8));
-        f.read(&raw[0], std::streamsize(raw.size()));
+        if (!raw.empty()) at(rec + 46, &raw[0], raw.size());
       }
     }
     std::string buf = raw.c_str();   // zipfile cuts a name at its first NUL
@@ -220,19 +228,21 @@ struct Zip {
 #endif
     mz_zip_archive_file_stat st;
     if (mz_zip_reader_file_stat(&z, i, &st)) {
+      // Python decodes the name first (strict UTF-8 with the flag, else cp437), then applies the field.
+      if (st.m_bit_flag & 0x800) from_utf8(raw.c_str());
       std::string up;
       if (unicode_path(z.m_central_directory_file_ofs + st.m_central_dir_ofs, raw, up)) {
         buf = up.c_str();
       } else if (!(st.m_bit_flag & 0x800)) {
         for (unsigned char c : buf)
           if (c >= 0x80) throw NonAscii("a zip entry's name in cp437 (no UTF-8 flag) outside ASCII");
-      } else {
-        from_utf8(buf);   // Python refuses the zip when a name flagged UTF-8 is not
       }
 #ifdef _WIN32
       std::replace(buf.begin(), buf.end(), '\\', '/');
 #endif
     }
+    if (i >= names_.size()) names_.resize(i + 1);
+    names_[i] = buf;
     return buf;
   }
   Bytes read(unsigned i) {
