@@ -244,6 +244,9 @@ static void read_config(void) {
         if (starts(line, "bag=360")) bag_360 = 1;
         if (starts(line, "pad_detect=") && length(line + 11) < 24) { extern char x360_pad_detect_test[24]; memcpy(x360_pad_detect_test, line + 11, length(line + 11) + 1); }
         if (starts(line, "hold_saves=1")) { extern int x360_save_held; x360_save_held = 1; }   /* a test: no save at all */
+        if (starts(line, "test_save_hook_fails=1")) { extern int x360_test_save_hook_fails; x360_test_save_hook_fails = 1; }
+        if (starts(line, "test_no_stop=1")) { extern int x360_test_no_stop; x360_test_no_stop = 1; }
+        if (starts(line, "test_stop_modal_fails=1")) { extern int x360_test_stop_modal_fails; x360_test_stop_modal_fails = 1; }
         if (starts(line, "save_root=") && length(line + 10) < sizeof save_root) memcpy(save_root, line + 10, length(line + 10) + 1);
         if (starts(line, "console=") && length(line + 8) < sizeof x360_console_commands)
             memcpy(x360_console_commands, line + 8, length(line + 8) + 1);

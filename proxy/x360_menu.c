@@ -6944,15 +6944,21 @@ static const unsigned char save_want[3] = {0x6a, 0xff, 0x68};
 #endif
 static unsigned char save_tramp[16];
 int x360_save_held;                    /* also x360_ui.ini hold_saves=1: a test of the hold, off by default */
+int x360_test_save_hook_fails;         /* x360_ui.ini test_save_hook_fails=1: a test, as if the pattern differed */
+static int load_items_aside(void);
 static int __fastcall save_game_hook(void *self, void *edx, int a, int b) {
     typedef int (__fastcall *orig_fn)(void *self, void *edx, int a, int b);
     if (x360_save_held) { x360_log("x360 load: a save refused (a stop is pending)\r\n"); return 0; }
+    /* From the first item kept aside until every one is placed: a save then would leave them out
+     * (the report's case: the game left during the wait for the pet). */
+    if (load_items_aside()) { x360_log("x360 load: a save refused (items are kept aside, not yet placed)\r\n"); return 0; }
     return ((orig_fn)(void *)save_tramp)(self, edx, a, b);
 }
 static int save_hook_install(void) {
     unsigned char *f = (unsigned char *)GOG_SAVE_GAME;
     unsigned long old;
     unsigned i;
+    if (x360_test_save_hook_fails) { x360_log("x360 load: test_save_hook_fails=1: the save function taken as not as expected\r\n"); return 0; }
     for (i = 0; i < sizeof save_want; i++) if (f[i] != save_want[i]) break;
     if (i < sizeof save_want || *(unsigned *)(f + sizeof save_want) != GOG_SAVE_HANDLER) {
         x360_log("x360 load: PC's save function not as expected, saves not held back\r\n");
@@ -6986,6 +6992,12 @@ typedef int (__fastcall *load_put_fn)(void *inv, void *edx, void *item, int slot
 #define LOAD_ASIDE_MAX 64
 static struct { void *item, *owner, *inv; int slot; } load_aside[LOAD_ASIDE_MAX];
 static int load_aside_count, load_moved, load_stopped;
+int x360_test_no_stop;                 /* x360_ui.ini test_no_stop=1: a test, items kept aside never decided */
+static int load_items_aside(void) {
+    int k;
+    for (k = 0; k < load_aside_count; k++) if (load_aside[k].item) return 1;
+    return 0;
+}
 /* A load the player asked for: set when a menu out of play gives way to none (Continue, Load, a
  * new game pressed), cleared when a menu shows again or play is left. The title's own loads of the
  * last character, before its menu shows or after leaving play, are not the player's: left to PC
@@ -7087,11 +7099,81 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
  * blank under Proton (QA runs 34, 35): not used. */
 static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed */
+static int stop_asked;                 /* a stop was decided */
+static unsigned stop_t0;               /* when (GetTickCount): the modal is waited for STOP_MODAL_MS */
+#define STOP_MODAL_MS 15000
+static unsigned short stop_wbody[700];
+int x360_test_stop_modal_fails;        /* x360_ui.ini test_stop_modal_fails=1: a test, PC's modal never shows */
+
+static void utf8_to_wide(const char *text, unsigned short *w, unsigned size) {
+    /* UTF-8 to UTF-16 (a character's name may have any letter). */
+    const unsigned char *u = (const unsigned char *)text;
+    unsigned o = 0;
+    while (*u && o + 1 < size) {
+        unsigned c = *u++;
+        if (c >= 0xe0 && u[0] && u[1]) { c = (c & 0x0f) << 12 | (u[0] & 0x3f) << 6 | (u[1] & 0x3f); u += 2; }
+        else if (c >= 0xc0 && u[0]) { c = (c & 0x1f) << 6 | (u[0] & 0x3f); u++; }
+        w[o++] = (unsigned short)c;
+    }
+    w[o] = 0;
+}
+
+/* PC's own modal (0x54cad0 on CGameUI, as PC's callers do: its title and text, wide strings by
+ * value), which the 360's modal shows. 1 when asked for. */
+static int open_pc_modal(const char *title, const unsigned short *wbody) {
+    unsigned short wtitle[64];
+    unsigned i;
+    int done = 0;
+    for (i = 0; i < 63 && title[i]; i++) wtitle[i] = (unsigned char)title[i];
+    wtitle[i] = 0;
+    __try {
+        typedef void (__fastcall *ctor_fn)(void *self, void *edx, const unsigned short *s);
+        typedef void (__fastcall *modal_fn)(void *gui, void *edx, msvc_wstring title, msvc_wstring body, int x);
+        msvc_wstring t, b;
+        ctor_fn ctor = *(ctor_fn *)0x00a85418;   /* msvcp90's basic_string<wchar_t>(const wchar_t *), as PC's callers */
+        if (ui) {
+            ctor(&t, 0, wtitle);
+            ctor(&b, 0, wbody);
+            ((modal_fn)0x0054cad0)(ui, 0, t, b, 0);   /* it takes the strings (by value) and destroys them */
+            done = 1;
+        }
+    } __except (1) { done = 0; x360_log("x360: exception opening PC's modal\r\n"); }
+    return done;
+}
+
+/* A Windows box, the last resort where PC's modal did not show (it may be blank under Proton, QA
+ * runs 34, 35, and behind the game's window): on top, and closed by itself after a while so a box
+ * that cannot be seen does not keep the game open forever. user32's, looked up (no import). */
+static void last_resort_box(const unsigned short *text) {
+    typedef int (__stdcall *box_timeout_fn)(void *w, const unsigned short *t, const unsigned short *c, unsigned type, unsigned short lang, unsigned ms);
+    typedef int (__stdcall *box_fn)(void *w, const unsigned short *t, const unsigned short *c, unsigned type);
+    static const unsigned short caption[] = {'T','o','r','c','h','l','i','g','h','t',0};
+    void *u = GetModuleHandleA("user32.dll");
+    box_timeout_fn bt = u ? (box_timeout_fn)GetProcAddress(u, "MessageBoxTimeoutW") : 0;
+    box_fn b = u ? (box_fn)GetProcAddress(u, "MessageBoxW") : 0;
+    const unsigned type = 0x10 | 0x1000 | 0x10000 | 0x40000;   /* MB_ICONERROR, MB_SYSTEMMODAL, MB_SETFOREGROUND, MB_TOPMOST */
+    if (bt) bt(0, text, caption, type, 0, 120000);
+    else if (b) b(0, text, caption, type);
+}
+
+/* A message for the player that does not stop the game: shown in PC's modal once in play. */
+static unsigned short notice_text[600];
+static int notice_pending;
+static void queue_notice(const char *text) {
+    utf8_to_wide(text, notice_text, sizeof notice_text / sizeof notice_text[0]);
+    notice_pending = 1;
+    x360_log("x360: a notice for the player: "); x360_log(text); x360_log("\r\n");
+}
+static void notice_tick(void) {
+    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
+    if (open_pc_modal("Xbox 360 interface", notice_text)) { notice_pending = 0; x360_log("x360: the notice shows\r\n"); }
+}
+
 static void stop_unsaved(const char *why, int count) {
     char text[700], name[96], path[600], *p = text;
-    unsigned short wtitle[64], wbody[700];
-    unsigned i;
     x360_save_held = 1;
+    stop_asked = 1;
+    stop_t0 = GetTickCount();
     name[0] = 0;
     __try { if (hero && !wstring_utf8(hero + 0x420, name, sizeof name)) name[0] = 0; } __except (1) { name[0] = 0; }   /* the shown name (GOG_UNIT_NAME), not the class's */
     copy(p, sizeof text, name[0] ? name : "This character", ": ");
@@ -7107,37 +7189,19 @@ static void stop_unsaved(const char *why, int count) {
         f = CreateFileA(path, 0x40000000, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
         if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
     }
-    for (i = 0; i < 63 && "The bag"[i]; i++) wtitle[i] = (unsigned char)"The bag"[i];
-    wtitle[i] = 0;
-    {
-        /* UTF-8 to UTF-16 (the character's name may have any letter). */
-        const unsigned char *u = (const unsigned char *)text;
-        unsigned o = 0;
-        while (*u && o < 698) {
-            unsigned c = *u++;
-            if (c >= 0xe0 && u[0] && u[1]) { c = (c & 0x0f) << 12 | (u[0] & 0x3f) << 6 | (u[1] & 0x3f); u += 2; }
-            else if (c >= 0xc0 && u[0]) { c = (c & 0x1f) << 6 | (u[0] & 0x3f); u++; }
-            wbody[o++] = (unsigned short)c;
-        }
-        wbody[o] = 0;
-    }
-    stop_state = 0;
-    __try {
-        typedef void (__fastcall *ctor_fn)(void *self, void *edx, const unsigned short *s);
-        typedef void (__fastcall *modal_fn)(void *gui, void *edx, msvc_wstring title, msvc_wstring body, int x);
-        msvc_wstring t, b;
-        ctor_fn ctor = *(ctor_fn *)0x00a85418;   /* msvcp90's basic_string<wchar_t>(const wchar_t *), as PC's callers */
-        if (ui) {
-            ctor(&t, 0, wtitle);
-            ctor(&b, 0, wbody);
-            ((modal_fn)0x0054cad0)(ui, 0, t, b, 0);   /* it takes the strings (by value) and destroys them */
-            stop_state = 1;
-        }
-    } __except (1) { stop_state = 0; x360_log("x360 load: exception opening PC's modal\r\n"); }
+    utf8_to_wide(text, stop_wbody, sizeof stop_wbody / sizeof stop_wbody[0]);
+    stop_state = x360_test_stop_modal_fails ? 0 : open_pc_modal("The bag", stop_wbody);
     if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
 }
 static void stop_tick(void) {
-    if (stop_state == 1 && pc_modal_menu_open()) { stop_state = 2; x360_log("x360 load: the stop's modal shows\r\n"); }
+    if (stop_state == 1 && pc_modal_menu_open() && !x360_test_stop_modal_fails) { stop_state = 2; x360_log("x360 load: the stop's modal shows\r\n"); }
+    /* Never playing on unsaved without knowing: PC's modal not opened, or not shown in
+     * STOP_MODAL_MS, gives the text in a Windows box, then the game ends (nothing saved). */
+    if (stop_asked && stop_state != 2 && (stop_state == 0 || GetTickCount() - stop_t0 > STOP_MODAL_MS)) {
+        x360_log("x360 load: the stop's modal did not show: a Windows box, then the game ends, unsaved\r\n");
+        last_resort_box(stop_wbody);
+        TerminateProcess(GetCurrentProcess(), 1);
+    }
     if (stop_state == 2 && !pc_modal_menu_open()) {
         x360_log("x360 load: the stop's modal closed: the game ends, unsaved\r\n");
         TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
@@ -7154,7 +7218,7 @@ static void load_aside_tick(void) {
     if (!hud_in_play) { frames_ready = 0; return; }   /* the title or a load: the units may be the title's */
     if (pet && !pet_logged) { pet_logged = 1; x360_log("x360 load: the pet is there, "); x360_log_num(frames_ready); x360_log(" frames into play\r\n"); }
     if (frames_ready < 1000000) frames_ready++;
-    if (!load_aside_count || load_stopped) return;
+    if (!load_aside_count || load_stopped || x360_test_no_stop) return;
     /* Only the items of the hero's and the pet's bags in play; others are of units gone (the
      * title's copy of the character). */
     for (k = 0; k < load_aside_count; k++) {
@@ -7203,18 +7267,31 @@ static void load_aside_tick(void) {
                  "character, make room (sell, stash or drop items), save, and change the bag.", left);
 }
 
+/* The save's hook first: items are kept aside only when a save can be held back. Without it (or
+ * without the loader's call as expected) nothing is placed again, as PC's game, and the player is
+ * told, in the log and on screen. */
+static const char reflow_off_text[] =
+    "The mod could not hook this game's save or load, so items that do not fit the bag chosen at install are not "
+    "moved to free slots: the game deletes them when this character is saved. Do not load a character saved with "
+    "the other bag; if you did, close the game with Alt+F4 instead of saving, and install again with that bag.";
 void x360_load_hook_install(void) {
     unsigned char *c = (unsigned char *)GOG_LOAD_PUT_CALL;
     unsigned long old;
-    if (c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PUT_AT_SLOT) {
-        x360_log("x360 load: PC's loader not as expected, items not placed again\r\n");
+    if (!save_hook_install()) {
+        x360_log("x360 load: no save hook: items not placed again\r\n");
+        queue_notice(reflow_off_text);
         return;
     }
-    if (!VirtualProtect(c, 5, 0x40, &old)) return;
+    x360_log("x360 load: PC's save function hooked (held back while items are aside or a stop is pending)\r\n");
+    if (c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PUT_AT_SLOT ||
+        !VirtualProtect(c, 5, 0x40, &old)) {
+        x360_log("x360 load: PC's loader not as expected, items not placed again\r\n");
+        queue_notice(reflow_off_text);
+        return;
+    }
     *(int *)(c + 1) = (int)(void *)load_put_hook - (int)(c + 5);
     VirtualProtect(c, 5, old, &old);
     x360_log("x360 load: saved items placed again when their slot does not fit\r\n");
-    if (save_hook_install()) x360_log("x360 load: PC's save function hooked (held back while a stop is pending)\r\n");
 }
 
 static void side_panels_test(int off) {
@@ -7749,6 +7826,7 @@ void x360_frame_tick(void) {
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
     __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
     __try { stop_tick(); } __except (1) { x360_log("x360 load: exception in the stop\r\n"); }
+    __try { notice_tick(); } __except (1) { x360_log("x360: exception showing a notice\r\n"); }
     __try { pc_pause_tick(); } __except (1) { x360_log("x360 menu: exception in PC's pause menu\r\n"); }
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
