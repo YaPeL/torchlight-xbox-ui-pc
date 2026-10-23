@@ -6864,7 +6864,7 @@ void x360_bag_patch(void) {
     for (i = 0; i < 2; i++)
         if (size[i][0] != 0x6a || size[i][1] != 0x15) { x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n"); return; }
     for (i = 0; i < 4; i++)
-        if (!calls_add_section(calls[i]) || calls[i][-2] != 0x6a || calls[i][-1] != (i & 1 ? 2 : 1)) {
+        if (!calls_add_section(calls[i]) || (i >= 2 && (calls[i][-2] != 0x6a || calls[i][-1] != i - 1))) {   /* the hero's: push 1, push 2 right before */
             x360_log("x360 bag: PC's code not as expected, PC's bag kept\r\n");
             return;
         }
