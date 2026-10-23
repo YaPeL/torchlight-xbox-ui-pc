@@ -2644,3 +2644,58 @@ parchment.
   CEGUI cursor, hidden, injected at the button's centre); A clicks there. The CEGUI mouse cursor is
   hidden everywhere except while PC's settings screen shows (its Apply and Cancel), kept so each
   frame as PC shows it again.
+
+**QA runs 11-21 (2026-10-23).** Steam's folders UNCHANGED after every run.
+- **PC's menus with the pad** (closed by the user: main menu, settings, character creation and
+  load, difficulty, pause, B back).
+  - PC reads Windows' cursor every frame (`0x4e7330`: GetCursorPos, ScreenToClient) and injects it
+    into CEGUI with a 1 px move for the hover (`0x4016c0`), so an injected position lasted one
+    frame (run 12). The focus puts Windows' cursor on the window (ClientToScreen, SetCursorPos):
+    PC hovers it itself.
+  - The windows: types ending Button, Editbox, Checkbox, CharacterSlot, Slider, Combobox, under the
+    sheet (out of play, PC's in-game sheet skipped: its HUD buttons stay visible while a game
+    loads), PC's pause menu's root, or the settings' own root; collected every frame, at most 64.
+  - The direction moves to the nearest window that way (distance along plus twice across; none,
+    around on the same line): the main menu is a row, the pause a column, character creation two
+    columns.
+  - A on a slider or drop-down starts changing it with left and right (A, B, up, down end it); a
+    drop-down by `setItemSelectState`, its text set and `onListSelectionAccepted` fired; placed by
+    its edit box (CEGUI's Combobox spans its list).
+  - B clicks the screen's Cancel or Back. A popup (a slot holding listed windows: the load's
+    DeleteConfirm) keeps the pad on its windows. A character slot is clicked as the focus comes
+    (PC's highlight, as the 360's moving selection).
+  - PC's settings told by being on the sheet (PC closes a menu by detaching it; "visible" stayed
+    true, run 13). In play, the play pad is off under them and the buttons they used are kept from
+    it until let go (B closing them cast the skill, run 20).
+- **The mouse**: PC's cursor is Windows', set by `0x547ca0` (thiscall; LoadCursorW of its
+  resources 0x6a-0x6d by `+0x106c`, none when `+0x60`). Hooked (7 bytes to a trampoline): none but
+  in PC's settings and character creation (told by its Destroyer: its CreatePlayer shows only with
+  a name).
+- **Crash** (run 19): the pad's A on an item read its class after `pickup` (an item in reach is
+  taken within the call): read before now.
+- **The quest dialog** (run 18): PC's cinematic menu has a DialogTextFrame too and took the search;
+  the dialog is found by its Portrait as well.
+- **The enchanter and gem goblins**: their act (`0x57a800`) calls PC's modal (`0x54cad0`, title and
+  text std::wstring by value, an int; callee pops 0x3c) and it showed seconds later. Hooked during
+  the act: the text taken for the 360's page, PC's modal not opened (run 21: taken, but the page
+  showed nothing; the page's window and text are logged now to see why).
+- **The transmuter** (run 20): with no recipe for its places the 360 plays the sound 24 and redraws,
+  no message (`sub_82379058`, its recipe search's 0 to `0x82379990`); the port does the same,
+  told by its places unchanged.
+- **Tabs** (the user's question): the 360 keeps one menu for the merchants and one for the stashes,
+  each with its filter (`sub_8236A488`); buying (`sub_8236B578`) and storing (`sub_8236BA20`) do
+  not change a tab. The port does the same.
+- **The bag** (run 21: weapons refused at "23 of 63"): PC's hero and pet (unit kind 0x57) get three
+  sections of 21 slots (`0x49f85f`: CInventory `0x4e9820` with 21, its first section from slot 19;
+  `0x49f880` and `0x49f88f`: addSection *(OT)* `0x4e9a00` for the types 1 and 2); the free slot is
+  looked for in the item's section only (`0x4e85b0`, `0x4e8410`, `0x4e84a0`). The 360 gives a unit
+  one section of 50 (`sub_822883F0`: `sub_822E0308` with 50, 0 for type 170). The "63" was PC's
+  three sections. `bag=360` (an install option, the user's) patches PC at load to one of 50.
+- **The installer** (`tools/install.py`), as the recomp's first start: the XBLA package (STFS,
+  `tools/stfs.py`; title 58410A7E, content type 000D0000) or an extracted folder; `default.xex`
+  decrypted and decompressed by `tools/xex` (the recomp's `xex_dump.py`, 360tools' LZX, a plain
+  Python AES); the bag asked with its warning, saves backed up (the game's prefix and those beside
+  it); conversion into the game's folder through `.partial` folders, the work folder in the game's
+  folder (a /tmp tmpfs's quota filled up); uninstall. Run end to end on a copy of GOG's folder: the
+  conversion is identical to the one the game uses. The update check was taken out (the user's
+  decision).
