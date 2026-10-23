@@ -805,14 +805,17 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             /* PC's click on an item (clickLeft, GOG 0x4146f8): stopPathing, setTargetItem, mode 7,
              * stopPathing, the virtual +0x1b4 with (0, level): the hero walks to it and picks it up. */
             void **vt = *(void ***)hero;
+            /* Its class read first: an item in reach is picked up within the call, and may be gone
+             * after it (QA run 19: the log's read of it crashed the game). */
+            x360_log("pad: A: pick up ");
+            x360_log(class_of(item_candidate));
+            x360_log("\r\n");
             ((void_fn)GOG_STOP_PATHING)(hero, 0);
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
             ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 7);
             ((void_fn)GOG_STOP_PATHING)(hero, 0);
             ((float_ptr_fn)vt[GOG_PICKUP_SLOT])(hero, 0, 0.0f, attack_level);
-            x360_log("pad: A: pick up ");
-            x360_log(class_of(item_candidate));
-            x360_log("\r\n");
+            item_candidate = 0;   /* chosen again next frame, if still there */
         } else if (any_candidate) {
             /* The 360 talks from where the hero stands: setTarget and the mode virtual with 9; the
              * engine's approachAI (OT) then opens the NPC's dialog if it is in reach, by its kind
