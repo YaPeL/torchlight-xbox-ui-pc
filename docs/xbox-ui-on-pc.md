@@ -2314,3 +2314,47 @@ inventory (section 13), so each run's batch is one.
   CSettingsMenuXenon (`sub_823807E8`), CLeaderboardsMenuXenon (`sub_82372480`) and one more
   (`sub_82304928`). The converter now takes that layout (`EXTRA_LAYOUTS`), and the proxy shows the
   bars while the 360's modal or NPC dialog shows, with the 360's HUD hidden. Not run yet.
+
+**Run B3 (2026-10-22, town and the mine, no console).** Steam's folders UNCHANGED. Sound works
+(the user installed the 32-bit sound libraries).
+- Confirmed as the 360's captures:
+  - the frame and pages preloaded (the first opening at once);
+  - Socket on a gem's bar; the select's Close under it and the rows' empty socket marks
+    (in-game/11);
+  - the NPC dialog: held A no longer accepts a quest, the quest reward's icon shows, the HUD is
+    hidden and the bars show (town/04);
+  - the card at the last row (in-game/18, within a few pixels);
+  - the enchanter's page (town/06);
+  - a melee skill's description: the requirement line "Right hand requires : melee Weapon", then
+    the effects (test/04);
+  - the pet to town and its return modal with the bars (in-game/16).
+- Found:
+  - **The enchanter lost the item.** After A on Enchant (a "nothing happens" result), the item was
+    no longer in slot 14 right after `GOG_ENCHANT_ACT`, PC's menu closed and the item was in no
+    bag, the pet's or the floor. PC's act seems to keep the item until its modal is answered; the
+    port closes PC's menu before that. To read in `0x57a800` before any change.
+  - **The gem goblins' and the enchanter's results** still went to the modal and closed the page:
+    PC's modal does not exist yet when the act returns (the log shows neither "taken" nor "opened
+    again"), so it has to be taken from the frame tick when it appears.
+  - **The parchment with chains** behind every modal (the goblin's, the enchanter's, the pet's in
+    the mine) is UI: it stands at the same place in all three. It is neither PC's modal window
+    (`20_Frame`, effective alpha 0 in `x360_dump_modal-3.json`) nor the 360's modal. Something
+    drawn outside the dumped sheet; to find in PC's modal code (`0x54cad0`).
+  - With a modal, the 360 hides the HUD (orbs, skill bar, minimap): the port only hides it for
+    the NPC dialog.
+  - PC's modal text has its own line breaks ("you\n15 Gold\nfrom..."); the 360's flows in two
+    lines.
+  - The bars: in place they match the 360 (solid, 10 %); the 360 slides them in and out over
+    0.2 s (`CInteractiveMenu` setOpen `0x82353068`: TopBar from y -0.1, BottomBar from 1.1, timer
+    `+32` = 0.2; per frame `0x821FFD50`), which the port does not.
+  - Items on the floor showed no label (the two dropped daggers, the town portal); the pad
+    picked them up. Whether PC (and the 360) label loose items without the mouse or Alt is to be
+    read.
+  - The pet's 3D view in the inventory frames the wolf too close and low (its head under the
+    Stats header). The mods agent: one camera (`WardrobeCamXenon`, `sub_823392E8` at
+    `0x8233C534`) for hero and pet; the per-unit placement is probably `unit+0x1B0`'s show
+    (vtable `+0x24`), unconfirmed; a 360 capture is asked for.
+  - The inventory stays open after using a town portal scroll; to compare with the 360.
+  - a melee skill shows "Mana Cost: 8" (and the rank's name line) where the 360's capture shows
+    none: PC's data or the wrong field (rank `+0x4c`); to check against PC's own description.
+  - The PC side panels at the gem goblins and the enchanter, already known.
