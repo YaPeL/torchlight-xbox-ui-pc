@@ -205,6 +205,7 @@ static void poll(void) {
             static long last_result = -1;
             long result = xinput_get_state ? (long)xinput_get_state(0, &st) : -2;
             if (result != last_result) {
+                if (result == 0) { void x360_swap_recheck(void); x360_swap_recheck(); }   /* a pad connected: which one */
                 /* 0: pad 0 connected; 1167 (ERROR_DEVICE_NOT_CONNECTED): none. */
                 x360_log("pad: XInputGetState(0) = ");
                 x360_log_num(result);
@@ -217,6 +218,11 @@ static void poll(void) {
         ly = st.ly * 1000 / 32767;
         ry = st.ry * 1000 / 32767;
         buttons = st.buttons | (st.lt > 64 ? BUTTON_LT : 0) | (st.rt > 64 ? BUTTON_RT : 0);
+        {
+            /* Nintendo's layout (proxy/setup.c): A and B swapped, X and Y kept. */
+            extern int x360_swap_active;
+            if (x360_swap_active && ((buttons & 0x1000) != 0) != ((buttons & 0x2000) != 0)) buttons ^= 0x3000;
+        }
     }
     {
         /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */

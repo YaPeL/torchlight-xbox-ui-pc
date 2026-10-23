@@ -24,6 +24,7 @@ IMPORT BOOL __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD
 IMPORT BOOL __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *overlapped);
 IMPORT BOOL __stdcall CloseHandle(HANDLE file);
 IMPORT DWORD __stdcall GetFileAttributesA(const char *name);
+IMPORT DWORD __stdcall GetModuleFileNameA(HMODULE module, char *out, DWORD size);
 IMPORT HANDLE __stdcall CreateThread(void *security, DWORD stack, DWORD (__stdcall *start)(void *), void *arg,
                                      DWORD flags, DWORD *id);
 
@@ -66,7 +67,12 @@ static const char *style_of_path(const char *p) {
     return 0;
 }
 
-/* The connected pad's style: the first Sony or Nintendo HID device, else "xbox". */
+/* Steam Input's virtual pad (Valve's 28DE): seen beside the physical one, if Proton shows it. */
+static int steam_virtual;
+int x360_pad_steam_input(void) { return steam_virtual; }
+
+/* The connected pad's style: the first Sony or Nintendo HID device, else "xbox". Steam Input's
+ * virtual pad is noted (x360_pad_steam_input) and the search goes on for the physical one. */
 const char *x360_pad_style(void) {
     static const GUID_ hid = {0x4D1E55B2, 0xF16F, 0x11CF, {0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
     HMODULE m = LoadLibraryA("setupapi.dll");
@@ -77,6 +83,7 @@ const char *x360_pad_style(void) {
     const char *style = "xbox";
     void *set;
     DWORD i;
+    steam_virtual = 0;
     if (!get_devs || !enum_ifaces || !detail_of || !destroy) return style;
     set = get_devs(&hid, 0, 0, 0x2 | 0x10);   /* DIGCF_PRESENT | DIGCF_DEVICEINTERFACE */
     if (!set || set == (void *)(long)-1) return style;
@@ -89,10 +96,72 @@ const char *x360_pad_style(void) {
         detail.size = 5;   /* SP_DEVICE_INTERFACE_DETAIL_DATA_A's cbSize on x86 */
         if (!detail_of(set, &data, &detail, sizeof detail, 0, 0)) continue;
         detail.path[sizeof detail.path - 1] = 0;
-        if ((s = style_of_path(detail.path)) != 0) { style = s; break; }
+        if (has(detail.path, "vid_28de")) { steam_virtual = 1; continue; }
+        if ((s = style_of_path(detail.path)) != 0 && style[0] == 'x') style = s;
     }
     destroy(set);
     return style;
+}
+
+/* ---- Nintendo's layout: A and B swapped (the owner, after the recomp's swap_confirm_cancel) ----
+ * The setting, x360_settings.ini's swap_confirm_cancel=1 beside the DLL (the mod's own file, written
+ * by the tick in PC's settings screen), acts only while the active pad is Nintendo's and not
+ * behind Steam Input (whose own Nintendo layout option swaps already: never twice). The prompts'
+ * folder is chosen at start (x360ui-nintendo-swapped with it on); the swap itself follows the pad
+ * (x360_swap_recheck at each pad connection). */
+int x360_swap_active;
+static int swap_setting = -1;
+static void settings_path(char *out, unsigned size) {
+    extern void *x360_self_module(void);
+    DWORD n = GetModuleFileNameA((HMODULE)x360_self_module(), out, size - 24);
+    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
+    {
+        static const char name[] = "x360_settings.ini";
+        unsigned i;
+        for (i = 0; i < sizeof name; i++) out[n + i] = name[i];
+    }
+}
+int x360_swap_setting(void) {
+    if (swap_setting < 0) {
+        char path[600], text[256];
+        DWORD got = 0;
+        HANDLE f;
+        settings_path(path, sizeof path);
+        swap_setting = 0;
+        f = CreateFileA(path, 0x80000000UL, 1, 0, 3, 0, 0);
+        if (f != (HANDLE)(long)-1) {
+            ReadFile(f, text, sizeof text - 1, &got, 0);
+            CloseHandle(f);
+            text[got] = 0;
+            swap_setting = has(text, "swap_confirm_cancel=1");
+        }
+    }
+    return swap_setting;
+}
+void x360_swap_setting_write(int on) {
+    char path[600];
+    static const char yes[] = "swap_confirm_cancel=1\r\n", no[] = "swap_confirm_cancel=0\r\n";
+    DWORD done;
+    HANDLE f;
+    settings_path(path, sizeof path);
+    f = CreateFileA(path, 0x40000000UL, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
+    if (f == (HANDLE)(long)-1) { x360_log("x360 prompts: x360_settings.ini not written\r\n"); return; }
+    WriteFile(f, on ? yes : no, sizeof yes - 1, &done, 0);
+    CloseHandle(f);
+    swap_setting = on;
+    x360_log(on ? "x360 prompts: Nintendo's layout on (from the next start)\r\n" : "x360 prompts: Nintendo's layout off (from the next start)\r\n");
+}
+/* Whether the pad now is Nintendo's, physical (no Steam Input in front). */
+int x360_pad_is_nintendo(void) {
+    const char *s = x360_pad_style();
+    return s[0] == 'n' && !steam_virtual;
+}
+void x360_swap_recheck(void) {
+    int was = x360_swap_active;
+    x360_swap_active = x360_swap_setting() && x360_pad_is_nintendo();
+    if (x360_swap_active != was)
+        x360_log(x360_swap_active ? "x360 prompts: A and B swapped (a Nintendo pad)\r\n"
+                                  : "x360 prompts: A and B as they are (not a Nintendo pad, or Steam Input)\r\n");
 }
 
 /* out_dir becomes out_dir-STYLE when that folder exists: setting is the ini's prompts= value
@@ -106,7 +175,13 @@ void x360_prompt_folder(char *out_dir, unsigned size, const char *setting) {
         style = has(connected, "playstation") ? connected : "playstation5";   /* the family: its model */
         k = len(style);
     }
-    x360_log("x360 prompts: style "); x360_log(style); x360_log("\r\n");
+    x360_log("x360 prompts: style "); x360_log(style); x360_log(steam_virtual ? " (Steam Input's pad seen)\r\n" : "\r\n");
+    x360_swap_recheck();
+    if (has(style, "nintendo") && x360_swap_setting() && !steam_virtual) {
+        static char swapped[] = "nintendo-swapped";   /* the icons of the swapped layout */
+        style = swapped;
+        k = len(style);
+    }
     if (has(style, "xbox") || !n || n + 1 + k >= sizeof candidate || n + 1 + k >= size) return;
     for (i = 0; i < n; i++) candidate[i] = out_dir[i];
     candidate[n] = '-';
