@@ -15,6 +15,7 @@
 0x00414608 0x00414448 verified   comment window, local
 0x004146c2 0x00414502 verified   comment window, local
 0x004146f8 0x00414538 verified   comment window, local
+0x00417380 0x00417110 verified   code    body +0x58,+0x78,+0x88, callers 0x402559, 0x419d62, 0x41b919, 0x41ba70 (port_addresses)
 0x0041b56b 0x0041b171 verified   comment window, local
 0x00480760 0x0047eaf0 verified   code    window, body, callers x6
 0x004818f0 0x0047fbf0 verified   code    window, body, callers x6
@@ -269,8 +270,10 @@
 0x005fa360 0x005f4360 verified   code    window, body, callers-global, callers x5
 0x005fe190 0x005fb380 verified   code    window, callers x5
 0x005ff150 0x005fc2f0 verified   code    body, callers x4, callers-global
+0x0060a15a 0x00609df0 checked    code    by hand: the handler pushed by the save function 0x417110 (its push imm32 after mov eax, fs:[0]; push -1), read in Steam's disassembly
 0x0070ced2 0x00707622 checked    code    by hand: the handler pushed by the modal function 0x5482f0 (verified), a frame handler stub as GOG is
 0x00a85390 0x00a5c398 verified   code    import, refs x5
+0x00a85418 0x00a5c420 verified   code    import msvcp90 basic_string<wchar_t>(const wchar_t *)
 0x00a85428 0x00a5c430 verified   code    import, refs x8
 0x00a85f64 0x00a5cf78 verified   code    import, refs x3
 0x00a85fc4 0x00a5cff8 verified   code    import, refs x7

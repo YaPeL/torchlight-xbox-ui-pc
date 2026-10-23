@@ -37,7 +37,11 @@ static HWND active_window(void) {
     return cached;
 }
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
-__declspec(dllimport) int __stdcall ShowWindow(HWND w, int how);
+__declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void *module, char *out, unsigned long size);
+__declspec(dllimport) void *__stdcall CreateFileA(const char *name, unsigned long access, unsigned long share, void *security,
+                                                  unsigned long disposition, unsigned long flags, void *templ);
+__declspec(dllimport) int __stdcall WriteFile(void *file, const void *data, unsigned long size, unsigned long *written, void *overlapped);
+__declspec(dllimport) int __stdcall CloseHandle(void *file);
 __declspec(dllimport) int __stdcall ClientToScreen(HWND w, long *point);
 __declspec(dllimport) int __stdcall SetCursorPos(int x, int y);
 __declspec(dllimport) void *__stdcall SetCursor(void *cursor);
@@ -6895,6 +6899,51 @@ void x360_bag_patch(void) {
     x360_log("x360 bag: the 360's bag (one section of 50), the hero's and the pet's\r\n");
 }
 
+/* ---- the save held back while a stop is pending (docs 21) ----
+ * Every save of the character goes through 0x417380 (thiscall, 2 arguments, ret 8: its 9 callers
+ * are the game's; it writes backup.tmp with "wb" at 0x41762d, renames it into the .svt at
+ * 0x417fad and writes sharedstash.bin through 0x52e3f0, whose one caller is 0x4173ce, in it). The
+ * other files opened "wb" or "w" are the settings' and logs'. While x360_save_held is set the
+ * function returns at once: nothing of the character or the shared stash is written. Its first
+ * instructions (GOG's push -1; push the handler, 7 bytes; Steam's mov eax, fs:[0]; push -1, 8)
+ * run from a copy, as for the modal function. */
+#define GOG_SAVE_GAME 0x00417380
+#define GOG_SAVE_HANDLER 0x0060a15a    /* the save function's exception handler (its push imm32) */
+#ifdef X360_TARGET_STEAM
+static const unsigned char save_want[9] = {0x64, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x6a, 0xff, 0x68};
+#define SAVE_MOVED 8
+#else
+static const unsigned char save_want[3] = {0x6a, 0xff, 0x68};
+#define SAVE_MOVED 7
+#endif
+static unsigned char save_tramp[16];
+static int x360_save_held;
+static int __fastcall save_game_hook(void *self, void *edx, int a, int b) {
+    typedef int (__fastcall *orig_fn)(void *self, void *edx, int a, int b);
+    if (x360_save_held) { x360_log("x360 load: a save refused (a stop is pending)\r\n"); return 0; }
+    return ((orig_fn)(void *)save_tramp)(self, edx, a, b);
+}
+static int save_hook_install(void) {
+    unsigned char *f = (unsigned char *)GOG_SAVE_GAME;
+    unsigned long old;
+    unsigned i;
+    for (i = 0; i < sizeof save_want; i++) if (f[i] != save_want[i]) break;
+    if (i < sizeof save_want || *(unsigned *)(f + sizeof save_want) != GOG_SAVE_HANDLER) {
+        x360_log("x360 load: PC's save function not as expected, saves not held back\r\n");
+        return 0;
+    }
+    for (i = 0; i < SAVE_MOVED; i++) save_tramp[i] = f[i];
+    save_tramp[SAVE_MOVED] = 0xe9;
+    *(int *)(save_tramp + SAVE_MOVED + 1) = (int)(f + SAVE_MOVED) - (int)(save_tramp + SAVE_MOVED + 5);
+    if (!VirtualProtect(save_tramp, sizeof save_tramp, 0x40, &old)) return 0;
+    if (!VirtualProtect(f, SAVE_MOVED, 0x40, &old)) return 0;
+    f[0] = 0xe9;
+    *(int *)(f + 1) = (int)(void *)save_game_hook - (int)(f + 5);
+    for (i = 5; i < SAVE_MOVED; i++) f[i] = 0x90;
+    VirtualProtect(f, SAVE_MOVED, old, &old);
+    return 1;
+}
+
 /* ---- items placed again at load (the owner's plan, docs 21) ----
  * PC's loader of a unit's saved data puts each saved item at its saved slot (0x4e9480 at
  * 0x4acd4b) and destroys it when that fails: a slot the bag lacks for its type (69 to 81 with the
@@ -6998,7 +7047,6 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
     return 0;
 }
 
-__declspec(dllimport) int __stdcall MessageBoxA(void *window, const char *text, const char *title, unsigned type);
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
 __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
 
@@ -7007,15 +7055,59 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * the world is ready without it (the 360's HUD up, then 60 frames, counted, not timed); then, with
  * no pet, the game stops with a message that says so. Nothing is done out of play (the title loads
  * the last character as well, QA run 29: its items were kept aside and placed twice). */
+/* The stop: saves held back at once; the text into x360_stop.txt beside the game and the log; PC's
+ * own modal opened with it (0x54cad0 on CGameUI, as PC's callers do: its title and text, wide
+ * strings by value), which the 360's modal shows (modal_tick) and which takes the pad, keyboard
+ * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
+ * blank under Proton (QA runs 34, 35): not used. */
+static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed */
 static void stop_unsaved(const char *why, int count) {
-    char text[700], *p = text;
+    char text[700], name[96], path[600], *p = text;
+    unsigned short wtitle[64], wbody[700];
+    unsigned i;
+    x360_save_held = 1;
+    name[0] = 0;
+    __try { if (hero) unit_name(hero, name, sizeof name); } __except (1) { name[0] = 0; }
+    copy(p, sizeof text, name[0] ? name : "This character", ": ");
+    p += length(p);
     if (count >= 0) p = put_int(p, count);
-    copy(p, sizeof text - (unsigned)(p - text), why, "\n\nPress Enter or click OK to close the game.");
-    /* The game's window minimized first: over it, full screen, the box showed blank (QA run 34). */
-    if (active_window()) ShowWindow(active_window(), 6);   /* SW_MINIMIZE */
-    MessageBoxA(0, text, "Torchlight: the Xbox 360 interface", 0x40030);   /* MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST */
-    TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+    copy(p, sizeof text - (unsigned)(p - text), why, 0);
+    x360_log("x360 load: the stop's text: "); x360_log(text); x360_log("\r\n");
+    {
+        void *f;
+        unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), done;
+        while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
+        copy(path + n, sizeof path - n, "x360_stop.txt", 0);
+        f = CreateFileA(path, 0x40000000, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
+        if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
+    }
+    for (i = 0; i < 63 && "The bag"[i]; i++) wtitle[i] = (unsigned char)"The bag"[i];
+    wtitle[i] = 0;
+    for (i = 0; i < 699 && text[i]; i++) wbody[i] = (unsigned char)text[i];   /* ASCII: the name is the save's */
+    wbody[i] = 0;
+    stop_state = 0;
+    __try {
+        typedef void (__fastcall *ctor_fn)(void *self, void *edx, const unsigned short *s);
+        typedef void (__fastcall *modal_fn)(void *gui, void *edx, msvc_wstring title, msvc_wstring body, int x);
+        msvc_wstring t, b;
+        ctor_fn ctor = *(ctor_fn *)0x00a85418;   /* msvcp90's basic_string<wchar_t>(const wchar_t *), as PC's callers */
+        if (ui) {
+            ctor(&t, 0, wtitle);
+            ctor(&b, 0, wbody);
+            ((modal_fn)0x0054cad0)(ui, 0, t, b, 0);   /* it takes the strings (by value) and destroys them */
+            stop_state = 1;
+        }
+    } __except (1) { stop_state = 0; x360_log("x360 load: exception opening PC's modal\r\n"); }
+    if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
 }
+static void stop_tick(void) {
+    if (stop_state == 1 && pc_modal_menu_open()) { stop_state = 2; x360_log("x360 load: the stop's modal shows\r\n"); }
+    if (stop_state == 2 && !pc_modal_menu_open()) {
+        x360_log("x360 load: the stop's modal closed: the game ends, unsaved\r\n");
+        TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+    }
+}
+
 static void load_aside_tick(void) {
     static int frames_ready, pet_logged;
     int k, left = 0, need_pet = 0;
@@ -7042,9 +7134,10 @@ static void load_aside_tick(void) {
         if (frames_ready < 60) return;
         load_stopped = 1;
         x360_log("x360 load: the world is ready and the hero has no pet: the game stops, unsaved\r\n");
-        stop_unsaved(" item(s) of this character do not fit in its bag, and its pet, where they would go, did not "
-                     "appear.\n\nThe game stops now, without saving: nothing is lost. Install again with the other bag, "
-                     "load this character, make room (sell, stash or drop items), save, then change the bag.", load_aside_count);
+        stop_unsaved(" item(s) do not fit in the bag chosen at install, and the pet, where they would go, is not "
+                     "there. Nothing is saved, nothing is lost: press A to close the game. Then install again with the "
+                     "other bag, load this character, make room (sell, stash or drop items), save, and change the bag.",
+                     load_aside_count);
         return;
     }
     for (k = 0; k < load_aside_count; k++) {
@@ -7069,9 +7162,9 @@ static void load_aside_tick(void) {
         x360_log_num(load_aside[k].slot); x360_log("\r\n");
     }
     x360_log("x360 load: "); x360_log_num(left); x360_log(" item(s) fit nowhere: the game stops, unsaved\r\n");
-    stop_unsaved(" item(s) of this character do not fit in its bag or its pet's with the bag chosen at install.\n\n"
-                 "The game stops now, without saving: nothing is lost. Install again with the other bag, load "
-                 "this character, make room (sell, stash or drop items), save, then change the bag.", left);
+    stop_unsaved(" item(s) do not fit in the bag or the pet's with the bag chosen at install. Nothing is saved, "
+                 "nothing is lost: press A to close the game. Then install again with the other bag, load this "
+                 "character, make room (sell, stash or drop items), save, and change the bag.", left);
 }
 
 void x360_load_hook_install(void) {
@@ -7085,6 +7178,7 @@ void x360_load_hook_install(void) {
     *(int *)(c + 1) = (int)(void *)load_put_hook - (int)(c + 5);
     VirtualProtect(c, 5, old, &old);
     x360_log("x360 load: saved items placed again when their slot does not fit\r\n");
+    if (save_hook_install()) x360_log("x360 load: PC's save function hooked (held back while a stop is pending)\r\n");
 }
 
 static void side_panels_test(int off) {
@@ -7556,6 +7650,7 @@ void x360_frame_tick(void) {
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
     __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
+    __try { stop_tick(); } __except (1) { x360_log("x360 load: exception in the stop\r\n"); }
     __try { pc_pause_tick(); } __except (1) { x360_log("x360 menu: exception in PC's pause menu\r\n"); }
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
