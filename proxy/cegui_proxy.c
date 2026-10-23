@@ -270,6 +270,7 @@ static void read_config(void) {
         line = end;
         while (*line == '\r' || *line == '\n') line++;
     }
+    if (test_names[0]) { put("test options on: "); put(test_names); put("\r\n"); }
     if (test_names[0] && mode_scheme) x360_test_options_notice(test_names);
     put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"");
     put(trace ? ", trace\r\n" : "\r\n");

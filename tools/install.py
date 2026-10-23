@@ -376,7 +376,8 @@ def read_ini(game):
 
 
 # The proxy's test options (x360_ui.ini, for runs on copies): never kept by an install; the proxy
-# also warns on screen when it finds one.
+# also warns on screen when it finds one. The same list in installer/src/install.cpp (ini_text) and
+# proxy/cegui_proxy.c (read_config).
 TEST_OPTIONS = ("save_root", "hold_saves", "pad_detect", "console")
 
 

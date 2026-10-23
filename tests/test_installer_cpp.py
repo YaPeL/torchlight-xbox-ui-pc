@@ -597,8 +597,8 @@ class InstallCppTest(unittest.TestCase):
     def test_test_options_not_kept(self):
         """The proxy's test options (save_root moves the saves where no backup looks, hold_saves holds
         every save): dropped by an install in both installers, the user's other lines kept."""
-        text = (b"save_root=Z:\\somewhere\r\nhold_saves=1\r\ntest_no_stop=1\r\npad_detect=057e\r\n"
-                b"console=MONEY 1\r\nfont_diff=1\r\n")
+        text = (b"save_root=Z:\\somewhere\r\n hold_saves=1\r\ntest_no_stop =1\r\npad_detect=057e\r\n"
+                b"console=MONEY 1\r\ntest_bare\r\nfont_diff=1\r\ndialog_markup=1\r\n")
         for who in ("py", "cpp"):
             with open(os.path.join(self.games[who][0], "x360_ui.ini"), "wb") as f:
                 f.write(text)
@@ -606,9 +606,9 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             with open(os.path.join(self.games[who][0], "x360_ui.ini"), "rb") as f:
                 ini = f.read()
-            for key in (b"save_root", b"hold_saves", b"test_no_stop", b"pad_detect", b"console"):
+            for key in (b"save_root", b"hold_saves", b"test_no_stop", b"pad_detect", b"console", b"test_bare"):
                 self.assertNotIn(key, ini, who)
-            self.assertIn(b"font_diff=1\r\n", ini, who)
+            self.assertTrue(ini.endswith(b"font_diff=1\r\ndialog_markup=1\r\n"), who)
         self.same_install()
 
     def test_an_ini_read_as_python(self):
