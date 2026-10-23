@@ -37,6 +37,8 @@ static HWND active_window(void) {
     return cached;
 }
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
+__declspec(dllimport) int __stdcall ClientToScreen(HWND w, long *point);
+__declspec(dllimport) int __stdcall SetCursorPos(int x, int y);
 __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
 __declspec(dllimport) short __stdcall GetAsyncKeyState(int key);
 __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *name);
@@ -6730,6 +6732,18 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
 static int pc_pause_open(void);
 static unsigned char *pc_pause_menu(void);
 int x360_pad_ly(void);
+/* PC reads Windows' cursor each frame (0x4e7330: GetCursorPos, ScreenToClient on its window) and
+ * injects it into CEGUI, then a 1 px move (0x4016c0) for the hover: a position injected alone lasts
+ * one frame (QA run 12). So Windows' cursor is put on (x, y), the window's client pixels, and PC
+ * hovers the button there itself; CEGUI is told the same at once for a click in this frame. */
+static void nav_point(float x, float y) {
+    void x360_inject_left(int down, float x, float y);
+    HWND w = GetActiveWindow();
+    long pt[2];
+    pt[0] = (long)x; pt[1] = (long)y;
+    if (w && ClientToScreen(w, pt)) SetCursorPos((int)pt[0], (int)pt[1]);
+    x360_inject_left(-1, x, y);
+}
 static void pc_menus_nav_tick(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -6790,9 +6804,18 @@ static void pc_menus_nav_tick(void) {
             }
         nav_focus = 0;
         for (i = 0; i < nav_count; i++) if (nav_list[i] == was) nav_focus = i;
+        if (nav_count != n_before) {
+            typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
+            static str_fn gn;
+            if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+            x360_log("x360 menu: PC's buttons for the pad "); x360_log_num(nav_count);
+            x360_log(in_play ? " (pause):" : ":");
+            for (i = 0; i < nav_count && gn; i++) { x360_log(" "); x360_log(c_str(gn(nav_list[i], 0), 0)); }
+            x360_log("\r\n");
+        }
         if (nav_count && (!was || nav_count != n_before)) {
             if (!was) nav_focus = 0;
-            x360_inject_left(-1, (r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+            nav_point((r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
         }
     } else for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
     if (!nav_count) return;
@@ -6807,10 +6830,11 @@ static void pc_menus_nav_tick(void) {
     }
     if (dir) {
         nav_focus = (nav_focus + (dir > 0 ? 1 : nav_count - 1)) % nav_count;
-        x360_inject_left(-1, (r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+        nav_point( (r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
     }
     if (pressed & 0x1000) {
         float x = (r[nav_focus].left + r[nav_focus].right) * 0.5f, y = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
+        nav_point(x, y);
         x360_inject_left(1, x, y);
         x360_inject_left(0, x, y);
         last_collect = 0;   /* the next screen's buttons */
