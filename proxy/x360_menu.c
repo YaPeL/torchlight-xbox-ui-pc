@@ -6954,17 +6954,34 @@ __declspec(dllimport) int __stdcall MessageBoxA(void *window, const char *text, 
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
 __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
 
-/* At the first frame in play: the items kept aside into the other one's bag; any left stops the
- * game, unsaved. */
+/* In play: the items kept aside into the other one's bag; any left stops the game, unsaved. The
+ * pet is waited for without a clock (a slow machine must not stop the game): until it exists, or
+ * the world is ready without it (the 360's HUD up, then 60 frames, counted, not timed); then, with
+ * no pet, the game stops with a message that says so. */
+static void stop_unsaved(const char *why, int count) {
+    char text[700], *p = text;
+    if (count >= 0) p = put_int(p, count);
+    copy(p, sizeof text - (unsigned)(p - text), why, 0);
+    MessageBoxA(0, text, "Torchlight: the Xbox 360 interface", 0x40030);   /* MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST */
+    TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+}
 static void load_aside_tick(void) {
-    int k, left = 0;
-    char text[600], *p;
-    static unsigned since;
+    static int frames_ready, pet_logged;
+    int k, left = 0, need_pet = 0;
     unsigned char *pet = the_pet();
+    if (pet && !pet_logged) { pet_logged = 1; x360_log("x360 load: the pet is there, "); x360_log_num(frames_ready); x360_log(" frames after the HUD\r\n"); }
+    if (hud_root && frames_ready < 1000000) frames_ready++;
     if (!load_aside_count || load_stopped) return;
-    /* The pet may come a little after the hero: waited for up to 10 s. */
-    if (!since) since = GetTickCount();
-    if (!pet && GetTickCount() - since < 10000) return;
+    for (k = 0; k < load_aside_count; k++) if (load_aside[k].item && !isa(load_aside[k].owner, 87)) need_pet = 1;
+    if (need_pet && !pet) {
+        if (frames_ready < 60) return;
+        load_stopped = 1;
+        x360_log("x360 load: the world is ready and the hero has no pet: the game stops, unsaved\r\n");
+        stop_unsaved(" item(s) of this character do not fit in its bag, and its pet, where they would go, did not "
+                     "appear.\n\nThe game stops now, without saving: nothing is lost. Install again with the other bag, "
+                     "load this character, make room (sell, stash or drop items), save, then change the bag.", load_aside_count);
+        return;
+    }
     for (k = 0; k < load_aside_count; k++) {
         void *item = load_aside[k].item;
         unsigned char *other = isa(load_aside[k].owner, 87) ? hero : pet;
@@ -6981,14 +6998,9 @@ static void load_aside_tick(void) {
     if (!left) { load_aside_count = 0; return; }
     load_stopped = 1;
     x360_log("x360 load: "); x360_log_num(left); x360_log(" item(s) fit nowhere: the game stops, unsaved\r\n");
-    p = text;
-    p = put_int(p, left);
-    copy(p, sizeof text - (unsigned)(p - text),
-         " item(s) of this character do not fit in its bag or its pet's with the bag chosen at install.\n\n"
-         "The game stops now, without saving: nothing is lost. Install again with the other bag, load "
-         "this character, make room (sell, stash or drop items), save, then change the bag.", 0);
-    MessageBoxA(0, text, "Torchlight: the Xbox 360 interface", 0x40030);   /* MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST */
-    TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+    stop_unsaved(" item(s) of this character do not fit in its bag or its pet's with the bag chosen at install.\n\n"
+                 "The game stops now, without saving: nothing is lost. Install again with the other bag, load "
+                 "this character, make room (sell, stash or drop items), save, then change the bag.", left);
 }
 
 void x360_load_hook_install(void) {

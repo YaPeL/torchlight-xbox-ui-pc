@@ -103,7 +103,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - **GOG and the Epic Games Store only.** Steam sells an older build (17685): every address the
   mod uses is already found in it, and its test is still to come.
 - **The bag.** With PC's bag (the default) the equipment section holds 21 items; the 360's bag
-  is an install option (above), with its effect on saves.
+  is an install option (above). Changing the bag of a save that has more items than the new bag
+  holds: the game says so and stops without saving (nothing is lost); go back to the other bag and
+  make room. A check in the installer, before changing the bag, is still to come.
 - Windows-only binaries; on Linux the game runs under Proton or Wine.
 
 ## Tools
