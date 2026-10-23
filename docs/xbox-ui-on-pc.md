@@ -3134,3 +3134,12 @@ release is made of, makes only the artifacts.
 - **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
   printed in the log, to compare with a local build), the actions by major version and the
   container images by tag.
+
+**The 360's bag remembered (the GPU agent's review, item 4; 2026-10-23).** Uninstall's switch to
+PC's bag wrote `bag=pc` alone, so the next uninstall neither warned nor backed up, though a
+character not yet loaded and saved with PC's bag still had its items where the 360's put them.
+Both installers now write `bag_360_used=1` with the 360's bag and keep it through later installs
+and switches; with it and PC's bag, uninstall asks whether each character was loaded and saved
+with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then backs the saves up
+before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
+same ini, refusal, backup and folder).

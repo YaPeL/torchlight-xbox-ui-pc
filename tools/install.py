@@ -66,6 +66,9 @@ NO_MOD_WARNING = (
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
     "PC's bag, then load and save each character.")
+NO_MOD_WARNING_AFTER = (
+    "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
+    "them, and without the mod the original game deletes those that do not fit PC's bag.")
 BAG_WARNING = (
     "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21 (any "
     "item, spells, fish).\n\n"
@@ -373,8 +376,12 @@ def read_ini(game):
 def write_ini(game, out, bag="pc"):
     """x360_ui.ini with the keys the installer owns set; other lines kept."""
     path = os.path.join(game, "x360_ui.ini")
+    old = read_ini(game)
+    # Remembered once the 360's bag was used, until uninstall: a character not yet loaded and saved
+    # with PC's bag would lose what does not fit it.
+    used = bag == "360" or old.get("bag") == "360" or old.get("bag_360_used") == "1"
     owned = {"mode": "scheme", "out": wine_path(out), "pad": "1", "pad_mode": "direct", "prompts": "auto",
-             "bag": bag, "update_check": None}
+             "bag": bag, "bag_360_used": "1" if used else None, "update_check": None}
     lines = []
     if os.path.isfile(path):
         with open(path, encoding="utf-8", errors="ignore") as f:
@@ -520,6 +527,16 @@ def do_uninstall(args):
                 "Uninstall anyway? The original game will delete the items that do not fit PC's bag. "
                 "Your saves are backed up first.", default=False):
             print("not uninstalled")
+            return 1
+        backups = back_up_saves(save_folders(game))
+        for b in backups:
+            print(f"saves backed up: {b}")
+    elif read_ini(game).get("bag_360_used") == "1":
+        if not args.get("anyway") and not ask.yes_no(
+                "PC's bag is installed, and the 360's was used before. " + NO_MOD_WARNING_AFTER +
+                "\n\nHave you loaded and saved each character with PC's bag? Your saves are backed up first.",
+                default=False):
+            print("not uninstalled (load and save each character with PC's bag first)")
             return 1
         backups = back_up_saves(save_folders(game))
         for b in backups:
