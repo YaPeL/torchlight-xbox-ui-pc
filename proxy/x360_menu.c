@@ -6908,7 +6908,7 @@ void x360_bag_patch(void) {
 #define GOG_LOAD_PUT_CALL 0x004acd4b   /* in the loader's loop (0x4acc3d), the call of 0x4e9480 */
 typedef int (__fastcall *load_put_fn)(void *inv, void *edx, void *item, int slot, int flag);
 #define LOAD_ASIDE_MAX 64
-static struct { void *item, *owner; int slot; } load_aside[LOAD_ASIDE_MAX];
+static struct { void *item, *owner, *inv; int slot; } load_aside[LOAD_ASIDE_MAX];
 static int load_aside_count, load_moved, load_stopped;
 
 static void log_item_name(void *item) {
@@ -6932,6 +6932,15 @@ static int empty_slot_of_section(unsigned char *inv, void *item) {
     return -1;
 }
 
+/* An item kept aside whose unit is gone: destroyed, as PC's loader would have (its vtable's first
+ * entry with 1, 0x4acd5b). */
+static void destroy_aside(int k) {
+    typedef void (__fastcall *dtor_fn)(void *self, void *edx, int flags);
+    void *item = load_aside[k].item;
+    load_aside[k].item = 0;
+    if (item) __try { ((dtor_fn)(*(void ***)item)[0])(item, 0, 1); } __except (1) { x360_log("x360 load: exception dropping an item\r\n"); }
+}
+
 static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, int flag) {
     load_put_fn put = (load_put_fn)GOG_PUT_AT_SLOT;
     unsigned char *owner;
@@ -6950,9 +6959,24 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
         x360_log(" from slot "); x360_log_num(slot); x360_log(" to "); x360_log_num(to); x360_log("\r\n");
         return r;
     }
+    {
+        /* The same bag and slot again: another load of the same save (the title loads the last
+         * character too, QA run 29): the earlier item kept aside is that unit's, gone with it. */
+        int k;
+        for (k = 0; k < load_aside_count; k++)
+            if (load_aside[k].item && load_aside[k].inv == inv && load_aside[k].slot == slot) {
+                destroy_aside(k);
+                load_aside[k].item = item;
+                load_aside[k].owner = owner;
+                x360_log("x360 load: "); log_item_name(item); x360_log(" from slot "); x360_log_num(slot);
+                x360_log(": kept aside again (another load), the earlier copy dropped\r\n");
+                return (int)item;
+            }
+    }
     if (load_aside_count < LOAD_ASIDE_MAX) {
         load_aside[load_aside_count].item = item;
         load_aside[load_aside_count].owner = owner;
+        load_aside[load_aside_count].inv = inv;
         load_aside[load_aside_count].slot = slot;
         load_aside_count++;
         x360_log("x360 load: "); log_item_name(item); x360_log(isa(owner, 87) ? " (the pet's)" : " (the hero's)");
@@ -6970,7 +6994,8 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
 /* In play: the items kept aside into the other one's bag; any left stops the game, unsaved. The
  * pet is waited for without a clock (a slow machine must not stop the game): until it exists, or
  * the world is ready without it (the 360's HUD up, then 60 frames, counted, not timed); then, with
- * no pet, the game stops with a message that says so. */
+ * no pet, the game stops with a message that says so. Nothing is done out of play (the title loads
+ * the last character as well, QA run 29: its items were kept aside and placed twice). */
 static void stop_unsaved(const char *why, int count) {
     char text[700], *p = text;
     if (count >= 0) p = put_int(p, count);
@@ -6982,9 +7007,20 @@ static void load_aside_tick(void) {
     static int frames_ready, pet_logged;
     int k, left = 0, need_pet = 0;
     unsigned char *pet = the_pet();
-    if (pet && !pet_logged) { pet_logged = 1; x360_log("x360 load: the pet is there, "); x360_log_num(frames_ready); x360_log(" frames after the HUD\r\n"); }
-    if (hud_root && frames_ready < 1000000) frames_ready++;
+    if (!hud_in_play) { frames_ready = 0; return; }   /* the title or a load: the units may be the title's */
+    if (pet && !pet_logged) { pet_logged = 1; x360_log("x360 load: the pet is there, "); x360_log_num(frames_ready); x360_log(" frames into play\r\n"); }
+    if (frames_ready < 1000000) frames_ready++;
     if (!load_aside_count || load_stopped) return;
+    /* Only the items of the hero's and the pet's bags in play; others are of units gone (the
+     * title's copy of the character). */
+    for (k = 0; k < load_aside_count; k++) {
+        void *own = load_aside[k].owner;
+        if (!load_aside[k].item) continue;
+        if ((own == hero || (pet && own == pet)) && load_aside[k].inv == owner_bag(own)) continue;
+        x360_log("x360 load: "); log_item_name(load_aside[k].item);
+        x360_log(" from slot "); x360_log_num(load_aside[k].slot); x360_log(": its unit is gone, dropped\r\n");
+        destroy_aside(k);
+    }
     for (k = 0; k < load_aside_count; k++) if (load_aside[k].item && !isa(load_aside[k].owner, 87)) need_pet = 1;
     if (need_pet && !pet) {
         if (frames_ready < 60) return;
