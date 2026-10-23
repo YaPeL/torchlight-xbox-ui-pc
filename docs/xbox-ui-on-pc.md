@@ -2617,3 +2617,22 @@ BottomBar, Root), and PC's main menu frame has windows of those names, so it was
 transparent. Now CGameUI's CInteractiveMenu itself (`+0x318`, vtable `0xab731c`, its root at
 `+0xc`, checked by its name) is. And the pad does nothing out of play (no PC HUD: the main menu
 has a hero and a level loaded behind it).
+
+**QA runs 8-10 (2026-10-23).** Steam's folders UNCHANGED each time. Closed by the user: the right
+stick's zoom (then set to the 360's rate), PC's bars over the settings, the card's dividers, the
+pet's sheet (name and three-quarter view), fishing (the ring's bite is the 360's 0.25-0.4 s window,
+`sub_822D21F0`; catch, B without the skill on B, feeding the pet), the modal without the
+parchment.
+- **PC's 3D boards hidden** (run 10): the entity check had used Ogre's export `??_7Entity@Ogre@@6B@`;
+  the vtable at an Entity's offset 0 is `??_7Entity@Ogre@@6BShadowCaster@1@@` (MovableObject derives
+  from ShadowCaster first), so every board had been refused (the run 9 log: "not an Entity's
+  vtable"). With it, the modal's parchment and the shops' boards are gone.
+- **The shops' world stayed narrowed** (run 10: blue strips where the boards were): PC has two side
+  tests, `0x541090` and `0x541130` (and `0x549b70`, both); only the first was patched. Both are now
+  (not run).
+- Still to run: the enchanter's and gem goblins' result in their page (the 6 s wait); the
+  transmuter. Seen: the minimap stays under the 360's modal (the 360 hides it, in-game/16).
+- Written this night (not run): `tools/install.py` (stores, 360 copy, all prompt styles, ini, proxy;
+  GOG's build only), the pad prompts by the connected pad (`proxy/setup.c`, HID vendor and product),
+  the update check (GitHub's latest release, offered at the next start; run 10's log: "no answer"
+  as there is no release yet), the GPL-3.0 license.
