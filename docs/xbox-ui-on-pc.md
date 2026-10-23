@@ -2374,7 +2374,7 @@ inventory (section 13), so each run's batch is one.
     the price and the chance go up after each try; the item's new name shows in the bag.
 - Fixed after the run (not run yet):
   - The results of the enchanter and the gem goblins: the act marks a result pending; the frame
-    tick (`enchant_result_tick`) waits up to 2 s for PC's modal, takes its text (line breaks
+    tick (`enchant_result_tick`) waits up to 6 s (2 s until QA run 6) for PC's modal, takes its text (line breaks
     flowed), presses its Ok, opens PC's enchant menu again with its type (`0x575990`) and closes
     PC's inventory; the shop tick does not close the 360's page meanwhile, and the 360's modal is
     not shown for it. The enchanter's text goes in `resultofenchant`.
@@ -2565,3 +2565,21 @@ CGameUI's CModalMenu (`+0x304`, vtable `0xab7d04`, a CMenu: open byte `+0x18`) o
 frame still drew its parchment and chains behind the 360's though transparent: it is moved
 10000 pixels off the screen while the 360's shows, and back for the click on its button and on
 closing.
+
+**QA run 6 (2026-10-23).** Steam's folders UNCHANGED. Closed by the user: the card's place, the
+stash. Found:
+- **PC's 3D boards.** The parchment with chains behind the 360's modal stayed with PC's modal
+  frame moved 10000 pixels away (the second hypothesis on it, after its alpha 0; stopped there),
+  and the merchant's and stash's side panels stayed with PC's interface hidden and its side-panel
+  test answering no. They are not CEGUI windows: PC's menus (CMenu: pause, settings, modal, death;
+  and its shops' boards) are 3D boards that drop or slide in, animated by an object the menu keeps
+  (CMenu's open `0x574f40` calls Entity::_updateAnimation; the object at the menu's `+0x38`, its
+  `0x4ca7a0` with an animation name). To hide: that object's scene node or entity, not read yet.
+  The user is asked whether to go on now or after the first beta.
+- **The enchanter's result:** the enchanting worked, but PC's modal came over 2 s after the act
+  (its board drops first), the wait gave up, PC closed the page and the 360's modal showed the
+  result (the second try on taking it, after the synchronous one). The wait is now 6 s (not run).
+- The black bars over PC's settings are PC's own CInteractiveMenu (`+0x318`), not the port's:
+  whether to hide them is the user's call.
+- A town portal scroll could not be picked up with the bag full and no stack of them: PC's own
+  rule; the pad's choice of item is the 360's (sub_821A4470, no bag test).

@@ -2461,7 +2461,7 @@ static void enchant(void) {
      * getsocketresult or destroysocketresult (in-game/14), the enchanter's in resultofenchant
      * (in-game/22-24). PC shows it in its modal (0x54cad0, called from the act: 0x57b6c9 and
      * others), which closes PC's menus a frame or two later (run B3: neither was done yet when the
-     * act returned). So the frame tick waits for the modal (enchant_result_tick). */
+     * act returned). So the frame tick waits for the modal (enchant_result_tick), up to 6 s. */
     ench_pending = GetTickCount();
     got = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT);
     if (got) {
@@ -6191,9 +6191,10 @@ static void enchant_result_tick(void) {
     unsigned char *en = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0;
     if (!ench_pending) return;
     if (!at_enchant || !en) { ench_pending = 0; return; }
-    if (GetTickCount() - ench_pending > 2000) {
+    /* PC's modal comes when its 3D sign has dropped (QA run 6: over 2 s after the act). */
+    if (GetTickCount() - ench_pending > 6000) {
         ench_pending = 0;
-        x360_log("x360 enchanter: no modal from PC in 2 s\r\n");
+        x360_log("x360 enchanter: no modal from PC in 6 s\r\n");
         return;
     }
     if (!x360_modal_take(ench_result, sizeof ench_result)) return;
