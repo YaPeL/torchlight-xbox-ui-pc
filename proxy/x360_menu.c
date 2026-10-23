@@ -1243,6 +1243,15 @@ static void place_buttons(const char *a, const char *y, const char *x) {
     write_rect(value, vx); prop(bx, "UnifiedAreaRect", value);
 }
 
+/* The section of a bag that an item goes to (PC's 0x4e8410 its type, 0x4e84a0 the type's section;
+ * -1 for none). */
+static int bag_section(void *inv, void *item) {
+    typedef int (__fastcall *of_item_fn)(void *self, void *edx, void *item);
+    typedef int (__fastcall *of_int_fn)(void *self, void *edx, int v);
+    if (!inv || !item) return -1;
+    return ((of_int_fn)0x004e84a0)(inv, 0, ((of_item_fn)0x004e8410)(inv, 0, item));
+}
+
 static void refresh(void) {
     int row, i, counts[6];
     char name[48], buf[200];
@@ -1318,11 +1327,24 @@ static void refresh(void) {
             unsigned count = *(unsigned *)(inv + INV_REFS + 4), j;
             int *starts = *(int **)(inv + INV_PANE_STARTS);
             int first = starts ? starts[0] : EQUIPPED_SLOTS;
-            for (j = 0; j < count; j++)
-                if (refs[j] && *(int *)((unsigned char *)refs[j] + REF_SLOT) >= first) n++;
+            int nsec = starts ? (int)((*(int **)(inv + INV_PANE_STARTS + 4)) - starts) : 0, end = *(long *)(inv + INV_SLOTS);
+            /* PC's bag (three sections of 21, bag=pc): the focused item's section, as the one that
+             * fills up (a pick-up looks for a slot in its item's section only, 0x4e85b0); the 360's
+             * one bag (bag=360), or an empty tab, the whole bag. */
+            if (nsec > 1 && !is_tm && list_count) {
+                int sec = bag_section(inv, list[selected[filter]]);
+                if (sec >= 0 && sec < nsec) {
+                    first = starts[sec];
+                    end = sec + 1 < nsec ? starts[sec + 1] : end;
+                }
+            }
+            for (j = 0; j < count; j++) {
+                int slot = refs[j] ? *(int *)((unsigned char *)refs[j] + REF_SLOT) : -1;
+                if (slot >= first && slot < end) n++;
+            }
             p = put_int(buf, is_tm ? list_count : n);   /* the transmuter's: of its 4 (sub_82367D38) */
             *p++ = '/';
-            p = put_int(p, is_tm ? 4 : *(long *)(inv + INV_SLOTS) - first);
+            p = put_int(p, is_tm ? 4 : end - first);
             *p = 0;
             text(win("inventorysize"), buf);
         }
