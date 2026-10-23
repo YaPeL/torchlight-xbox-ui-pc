@@ -2414,3 +2414,13 @@ inventory (section 13), so each run's batch is one.
   white as the candidate, grey otherwise.
 - The pet's doll: its camera's field of view is widened as the hero's (the hero's factor 1.6, the
   pet's 2.2: a first value from run B3's photo against in-game/19, to measure in the next run).
+- The mods agent's captures 28-30 (the use rule):
+  - A health potion used from the bag (29): the bag stays open, the stack goes down, the card
+    closes and the bar loses Use while the potion recharges (Drop / Swap).
+  - The identify scroll (30) has no Use on the 360 (Drop / Swap): an item is identified by A on
+    it ("Press A to identify").
+  - So the bag closes for the town portal, not for any use: likely the portal's opening closes the
+    360's menus. The mods agent is looking for that function; the port waits for it.
+  - Open in the port: the bar's Use for a recharging potion and for the identify scroll (the
+    port uses PC's useable test, `GOG_IS_USEABLE`); the 360's test before its Use prompt
+    (`sub_8236C8D0` near `0x8236E100`, `sub_821D7E20`) is to read.
