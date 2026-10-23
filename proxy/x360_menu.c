@@ -6800,7 +6800,7 @@ static void pc_menus_nav_tick(void) {
     static char settings_prefix[64];
     static const char *const settings_needs[] = {"Cancel", 0};
     static char create_prefix[64];
-    static const char *const create_needs[] = {"Destroyer", 0};
+    static const char *const create_needs[] = {"Vanquisher", 0};
     int create = 0;
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
@@ -6820,9 +6820,10 @@ static void pc_menus_nav_tick(void) {
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
     settings = settings_prefix[0] && pc_attached(settings_prefix, "Apply");
-    /* And PC's character creation (its name is typed): the mouse shown there too (the user). */
-    if (!create_prefix[0] || !win_of(create_prefix, "CreatePlayer")) find_pc_by_suffix("CreatePlayer", create_needs, create_prefix, sizeof create_prefix);
-    create = create_prefix[0] && pc_attached(create_prefix, "CreatePlayer");
+    /* And PC's character creation (its name is typed): the mouse shown there too (the user). Told by
+     * its Destroyer, always there (its CreatePlayer shows once a name is typed: QA run 16). */
+    if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
+    create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
     cursor_hook_install();
     if (nav_cursor_off != !(settings || create)) {
         nav_cursor_off = !(settings || create);
