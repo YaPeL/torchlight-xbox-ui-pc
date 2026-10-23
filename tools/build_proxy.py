@@ -37,9 +37,9 @@ LLVM = "/usr/lib/llvm-21/bin"
 
 
 def llvm(tool):
-    """An LLVM tool: on PATH (also with a version suffix, as Debian and Ubuntu name them), else
-    LLVM's folder."""
-    for name in [tool] + [f"{tool}-{v}" for v in range(22, 16, -1)]:
+    """An LLVM tool: version 21's on PATH (Debian and Ubuntu name it with the suffix), else the one on
+    PATH, else LLVM 21's folder."""
+    for name in [f"{tool}-21", tool]:   # 21: the version the proxy is built and compared with
         if shutil.which(name):
             return shutil.which(name)
     return f"{LLVM}/{tool}"
@@ -219,6 +219,8 @@ def build(real_dll, out, target="gog", exports_list=cegui_exports.LIST):
     if inside(out, repo):
         raise SystemExit(f"{out} is inside this repository; build elsewhere.")
     exports = cegui_exports.exports(exports_list)
+    if real_dll and not os.path.isfile(real_dll):
+        raise SystemExit(f"{real_dll}: no such file")
     game_dir = os.path.dirname(os.path.abspath(real_dll)) if real_dll else None
     if real_dll and is_proxy(real_dll):
         raise SystemExit(f"{real_dll} is the proxy, not the real DLL")

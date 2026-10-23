@@ -21,8 +21,15 @@ FORBIDDEN = (
     ".uilayout", ".scheme", ".looknfeel", ".font", ".ttf", ".xex", ".def", ".lib",
 )
 EXPORT_LIST = "proxy/cegui_exports.txt"
-# A line of the list's format, wherever it is.
-EXPORT_LINE = re.compile(rb"^[0-9]+ (cegui|runic) \?", re.M)
+# A mangled CEGUI name anywhere in a line.
+MANGLED = re.compile(rb"\?[!-~]*CEGUI@@")
+# A line holding one with an ordinal or a forward, in any export table's form: this list's
+# ("ORDINAL SOURCE NAME", any spacing), a .def's ("NAME=DLL.NAME @ORDINAL"), a dump's
+# ("NAME @ORDINAL", "ORDINAL NAME").
+EXPORT_ENTRY = re.compile(rb"^\s*[0-9]+\s+((cegui|runic)\s+)?\?[!-~]*CEGUI@@|\?[!-~]*CEGUI@@[!-~]*[ \t]+@[0-9]+\b"
+                          rb"|=\s*CEGUIBase(_orig)?\.\?", re.M)
+MAX_ENTRY_LINES = 5      # a few in the proxy's tests and docs as examples
+MAX_MANGLED_LINES = 400  # the proxy's sources name a hundred or so; the table has thousands
 
 
 def forbidden(paths):
@@ -49,7 +56,8 @@ def export_problems(root, paths):
                 cegui_exports.parse(data.decode("ascii"), p)
             except (UnicodeDecodeError, ValueError) as e:
                 out.append(f"{p}: {e}")
-        elif EXPORT_LINE.search(data):
+        elif (len(EXPORT_ENTRY.findall(data)) > MAX_ENTRY_LINES
+              or sum(1 for line in data.splitlines() if MANGLED.search(line)) > MAX_MANGLED_LINES):
             out.append(f"{p}: export table lines outside {EXPORT_LIST}")
     return out
 

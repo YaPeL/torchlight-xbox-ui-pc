@@ -13,7 +13,8 @@ The file holds only the exported (mangled C++) names of CEGUI's classes and thei
 code, data or text of the game. Every name must be in CEGUI's namespace (tools/check_no_game_files.py
 checks it in CI).
 
-A line: ORDINAL SOURCE NAME, ordered as the DLL's name table (by name). # lines are comments.
+A line: ORDINAL SOURCE NAME, ordered as the DLL's name table (by name). Up to 10 # lines of
+header before the first; no other line (blank or comment) is accepted.
 """
 import os
 import re
@@ -24,9 +25,17 @@ from pe_info import PE  # noqa: E402
 
 LIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "proxy", "cegui_exports.txt")
 SOURCES = ("cegui", "runic")
-# An MSVC mangled name in namespace CEGUI, a class member or a free function (printable ASCII).
-NAME = re.compile(r"^\?[!-~]*CEGUI@@[!-~]*$")
+# An MSVC mangled name (printable ASCII) whose qualified name, the part before the first "@@",
+# ends in namespace CEGUI: a member of a class there ("?f@Font@CEGUI@@...", templates' arguments
+# included) or a free operator of CEGUI ("??8CEGUI@@...").
+NAME = re.compile(r"^\?[!-~]+$")
+SCOPE = re.compile(r"^(.*@CEGUI|\?\?_?[0-9A-Z]CEGUI)$")
 LINE = re.compile(r"^([1-9][0-9]{0,4}) (cegui|runic) (\?[!-~]+)$")
+MAX_COMMENTS = 10   # the header's lines, before the first entry; none after it
+
+
+def in_cegui(name):
+    return bool(NAME.match(name) and "@@" in name and SCOPE.match(name.split("@@", 1)[0]))
 
 
 def dll_exports(path):
@@ -36,12 +45,15 @@ def dll_exports(path):
 
 def parse(text, where="the list"):
     """[(name, ordinal, source)] of the list's text; ValueError on a malformed line."""
-    out, names, ordinals = [], set(), set()
+    out, names, ordinals, comments = [], set(), set(), 0
     for n, line in enumerate(text.splitlines(), 1):
-        if line.startswith("#") or not line:
+        if line.startswith("#") and not out:
+            comments += 1
+            if comments > MAX_COMMENTS:
+                raise ValueError(f"{where}:{n}: more than {MAX_COMMENTS} header lines")
             continue
         m = LINE.match(line)
-        if not m or not NAME.match(m.group(3)):
+        if not m or not in_cegui(m.group(3)):
             raise ValueError(f"{where}:{n}: not 'ORDINAL cegui|runic NAME' with a name in CEGUI's namespace")
         name, ordinal = m.group(3), int(m.group(1))
         if name in names or ordinal in ordinals:
@@ -66,7 +78,7 @@ def exports(path=LIST):
 
 def make(game_dll, official_dll, out=LIST):
     game, official = dll_exports(game_dll), {n for n, _ in dll_exports(official_dll)}
-    bad = [n for n, _ in game if not NAME.match(n)]
+    bad = [n for n, _ in game if not in_cegui(n)]
     if bad:
         raise SystemExit(f"{game_dll} exports names outside CEGUI's namespace: {bad[:5]}")
     runic = [n for n, _ in game if n not in official]

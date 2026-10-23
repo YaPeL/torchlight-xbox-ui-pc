@@ -365,7 +365,7 @@ as on the 360 if it loads them at all. **[read]**
 
 ## 7. Stage 1: the proxy CEGUIBase.dll (2026-10-15)
 
-**The DLL.** `proxy/cegui_proxy.c`, built by `tools/build_proxy.py build REAL_DLL BUILD_DIR` with
+**The DLL.** `proxy/cegui_proxy.c`, built by `tools/build_proxy.py build [REAL_DLL] BUILD_DIR` with
 `clang-cl` and `lld-link` 21 (`--target=i686-pc-windows-msvc`, freestanding, no CRT; import
 libraries for `kernel32` and `msvcr90` made by `llvm-dlltool` from generated `.def` files). Its
 export table was generated from the user's own DLL at build time (since 2026-10-23 it is read from
@@ -2819,10 +2819,13 @@ repository as names only.
 
 **What the file holds.** One line per export of `CEGUIBase.dll`: its ordinal, its source and its
 MSVC mangled name, in the order of the DLL's name table. No code, data, address or text of the
-game: every name is in CEGUI's namespace (`CEGUI@@` in the mangled name), checked by
-`tools/cegui_exports.py` when reading it and by `tools/check_no_game_files.py` in CI. That check
-accepts export lines in this file only: a line of its format in any other tracked file, or a
-`.def` or `.lib`, fails CI.
+game: every name's qualified name (the mangled name up to its first `@@`) ends in namespace
+CEGUI, a member of a class there or a free operator of CEGUI; at most ten header lines before the
+first entry, nothing else. `tools/cegui_exports.py` checks it when reading the file and
+`tools/check_no_game_files.py` in CI. That check accepts an export table in this file only: any
+other tracked file with more than five lines holding a mangled CEGUI name with an ordinal or a
+forward (this list's form with any spacing, a `.def`'s, a dump's), or more than 400 lines naming
+one, fails CI, as does a `.def` or `.lib`.
 
 **Where it comes from.** `tools/cegui_exports.py make GAME_DLL OFFICIAL_DLL`, run on 2026-10-23:
 
@@ -2854,4 +2857,7 @@ accepts export lines in this file only: a line of its format in any other tracke
 - The link is reproducible (`lld-link /timestamp:0`): two builds give the same bytes. The proxy
   built from the list is the one built from GOG's DLL, and differs from the one installed for
   the last runs only in the PE timestamp's four bytes.
-- CI's `proxy` job builds both targets from the list with LLVM 21 and prints their SHA-256.
+- CI's `proxy` job builds both targets from the list with LLVM 21 (apt.llvm.org's) and prints
+  their SHA-256. Its first run (2026-10-23) gave the hashes of the local build (Ubuntu's clang
+  21.1.8): GOG `54dbc7d4…31d7c62b`, Steam `dfb727c2…9a3617`. `build_proxy.py` takes LLVM 21's tools
+  first (`clang-cl-21`, then `clang-cl`).
