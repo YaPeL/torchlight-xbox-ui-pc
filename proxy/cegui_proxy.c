@@ -416,6 +416,7 @@ void *__fastcall hook_load_layout2(void *self, void *edx, const void *file, int 
     r = real_load_layout2(self, 0, file, random_prefix);
     stamp(); put("loadWindowLayout -> "); put_hex((unsigned long)r); put("\r\n");
     if (r && file && ends_with_nocase(real_c_str(file, 0), "STATSMENU.LAYOUT")) x360_pc_stats_root = r;
+    if (r && file && mode_scheme) { void x360_pc_layout_loaded(const char *file, void *root); x360_pc_layout_loaded(real_c_str(file, 0), r); }
     return r;
 }
 

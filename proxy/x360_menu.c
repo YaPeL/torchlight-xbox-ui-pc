@@ -5482,6 +5482,27 @@ static const char *hud_stage = "";
 void x360_ui_dump_poll(void);
 
 static void add_frame_listener(void);
+/* PC's bottom HUD and pet HUD made transparent as PC loads their layouts, at the game's start: the
+ * HUD tick did it only once play was entered, so they showed for its first frames (the owner saw
+ * them flash at each load). PC changes their visibility, never their alpha. */
+void x360_pc_layout_loaded(const char *file, void *root) {
+    static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", 0};
+    unsigned n = length(file), i;
+    if (!resolve()) return;
+    for (i = 0; hidden[i]; i++) {
+        unsigned m = length(hidden[i]), j;
+        int same = n >= m;
+        for (j = 0; same && j < m; j++) {
+            char c = file[n - m + j];
+            if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+            same = c == hidden[i][j];
+        }
+        if (!same) continue;
+        __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+        x360_log("x360 hud: PC's "); x360_log(hidden[i]); x360_log(" transparent as it loads\r\n");
+    }
+}
+
 void x360_hud_tick(void) {
     static int logged;
     add_frame_listener();
@@ -6798,14 +6819,19 @@ static void boards_tick(void) {
     };
     static int modal_hidden, shop_hidden;
     unsigned i;
-    int want_modal = modal_shown, want_shop = inventory_open && shop;
+    int want_modal = modal_shown, want_shop = inventory_open && shop;   /* want_modal: the minimap's */
     if (!ui) return;
     modal_minimap(want_modal);
-    if (want_modal || modal_hidden) {
+    {
+        /* PC's modal's board kept hidden always (the 360's modal shows every one of PC's modals):
+         * hidden only while the 360's showed, its fall before it and its rise after it were seen
+         * (the owner, the pet's return). */
         unsigned char *m = *(unsigned char **)(ui + 0x304);
-        if (m && *(unsigned *)m == 0x00ab7d04) board_visible(m, 0x38, !want_modal);
-        if (modal_hidden != want_modal) x360_log(want_modal ? "x360 modal: PC's board hidden\r\n" : "x360 modal: PC's board shown again\r\n");
-        modal_hidden = want_modal;
+        if (m && *(unsigned *)m == 0x00ab7d04) {
+            board_visible(m, 0x38, 0);
+            if (!modal_hidden) x360_log("x360 modal: PC's board hidden for good\r\n");
+            modal_hidden = 1;
+        }
     }
     if (want_shop || shop_hidden) {
         for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
