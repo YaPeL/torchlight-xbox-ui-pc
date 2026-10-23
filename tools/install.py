@@ -54,7 +54,8 @@ STYLES = ("playstation3", "playstation4", "playstation5", "nintendo")
 X360_LAYOUT = "media/ui/mastermenu_xenon.layout"     # a file only the 360's pak has
 X360_TITLE = 0x58410A7E                               # Torchlight's Xbox LIVE Arcade title ID
 X360_CONTENT_TYPE = 0x000D0000                        # an Arcade title's package
-PROXY_FILES = {"gog": "CEGUIBase.dll"}                # a release's proxy per build, next to this script
+PROXY_FILES = {"gog": "CEGUIBase.dll", "steam": "CEGUIBase-steam.dll"}   # a release's proxy per build, next to this script
+EXPERIMENTAL = {"steam"}   # ported offline, not yet played with the mod: installed only into a --game given
 BAG_WARNING = (
     "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21.\n\n"
     "Your saves keep each item's slot number. With the 360's bag, items past its 50th slot in a "
@@ -78,11 +79,13 @@ def exe_timestamp(game):
 
 
 def build_of(game):
-    """"gog" for the build the proxy knows, else "unknown"."""
+    """The proxy's target for the game's Torchlight.exe (by its timestamp: build_proxy.TARGETS), or
+    "unknown"."""
     try:
-        return "gog" if exe_timestamp(game) == GOG_TIMESTAMP else "unknown"
+        stamp = exe_timestamp(game)
     except (OSError, struct.error):
         return "unknown"
+    return next((t for t, (s, _) in build_proxy.TARGETS.items() if s == stamp), "unknown")
 
 
 def _read_json(path):
@@ -397,8 +400,8 @@ def proxy_dll(build, game, given=None):
     real = os.path.join(game, "CEGUIBase_orig.dll")
     if not os.path.isfile(real):
         real = os.path.join(game, "CEGUIBase.dll")
-    out = tempfile.mkdtemp(prefix="x360ui-build-")
-    build_proxy.build(real, out)
+    out = tempfile.mkdtemp(prefix="x360ui-build-", dir=game)
+    build_proxy.build(real, out, build)
     return os.path.join(out, "CEGUIBase.dll")
 
 
@@ -409,7 +412,11 @@ def pick_game(given):
             raise SystemExit(f"No Torchlight.exe and CEGUIBase.dll in {game}.")
         return game, build_of(game)
     games = find_games()
-    supported = [(s, p) for s, p in games if build_of(p) in PROXY_FILES]
+    supported = [(s, p) for s, p in games if build_of(p) in PROXY_FILES and build_of(p) not in EXPERIMENTAL]
+    for store, path in games:
+        if build_of(path) in EXPERIMENTAL:
+            print(f"{store}: {path}: its build is supported experimentally (not yet played with the mod); "
+                  f"give it with --game to install there.")
     for store, path in games:
         if build_of(path) not in PROXY_FILES:
             print(f"{store}: {path}: a build this version does not support yet, left alone.")
@@ -423,7 +430,11 @@ def do_install(args):
     game, build = pick_game(args.get("game"))
     if build not in PROXY_FILES:
         raise SystemExit(f"{game}: a build this version does not support yet.")
-    print(f"the game: {game}")
+    print(f"the game: {game} ({build} build)")
+    if build in EXPERIMENTAL and not ask.yes_no(
+            f"This game's build ({build}) is supported experimentally: the mod was ported to it offline "
+            "and has not been played on it yet. Install anyway?", default=True):
+        return 1
     source = args.get("package") or args.get("x360_dir") or ask.file(
         "Your Torchlight Xbox LIVE Arcade package (or a file in a folder extracted from it)")
     if not source:
@@ -457,7 +468,8 @@ def do_uninstall(args):
             "-backup-<date>).\n\nUninstall anyway?", default=True):
         return 1
     build_proxy.remove(game)
-    for folder in converted_folders(game):
+    for folder in converted_folders(game) + glob.glob(os.path.join(game, "x360ui-build-*")) + glob.glob(
+            os.path.join(game, "x360ui-work-*")):
         shutil.rmtree(folder, ignore_errors=True)
         shutil.rmtree(folder + ".partial", ignore_errors=True)
     for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt"] + [

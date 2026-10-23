@@ -639,6 +639,9 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(builds[os.path.realpath(gog)], "gog")
             self.assertEqual(builds[os.path.realpath(wine)], "gog")
             self.assertEqual(builds[os.path.realpath(epic)], "unknown")
+            steam_build = os.path.join(home, "steambuild")
+            fake_game(steam_build, 0x4B5F7519)
+            self.assertEqual(install.build_of(steam_build), "steam")
 
     def test_writes_the_ini_with_the_bag_and_keeps_other_lines(self):
         with tempfile.TemporaryDirectory() as home:
