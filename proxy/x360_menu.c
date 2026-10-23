@@ -4929,6 +4929,19 @@ void x360_shop_tick(void) {
         at_stash = 1;
         left_column_for(1);   /* 0 merchants, 1 stashes, 2 the transmuter */
         x360_log(isa(shop, 170) ? "x360 shop: PC's stash menu opened (the shared stash)\r\n" : "x360 shop: PC's stash menu opened\r\n");
+        {
+            /* Which bag the stash has (docs 21: the personal one's ctor branch, ISA 128's 42 or the
+             * last one's, which bag=360 makes 50). */
+            unsigned char *inv = (unsigned char *)owner_bag(shop);
+            int *starts = inv ? *(int **)(inv + INV_PANE_STARTS) : 0;
+            x360_log("x360 shop:   the stash: ISA 128 "); x360_log(isa(shop, 128) ? "yes" : "no");
+            x360_log(", ISA 170 "); x360_log(isa(shop, 170) ? "yes" : "no");
+            if (inv) {
+                x360_log(", slots "); x360_log_num(*(long *)(inv + INV_SLOTS));
+                x360_log(", sections "); x360_log_num(starts ? (long)((*(int **)(inv + INV_PANE_STARTS + 4)) - starts) : 0);
+            }
+            x360_log("\r\n");
+        }
         x360_inventory_toggle();
     } else if (m && m[MENU_OPEN] && !shop && *(unsigned char **)(m + MERCHANT_OWNER)) {
         if (inventory_open) x360_inventory_toggle();
