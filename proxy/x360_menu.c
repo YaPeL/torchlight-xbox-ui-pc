@@ -6725,9 +6725,17 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
     type = c_str(get_type(w, 0), 0);
     if (type && depth > 0) {
         unsigned k = length(type);
-        /* Buttons, and edit boxes (A clicks one: its caret, the keyboard types the name). */
-        if ((k >= 6 && type[k - 6] == 'B' && type[k - 5] == 'u' && type[k - 4] == 't' && type[k - 3] == 't' && type[k - 2] == 'o' && type[k - 1] == 'n')
-            || (k >= 7 && type[k - 7] == 'E' && type[k - 6] == 'd' && type[k - 5] == 'i' && type[k - 4] == 't' && type[k - 3] == 'b' && type[k - 2] == 'o' && type[k - 1] == 'x')) {
+        /* Buttons, edit boxes (A clicks one: its caret, the keyboard types the name), check boxes
+         * (difficulty's Hardcore) and the character load's slots (QA run 16). */
+        static const char *const kinds[] = {"Button", "Editbox", "Checkbox", "CharacterSlot"};
+        unsigned q, hit = 0;
+        for (q = 0; q < 4 && !hit; q++) {
+            unsigned m = length(kinds[q]), c = 0;
+            if (k < m) continue;
+            while (c < m && type[k - m + c] == kinds[q][c]) c++;
+            hit = c == m;
+        }
+        if (hit) {
             nav_list[nav_count++] = w;
             return;
         }
