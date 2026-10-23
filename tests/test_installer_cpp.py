@@ -18,7 +18,10 @@ TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
 
 
 def run(*args):
-    return subprocess.run(list(args), check=True, capture_output=True).stdout
+    r = subprocess.run(list(args), capture_output=True)
+    if r.returncode:
+        raise AssertionError(f"{args[:2]} exited {r.returncode}: {r.stderr.decode(errors='replace')[-2000:]}")
+    return r.stdout
 
 
 @unittest.skipUnless(BINARY and os.path.isfile(BINARY), "X360UI_INSTALLER not set")
@@ -256,7 +259,7 @@ class ConvertCppTest(unittest.TestCase):
         import convert_x360_ui as c
         want = "".join(f"{k}=0x{v:08X}\n" for k, v in c.STRINGS.items()) + "".join(
             f"utf8:{k}=0x{v:08X}\n" for k, v in c.STRINGS_UTF8.items())
-        self.assertEqual(run(BINARY, "dev", "strings-table").decode(), want)
+        self.assertEqual(run(BINARY, "dev", "strings-table").decode().replace("\r\n", "\n"), want)   # stdout's line ends aside
 
     def test_stops_where_python_would_need_unicode_tables(self):
         """A character outside ASCII where re decides \\b: Python answers by its tables, the C++ stops."""
