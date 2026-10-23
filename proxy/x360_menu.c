@@ -1674,8 +1674,13 @@ static void show_info(void *item, float y, float list_left) {
  * PC's own stats menu (STATSMENU.LAYOUT, kept by cegui_proxy.c) has windows of the same names; the
  * texts PC writes there are copied over: the same numbers PC shows. The 3D doll is not done. */
 #define CHR_PREFIX "x360chr_"
+#define PETCHR_PREFIX "x360petchr_"
 extern void *x360_pc_stats_root;
 static void *character_root;
+static void *petchr_root;                 /* the pet's sheet (petmenu_xenon, in-game/19) in the character's column */
+static int chr_on;                        /* the character's column is up (the inventory's or the Stats page) */
+static void chr_show(int on);
+static void pet_sheet_fill(unsigned char *pet);
 typedef void *(__fastcall *child_search_fn)(const void *self, void *edx, const void *name);
 typedef const void *(__fastcall *get_text_fn)(const void *self, void *edx);
 
@@ -1730,6 +1735,8 @@ static void fill_character(void) {
     unsigned char *who = panels[focus_panel].is_pet ? (unsigned char *)the_pet() : hero;
     if (!character_root || !who) return;
     (void)pc_stats_menu;
+    chr_show(chr_on);
+    if (who != hero) { pet_sheet_fill(who); return; }
     __try {
         level = *(int *)(who + 0xf0);
         xp = *(int *)(who + 0x3c8);
@@ -2544,7 +2551,7 @@ static unsigned overlay_closed_at;     /* when a tip, modal or NPC dialog of the
 static int qd_shown;                         /* the 360's NPC dialog is shown (its section, at the end) */
 static int shop_closing;
 static int is_ours(void *w) {
-    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == ench_root || w == character_root ||
+    return w && (w == master_root || w == hud_root || w == pet_hud_root || w == inventory_root || w == panels[1].root || w == panels[2].root || w == ench_root || w == character_root || w == petchr_root ||
                  w == card_root(0) || w == card_root(1) || w == card_root(2));   /* the Info cards, PC's tooltips */
 }
 
@@ -2592,6 +2599,7 @@ static void page_titles(void) {
 /* The frame's layouts, loaded once: at the first opening, or before it when the game is entered
  * (x360_frame_tick, the 360's HUD shown): run B2 timed the frame's layouts at 394 ms at the first
  * opening, plus the pages'. */
+static void plain_markup(void *w, int depth);
 static void frame_load(void) {
     {
         RECT r;
@@ -2611,6 +2619,8 @@ static void frame_load(void) {
         /* The enchanter's panel in the same place (town/06: its column at the frame's left). */
         ench_root = inventory_root ? load("media/ui/x360/enchantermenu_xenon.layout", ENCH_PREFIX) : 0;
         character_root = inventory_root ? load("media/ui/x360/charactermenu_xenon.layout", CHR_PREFIX) : 0;
+        /* The pet's sheet in the same column (the 360's +0x110 beside the hero's +0x10C). */
+        petchr_root = inventory_root ? load("media/ui/x360/petmenu_xenon.layout", PETCHR_PREFIX) : 0;
         x360_log("x360 menu: the frame's layouts ms "); x360_log_num((int)(GetTickCount() - t0)); x360_log("\r\n");
         if (!inventory_root) inventory_failed = 1;
         else {
@@ -2630,6 +2640,9 @@ static void frame_load(void) {
             if (ench_root) scale_tree(ench_root, k, 0);
             if (character_root) scale_tree(character_root, k, 0);
             if (character_root) unclip_tree(character_root, 0);
+            if (petchr_root) scale_tree(petchr_root, k, 0);
+            if (petchr_root) unclip_tree(petchr_root, 0);
+            if (petchr_root) plain_markup(petchr_root, 0);   /* its "Pet" line is the 360's markup */
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
              * ContainerFrame, three columns: the character, the bag, the pet's bag. The 360's dump
              * of the screen (the catalog's menus/08-inventory) has the bag's TopFrame 299 (base
@@ -2641,6 +2654,8 @@ static void frame_load(void) {
                     move_by(top, 299.0f * k, 0);
                 }
                 top = character_root ? win_of(CHR_PREFIX, "TopFrame") : 0;
+                if (container && top) add_child(container, 0, top);
+                top = petchr_root ? win_of(PETCHR_PREFIX, "TopFrame") : 0;
                 if (container && top) add_child(container, 0, top);
                 top = panels[1].root ? win_of(PET_PREFIX, "TopFrame") : 0;
                 if (container && top) {
@@ -2679,7 +2694,7 @@ static void frame_load(void) {
     /* Loaded before the first opening: kept hidden until it (the opening sets each one's). */
     if (!inventory_open) {
         void *const roots[] = {master_root, inventory_root, panels[1].root, panels[2].root, ench_root,
-                               character_root, stats_root, journal_root, skills_root, quest_root};
+                               character_root, petchr_root, stats_root, journal_root, skills_root, quest_root};
         unsigned i;
         for (i = 0; i < sizeof roots / sizeof roots[0]; i++) if (roots[i]) set_visible(roots[i], 0, 0);
     }
@@ -2748,7 +2763,8 @@ void x360_inventory_toggle(void) {
         move_by(win_of(SHOP_PREFIX, "TopFrame"), -1.0f, 0);
     }
     if (character_root) set_visible(character_root, 0, inventory_open);
-    if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), page < 2 && !shop);
+    if (petchr_root) set_visible(petchr_root, 0, inventory_open);
+    chr_show(page < 2 && !shop);
     page_titles();
     if (inventory_open) move_to_front(master_root, 0);
     hide_pc_ui(inventory_open);
@@ -3322,6 +3338,44 @@ static int icon_image(const char *icon, char *out, unsigned size) {
     return found;
 }
 
+/* The character's column: the hero's sheet, or the pet's on the inventory's page with the pet's bag
+ * focused (in-game/19: RB from the hero's bag; "<pet name> / Pet", its spells, HP/MP, the stats). */
+static void chr_show(int on) {
+    int pet = on && page == 0 && panels[focus_panel].is_pet && petchr_root;
+    chr_on = on;
+    if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), on && !pet);
+    if (petchr_root) show(win_of(PETCHR_PREFIX, "TopFrame"), pet);
+}
+
+static void skill_icon(void *skill, unsigned fn, char *out, unsigned size);
+typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);
+static void pet_sheet_fill(unsigned char *pet) {
+    char buf[96], *p;
+    int i;
+    if (!petchr_root) return;
+    if (wstring_utf8(pet + 0x420, buf, sizeof buf)) text(win_of(PETCHR_PREFIX, "characterName"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAX_HP)(pet, 0)); *p = 0; text(win_of(PETCHR_PREFIX, "HP"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAX_MANA)(pet, 0)); *p = 0; text(win_of(PETCHR_PREFIX, "Mana"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_STRENGTH)(pet, 0)); *p = 0; text(win_of(PETCHR_PREFIX, "strPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_DEXTERITY)(pet, 0)); *p = 0; text(win_of(PETCHR_PREFIX, "dexPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_MAGIC)(pet, 0)); *p = 0; text(win_of(PETCHR_PREFIX, "magicPts"), buf);
+    p = put_int(buf, ((int_get_fn)GOG_DEFENSE)(pet, 0)); *p = 0; text(win_of(PETCHR_PREFIX, "defPts"), buf);
+    /* Its two spells (the pet's known spells, getKnownSpell 0x484ff0 as the hero's): the icon and
+     * name, or no icon and the 360's empty text. */
+    for (i = 0; i < 2; i++) {
+        unsigned char *sp = 0;
+        char name[16];
+        __try { sp = (unsigned char *)((known_spell_fn)0x484ff0)(pet, 0, i); } __except (1) { sp = 0; }
+        copy(name, sizeof name, "spellIcon", 0); p = put_int(name + 9, i); *p = 0;
+        if (sp) skill_icon(sp, 0x5d5950, buf, sizeof buf); else buf[0] = 0;
+        prop(win_of(PETCHR_PREFIX, name), "Image", buf);
+        copy(name, sizeof name, "SpellText", 0); p = put_int(name + 9, i); *p = 0;
+        if (!sp || !wstring_utf8((const unsigned char *)((skill_str_fn)0x5d59b0)(sp, 0), buf, sizeof buf))
+            copy(buf, sizeof buf, x360_text("pet.nospell"), 0);
+        text(win_of(PETCHR_PREFIX, name), buf);
+    }
+}
+
 static void skill_icon(void *skill, unsigned fn, char *out, unsigned size) {
     char icon[96];
     out[0] = 0;
@@ -3329,7 +3383,6 @@ static void skill_icon(void *skill, unsigned fn, char *out, unsigned size) {
 }
 
 /* CCharacter::getKnownSpell *(OT)* (GOG 0x484ff0; the 360's sub_821FD868): the player's spell i. */
-typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);
 static int sk_spell;
 
 static void *selected_skill(void) {
@@ -3912,7 +3965,7 @@ static void set_page(int p) {
     if (skills_root) set_visible(skills_root, 0, page == 2);
     if (quest_root) set_visible(quest_root, 0, page == 3);
     /* The character's column (and its doll) on the inventory's and the Stats pages only. */
-    if (character_root) show(win_of(CHR_PREFIX, "TopFrame"), page < 2);
+    chr_show(page < 2);
     show_doll(page < 2);
     page_titles();
     if (page == 1) { hide_info(); stat_sel = 0; stats_select(); journal_fill(); }

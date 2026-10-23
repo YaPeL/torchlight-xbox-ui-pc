@@ -547,15 +547,21 @@ class ImageStringsTest(unittest.TestCase):
         image = bytearray(0x200)
         base = convert_x360_ui.IMAGE_BASE
         saved = dict(convert_x360_ui.STRINGS)
+        saved8 = dict(convert_x360_ui.STRINGS_UTF8)
         try:
             convert_x360_ui.STRINGS.clear()
             convert_x360_ui.STRINGS.update({"a": base + 0x10, "b": base + 0x40, "c": base + 0x1000})
+            convert_x360_ui.STRINGS_UTF8.clear()
+            convert_x360_ui.STRINGS_UTF8.update({"d": base + 0x80, "e": base + 0x2000})
             image[0x10:0x10 + 8] = "Tab1".encode("utf-16-be")
             image[0x40:0x42] = b"\x00\x01"   # not printable
-            self.assertEqual(convert_x360_ui.image_strings(bytes(image)), {"a": "Tab1"})
+            image[0x80:0x80 + 6] = b"Spell\0"
+            self.assertEqual(convert_x360_ui.image_strings(bytes(image)), {"a": "Tab1", "d": "Spell"})
         finally:
             convert_x360_ui.STRINGS.clear()
             convert_x360_ui.STRINGS.update(saved)
+            convert_x360_ui.STRINGS_UTF8.clear()
+            convert_x360_ui.STRINGS_UTF8.update(saved8)
 
 
 def synthetic_adm(strings, root):

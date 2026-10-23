@@ -287,6 +287,10 @@ STRINGS = {
     "journal.12": 0x820CF718, "journal.13": 0x820CF734, "journal.14": 0x820CF750, "journal.15": 0x820CF768,
     "journal.16": 0x820CF784, "journal.17": 0x820CF7A8,
 }
+# The same for the few the 360 code keeps as UTF-8 (CEGUI strings made from char texts).
+STRINGS_UTF8 = {
+    "pet.nospell": 0x820CFD08,      # the pet sheet's empty spell row (in-game/19)
+}
 
 
 LABEL_LOOK = "ceguiWidget/ItemTextButton"
@@ -329,6 +333,17 @@ def image_strings(image):
             end += 2
         try:
             text = image[off:end].decode("utf-16-be")
+        except UnicodeDecodeError:
+            continue
+        if text and len(text) < 100 and text.isprintable() and "=" not in text:
+            out[key] = text
+    for key, addr in STRINGS_UTF8.items():
+        off = addr - IMAGE_BASE
+        if not 0 <= off < len(image):
+            continue
+        end = image.find(b"\0", off, off + 200)
+        try:
+            text = image[off:end].decode("utf-8") if end > off else ""
         except UnicodeDecodeError:
             continue
         if text and len(text) < 100 and text.isprintable() and "=" not in text:

@@ -2387,3 +2387,16 @@ inventory (section 13), so each run's batch is one.
   - The parchment: no visible PC window covers it in the dumps (PC's modal `20_Frame` and its
     children at effective alpha 0, no image on its parents). Next: see whether hiding `20_Frame`
     (not only its alpha) removes it, and where `0x54cad0` draws.
+- Closed without a run after B3:
+  - a melee skill's "Mana Cost" is PC's data: PC's skill loader stores `MANACOST` at the rank's
+    `+0x4c` (`0x5e0526`), the field read. The 360's capture is of its own data.
+  - The pet's sheet (in-game/19): `petmenu_xenon.layout` is loaded into the character's column
+    beside the hero's sheet and shown instead of it on the inventory's page with the pet's bag
+    focused: the pet's name, "Pet" (the layout's markup made its colour), HP/MP, the four stats,
+    and its two spells (getKnownSpell `0x484ff0` on the pet: icon and name), or no icon and the
+    360's empty text (`pet.nospell`, a UTF-8 text in the 360's image, so the converter now reads
+    `STRINGS_UTF8` too). Not run yet. The pet's model framing (small, whole, feet on the Stats
+    header) is still PC's doll camera: open.
+  - Floor items: with Alt PC shows their labels (the user); the 360 shows the candidate's
+    (in-game/20). Asked the mods agent whether the 360 shows the others too, and whether its
+    inventory closes after a town portal scroll.
