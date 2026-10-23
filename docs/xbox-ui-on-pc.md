@@ -2965,3 +2965,18 @@ load: 21 items into the pet's main section, 6 blades (slots 63-68) listed as fit
 game (accepted with Enter): the game's window is now minimized first, and the text says Enter or
 OK; the pad does not reach a Windows box.
 
+**The saves, read (GOG), and the stop as PC's modal.** Of the executable's `_wfopen_s` calls two
+open a file "wb": `0x41762d` and `0x52e4f5`. The first is in `0x417380` (thiscall, two arguments,
+ret 8), which writes `backup.tmp` and renames it into the `.svt` (`_wrename`, `0x417fad`); the
+second is in `0x52e3f0`, which writes `sharedstash.bin` and whose one caller is `0x4173ce`, inside
+`0x417380`. So every save of the character and of the shared stash goes through `0x417380`; its
+nine callers are `0x402559`, `0x419a66`, `0x419d62`, `0x41a4f4` (in `0x419b70`, twice),
+`0x41b919`, `0x41ba70`, `0x4daae1`, `0x4daaf7` (in `0x4daa80`, twice) and `0x56d40d` (the console,
+`0x56cd00`). The other files opened for writing ("w,ccs=": `0x5c4569`, `0x5c5608`) are text
+files (the settings, the logs). The proxy hooks `0x417380` (Steam `0x417110`): while a stop is
+pending it returns at once and logs "a save refused". The stop itself: saves held back, the text
+in the log and in `x360_stop.txt` beside the game, and PC's own modal opened with it
+(`0x54cad0` on CGameUI, the strings made with msvcp90's `basic_string<wchar_t>(const wchar_t *)`,
+`0xa85418`), which the 360's modal shows and which takes the pad, keyboard and mouse as PC's modal
+does; when it closes, `TerminateProcess`. Not run yet.
+
