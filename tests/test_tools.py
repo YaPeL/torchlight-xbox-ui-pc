@@ -1,4 +1,5 @@
 """Tests of the tools, on synthetic data only (no game file)."""
+import json
 import os
 import struct
 import subprocess
@@ -14,6 +15,7 @@ import check_no_game_files  # noqa: E402
 import compare_installs  # noqa: E402
 import compare_ui  # noqa: E402
 import convert_x360_ui  # noqa: E402
+import install  # noqa: E402
 import layout_windows  # noqa: E402
 import port_addresses  # noqa: E402
 import send_input  # noqa: E402
@@ -592,6 +594,72 @@ class ItemDescriptionsTest(unittest.TestCase):
                                         self.unit("media/units/items/c.dat.adm", "Same C", "Same text")])
             self.assertEqual(convert_x360_ui.item_descriptions(x3, pc),
                              {"desc.Scroll A": "~", "desc.Fish B": "~Feed it"})
+
+
+def fake_exe(path, timestamp):
+    """A Torchlight.exe of nothing but a PE header with that link timestamp."""
+    head = bytearray(512)
+    head[:2] = b"MZ"
+    struct.pack_into("<I", head, 0x3C, 0x80)
+    head[0x80:0x84] = b"PE\0\0"
+    struct.pack_into("<I", head, 0x88, timestamp)
+    with open(path, "wb") as f:
+        f.write(bytes(head))
+
+
+def fake_game(path, timestamp=install.GOG_TIMESTAMP):
+    os.makedirs(path, exist_ok=True)
+    fake_exe(os.path.join(path, "Torchlight.exe"), timestamp)
+    with open(os.path.join(path, "CEGUIBase.dll"), "wb") as f:
+        f.write(b"MZ")
+
+
+class InstallTest(unittest.TestCase):
+    def test_finds_the_stores_installs_and_tells_the_builds(self):
+        with tempfile.TemporaryDirectory() as home:
+            gog = os.path.join(home, "Games", "Heroic", "Torchlight")
+            fake_game(gog)
+            wine = os.path.join(home, "prefix", "drive_c", "GOG Games", "Torchlight")
+            fake_game(wine)
+            steam = os.path.join(home, ".steam", "steam", "steamapps")
+            fake_game(os.path.join(steam, "common", "Torchlight"), 0x4B000000)
+            open(os.path.join(steam, "appmanifest_41500.acf"), "w").close()
+            epic = os.path.join(home, "Epic", "Torchlight")
+            fake_game(epic, 0x4C000000)
+            os.makedirs(os.path.join(home, ".config", "legendary"))
+            with open(os.path.join(home, ".config", "legendary", "installed.json"), "w") as f:
+                json.dump({"Abc": {"title": "Torchlight", "install_path": epic}}, f)
+            found = install.find_games(home)
+            stores = {s for s, _ in found}
+            self.assertEqual(stores, {"gog", "steam", "epic"})
+            builds = {p: install.build_of(p) for _, p in found}
+            self.assertEqual(builds[os.path.realpath(gog)], "gog")
+            self.assertEqual(builds[os.path.realpath(wine)], "gog")
+            self.assertEqual(builds[os.path.realpath(epic)], "unknown")
+
+    def test_finds_the_360_pak_and_keeps_other_lines_of_the_ini(self):
+        with tempfile.TemporaryDirectory() as home:
+            x = os.path.join(home, "x360", "extracted")
+            os.makedirs(x)
+            with zipfile.ZipFile(os.path.join(x, "pak.zip"), "w") as z:
+                z.writestr("media/UI/mastermenu_xenon.layout", "<GUILayout/>")
+            with zipfile.ZipFile(os.path.join(home, "pak.zip"), "w") as z:
+                z.writestr("media/UI/hud.layout", "<GUILayout/>")
+            open(os.path.join(x, "default.xex"), "wb").close()
+            pak, image, xex = install.find_x360(home, roots=[home])
+            self.assertEqual(pak, os.path.join(x, "pak.zip"))
+            self.assertIsNone(image)
+            self.assertEqual(xex, os.path.join(x, "default.xex"))
+            game = os.path.join(home, "game")
+            os.makedirs(game)
+            with open(os.path.join(game, "x360_ui.ini"), "w") as f:
+                f.write("out=old\nfont_diff=1\n")
+            install.write_ini(game, os.path.join(game, "x360ui"))
+            with open(os.path.join(game, "x360_ui.ini")) as f:
+                text = f.read()
+            self.assertIn("prompts=auto", text)
+            self.assertIn("font_diff=1", text)
+            self.assertNotIn("out=old", text)
 
 
 class ImageStringsTest(unittest.TestCase):

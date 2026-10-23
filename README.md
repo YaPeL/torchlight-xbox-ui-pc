@@ -46,3 +46,17 @@ dialogs, stopped after three tries, its next steps written there).
 - `tools/check_no_game_files.py`: run by CI; fails if a game file type is committed.
 
 Tests use synthetic data only.
+
+## License
+
+GPL-3.0 (LICENSE). The code only: no file of either game is in this repository, and the converted
+interface is made from your own copies on your machine. The prompt icons in data/prompts are
+Kenney's "Input Prompts" (CC0; data/prompts/LICENSE.txt).
+
+## Installing
+
+`python3 tools/install.py` finds the PC game (GOG, Steam, Epic) and your extracted 360 copy, converts
+the 360's interface into the game's folder (one copy per pad style: Xbox, PlayStation 3/4/5,
+Nintendo) and installs the proxy. Only GOG's build 17870 is supported for now; `--list` shows what
+it finds, `--remove` puts the real CEGUIBase.dll back. It needs the 360's decrypted image
+(`default.bin`); without one it uses 360tools' `extract_pe.py` if installed.
