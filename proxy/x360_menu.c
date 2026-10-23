@@ -41,6 +41,7 @@ __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
 __declspec(dllimport) short __stdcall GetAsyncKeyState(int key);
 __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *name);
 __declspec(dllimport) void *__stdcall GetProcAddress(void *module, const char *name);
+__declspec(dllimport) int __stdcall VirtualProtect(void *addr, unsigned long size, unsigned long prot, unsigned long *old);
 
 /* Resolved in CEGUIBase_orig.dll; the build checks every name against the user's DLL. */
 static FARPROC need(const char *name) { return x360_need(name); }
@@ -1702,7 +1703,12 @@ static void show_info(void *item, float y, float list_left) {
          * TopFrame at 1172.7 in menus/08, 18 and 10, 1196.1 over 1174.1 in town/05), 25.1 into the
          * middle one (the merchant's card over the bag: 773.1 over 748.0 in town/01, 07, 09-11,
          * 18, 36-38) */
-        x = r.left + (panel_column(focus_panel) + 1 == 1 ? 17.85f : 15.6f) * k;
+        /* ... measured on the visible border, PC's tooltip drawing its frame about 15 pixels
+         * inside its root where the 360's is 22: the 360's border at the column's left - 0.7
+         * (third column: 1172 against 1172.7) and + 3 (middle: 751 against 748.0); ours was 7-8
+         * pixels right in both (QA run 2: 758; run B3: 1180), so the root goes 10.24 and 12.87
+         * (base units) in. */
+        x = r.left + (panel_column(focus_panel) + 1 == 1 ? 12.87f : 10.24f) * k;
     }
     /* The card's bottom kept 36 rows (of 720) above the screen's bottom: the 360's dumps
      * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends
@@ -4473,6 +4479,16 @@ static void pause_show(int on) {
     }
     if (!pause_root) return;
     pause_open = on;
+    /* The 360's pause stops the game (QA run 2: it did not). PC's pause (KEYMAP_PAUSE, CGameUI's
+     * update at 0x55de74) is CGameUI's 0x541c60: it flips +0x173d (the flag its updates and label
+     * loops test), and shows PC's "Paused" window (+0x9c), hidden here (the 360's menu says it). */
+    if (ui && (ui[0x173d] != 0) != (on != 0)) {
+        typedef void (__fastcall *self_fn)(void *self, void *edx);
+        __try {
+            ((self_fn)0x00541c60)(ui, 0);
+            if (on && *(void **)(ui + 0x9c)) set_visible(*(void **)(ui + 0x9c), 0, 0);
+        } __except (1) { x360_log("x360 menu: PC's pause threw\r\n"); }
+    }
     if (on) { pause_focus = 0; pause_draw(); }
     set_visible(pause_root, 0, on);
     if (on) { prop(pause_root, "AlwaysOnTop", "True"); move_to_front(pause_root, 0); }
@@ -4511,7 +4527,15 @@ void x360_pause_pad(unsigned pressed, int ly) {
     if (pressed & 0x1000) {                                            /* A */
         x360_log("x360 menu: pause A on "); x360_log_num(pause_focus); x360_log("\r\n");
         if (pause_focus == 1) { howto_show(1); if (howto_open) set_visible(pause_root, 0, 0); }
-        /* Exit to Title: not done (two tries failed, see the doc's section 14). */
+        /* Options and Exit to Title are PC's (the user's scope): PC's own pause menu
+         * (COptionsMenu, CGameUI's +0x2e8; optionsmenu.layout: Settings, ExitGame,
+         * ReturnToGame) is opened and its button pressed from the frame tick (pc_menu_tick):
+         * the earlier tries did both at once from the pad's hook and froze the game. */
+        if (pause_focus == 0 || pause_focus == 4) {
+            extern int x360_pc_menu_request;
+            x360_pc_menu_request = pause_focus == 0 ? 1 : 2;   /* 1 Settings, 2 ExitGame */
+            pause_show(0);
+        }
     }
 }
 
@@ -6122,7 +6146,7 @@ static void modal_tick(void) {
         pc_modal = find_pc_by_suffix("Accept", needs, pc_modal_prefix, sizeof pc_modal_prefix);
     }
     if (!pc_modal) return;
-    if (ench_pending || (int)(modal_skip_until - now) > 0) return;   /* an enchanting's result: its page takes it */
+    if (ench_pending || (modal_skip_until && (int)(modal_skip_until - now) > 0)) return;   /* an enchanting's result: its page takes it (0: none asked; a 0 compared would read as the future after 24.8 days of uptime) */
     if (!pc_attached(pc_modal_prefix, "Frame")) {
         if (modal_shown) {
             modal_shown = 0;
@@ -6312,6 +6336,99 @@ void x360_automap_cycle(void) {
     __except (1) { x360_log("x360: R3, the map's toggle threw\r\n"); }
 }
 
+/* The 360's pause menu's Options and Exit to Title, done by PC's own pause menu: opened by its
+ * setOpen (the virtual +0x1c) in one tick, its button pressed once it shows (a left click at its
+ * centre, as PC's other buttons), within 2 s. */
+int x360_pc_menu_request;
+static char pc_options_prefix[64];
+static void pc_menu_tick(void) {
+    static unsigned since;
+    static int opened;
+    unsigned char *m;
+    if (!x360_pc_menu_request || !ui) { since = 0; opened = 0; return; }
+    if (!since) since = GetTickCount();
+    if (GetTickCount() - since > 2000) {
+        x360_log("x360 menu: PC's pause menu did not show its button in 2 s\r\n");
+        x360_pc_menu_request = 0; since = 0; opened = 0;
+        return;
+    }
+    m = *(unsigned char **)(ui + 0x2e8);
+    if (!m) { x360_pc_menu_request = 0; return; }
+    if (!opened) {
+        ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 1);
+        opened = 1;
+        x360_log("x360 menu: PC's pause menu opened\r\n");
+        return;
+    }
+    {
+        static const char *const needs[] = {"ExitGame", "Settings", 0};
+        const char *button = x360_pc_menu_request == 1 ? "Settings" : "ExitGame";
+        if (!pc_options_prefix[0] || !win_of(pc_options_prefix, "ReturnToGame"))
+            find_pc_by_suffix("ReturnToGame", needs, pc_options_prefix, sizeof pc_options_prefix);
+        if (!pc_options_prefix[0] || !pc_shown_in(pc_options_prefix, button)) return;
+        press_pc(pc_options_prefix, button);
+        x360_pc_menu_request = 0; since = 0; opened = 0;
+    }
+}
+
+/* PC's hotkeys for its own screens, off: CGameUI's update tests each key (its action's binding,
+ * 0x5c53d0, pressed, 0x4e71b0) and opens the screen; each test's jump is made to always pass the
+ * opening by (the user: the menus showing and closing at once were not a fix). KEYMAP_INVENTORY
+ * [0xf60c0c] at 0x55d206 (with its HUD button's flag), KEYMAP_SKILLS [0xf60c00] at 0x55d282,
+ * KEYMAP_JOURNAL [0xf60bf8] at 0x55d2a4, KEYMAP_QUESTS [0xf60bfc] at 0x55d2c5, KEYMAP_STATS
+ * [0xf60c04] at 0x55d2e7, KEYMAP_PET [0xf60c08] at 0x55d318. Each patched only if its two bytes
+ * are as read. */
+static void hotkeys_off(void) {
+    static const struct { unsigned at; unsigned char was[2], now[2]; } p[] = {
+        {0x0055d206, {0x75, 0x08}, {0xeb, 0x16}},
+        {0x0055d282, {0x74, 0x07}, {0xeb, 0x07}},
+        {0x0055d2a4, {0x74, 0x07}, {0xeb, 0x07}},
+        {0x0055d2c5, {0x74, 0x07}, {0xeb, 0x07}},
+        {0x0055d2e7, {0x75, 0x08}, {0xeb, 0x16}},
+        {0x0055d318, {0x75, 0x08}, {0xeb, 0x16}},
+    };
+    static int done;
+    unsigned i, n = 0;
+    if (done) return;
+    done = 1;
+    for (i = 0; i < sizeof p / sizeof p[0]; i++) {
+        unsigned char *f = (unsigned char *)p[i].at;
+        unsigned long old;
+        if (f[0] != p[i].was[0] || f[1] != p[i].was[1]) continue;
+        if (!VirtualProtect(f, 2, 0x40, &old)) continue;
+        f[0] = p[i].now[0]; f[1] = p[i].now[1];
+        VirtualProtect(f, 2, old, &old);
+        n++;
+    }
+    x360_log("x360 menu: PC's screen hotkeys off: "); x360_log_num((long)n); x360_log(" of 6\r\n");
+}
+
+/* PC narrows its world's viewport while one of its side panels is open (a shop's: CGameUI's
+ * 0x541090 asks each of its panels, the vector at +0x16b8, their virtuals +8 and +0xc; the client's
+ * update at 0x40276c then sets the viewport inside them, and the mouse's and labels' projections,
+ * 0x411b8f, 0x541886, use the same test). The 360's frame covers the screen with the world seen
+ * whole around it, and the strips PC leaves out keep the last picture of PC's panels (QA runs 1, 2:
+ * the merchant's sides). While the 360's frame is open at a shop, 0x541090 answers no (its first
+ * bytes made "xor al, al; ret"; put back when it closes). */
+static void side_panels_test(int off) {
+    static const unsigned char no[3] = {0x32, 0xc0, 0xc3};
+    static unsigned char saved[3];
+    static int patched;
+    unsigned char *f = (unsigned char *)0x00541090;
+    unsigned long old;
+    unsigned i;
+    if (off == patched) return;
+    if (off && !(f[0] == 0x53 && f[1] == 0x56 && f[2] == 0x8b)) { x360_log("x360 menu: 0x541090 not as expected, left\r\n"); patched = -1; return; }
+    if (patched < 0) return;
+    if (!VirtualProtect(f, 3, 0x40 /* PAGE_EXECUTE_READWRITE */, &old)) return;
+    if (off) { for (i = 0; i < 3; i++) { saved[i] = f[i]; f[i] = no[i]; } }
+    else for (i = 0; i < 3; i++) f[i] = saved[i];
+    VirtualProtect(f, 3, old, &old);
+    patched = off;
+    x360_log(off ? "x360 menu: PC's side panels told closed (the world's viewport whole)\r\n"
+                 : "x360 menu: PC's side panels test put back\r\n");
+}
+
 void x360_frame_tick(void) {
     static int logged, preloaded;
     if (!find_world()) return;
@@ -6328,6 +6445,9 @@ void x360_frame_tick(void) {
         x360_log("x360: dumped the UI after a talk\r\n");
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
+    __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
+    __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }

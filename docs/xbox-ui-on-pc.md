@@ -2508,3 +2508,34 @@ the floor labels, the town portal scroll closing the bag. Broken and fixed after
   when its 3D distance to the hero is under the root of 20.0 (pool `0x820AA2C0 +0x244`) and it is
   not of type 29 (the breakables); one distance for items, chests, shrines and exits; a "show all"
   input as PC's Alt besides. The port makes the other labels of both lists transparent. Not run.
+
+**QA run 2 (2026-10-23, town and mine).** Steam's folders UNCHANGED. Fine: the mine's entrance's
+label only near; the merchant opens; the quest marker of the NPC talked to hidden (the others'
+stay, as the 360's town/14); the identify scroll (no Use, the 360's card text); the potion; the
+pet commands; the pet's sheet (its model faces front where the 360's lynx is three-quarter: the
+user's save has a wolf, the 360's a lynx). Found and fixed after it (not run yet):
+- **The 360's modal never showed** (PC's whole parchment modal came up): `modal_skip_until`, 0
+  when no wait was asked, was compared as a signed tick difference, which reads 0 as the future
+  once the machine's uptime passes 24.8 days (27.2 here). Now tested only when set.
+- **The merchant's sides kept PC's panels:** CEGUI had them hidden; PC narrows its world viewport
+  while a side panel is open (CGameUI `0x541090`, asking the panels in its vector at `+0x16b8`;
+  the client's update at `0x40276c` sets the narrowed viewport; the mouse's and labels'
+  projections use the same test), so the strips outside kept the last picture. While the 360's
+  frame is open at a shop, `0x541090` answers no (its first bytes "xor al, al; ret", put back
+  on closing; patched only if its bytes are as read).
+- **The card** 7-8 pixels right of the 360's (measured on the visible border, in the merchant's
+  middle column and the inventory's third): PC's tooltip draws its frame about 15 pixels inside
+  its root, the 360's 22. The root now goes 10.24 and 12.87 base units into the column.
+- **The pause did not pause:** the 360's pause menu now calls PC's pause (`0x541c60` on CGameUI,
+  KEYMAP_PAUSE's, flipping `+0x173d`) on opening and closing, PC's "Paused" window (`+0x9c`)
+  hidden.
+- **Options and Exit to Title** in the 360's pause menu open PC's own pause menu (COptionsMenu
+  `+0x2e8`, its setOpen) and press its Settings or ExitGame once it shows, from the frame tick
+  (the earlier tries did both at once from the pad's hook and froze).
+- **PC's hotkeys:** closing PC's screens as they opened showed them for a frame (the user). Now
+  CGameUI's update's tests for KEYMAP_INVENTORY, SKILLS, JOURNAL, QUESTS, STATS and PET
+  (`0x55d206`, `0x55d282`, `0x55d2a4`, `0x55d2c5`, `0x55d2e7`, `0x55d318`) are made to always
+  jump past the opening, in memory, each only if its bytes are as read.
+- Open: the pet's sheet's name is gold (white on the 360), the card's two dividers around an
+  empty description, the pet model's three-quarter turn, the minimap's fill (the user: "not
+  identical").
