@@ -7220,7 +7220,7 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * the world is ready without it (the 360's HUD up, then 60 frames, counted, not timed); then, with
  * no pet, the game stops with a message that says so. Nothing is done out of play (the title loads
  * the last character as well, QA run 29: its items were kept aside and placed twice). */
-/* The stop: saves held back at once; the text into x360_stop.txt beside the game and the log; PC's
+/* The stop: saves held back at once; the text into x360_stop.txt (stop_path: LOCALAPPDATA\\x360ui) and the log; PC's
  * own modal opened with it (0x54cad0 on CGameUI, as PC's callers do: its title and text, wide
  * strings by value), which the 360's modal shows (modal_tick) and which takes the pad, keyboard
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
@@ -7232,7 +7232,7 @@ static unsigned stop_t0;               /* when (GetTickCount): the modal is wait
 #define STOP_WAIT_MS 120000          /* from the stop, while another modal is open (state 3) */
 #define STOP_BOX_MS 30000
 static unsigned short stop_wbody[700];
-static char stop_file[600];              /* x360_stop.txt, the stop's text beside the game */
+static char stop_file[600];              /* x360_stop.txt, where stop_path put it */
 int x360_test_stop_modal_fails;        /* x360_ui.ini test_stop_modal_fails=1: a test, PC's modal never shows */
 
 static void utf8_to_wide(const char *text, unsigned short *w, unsigned size) {
@@ -7319,15 +7319,34 @@ static void notice_tick(void) {
     if (open_pc_modal("The mod", notice_text)) { notice_pending = 0; x360_log("x360: the notice shows\r\n"); }
 }
 
-/* x360_stop.txt beside the game: the stop's text, kept until the player has seen it (the stop's
+/* x360_stop.txt (stop_path): the stop's text, kept until the player has seen it (the stop's
  * modal or black screen closed by them); one left at the next start is shown then, at the title. */
 static char stop_utf8[700];
+/* Its place: %LOCALAPPDATA%\x360ui\x360_stop.txt (the game's folder may be Program Files, which the
+ * game may not write and Windows would redirect into VirtualStore); the uninstallers remove the
+ * folder. Beside the game only when there is no LOCALAPPDATA. kernel32's, looked up. */
+static void stop_path(char *path, unsigned size) {
+    typedef unsigned long (__stdcall *getenv_fn)(const char *name, char *out, unsigned long size);
+    typedef int (__stdcall *mkdir_fn)(const char *name, void *security);
+    void *k = GetModuleHandleA("kernel32.dll");
+    getenv_fn env = k ? (getenv_fn)GetProcAddress(k, "GetEnvironmentVariableA") : 0;
+    mkdir_fn mkdir = k ? (mkdir_fn)GetProcAddress(k, "CreateDirectoryA") : 0;
+    unsigned long n = env ? env("LOCALAPPDATA", path, size - 32) : 0;
+    if (n && n < size - 32 && mkdir) {
+        copy(path + n, size - n, "\\x360ui", 0);
+        mkdir(path, 0);   /* there already: fine */
+        copy(path + length(path), size - length(path), "\\x360_stop.txt", 0);
+        return;
+    }
+    n = GetModuleFileNameA(0, path, size - 20);
+    while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
+    copy(path + n, size - n, "x360_stop.txt", 0);
+}
 static void write_stop_file(const char *text) {
     char path[600];
     void *f;
-    unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), done;
-    while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
-    copy(path + n, sizeof path - n, "x360_stop.txt", 0);
+    unsigned long done;
+    stop_path(path, sizeof path);
     copy(stop_file, sizeof stop_file, path, 0);
     f = CreateFileA(path, 0x40000000, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
     if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
@@ -7491,9 +7510,8 @@ void x360_stop_file_check(void) {
     static char textbuf[1200];
     char path[600];
     void *f;
-    unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), got = 0;
-    while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
-    copy(path + n, sizeof path - n, "x360_stop.txt", 0);
+    unsigned long n, got = 0;
+    stop_path(path, sizeof path);
     f = CreateFileA(path, 0x80000000, 1, 0, 3, 0x80, 0);   /* GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING */
     if (f == (void *)-1) return;
     copy(textbuf, sizeof textbuf, "The last game was closed by the mod, and this was not shown then:\n\n", 0);
