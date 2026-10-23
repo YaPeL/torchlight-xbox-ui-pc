@@ -5077,13 +5077,22 @@ void x360_shop_tick(void) {
  * filter; A acts on the row; B or Back closes. */
 static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
 static int stop_asked;   /* a stop was decided (stop_unsaved): the menus take no input after it */
+static unsigned short stop_wbody[700];   /* the stop's text (also declared below) */
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     static int logged;
     if (stop_asked) return;
     __try { inventory_pad(pressed, buttons, lx, ly); }
     __except (1) { if (!logged++) x360_log("x360 inv: exception in the menus' input (logged once)\r\n"); }
     __try { move_cut_short(); }
-    __except (1) { x360_save_held = 1; stop_asked = 1; x360_log("x360 inv: exception stopping a cut move: saves held\r\n"); }
+    __except (1) {
+        /* The last-resort box needs a text: a fixed one if the stop's was not made. */
+        static const char fallback[] = "A move between bags was interrupted. Nothing is saved, nothing is lost: the game closes.";
+        unsigned i;
+        x360_save_held = 1;
+        if (!stop_wbody[0]) { for (i = 0; fallback[i] && i + 1 < 700; i++) stop_wbody[i] = (unsigned char)fallback[i]; stop_wbody[i] = 0; }
+        stop_asked = 1;
+        x360_log("x360 inv: exception stopping a cut move: saves held\r\n");
+    }
 }
 static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     static unsigned next_repeat;
@@ -7309,7 +7318,7 @@ static void notice_tick(void) {
 static void stop_unsaved(const char *why, int count) {
     char text[700], name[96], path[600], *p = text;
     x360_save_held = 1;
-    if (stop_asked) return;   /* one stop: a second would replace the modal being shown */
+    if (stop_asked) { x360_log("x360 load: a second stop ignored (one is under way)\r\n"); return; }
     stop_asked = 1;
     stop_t0 = GetTickCount();
     name[0] = 0;
