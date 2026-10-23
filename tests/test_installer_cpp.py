@@ -350,6 +350,30 @@ class ConvertCppTest(unittest.TestCase):
             with open(os.path.join(root, "py", "x360_strings.txt"), "rb") as a, open(os.path.join(root, "cpp", "x360_strings.txt"), "rb") as b:
                 self.assertEqual(b.read(), a.read())
 
+    def test_zip_unicode_path_field_as_python(self):
+        """An entry whose Info-ZIP Unicode Path field (0x7075, version 1, the raw name's CRC) names
+        another file: zipfile (3.12 on) takes that name; the C++ does the same."""
+        import zipfile, zlib
+        if sys.version_info < (3, 12):
+            self.skipTest("zipfile reads the field from Python 3.12")
+        from test_tools import ConvertX360Test
+        with tempfile.TemporaryDirectory() as root:
+            pak = os.path.join(root, "pak.zip")
+            with zipfile.ZipFile(pak, "w") as z:
+                for name, data in ConvertX360Test.FILES.items():
+                    if name.endswith("skills.uilayout"):
+                        info = zipfile.ZipInfo("media/ui/other.uilayout")
+                        up = b"media/ui/renamed.uilayout"
+                        info.extra = struct.pack("<HHBL", 0x7075, 5 + len(up), 1, zlib.crc32(b"media/ui/other.uilayout")) + up
+                        z.writestr(info, data)
+                    else:
+                        z.writestr(name, data)
+            run(sys.executable, os.path.join(TOOLS, "convert_x360_ui.py"), pak, os.path.join(root, "py"))
+            run(BINARY, "dev", "convert", pak, os.path.join(root, "cpp"))
+            d = os.path.join("media", "ui", "x360")
+            self.assertTrue(os.path.isfile(os.path.join(root, "py", d, "renamed.layout")))
+            self.assertEqual(sorted(os.listdir(os.path.join(root, "cpp", d))), sorted(os.listdir(os.path.join(root, "py", d))))
+
 
 if __name__ == "__main__":
     unittest.main()
