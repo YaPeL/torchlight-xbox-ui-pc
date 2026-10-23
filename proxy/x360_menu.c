@@ -6580,6 +6580,26 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
         }
     } __except (1) { }
 }
+/* The minimap under the 360's modal: the 360 hides it there (in-game/16; its shops keep it, town/07).
+ * PC's automap (CGameUI's +0x20, its +0x160; shown at its +0x3c) hidden by PC's own call
+ * (0x4ea6b0 with 0, as KEYMAP_AUTOMAP's 0x4ee7c0 does) while the modal shows, if it was shown, and
+ * shown again after. */
+static void modal_minimap(int hide) {
+    typedef void (__fastcall *show_fn)(void *self, void *edx, int on);
+    static unsigned char *hidden;
+    unsigned char *holder, *am;
+    if (!ui) return;
+    holder = *(unsigned char **)(ui + 0x20);
+    am = holder ? *(unsigned char **)(holder + 0x160) : 0;
+    if (hide) {
+        if (hidden || !am || !am[0x3c]) return;
+        __try { ((show_fn)0x004ea6b0)(am, 0, 0); hidden = am; } __except (1) { }
+    } else if (hidden) {
+        __try { if (am == hidden) ((show_fn)0x004ea6b0)(am, 0, 1); } __except (1) { }
+        hidden = 0;
+    }
+}
+
 static void boards_tick(void) {
     /* Each shop screen's board, where its update (its vtable's slot 9) animates it: CInventoryMenu
      * 0x580f80 its +0x7b20, CMerchantMenu 0x58ac50 +0x48, CEnchantMenu 0x5752d0 +0x50,
@@ -6592,6 +6612,7 @@ static void boards_tick(void) {
     unsigned i;
     int want_modal = modal_shown, want_shop = inventory_open && shop;
     if (!ui) return;
+    modal_minimap(want_modal);
     if (want_modal || modal_hidden) {
         unsigned char *m = *(unsigned char **)(ui + 0x304);
         if (m && *(unsigned *)m == 0x00ab7d04) board_visible(m, 0x38, !want_modal);
@@ -6630,7 +6651,11 @@ static void pc_bars_off(void) {
     nm = c_str(gn(root, 0), 0);
     n = nm ? length(nm) : 0;
     if (n < 4 || nm[n - 4] != 'R' || nm[n - 3] != 'o' || nm[n - 2] != 'o' || nm[n - 1] != 't') return;
-    prop(root, "Alpha", "0");
+    {
+        char a[16];
+        read_prop(root, "Alpha", a, sizeof a);   /* written only when not already 0: a write redraws (QA run 11's slowness) */
+        if (!(a[0] == '0' && a[1] != '.')) prop(root, "Alpha", "0");
+    }
 }
 
 /* PC narrows its world's viewport while one of its side panels is open (a shop's: CGameUI's
