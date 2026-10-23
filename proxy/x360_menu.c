@@ -5493,7 +5493,12 @@ static void *find_pc_by_suffix(const char *suffix, const char *const *needs, cha
 }
 
 /* PC's quest dialog's DialogTextFrame. */
-static void *find_pc_dialog(void) { return find_pc_by_suffix("DialogTextFrame", 0, pc_qd_prefix, sizeof pc_qd_prefix); }
+/* With its Portrait: PC's cinematic menu has a DialogTextFrame too (QA run 18: a new character's
+ * intro took it, the quest dialog then never found). */
+static void *find_pc_dialog(void) {
+    static const char *const needs[] = {"Portrait", 0};
+    return find_pc_by_suffix("DialogTextFrame", needs, pc_qd_prefix, sizeof pc_qd_prefix);
+}
 
 /* Whether PC's window prefix+name is visible, and its Frame shown and still under the GUI sheet
  * (PC closes its menus by taking them off the sheet: they stay "visible"). */
@@ -6702,7 +6707,7 @@ static void side_panels_test(int off) {
  * from the top one down: up and down (the d-pad or the left stick) move the focus, shown as PC
  * shows a hover (the CEGUI cursor, hidden, put on the button's centre); A clicks it there. Not in
  * PC's settings screen (Apply, Cancel), used with the mouse, which shows there; hidden elsewhere. */
-static void *nav_list[24];
+static void *nav_list[24], *nav_editing;
 static int nav_count, nav_focus;
 /* The windows the pad goes to, by their type's end: buttons, edit boxes (A clicks one: its caret,
  * the keyboard types the name), check boxes (difficulty's Hardcore), the character load's slots
@@ -6724,6 +6729,24 @@ static int nav_kind(void *w) {
     static str_fn get_type;
     if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
     return w && get_type ? nav_kind_of(c_str(get_type(w, 0), 0)) : NAV_NONE;
+}
+/* A window's rectangle in pixels; a drop-down's is its edit box's (CEGUI's Combobox spans its
+ * list too: its centre was below, the pad passed it by, QA run 18). */
+typedef struct { float top, bottom, left, right; } nav_rect_t;
+static void nav_rect(void *w, void *out) {
+    typedef nav_rect_t *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, nav_rect_t *out);
+    static pixel_rect_fn6 rect_of;
+    nav_rect_t *r = (nav_rect_t *)out;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!rect_of) return;
+    rect_of(w, 0, r);
+    if (nav_kind(w) == NAV_COMBO) {
+        unsigned c, n = child_count(w, 0);
+        for (c = 0; c < n; c++) {
+            void *e = child_at(w, 0, c);
+            if (nav_kind(e) == NAV_EDIT) { rect_of(e, 0, r); break; }
+        }
+    }
 }
 /* Left or right (step -1, 1) on a slider (its click step, else a tenth) or a drop-down (the item
  * before or after, accepted as a click on it would: its text, PC's handler). */
@@ -6961,7 +6984,7 @@ static void pc_menus_nav_tick(void) {
             }
         }
         /* From the top one down, then left to right. */
-        for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
+        for (i = 0; i < nav_count; i++) nav_rect(nav_list[i], &r[i]);
         for (i = 1; i < nav_count; i++)
             for (j = i; j > 0 && (r[j].top < r[j - 1].top - 4.0f || (r[j].top < r[j - 1].top + 4.0f && r[j].left < r[j - 1].left)); j--) {
                 rect6 t = r[j]; void *tw = nav_list[j];
@@ -6983,7 +7006,7 @@ static void pc_menus_nav_tick(void) {
             if (!was) nav_focus = 0;
             nav_point((r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
         }
-    } else for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
+    } else for (i = 0; i < nav_count; i++) nav_rect(nav_list[i], &r[i]);
     if (!nav_count) return;
     {
         /* A direction (1 up, 2 down, 3 left, 4 right): the d-pad, or the left stick held (its
@@ -6998,9 +7021,20 @@ static void pc_menus_nav_tick(void) {
         else if (stick && (stick != held_dir || (int)(now - next_repeat) >= 0)) { dir = stick; next_repeat = now + (stick != held_dir ? 400 : 180); }
         held_dir = stick;
     }
-    if ((dir == 3 || dir == 4) && (nav_kind(nav_list[nav_focus]) == NAV_SLIDER || nav_kind(nav_list[nav_focus]) == NAV_COMBO)) {
+    /* A slider or a drop-down is changed after an A on it (left and right then change it; A, B, up
+     * or down end that): the d-pad otherwise moves on past it (QA run 18: left and right always
+     * changing it trapped the focus there). */
+    if (nav_editing && (nav_editing != nav_list[nav_focus] || (pressed & (0x1000 | 0x2000)) || dir == 1 || dir == 2)) {
+        if (pressed & (0x1000 | 0x2000)) pressed &= ~0x1000u;
+        nav_editing = 0;
+        x360_log("x360 menu: changing a setting ended\r\n");
+    } else if (nav_editing && (dir == 3 || dir == 4)) {
         nav_change(nav_list[nav_focus], nav_kind(nav_list[nav_focus]), dir == 3 ? -1 : 1);
         dir = 0;
+    } else if ((pressed & 0x1000) && (nav_kind(nav_list[nav_focus]) == NAV_SLIDER || nav_kind(nav_list[nav_focus]) == NAV_COMBO)) {
+        nav_editing = nav_list[nav_focus];
+        pressed &= ~0x1000u;
+        x360_log("x360 menu: changing a setting (left, right)\r\n");
     }
     if (dir) {
         /* The nearest window that way (its centre's distance along it, plus twice the distance across:
