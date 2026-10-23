@@ -266,6 +266,7 @@ def save_folders(game, home=None):
     and the prefixes beside it (a Proton run's own prefix next to the install's: "compat/pfx" by
     "prefix"), not every prefix in the home."""
     tail = os.path.join("AppData", "Roaming", "runic games", "torchlight", "save")
+    home = home or os.path.expanduser("~")
     found = []
     if os.name == "nt" and os.environ.get("APPDATA"):
         found.append(os.path.join(os.environ["APPDATA"], "runic games", "torchlight", "save"))
