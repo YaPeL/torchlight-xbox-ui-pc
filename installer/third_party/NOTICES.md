@@ -3,7 +3,13 @@
 - **tiny-AES-c** (`tiny-aes/aes.c`, `aes.h`): https://github.com/kokke/tiny-AES-c at commit
   `23856752fbd139da0b8ca6e471a13d5bcc99a08d`, unchanged. Released into the public domain under
   The Unlicense (`tiny-aes/unlicense.txt`). Built with CBC only, AES-128.
-- **LZX** (`../src/lzx.cpp`, `lzx.h`): a C++ port of `tools/xex/lzx_decompress.py`, which comes from
+- **LZX** (`../src/lzx.cpp`, `lzx.h`): a C++ port of `tools/xex/lzx_decompress.py`. That file mirrors
+  libmspack's `lzxd.c` (its state, its tables, its frame by frame decoding), so both are taken as
+  derived from it: **libmspack**, https://github.com/kyz/libmspack, `libmspack/mspack/lzxd.c`,
+  (C) 2003-2023 Stuart Caie (the LZX method by Jonathan Forbes and Tomi Poutanen, adapted by
+  Microsoft), under the GNU Lesser General Public License 2.1 (`LGPL-2.1.txt`, beside this file).
+  This repository is GPL-3.0 (`LICENSE`); the LGPL's section 3 lets that code be used under the GPL,
+  and its source is this repository's at the release's tag. The Python file itself comes from
   https://github.com/sp00nznet/360tools (`tools/lzx_decompress.py`), MIT License:
 
   > Copyright (c) 2026 sp00nznet

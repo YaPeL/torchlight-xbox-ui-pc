@@ -3134,3 +3134,15 @@ release is made of, makes only the artifacts.
 - **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
   printed in the log, to compare with a local build), the actions by major version and the
   container images by tag.
+
+**Licences (the GPU agent's review, items 7 and 8; 2026-10-23).** The LZX decoder
+(`tools/xex/lzx_decompress.py` and its C++ port `installer/src/lzx.cpp`) mirrors libmspack's
+`lzxd.c`: the same state (`header_read`, `block_remaining`, `intel_filesize`, `intel_started`, the
+length tables with `LENTABLE_SAFETY` 64), the same frame by frame decoding, and the Python file's
+own comments name it. So it is taken as derived from libmspack ((C) 2003-2023 Stuart Caie, LGPL-2.1):
+credited in `installer/third_party/NOTICES.md`, `tools/xex/README.md` and both files' headers, the
+licence's text in `installer/third_party/LGPL-2.1.txt`, used under its section 3 as GPL-3.0 code.
+The release carries `THIRD_PARTY_NOTICES.md`, `LGPL-2.1.txt`, `LICENSE.txt` and
+`APPIMAGE_NOTICES.md` beside the `.exe` (the AppImage carries them inside too), and the AppImage
+runtime's libfuse source: `fuse-3.15.0.tar.xz`, `type2-runtime-8f39b89.tar.gz` and the patch alone,
+`libfuse-mount.c.diff`.

@@ -17,3 +17,7 @@ get fuse-3.15.0.tar.xz \
 get type2-runtime-8f39b89.tar.gz \
   https://github.com/AppImage/type2-runtime/archive/8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa.tar.gz \
   c449eb42c2190820872631f5e22f8e15b1e985a36dc4a9e2de3585bb7536c785
+# The patch to libfuse on its own too (it is also in the tarball).
+tar -xzOf type2-runtime-8f39b89.tar.gz \
+  type2-runtime-8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa/patches/libfuse/mount.c.diff > libfuse-mount.c.diff
+[ -s libfuse-mount.c.diff ] || { echo "get_sources: no libfuse patch in the type2-runtime tarball" >&2; exit 1; }

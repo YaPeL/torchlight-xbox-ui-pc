@@ -6,3 +6,7 @@ address: guest address A is file offset A - base).
   (pycryptodome when installed, else `aes128.py`, plain Python AES written here). Changed here: the AES fallback.
 - `lzx_decompress.py`: from https://github.com/sp00nznet/360tools (tools/lzx_decompress.py),
   MIT License, Copyright (c) 2026 sp00nznet; its notice is at the top of the file and in `LICENSE-lzx_decompress`.
+  It mirrors libmspack's `lzxd.c` (its state's fields, `LENTABLE_SAFETY`, the frame by frame
+  decoding, which its comments name), so it is taken as derived from it: libmspack, (C) 2003-2023
+  Stuart Caie, GNU LGPL 2.1 (`installer/third_party/LGPL-2.1.txt`), used here under the LGPL's
+  section 3 as GPL-3.0 code like the rest of the repository.

@@ -1,5 +1,8 @@
 # Copied from https://github.com/sp00nznet/360tools (tools/lzx_decompress.py), MIT License,
-# Copyright (c) 2026 sp00nznet.
+# Copyright (c) 2026 sp00nznet. It mirrors libmspack's lzxd.c (its state, its tables, its frame by
+# frame decoding; https://github.com/kyz/libmspack, (C) 2003-2023 Stuart Caie, GNU LGPL 2.1, text in
+# installer/third_party/LGPL-2.1.txt), so it is taken as derived from it: this repository uses it
+# under the LGPL's section 3, as GPL-3.0 code (LICENSE), with both notices kept.
 """
 LZX decompression algorithm for Xbox 360 XEX2 files.
 
