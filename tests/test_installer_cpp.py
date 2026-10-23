@@ -594,6 +594,23 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(len(backups), 1, who)
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
 
+    def test_test_options_not_kept(self):
+        """The proxy's test options (save_root moves the saves where no backup looks, hold_saves holds
+        every save): dropped by an install in both installers, the user's other lines kept."""
+        text = (b"save_root=Z:\\somewhere\r\nhold_saves=1\r\ntest_no_stop=1\r\npad_detect=057e\r\n"
+                b"console=MONEY 1\r\nfont_diff=1\r\n")
+        for who in ("py", "cpp"):
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "wb") as f:
+                f.write(text)
+            r = self.install(who, "--bag", "pc")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "rb") as f:
+                ini = f.read()
+            for key in (b"save_root", b"hold_saves", b"test_no_stop", b"pad_detect", b"console"):
+                self.assertNotIn(key, ini, who)
+            self.assertIn(b"font_diff=1\r\n", ini, who)
+        self.same_install()
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""

@@ -375,6 +375,15 @@ def read_ini(game):
     return values
 
 
+# The proxy's test options (x360_ui.ini, for runs on copies): never kept by an install; the proxy
+# also warns on screen when it finds one.
+TEST_OPTIONS = ("save_root", "hold_saves", "pad_detect", "console")
+
+
+def is_test_option(key):
+    return key in TEST_OPTIONS or key.startswith("test_")
+
+
 def write_ini(game, out, bag="pc"):
     """x360_ui.ini with the keys the installer owns set; other lines kept."""
     path = os.path.join(game, "x360_ui.ini")
@@ -387,7 +396,8 @@ def write_ini(game, out, bag="pc"):
     lines = []
     if os.path.isfile(path):
         with open(path, encoding="utf-8", errors="ignore") as f:
-            lines = [l.rstrip("\r\n") for l in f if l.split("=", 1)[0].strip() not in owned]
+            lines = [l.rstrip("\r\n") for l in f
+                     if l.split("=", 1)[0].strip() not in owned and not is_test_option(l.split("=", 1)[0].strip())]
     with open(path, "w", encoding="utf-8", newline="\r\n") as f:
         for k, v in owned.items():
             if v is not None:
