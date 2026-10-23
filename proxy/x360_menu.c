@@ -6717,6 +6717,9 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
     if (!get_type || !gn || !vis) return;
     nm = c_str(gn(w, 0), 0);
     if (nm && nm[0] == 'x' && nm[1] == '3' && nm[2] == '6' && nm[3] == '0') return;   /* the port's */
+    /* Out of play, not PC's in-game sheet: its HUD buttons stay visible while a game loads (QA run
+     * 14: 19 of them listed for a moment). */
+    if (!only_under_pause && nm && nm[0] == 'I' && nm[1] == 'n' && nm[2] == 'g' && nm[3] == 'a' && nm[4] == 'm' && nm[5] == 'e' && nm[6] == ' ') return;
     if (!vis(w, 0, 1)) return;   /* hidden here: nothing under it shows */
     type = c_str(get_type(w, 0), 0);
     if (type && depth > 0) {
