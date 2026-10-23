@@ -6737,7 +6737,8 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
         }
         if (hit) {
             nav_list[nav_count++] = w;
-            return;
+            /* A slot holds windows too: the load's DeleteConfirm, its DeleteConfirmButton and Cancel. */
+            if (q != 4) return;
         }
     }
     n = child_count(w, 0);
