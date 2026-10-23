@@ -6917,7 +6917,7 @@ static const unsigned char save_want[3] = {0x6a, 0xff, 0x68};
 #define SAVE_MOVED 7
 #endif
 static unsigned char save_tramp[16];
-static int x360_save_held;
+int x360_save_held;                    /* also x360_ui.ini hold_saves=1: a test of the hold, off by default */
 static int __fastcall save_game_hook(void *self, void *edx, int a, int b) {
     typedef int (__fastcall *orig_fn)(void *self, void *edx, int a, int b);
     if (x360_save_held) { x360_log("x360 load: a save refused (a stop is pending)\r\n"); return 0; }
@@ -7067,7 +7067,7 @@ static void stop_unsaved(const char *why, int count) {
     unsigned i;
     x360_save_held = 1;
     name[0] = 0;
-    __try { if (hero) unit_name(hero, name, sizeof name); } __except (1) { name[0] = 0; }
+    __try { if (hero && !wstring_utf8(hero + 0x420, name, sizeof name)) name[0] = 0; } __except (1) { name[0] = 0; }   /* the shown name (GOG_UNIT_NAME), not the class's */
     copy(p, sizeof text, name[0] ? name : "This character", ": ");
     p += length(p);
     if (count >= 0) p = put_int(p, count);
@@ -7083,8 +7083,18 @@ static void stop_unsaved(const char *why, int count) {
     }
     for (i = 0; i < 63 && "The bag"[i]; i++) wtitle[i] = (unsigned char)"The bag"[i];
     wtitle[i] = 0;
-    for (i = 0; i < 699 && text[i]; i++) wbody[i] = (unsigned char)text[i];   /* ASCII: the name is the save's */
-    wbody[i] = 0;
+    {
+        /* UTF-8 to UTF-16 (the character's name may have any letter). */
+        const unsigned char *u = (const unsigned char *)text;
+        unsigned o = 0;
+        while (*u && o < 698) {
+            unsigned c = *u++;
+            if (c >= 0xe0 && u[0] && u[1]) { c = (c & 0x0f) << 12 | (u[0] & 0x3f) << 6 | (u[1] & 0x3f); u += 2; }
+            else if (c >= 0xc0 && u[0]) { c = (c & 0x1f) << 6 | (u[0] & 0x3f); u++; }
+            wbody[o++] = (unsigned short)c;
+        }
+        wbody[o] = 0;
+    }
     stop_state = 0;
     __try {
         typedef void (__fastcall *ctor_fn)(void *self, void *edx, const unsigned short *s);

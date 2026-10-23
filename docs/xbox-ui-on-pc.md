@@ -2926,7 +2926,7 @@ pending it returns at once and logs "a save refused". The stop itself: saves hel
 in the log and in `x360_stop.txt` beside the game, and PC's own modal opened with it
 (`0x54cad0` on CGameUI, the strings made with msvcp90's `basic_string<wchar_t>(const wchar_t *)`,
 `0xa85418`), which the 360's modal shows and which takes the pad, keyboard and mouse as PC's modal
-does; when it closes, `TerminateProcess`. Not run yet.
+does; when it closes, `TerminateProcess`. QA run 37: the 360's modal showed the text (A OK), A closed the game, the save and `sharedstash.bin` byte for byte N1's, the owner's folders' hashes the same, Steam's UNCHANGED; no save was attempted meanwhile (none logged). The text named the class (`unit_name`): it now takes the shown name (`+0x420`), turned to UTF-16. `hold_saves=1` in x360_ui.ini (a test, off by default) holds every save back from the start, to try the hold by changing level and leaving.
 
 **The warning without the mod (the owner, 2026-10-23).** In three places, in English (the
 installer's only language): the installer's question for the 360's bag (`BAG_WARNING`, with
