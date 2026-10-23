@@ -37,19 +37,30 @@ You need:
 
 - Torchlight for PC, from **GOG** (build 17870, the one GOG sells). Other stores' builds are not
   supported yet.
-- Your Torchlight Xbox LIVE Arcade package (title 58410A7E) or a folder extracted from it.
-- Python 3.
+- Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
+  Xbox 360's storage, or a folder extracted from it.
+- Python 3. Nothing else: the package is read and its executable decrypted in plain Python
+  (pycryptodome, if installed, makes it faster).
 
 Run `python3 tools/install.py`. It finds the PC game (GOG, Steam and Epic installs, also inside
-Wine and Proton prefixes), converts the 360's interface from your copy into the game's folder (one
-copy per pad style: Xbox, PlayStation 3/4/5 and Nintendo), writes `x360_ui.ini` and installs the
-proxy. The game's real `CEGUIBase.dll` is kept as `CEGUIBase_orig.dll`.
+Wine and Proton prefixes), asks for your 360 package, checks that it is Torchlight's, converts the
+360's interface into the game's folder (one copy per pad style: Xbox, PlayStation 3/4/5 and
+Nintendo), writes `x360_ui.ini` and installs the proxy. The game's real `CEGUIBase.dll` is kept as
+`CEGUIBase_orig.dll`. It takes about a minute.
 
-- `--list` prints the games it found and stops.
-- `--remove` puts the real `CEGUIBase.dll` back.
+It also asks which bag you want:
 
-The installer is being reworked to take the XBLA package directly (`tools/stfs.py` and
-`tools/xex/` already read and decrypt it, with nothing beyond Python) and to uninstall cleanly.
+- **PC's** (the default): three sections of 21 slots.
+- **The 360's**: one section of 50 slots for every kind of item, as on the console. Your saves keep
+  each item's slot, so with it items past the 50th slot of a save are lost, and going back to PC's
+  bag later places items oddly. The installer backs up the saves it finds first.
+
+Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
+questions, PC's bag), `--console` (questions on the console, not in windows).
+
+- `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
+  install wrote. Saves are not touched.
+- `python3 tools/install.py list` prints the games it finds.
 
 ## Playing
 
@@ -91,8 +102,8 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - **GOG only.** The proxy uses addresses of GOG's build 17870. Steam sells an older build (17685);
   most of the addresses are already found in it, and support is planned. Humble and Epic will come
   after.
-- **The bag's size.** PC's bag holds 21 items per section, the 360's more; a larger bag as the
-  360's is being added as an install option.
+- **The bag.** With PC's bag (the default) the equipment section holds 21 items; the 360's bag
+  is an install option (above), with its effect on saves.
 - Windows-only binaries; on Linux the game runs under Proton or Wine.
 
 ## Tools

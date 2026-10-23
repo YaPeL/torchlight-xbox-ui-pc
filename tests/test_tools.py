@@ -16,6 +16,9 @@ import compare_installs  # noqa: E402
 import compare_ui  # noqa: E402
 import convert_x360_ui  # noqa: E402
 import install  # noqa: E402
+import stfs  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "xex"))
+import aes128  # noqa: E402
 import layout_windows  # noqa: E402
 import port_addresses  # noqa: E402
 import send_input  # noqa: E402
@@ -637,29 +640,171 @@ class InstallTest(unittest.TestCase):
             self.assertEqual(builds[os.path.realpath(wine)], "gog")
             self.assertEqual(builds[os.path.realpath(epic)], "unknown")
 
-    def test_finds_the_360_pak_and_keeps_other_lines_of_the_ini(self):
+    def test_writes_the_ini_with_the_bag_and_keeps_other_lines(self):
+        with tempfile.TemporaryDirectory() as home:
+            game = os.path.join(home, "game")
+            os.makedirs(game)
+            with open(os.path.join(game, "x360_ui.ini"), "w") as f:
+                f.write("out=old\nfont_diff=1\nupdate_check=0\n")
+            install.write_ini(game, os.path.join(game, "x360ui"), "360")
+            with open(os.path.join(game, "x360_ui.ini")) as f:
+                text = f.read()
+            self.assertIn("prompts=auto", text)
+            self.assertIn("bag=360", text)
+            self.assertIn("font_diff=1", text)
+            self.assertNotIn("out=old", text)
+            self.assertNotIn("update_check", text)
+            self.assertEqual(install.read_ini(game)["bag"], "360")
+
+    def test_reads_the_360_copy_from_an_extracted_folder(self):
         with tempfile.TemporaryDirectory() as home:
             x = os.path.join(home, "x360", "extracted")
             os.makedirs(x)
             with zipfile.ZipFile(os.path.join(x, "pak.zip"), "w") as z:
                 z.writestr("media/UI/mastermenu_xenon.layout", "<GUILayout/>")
-            with zipfile.ZipFile(os.path.join(home, "pak.zip"), "w") as z:
+            with open(os.path.join(x, "default.bin"), "wb") as f:
+                f.write(b"MZ")
+            work = os.path.join(home, "work")
+            os.makedirs(work)
+            saved = install.is_x360_image
+            try:
+                install.is_x360_image = lambda data: data[:2] == b"MZ"
+                pak, image = install.read_360_copy(os.path.join(home, "x360"), work)
+            finally:
+                install.is_x360_image = saved
+            self.assertTrue(install.is_x360_pak(pak))
+            self.assertEqual(image, os.path.join(x, "default.bin"))
+            other = os.path.join(home, "other")
+            os.makedirs(other)
+            with zipfile.ZipFile(os.path.join(other, "pak.zip"), "w") as z:
                 z.writestr("media/UI/hud.layout", "<GUILayout/>")
-            open(os.path.join(x, "default.xex"), "wb").close()
-            pak, image, xex = install.find_x360(home, roots=[home])
-            self.assertEqual(pak, os.path.join(x, "pak.zip"))
-            self.assertIsNone(image)
-            self.assertEqual(xex, os.path.join(x, "default.xex"))
+            open(os.path.join(other, "default.bin"), "wb").close()
+            with self.assertRaises(SystemExit):
+                install.read_360_copy(other, work)
+
+    def test_refuses_another_games_package(self):
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "pkg")
+            with open(path, "wb") as f:
+                f.write(stfs_package({"pak.zip": b"x"}, title=0x12345678))
+            with self.assertRaises(SystemExit) as e:
+                install.read_360_copy(path, home)
+            self.assertIn("another game", str(e.exception))
+
+    def test_backs_up_the_saves_of_the_games_prefix(self):
+        with tempfile.TemporaryDirectory() as home:
+            game = os.path.join(home, "pfx", "drive_c", "GOG Games", "Torchlight")
+            fake_game(game)
+            save = os.path.join(home, "pfx", "drive_c", "users", "me", "AppData", "Roaming", "runic games",
+                                "torchlight", "save")
+            os.makedirs(save)
+            with open(os.path.join(save, "0.svt"), "w") as f:
+                f.write("hero")
+            beside = os.path.join(home, "compat", "pfx", "drive_c", "users", "me", "AppData", "Roaming",
+                                  "runic games", "torchlight", "save")
+            os.makedirs(beside)
+            elsewhere = os.path.join(home, "other", "x", "y", "pfx", "drive_c", "users", "me", "AppData", "Roaming",
+                                     "runic games", "torchlight", "save")
+            os.makedirs(elsewhere)
+            folders = install.save_folders(game, home)
+            self.assertEqual(sorted(folders), sorted([os.path.realpath(save), os.path.realpath(beside)]))
+            copies = install.back_up_saves(folders)
+            with open(os.path.join(copies[0], "0.svt")) as f:
+                self.assertEqual(f.read(), "hero")
+            with open(os.path.join(save, "0.svt")) as f:
+                self.assertEqual(f.read(), "hero")
+
+    def test_uninstall_removes_what_the_install_wrote(self):
+        with tempfile.TemporaryDirectory() as home:
             game = os.path.join(home, "game")
-            os.makedirs(game)
-            with open(os.path.join(game, "x360_ui.ini"), "w") as f:
-                f.write("out=old\nfont_diff=1\n")
-            install.write_ini(game, os.path.join(game, "x360ui"))
-            with open(os.path.join(game, "x360_ui.ini")) as f:
-                text = f.read()
-            self.assertIn("prompts=auto", text)
-            self.assertIn("font_diff=1", text)
-            self.assertNotIn("out=old", text)
+            fake_game(game)
+            for folder in install.converted_folders(game):
+                os.makedirs(os.path.join(folder, "media"))
+            for name in ("x360_ui.ini", "x360_ui.log", "x360_dump_a.json"):
+                open(os.path.join(game, name), "w").close()
+            removed = []
+            saved = install.build_proxy.remove
+            try:
+                install.build_proxy.remove = lambda g: removed.append(g)
+                self.assertEqual(install.main(["uninstall", "--game", game, "--yes"]), 0)
+            finally:
+                install.build_proxy.remove = saved
+            self.assertEqual(removed, [os.path.realpath(game)])
+            self.assertEqual(sorted(os.listdir(game)), ["CEGUIBase.dll", "Torchlight.exe"])
+
+
+def stfs_package(files, title=0x58410A7E, content_type=0x000D0000, contiguous=True):
+    """A LIVE package of the files (name: bytes): the file table at data block 0, each file's
+    blocks after it, chained through the level 0 hash table when not contiguous."""
+    header_size = 0xAD0E                       # rounded up to 0xB000: one copy of each table
+    out = bytearray(0xB000)
+    out[:4] = b"LIVE"
+    struct.pack_into(">I", out, 0x340, header_size)
+    struct.pack_into(">I", out, 0x344, content_type)
+    struct.pack_into(">I", out, 0x360, title)
+    v = 0x379
+    out[v] = 0x24
+    out[v + 2] = 1
+    struct.pack_into("<H", out, v + 3, 1)       # the file table: one block, data block 0
+    blocks, entries, nxt = [b""], [], {}
+    for name, data in files.items():
+        first = len(blocks)
+        chunks = [data[i:i + 0x1000] for i in range(0, max(len(data), 1), 0x1000)]
+        blocks += chunks
+        for k in range(len(chunks) - 1):
+            nxt[first + k] = first + k + 1
+        e = bytearray(0x40)
+        e[:len(name)] = name.encode()
+        e[0x28] = len(name) | (0x40 if contiguous else 0)
+        e[0x29:0x2C] = len(chunks).to_bytes(3, "little")
+        e[0x2F:0x32] = first.to_bytes(3, "little")
+        struct.pack_into(">h", e, 0x32, -1)
+        struct.pack_into(">I", e, 0x34, len(data))
+        entries.append(bytes(e))
+    blocks[0] = b"".join(entries)
+    hash_table = bytearray(0x1000)
+    for n, m in nxt.items():
+        hash_table[n * 0x18 + 0x15:n * 0x18 + 0x18] = m.to_bytes(3, "big")
+    out += hash_table                          # block 0: the level 0 hash table
+    for b in blocks:                           # data block n at block n + 1
+        out += b.ljust(0x1000, b"\0")
+    return bytes(out)
+
+
+class StfsTest(unittest.TestCase):
+    def test_lists_and_reads_files_contiguous_or_chained(self):
+        big = bytes(range(256)) * 20            # 5120 bytes: two blocks
+        for contiguous in (True, False):
+            with tempfile.TemporaryDirectory() as home:
+                path = os.path.join(home, "pkg")
+                with open(path, "wb") as f:
+                    f.write(stfs_package({"pak.zip": b"zip", "default.xex": big}, contiguous=contiguous))
+                with stfs.Package(path) as pkg:
+                    self.assertEqual(pkg.title_id, 0x58410A7E)
+                    self.assertEqual(sorted(e["path"] for e in pkg.files), ["default.xex", "pak.zip"])
+                    self.assertEqual(pkg.read(pkg.find("DEFAULT.XEX")), big)
+                    self.assertEqual(pkg.read(pkg.find("pak.zip")), b"zip")
+
+    def test_refuses_what_is_not_a_package(self):
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "x")
+            with open(path, "wb") as f:
+                f.write(b"MZ" + bytes(0x400))
+            with self.assertRaises(ValueError):
+                stfs.Package(path)
+
+
+class Aes128Test(unittest.TestCase):
+    def test_fips_197_and_cbc_chaining(self):
+        key = bytes(range(16))
+        self.assertEqual(aes128.cbc_decrypt(key, bytes(16), bytes.fromhex("69c4e0d86a7b0430d8cdb78070b4c55a")),
+                         bytes.fromhex("00112233445566778899aabbccddeeff"))
+        # NIST SP 800-38A F.2.2, the first two blocks.
+        key = bytes.fromhex("2b7e151628aed2a6abf7158809cf4f3c")
+        iv = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
+        ct = bytes.fromhex("7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b2")
+        self.assertEqual(aes128.cbc_decrypt(key, iv, ct),
+                         bytes.fromhex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51"))
 
 
 class ImageStringsTest(unittest.TestCase):

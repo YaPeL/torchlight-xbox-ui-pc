@@ -32,6 +32,13 @@ PER_TABLE = 0xAA
 class Package:
     def __init__(self, path):
         self.f = open(path, "rb")
+        try:
+            self._open()
+        except Exception:
+            self.f.close()
+            raise
+
+    def _open(self):
         head = self.f.read(0x3A0)
         if head[:4] not in MAGICS:
             raise ValueError("not an Xbox 360 package (CON, LIVE or PIRS)")
@@ -45,6 +52,11 @@ class Package:
         self.table_first = int.from_bytes(head[v + 5:v + 8], "little")
         self.base = (self.header_size + 0xFFF) & ~0xFFF
         self.shift = 0 if self.base == 0xB000 or self.separation & 1 else 1
+        self.total_blocks = struct.unpack_from(">I", head, v + 0x1c)[0] if len(head) >= v + 0x20 else 0
+        # Two copies of each table (shift 1): the active one of a package of one level 0 table is
+        # told by the separation's bit 1; deeper packages' choice (their level 1 entries' status) is
+        # not read, the first copy taken (an Arcade package, LIVE or PIRS, has one copy).
+        self.copy = 1 if self.shift and self.separation & 2 and self.total_blocks <= PER_TABLE else 0
         self.files = self._read_table()
 
     def close(self):
@@ -86,8 +98,11 @@ class Package:
         return self.f.read(BLOCK)
 
     def next_block(self, n):
-        self.f.seek(self.base + self.hash_block(n) * BLOCK + (n % PER_TABLE) * 0x18 + 0x15)
-        return int.from_bytes(self.f.read(3), "big")
+        self.f.seek(self.base + (self.hash_block(n) + self.copy) * BLOCK + (n % PER_TABLE) * 0x18 + 0x15)
+        got = self.f.read(3)
+        if len(got) < 3:
+            raise ValueError("the package ends inside its hash tables")
+        return int.from_bytes(got, "big")
 
     def blocks(self, first, count, contiguous):
         n = first
@@ -98,15 +113,15 @@ class Package:
     # ---- the file table ----
 
     def _read_table(self):
-        entries = []
-        for n in self.blocks(self.table_first, self.table_blocks, False):
+        entries = {}                           # by the entry's index in the whole table
+        for t, n in enumerate(self.blocks(self.table_first, self.table_blocks, False)):
             data = self.read_block(self.data_block(n))
             for o in range(0, BLOCK, 0x40):
                 e = data[o:o + 0x40]
-                length = e[0x28] & 0x3F
+                length = e[0x28] & 0x3F if len(e) == 0x40 else 0
                 if not length:
                     continue
-                entries.append({
+                entries[t * (BLOCK // 0x40) + o // 0x40] = ({
                     "name": e[:length].decode("latin-1"),
                     "folder": bool(e[0x28] & 0x80),
                     "contiguous": bool(e[0x28] & 0x40),
@@ -115,13 +130,13 @@ class Package:
                     "parent": struct.unpack_from(">h", e, 0x32)[0],
                     "size": struct.unpack_from(">I", e, 0x34)[0],
                 })
-        for e in entries:
+        for e in entries.values():
             parts, p, seen = [e["name"]], e["parent"], 0
-            while 0 <= p < len(entries) and seen < 64:
+            while p in entries and seen < 64:
                 parts.append(entries[p]["name"])
                 p, seen = entries[p]["parent"], seen + 1
             e["path"] = "/".join(reversed(parts))
-        return [e for e in entries if not e["folder"]]
+        return [e for e in entries.values() if not e["folder"]]
 
     def find(self, path):
         low = path.replace("\\", "/").lower()
@@ -144,7 +159,10 @@ class Package:
         return None if out else b"".join(chunks)
 
     def extract(self, entry, dest):
-        path = os.path.join(dest, *entry["path"].split("/"))
+        parts = entry["path"].split("/")
+        if any(p in ("", ".", "..") or "\\" in p or ":" in p for p in parts):
+            raise ValueError(f"a name that would leave the folder: {entry['path']!r}")
+        path = os.path.join(dest, *parts)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             self.read(entry, f)
@@ -152,7 +170,7 @@ class Package:
 
 
 def main(argv):
-    if not argv or len(argv) == 2 and False:
+    if not argv:
         sys.exit(__doc__)
     with Package(argv[0]) as p:
         print(f"{p.magic.decode().strip()} title {p.title_id:08X} type {p.content_type:08X}, {len(p.files)} files")
@@ -160,9 +178,9 @@ def main(argv):
             for e in p.files:
                 print(f"{e['size']:>12} {e['path']}")
             return 0
-        names = argv[2:]
+        names = {n.lower() for n in argv[2:]}
         for e in p.files:
-            if not names or e["path"] in names:
+            if not names or e["path"].lower() in names:
                 print(p.extract(e, argv[1]))
     return 0
 
