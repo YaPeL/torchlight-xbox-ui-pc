@@ -39,6 +39,7 @@ static HWND active_window(void) {
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
 __declspec(dllimport) int __stdcall ClientToScreen(HWND w, long *point);
 __declspec(dllimport) int __stdcall SetCursorPos(int x, int y);
+__declspec(dllimport) void *__stdcall SetCursor(void *cursor);
 __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
 __declspec(dllimport) short __stdcall GetAsyncKeyState(int key);
 __declspec(dllimport) void *__stdcall GetModuleHandleA(const char *name);
@@ -6748,6 +6749,38 @@ static void nav_point(float x, float y) {
     if (w && ClientToScreen(w, pt)) SetCursorPos((int)pt[0], (int)pt[1]);
     x360_inject_left(-1, x, y);
 }
+/* Windows' cursor, PC's own (CEGUI's is not the one shown): PC's 0x547ca0 (thiscall) sets it, as
+ * the mouse moves, to its resource cursors 0x6a-0x6d (SetCursor(LoadCursorW(GetModuleHandleW(0),
+ * id)) by its +0x106c), or none when its +0x60 is set. Hooked: none either while nav_cursor_off
+ * (QA run 14: hiding CEGUI's cursor left this one shown). The hook's first 7 bytes (push esi;
+ * mov esi,ecx; cmp dword [esi+0x60],0) run from a copy, then its je onwards in place. */
+static volatile int nav_cursor_off;
+static unsigned char cursor_tramp[16];
+static void __fastcall cursor_hook(void *self) {
+    typedef void (__fastcall *orig_fn)(void *self);
+    if (nav_cursor_off) { SetCursor(0); return; }
+    ((orig_fn)(void *)cursor_tramp)(self);
+}
+static void cursor_hook_install(void) {
+    static const unsigned char want[7] = {0x56, 0x8b, 0xf1, 0x83, 0x7e, 0x60, 0x00};
+    static int done;
+    unsigned char *f = (unsigned char *)0x00547ca0;
+    unsigned long old;
+    unsigned i;
+    if (done) return;
+    done = 1;
+    for (i = 0; i < 7; i++) if (f[i] != want[i]) { x360_log("x360 menu: PC's cursor function not as expected, left\r\n"); return; }
+    for (i = 0; i < 7; i++) cursor_tramp[i] = f[i];
+    cursor_tramp[7] = 0xe9;
+    *(int *)(cursor_tramp + 8) = (int)(f + 7) - (int)(cursor_tramp + 12);
+    if (!VirtualProtect(cursor_tramp, sizeof cursor_tramp, 0x40, &old)) return;
+    if (!VirtualProtect(f, 7, 0x40, &old)) return;
+    f[0] = 0xe9;
+    *(int *)(f + 1) = (int)(void *)cursor_hook - (int)(f + 5);
+    f[5] = f[6] = 0x90;
+    VirtualProtect(f, 7, old, &old);
+    x360_log("x360 menu: PC's cursor hooked\r\n");
+}
 static void pc_menus_nav_tick(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -6764,6 +6797,9 @@ static void pc_menus_nav_tick(void) {
     static int held_dir, settings_shown = -1;
     static char settings_prefix[64];
     static const char *const settings_needs[] = {"Cancel", 0};
+    static char create_prefix[64];
+    static const char *const create_needs[] = {"Destroyer", 0};
+    int create = 0;
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
@@ -6782,9 +6818,18 @@ static void pc_menus_nav_tick(void) {
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
     settings = settings_prefix[0] && pc_attached(settings_prefix, "Apply");
+    /* And PC's character creation (its name is typed): the mouse shown there too (the user). */
+    if (!create_prefix[0] || !win_of(create_prefix, "CreatePlayer")) find_pc_by_suffix("CreatePlayer", create_needs, create_prefix, sizeof create_prefix);
+    create = create_prefix[0] && pc_attached(create_prefix, "CreatePlayer");
+    cursor_hook_install();
+    if (nav_cursor_off != !(settings || create)) {
+        nav_cursor_off = !(settings || create);
+        x360_log(nav_cursor_off ? "x360 menu: Windows' cursor off\r\n" : "x360 menu: Windows' cursor on\r\n");
+        if (nav_cursor_off) SetCursor(0);
+    }
     if (cursor_get && cursor_hide && cursor_show && cursor_vis && cursor_get()) {
         /* Kept so each frame: PC shows its cursor again on its own. */
-        if ((cursor_vis(cursor_get(), 0) != 0) != (settings != 0)) (settings ? cursor_show : cursor_hide)(cursor_get(), 0);
+        if ((cursor_vis(cursor_get(), 0) != 0) != (settings || create)) (settings || create ? cursor_show : cursor_hide)(cursor_get(), 0);
         if (settings != settings_shown) {
             settings_shown = settings;
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
