@@ -3066,3 +3066,32 @@ and compared with it by a test. The icons of `data/prompts` are built into the e
   NonAscii stop; the strings table. CI runs them on Linux and Windows, each against its own
   Python (line ends).
 
+**Batch 4: the installer itself** (`installer/src/install.cpp`, `game.cpp`): tools/install.py's
+install, uninstall and list, with its questions, texts and results, and what the owner asked of
+the C++ one:
+- **Permissions (Windows).** The executable's manifest is asInvoker, so Windows never redirects a
+  write it refuses (no VirtualStore). Once every question is answered and before anything is
+  changed, the game's folder is tried for writing (a file created and deleted on close); when that
+  fails the installer runs itself again elevated (UAC, `runas`) with the answers, and a declined
+  prompt ends it with "nothing was changed". On Linux a folder it may not write ends it the same
+  way (no elevation).
+- **One step.** The six interfaces are converted into `.partial` folders first; then the old
+  folders are put aside, the new ones put in place, the ini written, the proxy installed (as
+  build_proxy.install) as the steps of one change, undone in reverse if any fails (the old
+  files back from an undo folder). Uninstall the same: the real DLL back and the mod's files put
+  aside, then removed. `X360UI_TEST_FAIL_AFTER_PROXY` makes a test's run fail at the end.
+- **The bag.** The 360's bag's warning (with uninstalling and the stores' verify, repair or
+  update), the saves backed up first; the uninstaller with the 360's bag offering PC's bag (the
+  default) or uninstalling anyway with the saves backed up.
+- **The proxy.** Given with `--dll`, else the release's built in (`-DX360UI_PROXY_GOG`,
+  `-DX360UI_PROXY_STEAM`). The real DLL is checked against proxy/cegui_exports.txt (built in).
+- **Questions.** Windows' own boxes and file dialog; on Linux zenity or kdialog when there is a
+  display; else the console (`--console`); `--yes` the defaults.
+- **Tests** (`tests/test_installer_cpp.py`, fake folders only): a Wine prefix's GOG folder with
+  saves beside it, installed with PC's bag and the 360's by both installers: the same files, ini
+  and backups; uninstalled by both back to the folder as it was; a Steam library (Steam's build,
+  experimental in both) and a Legendary (Epic) install: `list` the same and the same files
+  installed; a failed install and a failed uninstall leave the folder as it was; a folder without
+  write permission (Linux) and one whose ACL denies writing (Windows, the elevation declined):
+  nothing changed.
+

@@ -406,5 +406,218 @@ class ConvertCppTest(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(os.path.join(root, "cpp", d))), sorted(os.listdir(os.path.join(root, "py", d))))
 
 
+def _real_cegui_dll(path):
+    """A PE32 whose export table is proxy/cegui_exports.txt's (names and ordinals), as the game's
+    CEGUIBase.dll's: what the installers check the real DLL against."""
+    sys.path.insert(0, TOOLS)
+    import cegui_exports
+    entries = cegui_exports.exports()
+    names = [n.encode() + b"\0" for n, _ in entries]
+    n = len(entries)
+    base_ord = min(o for _, o in entries)
+    sec_rva, sec_raw = 0x1000, 0x400
+    body = bytearray(40)
+    funcs_off = len(body)
+    body += bytes(4 * (max(o for _, o in entries) - base_ord + 1))
+    names_off = len(body)
+    body += bytes(4 * n)
+    ords_off = len(body)
+    body += bytes(2 * n)
+    dll_name_off = len(body)
+    body += b"CEGUIBase.dll\0"
+    for k, ((name, ordinal), raw) in enumerate(zip(entries, names)):
+        struct.pack_into("<I", body, names_off + 4 * k, sec_rva + len(body))
+        struct.pack_into("<H", body, ords_off + 2 * k, ordinal - base_ord)
+        body += raw
+    struct.pack_into("<IIHHIIIIIII", body, 0, 0, 0, 0, 0, sec_rva + dll_name_off, base_ord,
+                     max(o for _, o in entries) - base_ord + 1, n, sec_rva + funcs_off, sec_rva + names_off, sec_rva + ords_off)
+    head = bytearray(sec_raw)
+    head[0:2] = b"MZ"
+    struct.pack_into("<I", head, 0x3C, 0x40)
+    head[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HHIIIHH", head, 0x44, 0x14C, 1, 0, 0, 0, 0xE0, 0x2102)
+    opt = 0x58
+    struct.pack_into("<H", head, opt, 0x10B)
+    struct.pack_into("<I", head, opt + 92, 16)                       # NumberOfRvaAndSizes
+    struct.pack_into("<II", head, opt + 96, sec_rva, len(body))        # the export directory
+    sect = opt + 0xE0
+    head[sect:sect + 8] = b".edata\0\0"
+    struct.pack_into("<IIII", head, sect + 8, len(body), sec_rva, len(body), sec_raw)
+    with open(path, "wb") as f:
+        f.write(bytes(head) + bytes(body))
+
+
+@unittest.skipUnless(BINARY and os.path.isfile(BINARY), "X360UI_INSTALLER not set")
+class InstallCppTest(unittest.TestCase):
+    """The C++ installer against tools/install.py on fake games (a Wine prefix's GOG folder with
+    saves beside it): the same files written, the same ini and backups, and an uninstall that
+    leaves the folder as it was; then what only the C++ one does (undoing a failed install, a
+    folder it may not write)."""
+
+    def setUp(self):
+        from test_tools import fake_exe
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self.root, True)
+        pak, pc, image = ConvertCppTest().paks(self.root)
+        import zipfile
+        with zipfile.ZipFile(pak, "a") as z:
+            z.writestr("media/UI/mastermenu_xenon.layout", "<GUILayout />")
+        self.x360 = os.path.join(self.root, "x360")
+        os.makedirs(self.x360)
+        os.replace(pak, os.path.join(self.x360, "pak.zip"))
+        with open(image, "rb") as f:
+            data = bytearray(f.read())
+        data[0:2] = b"MZ"                        # an image is a PE (the installers check)
+        with open(os.path.join(self.x360, "default.bin"), "wb") as f:
+            f.write(data)
+        self.proxy = os.path.join(self.root, "proxy.dll")
+        with open(self.proxy, "wb") as f:
+            f.write(b"MZ a synthetic proxy forwarding to CEGUIBase_orig.Thing")
+        self.games = {}
+        for who in ("py", "cpp"):
+            prefix = os.path.join(self.root, who, "prefix")
+            game = os.path.join(prefix, "drive_c", "GOG Games", "Torchlight")
+            os.makedirs(game)
+            fake_exe(os.path.join(game, "Torchlight.exe"), 0x4FFC6815)
+            _real_cegui_dll(os.path.join(game, "CEGUIBase.dll"))
+            __import__("shutil").copyfile(pc, os.path.join(game, "Pak.zip"))
+            saves = os.path.join(prefix, "drive_c", "users", "me", "AppData", "Roaming", "runic games", "torchlight", "save")
+            os.makedirs(saves)
+            with open(os.path.join(saves, "0.svt"), "wb") as f:
+                f.write(b"a synthetic save")
+            self.games[who] = (game, saves)
+        self.env = dict(os.environ, HOME=self.root)
+
+    def install(self, who, *args, env=None):
+        game = self.games[who][0]
+        common = ["--game", game, "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, *args]
+        cmd = [sys.executable, os.path.join(TOOLS, "install.py"), "install", *common] if who == "py" else [BINARY, "install", *common]
+        return subprocess.run(cmd, capture_output=True, text=True, env=env or self.env)
+
+    def uninstall(self, who, *args):
+        game = self.games[who][0]
+        cmd = [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+        return subprocess.run(cmd + ["uninstall", "--game", game, "--console", *args], capture_output=True, text=True, env=self.env)
+
+    def same_install(self):
+        py, cpp = _tree(self.games["py"][0]), _tree(self.games["cpp"][0])
+        ini = "x360_ui.ini"
+        out = lambda t, who: t[ini].replace(self.games[who][0].replace("/", "\\").encode(), b"GAME")
+        self.assertEqual(out(cpp, "cpp"), out(py, "py"))
+        del py[ini], cpp[ini]
+        self.assertEqual(sorted(cpp), sorted(py))
+        for rel in py:
+            self.assertEqual(cpp[rel], py[rel], rel)
+
+    def test_install_and_uninstall_as_python(self):
+        before = {who: _tree(g) for who, (g, _) in self.games.items()}
+        for bag in ("pc", "360"):
+            for who in ("py", "cpp"):
+                r = self.install(who, "--bag", bag)
+                self.assertEqual(r.returncode, 0, f"{who} {bag}: {r.stdout}{r.stderr}")
+            self.same_install()
+        backups = {who: sorted(d for d in os.listdir(os.path.dirname(s)) if "-backup-" in d) for who, (_, s) in self.games.items()}
+        self.assertEqual([len(b) for b in backups.values()], [1, 1])
+        for who, (_, saves) in self.games.items():
+            self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[who][0])), {"0.svt": b"a synthetic save"})
+        # The 360's bag installed: uninstall with --yes switches to PC's bag in both, then --anyway uninstalls.
+        for who in ("py", "cpp"):
+            self.assertEqual(self.uninstall(who, "--yes").returncode, 0)
+        self.same_install()
+        for who in ("py", "cpp"):
+            r = self.uninstall(who, "--anyway")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(_tree(self.games[who][0]), before[who], f"{who}: the folder as it was")
+
+    def test_a_failed_install_leaves_the_folder_as_it_was(self):
+        game = self.games["cpp"][0]
+        before = _tree(game)
+        r = self.install("cpp", "--bag", "pc", env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(_tree(game), before)
+        self.assertEqual(sorted(os.listdir(game)), sorted(before))   # no work, partial or undo folder left
+        # Installed, then a failed uninstall: the install as it was.
+        self.assertEqual(self.install("cpp", "--bag", "pc").returncode, 0)
+        installed = _tree(game)
+        r = subprocess.run([BINARY, "uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True,
+                           env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(_tree(game), installed)
+
+    def test_stores_found_and_steam_and_epic_installed_as_python(self):
+        """A home with a Steam library (Steam's build) and a Legendary (Epic) install of GOG's
+        build beside the Wine prefix's GOG one: `list` the same; Steam's needs --experimental in
+        both; Epic's installs as GOG's."""
+        import json, shutil
+        from test_tools import fake_exe
+        steam_root = os.path.join(self.root, ".steam", "steam", "steamapps")
+        steam_game = os.path.join(steam_root, "common", "Torchlight")
+        os.makedirs(steam_game)
+        open(os.path.join(steam_root, "appmanifest_41500.acf"), "w").close()
+        fake_exe(os.path.join(steam_game, "Torchlight.exe"), 0x4B5F7519)
+        _real_cegui_dll(os.path.join(steam_game, "CEGUIBase.dll"))
+        shutil.copyfile(os.path.join(self.games["py"][0], "Pak.zip"), os.path.join(steam_game, "Pak.zip"))
+        epic_game = os.path.join(self.root, "Epic", "Torchlight")
+        shutil.copytree(self.games["cpp"][0], epic_game)
+        os.makedirs(os.path.join(self.root, ".config", "legendary"))
+        with open(os.path.join(self.root, ".config", "legendary", "installed.json"), "w") as f:
+            json.dump({"Torchlight": {"title": "Torchlight", "install_path": epic_game}}, f)
+        lst = lambda cmd: subprocess.run(cmd + ["list"], capture_output=True, text=True, env=self.env).stdout
+        py_list = lst([sys.executable, os.path.join(TOOLS, "install.py")])
+        self.assertEqual(lst([BINARY]), py_list)
+        self.assertIn("steam: ", py_list)
+        self.assertIn("epic: ", py_list)
+        for game in (steam_game, epic_game):
+            twins = {}
+            for who in ("py", "cpp"):
+                copy = os.path.join(self.root, who + "-" + os.path.basename(os.path.dirname(game)))
+                shutil.copytree(game, copy)
+                twins[who] = copy
+            for who, copy in twins.items():
+                cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) + [
+                    "install", "--game", copy, "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, "--bag", "pc"]
+                if game == steam_game:
+                    refused = subprocess.run(cmd, capture_output=True, text=True, env=self.env, input="")
+                    self.assertNotEqual(refused.returncode, 0, who)          # experimental: no yes given
+                    cmd.append("--experimental")
+                r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+                self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            a, b = _tree(twins["py"]), _tree(twins["cpp"])
+            norm = lambda t, p: t["x360_ui.ini"].replace(p.replace("/", "\\").encode(), b"GAME")
+            self.assertEqual(norm(b, twins["cpp"]), norm(a, twins["py"]))
+            del a["x360_ui.ini"], b["x360_ui.ini"]
+            self.assertEqual(b, a)
+
+    @unittest.skipUnless(os.name == "nt", "Windows: a folder whose write is denied by its ACL")
+    def test_a_folder_windows_denies(self):
+        """Write denied to everyone on the game's folder (icacls): the installer asks for an
+        administrator's permission only then (X360UI_NO_ELEVATE stands for a declined UAC prompt;
+        an elevated runner is refused by the ACL as well) and changes nothing."""
+        game = self.games["cpp"][0]
+        before = _tree(game)
+        subprocess.run(["icacls", game, "/deny", "*S-1-1-0:(W,D,DC,AD,WD)"], check=True, capture_output=True)
+        try:
+            r = self.install("cpp", "--bag", "pc", env=dict(self.env, X360UI_NO_ELEVATE="1"))
+        finally:
+            subprocess.run(["icacls", game, "/remove:d", "*S-1-1-0"], check=True, capture_output=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("nothing was changed", r.stderr)
+        self.assertEqual(_tree(game), before)
+        self.assertFalse(any(n.startswith("x360ui") for n in os.listdir(game)))
+
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), "a folder without write permission (POSIX, not root)")
+    def test_a_folder_it_may_not_write(self):
+        game = self.games["cpp"][0]
+        before = _tree(game)
+        os.chmod(game, 0o555)
+        try:
+            r = self.install("cpp", "--bag", "pc")
+        finally:
+            os.chmod(game, 0o755)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("nothing was changed", r.stderr)
+        self.assertEqual(_tree(game), before)
+
+
 if __name__ == "__main__":
     unittest.main()
