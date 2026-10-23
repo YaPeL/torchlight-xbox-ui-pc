@@ -2500,5 +2500,11 @@ the floor labels, the town portal scroll closing the bag. Broken and fixed after
 - No shop opened in town: a shop's menu opens PC's inventory with it, and the hotkeys' guard
   closed that inventory before the shop was seen, closing the shop. The guard leaves PC's
   screens alone while a merchant, enchant, combine or stash menu is open.
-- To see: the mine's entrance from town "drawn from too far" against the 360 (what exactly is
-  asked).
+- The mine's entrance's label showed from far off: PC's "TOGGLE DROPPED ITEMS", set on for the
+  floor items, labels every unit of both its lists on the screen (the level's `+0x7c`, the items,
+  and `+0x80`, the objects; GOG `0x55a8e0`, `0x55b263`; without it, the hovered unit only, CGameUI's
+  `+0x34` and `+0x2c`). The 360's rule (`sub_821A83C8`, its label loop at `0x821AA9FC`; the mods
+  agent's static reading): a unit is labelled when it is the pad's target (unless of type 30), or
+  when its 3D distance to the hero is under the root of 20.0 (pool `0x820AA2C0 +0x244`) and it is
+  not of type 29 (the breakables); one distance for items, chests, shrines and exits; a "show all"
+  input as PC's Alt besides. The port makes the other labels of both lists transparent. Not run.

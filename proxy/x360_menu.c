@@ -5729,6 +5729,38 @@ static void labels_tick(void) {
             if (logged_toggle < 3) { x360_log("x360 labels: PC's dropped items toggle set on\r\n"); logged_toggle++; }
         }
     }
+    /* With the toggle on PC labels every unit of its two lists on the screen (the level's +0x7c,
+     * the items, and +0x80, the objects: chests, shrines, exits; GOG 0x55a8e0, 0x55b263). The 360
+     * (sub_821A83C8's label loop at 0x821AA9FC, the mods agent's reading) labels a unit when it
+     * is the pad's target (unless of type 30), or when its distance to the hero is under the root
+     * of 20.0 (const pool 0x820AA2C0 +0x244: 4.47) and it is not of type 29 (the breakables): the
+     * others are made transparent here (QA run 1: the mine's entrance labelled from far off). */
+    if (level && hero) {
+        static const unsigned lists[] = {0x7c, 0x80};
+        float hp[3], up[3];
+        unsigned li;
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, hp, 1);
+        for (li = 0; li < 2; li++) {
+            unsigned char *lst = *(unsigned char **)(level + lists[li]);
+            unsigned char *node = lst ? *(unsigned char **)lst : 0;
+            int guard = 0;
+            for (; node && guard < 4096; node = *(unsigned char **)(node + 4), guard++) {
+                unsigned char *u = *(unsigned char **)node;
+                void *lw = u ? *(void **)(u + 0x198) : 0;
+                float dx, dy, dz;
+                int near_, on;
+                char a[16];
+                if (!lw) continue;
+                ((get_position_fn)GOG_GET_POSITION)(u, 0, up, 1);
+                dx = up[0] - hp[0]; dy = up[1] - hp[1]; dz = up[2] - hp[2];
+                near_ = dx * dx + dy * dy + dz * dz < 20.0f;
+                on = u == cand ? !isa(u, 30) : near_ && !isa(u, 29);
+                read_prop(lw, "Alpha", a, sizeof a);
+                if (on ? a[0] == '0' && a[1] != '.' : !(a[0] == '0' && a[1] != '.'))
+                    prop(lw, "Alpha", on ? "1" : "0");
+            }
+        }
+    }
     want[0] = 0;
     if (cand && !wstring_utf8(cand + GOG_UNIT_LABEL_NAME, want, sizeof want))
         if (!wstring_utf8(cand + GOG_ITEM_NAME, want, sizeof want)) want[0] = 0;
