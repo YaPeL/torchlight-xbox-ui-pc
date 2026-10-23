@@ -2859,7 +2859,7 @@ DIR's `runic games\torchlight` and the user's own folder is neither read nor wri
 **QA run 28 (2026-10-23, the copy of the test hero, its health potion's slot made 70 with the 360's
 bag).** The potion was not in the bag after loading (the HUD's count gone) nor in the file after
 saving: the static reading confirmed. `backup.tmp`, written at load, is the loaded file as it was
-(a copy, not a save of the new state); the save itself was written on leaving.
+(a copy, not a save of the new state); the save itself was written on leaving. (Run 30: a level change, the town portal, writes it too; the stop comes at the first frame in play, before any.)
 
 **The bags, read (GOG).** A bag's sections have types (`+0x48`, codes into `0xaa9530`): 0 any item
 (ISA 31), 1 spells (129), 2 fish (124), 3 weapons (8), 4 armour (13); `0x4e8410` gives an item the
@@ -2882,4 +2882,24 @@ until it exists or the world is ready without it (the 360's HUD up, then 60 fram
 no pet the message says so. Pending (the owner, 2026-10-23): the installer's check of every save
 before a bag change (a read-only parser of the saves), left for later since the stop loses nothing. The personal stash is left out of the order (the owner's rule when it is not known to exist
 at load: a unit of the town's level, not the hero's). Not run yet.
+
+**The round trip, QA runs 29 to 32 (2026-10-23, `save_root` on a fresh copy of the test hero, the
+owner's two save folders' hashes the same before and after every run, Steam's folders
+UNCHANGED).**
+- Run 29 (PC's bag): the title loads the last character (twice, four times in run 30) before the
+  main menu; its items kept aside were placed into the title's pet, and the real hero's again:
+  duplicates (the copy thrown away unsaved). Fixed: nothing placed out of play (`hud_in_play`),
+  an item kept aside whose unit is gone dropped as PC's loader would.
+- Run 30 (PC's bag, stage S1): four items the 360's bag had put in the spell section's slots
+  (41-44), the hero's main section full: into the pet's bag (19-22), once each; the title's
+  copies dropped. The console's 20 spells and a gem (socketed in the mace); the stash is
+  ISA 128 with one section of 42 (its slots 61): the ctor's branch of 42, which `bag=360` leaves.
+- Run 31 (the 360's bag, S2): nothing moved at load; the bag filled to 50 at a merchant.
+- Run 32 (PC's bag, S3): a spell from 63 to 57 in its section; seven items with no room in the
+  main section into the pet's bag (23-29).
+- `tools/save_items.py compare S2 S3`: the stash the same; the hero's and the pet's 58 items
+  pair off by name and affixes, 57 byte for byte (slots and the save's instance ids aside); the one
+  left, the axe, was the hero's last record in S2 and runs on there into the hero's trailer
+  (INNATEARMOR twice, then the level), which the partial reading does not cut. The merchants'
+  stock differs (restocked between runs).
 
