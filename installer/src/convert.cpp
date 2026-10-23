@@ -162,7 +162,25 @@ bool ends_with(const std::string& s, const std::string& e) { return s.size() >= 
 // ---- reading the paks ----
 struct Zip {
   mz_zip_archive z{};
-  explicit Zip(const std::string& path) {
+  std::string path_;
+  // The entry's central directory record has an extra field 0x7075 (Info-ZIP Unicode Path).
+  bool has_unicode_path(uint64_t ofs) {
+    std::ifstream f(fs_path(path_), std::ios::binary);
+    unsigned char h[46];
+    f.seekg(std::streamoff(ofs));
+    if (!f.read(reinterpret_cast<char*>(h), 46)) return false;
+    const unsigned name = h[28] | h[29] << 8, extra = h[30] | h[31] << 8;
+    std::vector<unsigned char> x(extra);
+    f.seekg(std::streamoff(ofs + 46 + name));
+    if (!f.read(reinterpret_cast<char*>(x.data()), std::streamsize(extra))) return false;
+    for (size_t k = 0; k + 4 <= x.size();) {
+      const unsigned id = x[k] | x[k + 1] << 8, len = x[k + 2] | x[k + 3] << 8;
+      if (id == 0x7075) return true;
+      k += 4 + len;
+    }
+    return false;
+  }
+  explicit Zip(const std::string& path) : path_(path) {
     if (!mz_zip_reader_init_file(&z, path.c_str(), 0)) throw Error("cannot read " + path + " as a zip");
   }
   ~Zip() { mz_zip_reader_end(&z); }
@@ -177,9 +195,16 @@ struct Zip {
     std::replace(buf.begin(), buf.end(), '\\', '/');
 #endif
     mz_zip_archive_file_stat st;
-    if (mz_zip_reader_file_stat(&z, i, &st) && !(st.m_bit_flag & 0x800))
-      for (unsigned char c : buf)
-        if (c >= 0x80) throw NonAscii("a zip entry's name in cp437 (no UTF-8 flag) outside ASCII");
+    if (mz_zip_reader_file_stat(&z, i, &st)) {
+      if (!(st.m_bit_flag & 0x800)) {
+        for (unsigned char c : buf)
+          if (c >= 0x80) throw NonAscii("a zip entry's name in cp437 (no UTF-8 flag) outside ASCII");
+      } else {
+        from_utf8(buf);   // Python refuses the zip when a name flagged UTF-8 is not
+      }
+      if (has_unicode_path(st.m_central_dir_ofs))
+        throw NonAscii("a zip entry with an Info-ZIP Unicode Path field (Python takes its name from it)");
+    }
     return buf;
   }
   Bytes read(unsigned i) {
@@ -280,9 +305,12 @@ std::vector<std::pair<std::string, std::string>> image_strings(const Bytes& imag
     } catch (const Error&) {
       continue;
     }
+    // Python's `text and len(text) < 100 and text.isprintable() and "=" not in text`, in its order:
+    // isprintable only asked of what passes the first two.
+    if (text.empty() || text.size() >= 100) continue;
     bool printable = true;
     for (char32_t c : text) printable = printable && py_isprintable(c);
-    if (!text.empty() && text.size() < 100 && printable && text.find(U'=') == U32::npos) out.push_back({s.key, u8(text)});
+    if (printable && text.find(U'=') == U32::npos) out.push_back({s.key, u8(text)});
   }
   for (const Str& s : kStringsUtf8) {
     const long long off = (long long)s.addr - kImageBase;
@@ -296,9 +324,12 @@ std::vector<std::pair<std::string, std::string>> image_strings(const Bytes& imag
     } catch (const Error&) {
       continue;
     }
+    // Python's `text and len(text) < 100 and text.isprintable() and "=" not in text`, in its order:
+    // isprintable only asked of what passes the first two.
+    if (text.empty() || text.size() >= 100) continue;
     bool printable = true;
     for (char32_t c : text) printable = printable && py_isprintable(c);
-    if (!text.empty() && text.size() < 100 && printable && text.find(U'=') == U32::npos) out.push_back({s.key, u8(text)});
+    if (printable && text.find(U'=') == U32::npos) out.push_back({s.key, u8(text)});
   }
   return out;
 }

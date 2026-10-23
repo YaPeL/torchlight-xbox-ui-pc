@@ -343,11 +343,13 @@ std::optional<long long> py_int(const U32& s) {
   bool neg = false;
   if (b < e && (s[b] == '+' || s[b] == '-')) neg = s[b++] == '-';
   if (b >= e) return std::nullopt;
+  for (size_t i = b; i < e; i++)
+    if (s[i] >= 0x80) throw NonAscii("int() on a character outside ASCII (Python takes Unicode digits)");
+  if (e - b > 18) throw NonAscii("int() past 18 digits (Python's integers have no bound)");
   long long v = 0;
   bool prev_digit = false;
   for (size_t i = b; i < e; i++) {
     if (s[i] == '_' && prev_digit && i + 1 < e && s[i + 1] >= '0' && s[i + 1] <= '9') { prev_digit = false; continue; }
-    if (s[i] >= 0x80) throw NonAscii("int() on a character outside ASCII (Python takes Unicode digits)");
     if (s[i] < '0' || s[i] > '9') return std::nullopt;
     v = v * 10 + (s[i] - '0');
     prev_digit = true;

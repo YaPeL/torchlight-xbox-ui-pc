@@ -3053,13 +3053,13 @@ own and is ported as it is: the PNG decoder (miniz's inflate for zlib's), the DD
 encoder in integers, the icon's fitting in doubles in Python's order (no fused multiply-add,
 Python's round half to even). The re patterns are matched by hand (`pytext.cpp`) with Python's
 rules; where Python decides `\w`, `\b` or re.I by Unicode tables on a character outside ASCII the
-C++ stops (NonAscii) instead of guessing; the same for `str.isprintable` outside Latin-1's signs and common punctuation, for `int()` on a digit outside ASCII, and for a zip entry's name outside ASCII that a filter would take (or one in cp437, without the UTF-8 flag). A short DDS stops as Python's struct.error does; a 32-bit mask wider than 8 bits gives Python's ValueError text in the report. Files written in text mode take the system's line end,
+C++ stops (NonAscii) instead of guessing; the same for `str.isprintable` outside Latin-1's signs and common punctuation, for `int()` on any character outside ASCII or past 18 digits, for `str.isprintable` only where Python asks it (a text under 100 characters), and for a zip entry's name outside ASCII that a filter would take (or one in cp437, without the UTF-8 flag, or with an Info-ZIP Unicode Path field; a name flagged UTF-8 that is not stops, as Python refuses the zip). A short DDS stops as Python's struct.error does; a 32-bit mask wider than 8 bits gives Python's ValueError text in the report. Files written in text mode take the system's line end,
 as Python's. The 360 code's text addresses (`convert_strings.inc`) are generated from STRINGS
 and compared with it by a test. The icons of `data/prompts` are built into the executable.
 - Against the owner's copy (2026-10-23): the six variants (xbox, playstation3, 4, 5, nintendo,
   nintendo-swapped) converted with the image and PC's pak, every file of each the same bytes as
   the Python converter's (the layouts, imagesets, looknfeel, scheme, textures with the icons,
-  the report and x360_strings.txt); no NonAscii stop; 0.6 s against 1.2 s.
+  the report and x360_strings.txt); no NonAscii stop; 0.6 s against 1.2 s (run again after each review's fixes, the last on 2026-10-23: the same).
 - `tests/test_installer_cpp.py`: a synthetic 360 pak (ARGB, DXT1, DXT3 and DXT5 textures with
   prompt images, the label's look, UTF-16 and UTF-8 with a BOM, tips and item .adm files, a PC
   pak, an image with texts) converted by both for the six variants, every file compared; the

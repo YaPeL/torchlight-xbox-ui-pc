@@ -307,7 +307,48 @@ class ConvertCppTest(unittest.TestCase):
             py, cpp = both(pak, "--prompts", "nintendo")
             self.assertEqual(py.returncode, 0)
             self.assertNotEqual(cpp.returncode, 0)
+
+            def unicode_digit_after_underscore(f):   # Python's int("1_\u0661") is 11
+                wide_mask(f)
+                f["media/UI/icons2/widgets1.dds"] = _dds_argb(8, 8, 6)
+                f["media/UI/icons2/widgets1.imageset"] = f["media/UI/icons2/widgets1.imageset"].replace('XPos="0"', 'XPos="0_\u0661"')
+            pak = pak_with(unicode_digit_after_underscore)
+            py, cpp = both(pak, "--prompts", "nintendo")
+            self.assertEqual(py.returncode, 0)
+            self.assertNotEqual(cpp.returncode, 0)
             self.assertIn(b"outside ASCII", cpp.stderr)
+
+            def short_dds(f):   # cut inside its pixels: Python's struct.error, uncaught by both
+                wide_mask(f)
+                f["media/UI/icons2/widgets1.dds"] = _dds_argb(8, 8, 7)[:200]
+            pak = pak_with(short_dds)
+            py, cpp = both(pak, "--prompts", "nintendo")
+            self.assertNotEqual(py.returncode, 0)
+            self.assertNotEqual(cpp.returncode, 0)
+
+    def test_image_texts_long_or_with_signs_as_python(self):
+        """Texts of 100 characters or more are skipped before isprintable (no stop); Latin-1 signs pass."""
+        import convert_x360_ui as c
+        with tempfile.TemporaryDirectory() as root:
+            image = bytearray(_image_with_strings())
+            keys = list(c.STRINGS.items())
+            for k, (key, addr) in enumerate(keys[:3]):
+                text = ["\u20ac" * 120, "Caf\u00e9 \u00bfs\u00ed?", "\u2014dash\u2014"][k]
+                o = addr - c.IMAGE_BASE
+                image[o:o + 2 * len(text) + 2] = text.encode("utf-16-be") + b"\0\0"
+            from test_tools import ConvertX360Test
+            import zipfile
+            pak = os.path.join(root, "pak.zip")
+            with zipfile.ZipFile(pak, "w") as z:
+                for name, data in ConvertX360Test.FILES.items():
+                    z.writestr(name, data)
+            img = os.path.join(root, "img")
+            with open(img, "wb") as f:
+                f.write(image)
+            run(sys.executable, os.path.join(TOOLS, "convert_x360_ui.py"), pak, os.path.join(root, "py"), "--image", img)
+            run(BINARY, "dev", "convert", pak, os.path.join(root, "cpp"), "--image", img)
+            with open(os.path.join(root, "py", "x360_strings.txt"), "rb") as a, open(os.path.join(root, "cpp", "x360_strings.txt"), "rb") as b:
+                self.assertEqual(b.read(), a.read())
 
 
 if __name__ == "__main__":
