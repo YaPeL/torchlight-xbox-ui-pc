@@ -6641,19 +6641,27 @@ static void pc_bars_off(void) {
  * the merchant's sides). While the 360's frame is open at a shop, 0x541090 answers no (its first
  * bytes made "xor al, al; ret"; put back when it closes). */
 static void side_panels_test(int off) {
+    /* Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
+     * (the other's, +8); 0x549b70, both, calls them (QA run 10: with only the first patched the world
+     * stayed narrowed, its strips the background's blue once the boards were hidden). */
+    static const unsigned tests[2] = {0x00541090, 0x00541130};
     static const unsigned char no[3] = {0x32, 0xc0, 0xc3};
-    static unsigned char saved[3];
+    static unsigned char saved[2][3];
     static int patched;
-    unsigned char *f = (unsigned char *)0x00541090;
     unsigned long old;
-    unsigned i;
-    if (off == patched) return;
-    if (off && !(f[0] == 0x53 && f[1] == 0x56 && f[2] == 0x8b)) { x360_log("x360 menu: 0x541090 not as expected, left\r\n"); patched = -1; return; }
-    if (patched < 0) return;
-    if (!VirtualProtect(f, 3, 0x40 /* PAGE_EXECUTE_READWRITE */, &old)) return;
-    if (off) { for (i = 0; i < 3; i++) { saved[i] = f[i]; f[i] = no[i]; } }
-    else for (i = 0; i < 3; i++) f[i] = saved[i];
-    VirtualProtect(f, 3, old, &old);
+    unsigned t, i;
+    if (off == patched || patched < 0) return;
+    for (t = 0; t < 2; t++) {
+        unsigned char *f = (unsigned char *)tests[t];
+        if (off && !(f[0] == 0x53 && f[1] == 0x56 && f[2] == 0x8b)) { x360_log("x360 menu: a side-panel test not as expected, left\r\n"); patched = -1; return; }
+    }
+    for (t = 0; t < 2; t++) {
+        unsigned char *f = (unsigned char *)tests[t];
+        if (!VirtualProtect(f, 3, 0x40 /* PAGE_EXECUTE_READWRITE */, &old)) continue;
+        if (off) { for (i = 0; i < 3; i++) { saved[t][i] = f[i]; f[i] = no[i]; } }
+        else for (i = 0; i < 3; i++) f[i] = saved[t][i];
+        VirtualProtect(f, 3, old, &old);
+    }
     patched = off;
     x360_log(off ? "x360 menu: PC's side panels told closed (the world's viewport whole)\r\n"
                  : "x360 menu: PC's side panels test put back\r\n");
