@@ -1649,6 +1649,10 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
      * FrizQuadrataBig there. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
      * the 360's already. */
     prop(descendant_ending(root, "ItemName"), "Font", "X360_SerifBig");
+    /* The 360's card has its dividers' windows but draws nothing there (in-game/10, 30: the card's
+     * background at their rows); PC's draw a white line. */
+    prop(descendant_ending(root, "Divider"), "Alpha", "0");
+    prop(descendant_ending(root, "Divider1"), "Alpha", "0");
     add_child(sheet, 0, root);
     set_visible(root, 0, 1);
     read_prop(root, "UnifiedAreaRect", value, sizeof value);
@@ -2625,6 +2629,28 @@ static unsigned char *pc_pet_menu(void) {
 static float fovy_saved[2];
 static int doll_shown = -1;                 /* -1 none, 0 the hero's, 1 the pet's */
 
+/* The pet seen three-quarters as the 360's (in-game/19: the lynx side-on, its head to the right;
+ * the 360's one wardrobe camera at (0, 1, 4.5) looking at (0, 1, 0), its pet's model turned).
+ * PC's pet camera (CPetMenu's, made at GOG 0x5980e7) is at (0, 1, [0xaa75f4] = 3.5) looking at
+ * (0, 1, 0), its pet facing it: the camera is turned PET_DOLL_YAW about that point while the
+ * pet's sheet shows, and put back after. A first angle, to measure against 19. */
+#define PET_DOLL_YAW (-55.0f * 3.14159265f / 180.0f)
+static float x87_cos(float x) { float r; __asm__("fcos" : "=t"(r) : "0"(x)); return r; }
+static float x87_sin2(float x) { float r; __asm__("fsin" : "=t"(r) : "0"(x)); return r; }
+static void pet_camera_turn(void *camera, int turned) {
+    typedef void (__fastcall *xyz_fn)(void *self, void *edx, float x, float y, float z);
+    static xyz_fn set_pos, look_at;
+    float d = *(float *)0x00aa75f4, a = turned ? PET_DOLL_YAW : 0.0f;
+    if (!set_pos) {
+        void *ogre = GetModuleHandleA("OgreMain.dll");
+        set_pos = ogre ? (xyz_fn)GetProcAddress(ogre, "?setPosition@Camera@Ogre@@QAEXMMM@Z") : 0;
+        look_at = ogre ? (xyz_fn)GetProcAddress(ogre, "?lookAt@Camera@Ogre@@QAEXMMM@Z") : 0;
+    }
+    if (!set_pos || !look_at || !camera || !(d > 0.5f && d < 50.0f)) return;
+    set_pos(camera, 0, d * x87_sin2(a), 1.0f, d * x87_cos(a));
+    look_at(camera, 0, 0.0f, 1.0f, 0.0f);
+}
+
 static void show_doll_of(int pet, int on) {
     static pixel_rect_fn rect_of;
     static get_fovy_fn fovy;
@@ -2645,6 +2671,7 @@ static void show_doll_of(int pet, int on) {
     vp = *(void **)(m + vp_at);
     if (!target || !camera) return;
     if (!on) {
+        if (pet) pet_camera_turn(camera, 0);
         if (vp) { ((remove_viewport_fn)(*(void ***)target)[0x2c / 4])(target, 0, z); *(void **)(m + vp_at) = 0; }
         if (fovy_saved[pet] && set_fovy) { set_fovy(camera, 0, &fovy_saved[pet]); fovy_saved[pet] = 0; }
         return;
@@ -2684,6 +2711,7 @@ static void show_doll_of(int pet, int on) {
                 set_fovy(camera, 0, &wide);
             }
         }
+        if (pet) pet_camera_turn(camera, 1);
         x360_log(pet ? "x360 chr: pet doll viewport at " : "x360 chr: doll viewport at ");
         x360_log_num((long)a.left); x360_log(","); x360_log_num((long)a.top);
         x360_log(" "); x360_log_num((long)(a.right - a.left)); x360_log("x"); x360_log_num((long)(a.bottom - a.top)); x360_log("\r\n");
@@ -2808,6 +2836,9 @@ static void frame_load(void) {
             if (petchr_root) scale_tree(petchr_root, k, 0);
             if (petchr_root) unclip_tree(petchr_root, 0);
             if (petchr_root) plain_markup(petchr_root, 0);   /* its "Pet" line is the 360's markup */
+            /* The pet's name is white on the 360 (in-game/19): its layout's sample "|cFFB29560Name|u"
+             * left gold by plain_markup, the 360's code writing the name plain. */
+            if (petchr_root) prop(win_of(PETCHR_PREFIX, "characterName"), "TextColour", "FFFFFFFF");
             /* The 360's tabbed frame (mastermenu_xenon, centred) holds the screens in its
              * ContainerFrame, three columns: the character, the bag, the pet's bag. The 360's dump
              * of the screen (the catalog's menus/08-inventory) has the bag's TopFrame 299 (base
@@ -6489,6 +6520,78 @@ static void hotkeys_off(void) {
     x360_log("x360 menu: PC's screen hotkeys off: "); x360_log_num((long)n); x360_log(" of 6\r\n");
 }
 
+/* PC's menus' 3D boards (QA runs 5, 6: the parchment with chains behind the 360's modal, the
+ * boards at the shops' sides; neither a CEGUI window, they stayed with PC's interface hidden and
+ * its modal frame moved away). A CMenu keeps its board at +0x38 (the modal, CGameUI's +0x304;
+ * CMenu's update 0x574477 animates the entity at the board's +0x5c with Entity::_updateAnimation),
+ * a shop's screen elsewhere (boards_tick's table, each read in its update). The entity is made invisible
+ * (Ogre's MovableObject::setVisible, exported) while the 360's modal or shop frame covers them,
+ * and visible again after. */
+static void board_visible(unsigned char *menu, unsigned at, int visible) {
+    typedef void (__fastcall *set_visible_fn)(void *self, void *edx, int visible);
+    static set_visible_fn set_vis;
+    static void *entity_vtable;
+    unsigned char *board;
+    void *entity;
+    if (!set_vis) {
+        void *ogre = GetModuleHandleA("OgreMain.dll");
+        set_vis = ogre ? (set_visible_fn)GetProcAddress(ogre, "?setVisible@MovableObject@Ogre@@UAEX_N@Z") : 0;
+        entity_vtable = ogre ? GetProcAddress(ogre, "??_7Entity@Ogre@@6B@") : 0;
+    }
+    if (!set_vis || !entity_vtable || !menu) return;
+    __try {
+        board = *(unsigned char **)(menu + at);
+        entity = board ? *(void **)(board + 0x5c) : 0;
+        if (entity && *(void **)entity == entity_vtable) set_vis(entity, 0, visible);   /* an Ogre::Entity only */
+    } __except (1) { }
+}
+static void boards_tick(void) {
+    /* Each shop screen's board, where its update (its vtable's slot 9) animates it: CInventoryMenu
+     * 0x580f80 its +0x7b20, CMerchantMenu 0x58ac50 +0x48, CEnchantMenu 0x5752d0 +0x50,
+     * CCombineMenu 0x5656a0 +0x6c, CStashMenu 0x5aadb0 +0x48; the menu's vtable checked first. */
+    static const struct { unsigned at, vtable, board; } shops[] = {
+        {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
+        {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
+    };
+    static int modal_hidden, shop_hidden;
+    unsigned i;
+    int want_modal = modal_shown, want_shop = inventory_open && shop;
+    if (!ui) return;
+    if (want_modal || modal_hidden) {
+        unsigned char *m = *(unsigned char **)(ui + 0x304);
+        if (m && *(unsigned *)m == 0x00ab7d04) board_visible(m, 0x38, !want_modal);
+        if (modal_hidden != want_modal) x360_log(want_modal ? "x360 modal: PC's board hidden\r\n" : "x360 modal: PC's board shown again\r\n");
+        modal_hidden = want_modal;
+    }
+    if (want_shop || shop_hidden) {
+        for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
+            unsigned char *m = *(unsigned char **)(ui + shops[i].at);
+            if (m && *(unsigned *)m == shops[i].vtable) board_visible(m, shops[i].board, !want_shop);
+        }
+        if (shop_hidden != want_shop) x360_log(want_shop ? "x360 shop: PC's boards hidden\r\n" : "x360 shop: PC's boards shown again\r\n");
+        shop_hidden = want_shop;
+    }
+}
+
+/* PC's own bars (its CInteractiveMenu, CGameUI's +0x318, interactivemenu.layout: Root, TopBar,
+ * BottomBar) shown with its settings (QA run 5): made transparent; the port shows the 360's where
+ * the 360 does. */
+static void pc_bars_off(void) {
+    static char prefix[64];
+    static unsigned last;
+    static const char *const needs[] = {"BottomBar", "Root", 0};
+    void *root;
+    if (!prefix[0]) {
+        if (GetTickCount() - last < 1000) return;
+        last = GetTickCount();
+        if (!find_pc_by_suffix("TopBar", needs, prefix, sizeof prefix)) { prefix[0] = 0; return; }
+        x360_log("x360 bars: PC's found, made transparent\r\n");
+    }
+    root = win_of(prefix, "Root");
+    if (!root) { prefix[0] = 0; return; }
+    prop(root, "Alpha", "0");
+}
+
 /* PC narrows its world's viewport while one of its side panels is open (a shop's: CGameUI's
  * 0x541090 asks each of its panels, the vector at +0x16b8, their virtuals +8 and +0xc; the client's
  * update at 0x40276c then sets the viewport inside them, and the mouse's and labels' projections,
@@ -6534,6 +6637,8 @@ void x360_frame_tick(void) {
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
     __try { pc_pause_tick(); } __except (1) { x360_log("x360 menu: exception in PC's pause menu\r\n"); }
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
+    __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
+    __try { pc_bars_off(); } __except (1) { x360_log("x360 bars: exception hiding PC's\r\n"); }
     __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }

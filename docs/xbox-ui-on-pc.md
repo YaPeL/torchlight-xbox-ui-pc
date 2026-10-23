@@ -2583,3 +2583,21 @@ stash. Found:
   whether to hide them is the user's call.
 - A town portal scroll could not be picked up with the bag full and no stack of them: PC's own
   rule; the pad's choice of item is the 360's (sub_821A4470, no bag test).
+- After QA run 6 (not run yet):
+  - **PC's 3D boards hidden.** The object a menu animates (its update calls 0x4c9640 on it, then
+    Entity::_updateAnimation on its `+0x5c`) is the board: CMenu (the modal, CGameUI `+0x304`) at
+    `+0x38` (`0x574477`); CInventoryMenu `+0x7b20` (`0x580f80`), CMerchantMenu `+0x48` (`0x58ac50`),
+    CEnchantMenu `+0x50` (`0x5752d0`), CCombineMenu `+0x6c` (`0x5656a0`), CStashMenu `+0x48`
+    (`0x5aadb0`), each its vtable's slot 9. Its entity, checked to be an Ogre::Entity by its vtable
+    (`??_7Entity@Ogre@@6B@`), is made invisible (MovableObject::setVisible) while the 360's modal
+    or shop frame covers it, and visible again after.
+  - **PC's own bars** (CInteractiveMenu, `interactivemenu.layout` Root/TopBar/BottomBar) made
+    transparent: the user saw them over PC's settings.
+  - **The card's dividers** made transparent: the 360's card has the windows but draws nothing
+    there (in-game/10, 30: the background at their rows).
+  - **The pet's name** white, as the 360's (in-game/19).
+  - **The pet seen three-quarters:** PC's pet camera (made at `0x5980e7`: (0, 1, `[0xaa75f4]` 3.5)
+    looking at (0, 1, 0)) turned -55 degrees about (0, 1, 0) while the pet's sheet shows (the 360
+    turns the model, not its one camera at (0, 1, 4.5)); a first angle, to measure.
+- Moved to "nice to have, after the first version" (the user, 2026-10-23): the minimap's fill
+  (the 360's lighter, opaque grey).
