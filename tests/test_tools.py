@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 import build_proxy  # noqa: E402
+import cegui_exports  # noqa: E402
 import check_no_game_files  # noqa: E402
 import compare_installs  # noqa: E402
 import compare_ui  # noqa: E402
@@ -86,6 +87,7 @@ def synthetic_pe(imports, exports, timestamp=1):
 
 def write(path, data):
     p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(data) if isinstance(data, bytes) else p.write_text(data)
 
 
@@ -125,10 +127,11 @@ class BuildProxyTest(unittest.TestCase):
     def test_check_names(self):
         with tempfile.TemporaryDirectory() as game:
             write(os.path.join(game, "Ogre.dll"), synthetic_pe({}, ["?a@@XZ"]))
-            write(os.path.join(game, "real.dll"), synthetic_pe({}, ["?b@@XZ"]))
-            src = 'sym("Ogre.dll", "?a@@XZ"); sym("Ogre.dll", "?typo@@XZ"); need("?b@@XZ");'
-            self.assertEqual(build_proxy.check_names(src, game, os.path.join(game, "real.dll")),
-                             ["Ogre.dll: ?typo@@XZ"])
+            src = 'sym("Ogre.dll", "?a@@XZ"); sym("Ogre.dll", "?typo@@XZ"); need("?b@@XZ"); need("?c@@XZ");'
+            self.assertEqual(build_proxy.check_names(src, game, {"?b@@XZ"}),
+                             ["Ogre.dll: ?typo@@XZ", "CEGUIBase_orig.dll: ?c@@XZ"])
+            # Without the game's folder only CEGUIBase_orig's names (the list's) are checked.
+            self.assertEqual(build_proxy.check_names(src, None, {"?b@@XZ"}), ["CEGUIBase_orig.dll: ?c@@XZ"])
 
     def test_the_proxy_source_parses(self):
         src = Path(os.path.dirname(os.path.abspath(__file__)), "..", "proxy", "cegui_proxy.c").read_text()
@@ -382,6 +385,43 @@ class NoGameFilesTest(unittest.TestCase):
         self.assertEqual(check_no_game_files.forbidden(paths),
                          ["x/Torchlight.EXE", "m/ui.layout", "m/a.imageset", "t.dds", "data.pak", "c.dll",
                           "media/Pak.zip", "a.uilayout"])
+
+    def test_export_list(self):
+        """Only proxy/cegui_exports.txt may hold an export table, and only CEGUI's names in its format."""
+        name = "?f@Font@" + "CEGUI@@QAEXXZ"          # split: this file must not look like a table
+        good = "# comment\n" + f"1 cegui ??0Thing@CEGUI@@QAE@XZ\n2 runic {name}\n"
+        table = lambda form: "".join(form.format(i=i, n=name.replace("XZ", f"{i}XZ")) + "\n" for i in range(8))
+        with tempfile.TemporaryDirectory() as root:
+            write(os.path.join(root, "proxy", "cegui_exports.txt"), good)
+            copies = {"copy.md": table("{i} cegui {n}"), "indented.md": table("    {i} cegui {n}"),
+                      "tabs.txt": table("{i}\tcegui\t{n}"), "def.txt": table("    {n}=CEGUIBase_orig.{n} @{i}"),
+                      "dump.txt": table("{n} @{i}"), "numbered.txt": table("{i} {n}"),
+                      "bulk.txt": table("{n}") * 60}
+            for f, text in copies.items():
+                write(os.path.join(root, "docs", f), text)
+            write(os.path.join(root, "docs", "fine.md"), table("a call of {n} in a sentence"))
+            paths = ["proxy/cegui_exports.txt", "docs/fine.md"] + [f"docs/{f}" for f in copies]
+            self.assertEqual(check_no_game_files.export_problems(root, paths),
+                             [f"docs/{f}: export table lines outside proxy/cegui_exports.txt" for f in copies])
+            for bad in ("3 cegui ?other@Ogre@@QAEXXZ\n", "3 cegui ?f@Ogre@@QAEXPAVWindow@CEGUI@@@Z\n",
+                        "3 game ?x@CEGUI@@QAEXXZ\n", "free text\n", "# a comment after the entries\n",
+                        "\n", "1 cegui ?dup@CEGUI@@QAEXXZ\n"):
+                write(os.path.join(root, "proxy", "cegui_exports.txt"), good + bad)
+                self.assertEqual(len(check_no_game_files.export_problems(root, paths[:1])), 1, bad)
+            write(os.path.join(root, "proxy", "cegui_exports.txt"), "#\n" * 11 + good)
+            self.assertEqual(len(check_no_game_files.export_problems(root, paths[:1])), 1)
+        self.assertTrue(cegui_exports.in_cegui("??8CEGUI@@YA_NABVString@0@0@Z"))
+        self.assertTrue(cegui_exports.in_cegui("??0?$RefCounted@VBoundSlot@CEGUI@@@CEGUI@@QAE@XZ"))
+        self.assertEqual(check_no_game_files.forbidden(["proxy/proxy.def", "x/kernel32.lib"]),
+                         ["proxy/proxy.def", "x/kernel32.lib"])
+
+    def test_committed_export_list(self):
+        repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        entries = cegui_exports.read(os.path.join(repo, "proxy", "cegui_exports.txt"))
+        names = {n for n, _, _ in entries}
+        self.assertTrue(set(build_proxy.HOOKS) <= names)
+        self.assertEqual(sorted(o for _, o, _ in entries), list(range(1, len(entries) + 1)))
+        self.assertEqual(check_no_game_files.export_problems(repo, ["proxy/cegui_exports.txt"]), [])
 
     def test_tracked_repo(self):
         with tempfile.TemporaryDirectory() as root:
@@ -801,6 +841,33 @@ def stfs_package(files, title=0x58410A7E, content_type=0x000D0000, contiguous=Tr
     return bytes(out)
 
 
+class CheckRealDllTest(unittest.TestCase):
+    def test_the_real_dll_against_the_list(self):
+        with tempfile.TemporaryDirectory() as d:
+            game, listed = os.path.join(d, "game"), os.path.join(d, "exports.txt")
+            dll, orig = os.path.join(game, "CEGUIBase.dll"), os.path.join(game, "CEGUIBase_orig.dll")
+            real = synthetic_pe({}, ["?a@CEGUI@@XZ"])
+            write(listed, "1 cegui ?a@CEGUI@@XZ\n")
+            write(dll, real)
+            install.check_real_dll(game, listed)                 # not installed yet
+            os.rename(dll, orig)
+            write(dll, b"MZ forwards to CEGUIBase_orig.x")
+            install.check_real_dll(game, listed)                 # the proxy installed: the real one beside it
+            write(dll, real)
+            install.check_real_dll(game, listed)                 # a store's file check put the real one back
+            os.remove(dll)
+            install.check_real_dll(game, listed)                 # only the real one, renamed
+            write(dll, b"MZ forwards to CEGUIBase_orig.x")
+            write(listed, "1 cegui ?a@CEGUI@@XZ\n" + "2 cegui ?b@CEGUI@@XZ\n")
+            with self.assertRaises(SystemExit) as e:
+                install.check_real_dll(game, listed)
+            self.assertIn("is not the CEGUIBase.dll this mod is made for", str(e.exception))
+            os.remove(orig)
+            with self.assertRaises(SystemExit) as e:
+                install.check_real_dll(game, listed)
+            self.assertIn("the real CEGUIBase.dll is missing", str(e.exception))
+
+
 class StfsTest(unittest.TestCase):
     def test_lists_and_reads_files_contiguous_or_chained(self):
         big = bytes(range(256)) * 20            # 5120 bytes: two blocks
@@ -1121,13 +1188,25 @@ class BuildTargetTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             game = os.path.join(d, "game")
             fake_game(game, timestamp=build_proxy.TARGETS["gog"][0])
-            with open(os.path.join(game, "CEGUIBase.dll"), "wb") as f:
-                f.write(synthetic_pe({}, list(build_proxy.HOOKS)))
+            dll = os.path.join(game, "CEGUIBase.dll")
+            write(dll, synthetic_pe({}, ["?a@CEGUI@@XZ"]))
+            listed = os.path.join(d, "exports.txt")
+            write(listed, "1 cegui ?a@CEGUI@@XZ\n")
             with self.assertRaises(SystemExit) as e:
-                build_proxy.build(os.path.join(game, "CEGUIBase.dll"), os.path.join(d, "out"), target="steam")
+                build_proxy.build(dll, os.path.join(d, "out"), target="steam", exports_list=listed)
             self.assertIn("--target gog", str(e.exception))
             with self.assertRaises(SystemExit):
-                build_proxy.build(os.path.join(game, "CEGUIBase.dll"), os.path.join(d, "out"), target="epic")
+                build_proxy.build(dll, os.path.join(d, "out"), target="epic", exports_list=listed)
+
+    def test_build_refuses_another_dll(self):
+        with tempfile.TemporaryDirectory() as d:
+            dll = os.path.join(d, "game", "CEGUIBase.dll")
+            write(dll, synthetic_pe({}, ["?a@CEGUI@@XZ"]))
+            listed = os.path.join(d, "exports.txt")
+            write(listed, "1 cegui ?a@CEGUI@@XZ\n" + "2 cegui ?b@CEGUI@@XZ\n")
+            with self.assertRaises(SystemExit) as e:
+                build_proxy.build(dll, os.path.join(d, "out"), exports_list=listed)
+            self.assertIn("not the CEGUIBase.dll the proxy is made for", str(e.exception))
 
     def test_committed_steam_table(self):
         """proxy/addresses_steam.txt covers every address in the proxy's code, numbers only."""

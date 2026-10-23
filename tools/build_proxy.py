@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Build and install the proxy CEGUIBase.dll (proxy/cegui_proxy.c) for a copy of the PC game.
 
-build_proxy.py build REAL_DLL BUILD_DIR [--target gog|steam]
-                                          the .def from REAL_DLL's exports, then clang-cl and lld-link
-                                          into BUILD_DIR/CEGUIBase.dll (BUILD_DIR outside this repo)
+build_proxy.py build [REAL_DLL] BUILD_DIR [--target gog|steam]
+                                          the .def from proxy/cegui_exports.txt, then clang-cl and
+                                          lld-link into BUILD_DIR/CEGUIBase.dll (BUILD_DIR outside this
+                                          repo); REAL_DLL, when given, is checked first to export
+                                          exactly that list, and its folder to hold the target's build
 build_proxy.py install GAME_DIR PROXY     CEGUIBase.dll -> CEGUIBase_orig.dll (once), PROXY copied in
 build_proxy.py remove GAME_DIR            the real CEGUIBase.dll put back
 build_proxy.py status GAME_DIR            which CEGUIBase.dll the folder holds
 
-The export table is read from the user's own DLL at build time and is not kept in the repository.
+The export table is proxy/cegui_exports.txt (names and ordinals only, tools/cegui_exports.py).
 Every export is forwarded by name, with its own ordinal, to CEGUIBase_orig.dll, except the members
 in HOOKS, which go to the proxy's thunks. Only use GAME_DIR on a copy of the game (GOG's, in its own
 prefix), never Steam's install.
@@ -27,10 +29,21 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pe_info import PE  # noqa: E402
+import cegui_exports  # noqa: E402
 import port_addresses  # noqa: E402
 
 REAL = "CEGUIBase_orig"
 LLVM = "/usr/lib/llvm-21/bin"
+
+
+def llvm(tool):
+    """An LLVM tool: version 21's on PATH (Debian and Ubuntu name it with the suffix), else the one on
+    PATH, else LLVM 21's folder."""
+    for name in [f"{tool}-21", tool]:   # 21: the version the proxy is built and compared with
+        if shutil.which(name):
+            return shutil.which(name)
+    return f"{LLVM}/{tool}"
+
 # Mangled member -> the thunk's __fastcall symbol (@name@bytes of arguments, ecx and edx included).
 HOOKS = {
     "?loadScheme@SchemeManager@CEGUI@@QAEPAVScheme@2@ABVString@2@0@Z": "@hook_load_scheme@16",
@@ -133,14 +146,20 @@ def referenced_names(src):
     return out
 
 
-def check_names(src, game_dir, real_dll):
-    """The names of referenced_names() that the game folder's DLLs do not export."""
+def check_names(src, game_dir, real_names):
+    """The names of referenced_names() not exported: CEGUIBase_orig's by real_names (a set), the
+    other DLLs' by the game folder's (not checked without one)."""
     missing = []
     for dll, name in referenced_names(src):
-        path = real_dll if dll == REAL + ".dll" else os.path.join(game_dir, dll)
-        with open(path, "rb") as f:
-            if name not in {n for n, _ in PE(f.read()).exports()}:
-                missing.append(f"{dll}: {name}")
+        if dll == REAL + ".dll":
+            known = real_names
+        elif game_dir:
+            with open(os.path.join(game_dir, dll), "rb") as f:
+                known = {n for n, _ in PE(f.read()).exports()}
+        else:
+            continue
+        if name not in known:
+            missing.append(f"{dll}: {name}")
     return missing
 
 
@@ -193,21 +212,28 @@ def target_sources(repo, out, target):
     return paths
 
 
-def build(real_dll, out, target="gog"):
+def build(real_dll, out, target="gog", exports_list=cegui_exports.LIST):
     repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     if target not in TARGETS:
         raise SystemExit(f"unknown target {target!r}: one of {', '.join(TARGETS)}")
     if inside(out, repo):
         raise SystemExit(f"{out} is inside this repository; build elsewhere.")
-    with open(real_dll, "rb") as f:
-        pe = PE(f.read())
-    if is_proxy(real_dll):
+    exports = cegui_exports.exports(exports_list)
+    if real_dll and not os.path.isfile(real_dll):
+        raise SystemExit(f"{real_dll}: no such file")
+    game_dir = os.path.dirname(os.path.abspath(real_dll)) if real_dll else None
+    if real_dll and is_proxy(real_dll):
         raise SystemExit(f"{real_dll} is the proxy, not the real DLL")
-    stamp = exe_timestamp(os.path.dirname(os.path.abspath(real_dll)))
+    stamp = exe_timestamp(game_dir) if game_dir else None
     if stamp is not None and stamp != TARGETS[target][0]:
         known = [t for t, (ts, _) in TARGETS.items() if ts == stamp]
         raise SystemExit(f"the Torchlight.exe next to {real_dll} is build {stamp:#x}"
                          + (f" ({known[0]}): pass --target {known[0]}" if known else ", not one the proxy knows"))
+    if real_dll:
+        diff = cegui_exports.differences(real_dll, exports_list)
+        if diff:
+            raise SystemExit(f"{real_dll} is not the CEGUIBase.dll the proxy is made for "
+                             f"({len(diff)} exports differ from {exports_list}):\n  " + "\n  ".join(diff[:10]))
     os.makedirs(out, exist_ok=True)
     sources = target_sources(repo, out, target)
     src = sources["cegui_proxy.c"]
@@ -217,41 +243,41 @@ def build(real_dll, out, target="gog"):
     missing = []
     for path in (src, menu, ui_dump, setup):
         with open(path) as f:
-            missing += check_names(f.read(), os.path.dirname(os.path.abspath(real_dll)), real_dll)
+            missing += check_names(f.read(), game_dir, {n for n, _ in exports})
     if missing:
         raise SystemExit("the proxy names functions these DLLs do not export:\n  " + "\n  ".join(missing))
     with open(os.path.join(out, "proxy.def"), "w") as f:
-        f.write(proxy_def(pe.exports()))
+        f.write(proxy_def(exports))
     with open(os.path.join(out, "kernel32.def"), "w") as f:
         f.write(import_def("kernel32.dll", {**KERNEL32, **KERNEL32_EXE}))
     with open(os.path.join(out, "user32.def"), "w") as f:
         f.write(import_def("user32.dll", USER32))
     with open(os.path.join(out, "msvcr90.def"), "w") as f:
         f.write(import_def("msvcr90.dll", MSVCR90))
-    cc = ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding"]
+    cc = [llvm("clang-cl"), "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding"]
     if target != "gog":
         cc.append(f"/DX360_TARGET_{target.upper()}")
     steps = [
-        [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "kernel32.def", "-l", "kernel32.lib"],
-        [f"{LLVM}/llvm-dlltool", "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],
-        [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "user32.def", "-l", "user32.lib"],
+        [llvm("llvm-dlltool"), "-m", "i386", "-k", "-d", "kernel32.def", "-l", "kernel32.lib"],
+        [llvm("llvm-dlltool"), "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],
+        [llvm("llvm-dlltool"), "-m", "i386", "-k", "-d", "user32.def", "-l", "user32.lib"],
         cc + ["/Focegui_proxy.obj", src],
         cc + ["/Fopad.obj", sources["pad.c"]],
         cc + ["/Fox360_menu.obj", menu],
         cc + ["/Foui_dump.obj", ui_dump],
         cc + ["/Fosetup.obj", setup],
-        ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
+        [llvm("lld-link"), "/timestamp:0", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
          "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "x360_menu.obj", "ui_dump.obj", "setup.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
     helper = sources["send_input.c"]
     steps += [
         cc + ["/Fosend_input.obj", helper],
-        ["lld-link", "/subsystem:console", "/machine:x86", "/nodefaultlib", "/entry:start", "/safeseh:no",
+        [llvm("lld-link"), "/timestamp:0", "/subsystem:console", "/machine:x86", "/nodefaultlib", "/entry:start", "/safeseh:no",
          "send_input.obj", "kernel32.lib", "user32.lib", "/out:send_input.exe"],
     ]
     for step in steps:
         subprocess.run(step, cwd=out, check=True)
-    print(f"built {os.path.join(out, 'CEGUIBase.dll')} for {target}: {len(pe.exports())} exports, "
+    print(f"built {os.path.join(out, 'CEGUIBase.dll')} for {target}: {len(exports)} exports, "
           f"{len(HOOKS)} hooked; and send_input.exe")
 
 
@@ -302,7 +328,7 @@ def status(game):
 
 
 def main():
-    cmds = {"build": (build, 2), "install": (install, 2), "remove": (remove, 1), "status": (status, 1)}
+    cmds = {"build": (build, (1, 2)), "install": (install, 2), "remove": (remove, 1), "status": (status, 1)}
     args, target = sys.argv[1:], None
     if "--target" in args:
         i = args.index("--target")
@@ -311,11 +337,13 @@ def main():
             return 2
         target = args[i + 1]
         del args[i:i + 2]
-    if not args or args[0] not in cmds or len(args) != 1 + cmds[args[0]][1] or (target and args[0] != "build"):
+    counts = cmds[args[0]][1] if args and args[0] in cmds else ()
+    if not args or len(args) - 1 not in (counts if isinstance(counts, tuple) else (counts,)) \
+            or (target and args[0] != "build"):
         print(__doc__)
         return 2
-    if target:
-        build(*args[1:], target=target)
+    if args[0] == "build":
+        build(*([None] if len(args) == 2 else []), *args[1:], target=target or "gog")
     else:
         cmds[args[0]][0](*args[1:])
     return 0

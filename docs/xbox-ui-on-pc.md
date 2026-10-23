@@ -365,10 +365,11 @@ as on the 360 if it loads them at all. **[read]**
 
 ## 7. Stage 1: the proxy CEGUIBase.dll (2026-10-15)
 
-**The DLL.** `proxy/cegui_proxy.c`, built by `tools/build_proxy.py build REAL_DLL BUILD_DIR` with
+**The DLL.** `proxy/cegui_proxy.c`, built by `tools/build_proxy.py build [REAL_DLL] BUILD_DIR` with
 `clang-cl` and `lld-link` 21 (`--target=i686-pc-windows-msvc`, freestanding, no CRT; import
 libraries for `kernel32` and `msvcr90` made by `llvm-dlltool` from generated `.def` files). Its
-export table is generated from the user's own DLL at build time and not kept here: each of the
+export table was generated from the user's own DLL at build time (since 2026-10-23 it is read from
+`proxy/cegui_exports.txt`, names and ordinals only: section 18): each of the
 3839 exports is forwarded by name, with its own ordinal, to `CEGUIBase_orig.dll` (the real DLL,
 renamed), except three, which go to `__fastcall` thunks (the `__thiscall` convention with a
 dummy `edx`; they pop 8, 8 and 20 bytes, checked in the disassembly):
@@ -2809,3 +2810,54 @@ parchment.
   folder (a /tmp tmpfs's quota filled up); uninstall. Run end to end on a copy of GOG's folder: the
   conversion is identical to the one the game uses. The update check was taken out (the user's
   decision).
+
+## 18. The proxy built without the game's DLL: `proxy/cegui_exports.txt` (2026-10-23)
+
+The owner's decision (2026-10-23): the installer becomes one executable per system, with the proxy
+built in CI and published in the release, so the export table it forwards is kept in the
+repository as names only.
+
+**What the file holds.** One line per export of `CEGUIBase.dll`: its ordinal, its source and its
+MSVC mangled name, in the order of the DLL's name table. No code, data, address or text of the
+game: every name's qualified name (the mangled name up to its first `@@`) ends in namespace
+CEGUI, a member of a class there or a free operator of CEGUI; at most ten header lines before the
+first entry, nothing else. `tools/cegui_exports.py` checks it when reading the file and
+`tools/check_no_game_files.py` in CI. That check accepts an export table in this file only: any
+other tracked file with more than five lines holding a mangled CEGUI name with an ordinal or a
+forward (this list's form with any spacing, a `.def`'s, a dump's), or more than 400 lines naming
+one, fails CI, as does a `.def` or `.lib`.
+
+**Where it comes from.** `tools/cegui_exports.py make GAME_DLL OFFICIAL_DLL`, run on 2026-10-23:
+
+- The game's DLL: GOG's `CEGUIBase.dll` (kept as `CEGUIBase_orig.dll`, SHA-256 `360bff56…ffa6d1`),
+  3839 exports, ordinals 1 to 3839. Steam's `CEGUIBase.dll` (SHA-256 `b3464338…dfe28`, read only)
+  exports the same 3839 names with the same ordinals (`cegui_exports.py check` prints "same
+  exports" for both).
+- The CEGUI version: 0.6.2. The DLL's assertion paths name `CEGUI-0.6.2\src\…`.
+- The official build compared: `bin/CEGUIBase.dll` of CEGUI's own SDK,
+  `CEGUI-SDK-0.6.2b-vc9.zip` from the project's SourceForge files (zip SHA-256
+  `75e1aab9…5737c7`, DLL SHA-256 `95305f53…274cfec`), 3835 exports. 3828 of the game's names
+  are in it: marked `cegui`. The other 11 are Runic's own, marked `runic`: seven
+  `Font::drawText` overloads with one more `bool` argument than CEGUI's (which replace the
+  official seven, absent from the game's DLL) and `Font`'s colour trigger members
+  (`setColourTrigger`, `setColourUnTrigger`, `setColourTriggerEnabled`,
+  `isColourTriggerEnabled`). The ordinals are the game's: the official build numbers 2569 of
+  the common names the same way, the rest are shifted by Runic's additions.
+
+**How it is used.**
+
+- `tools/build_proxy.py build [REAL_DLL] OUT` writes the proxy's `.def` from the list. With
+  REAL_DLL, it first checks that the DLL exports exactly the list (names and ordinals) and that
+  the folder's `Torchlight.exe` is the target's build. Without it (CI), only the names the proxy
+  resolves in `CEGUIBase_orig.dll` are checked against the list; those of `OgreMain.dll` and
+  `msvcp90.dll` need the game's folder.
+- The installer checks the game's real `CEGUIBase.dll` against the list before anything else
+  (`install.check_real_dll`). A DLL that differs would leave the game calling into exports the
+  proxy does not forward.
+- The link is reproducible (`lld-link /timestamp:0`): two builds give the same bytes. The proxy
+  built from the list is the one built from GOG's DLL, and differs from the one installed for
+  the last runs only in the PE timestamp's four bytes.
+- CI's `proxy` job builds both targets from the list with LLVM 21 (apt.llvm.org's) and prints
+  their SHA-256. Its first run (2026-10-23) gave the hashes of the local build (Ubuntu's clang
+  21.1.8): GOG `54dbc7d4…31d7c62b`, Steam `dfb727c2…9a3617`. `build_proxy.py` takes LLVM 21's tools
+  first (`clang-cl-21`, then `clang-cl`).

@@ -46,6 +46,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "xex"))
 import build_proxy  # noqa: E402
+import cegui_exports  # noqa: E402
 import convert_x360_ui  # noqa: E402
 import stfs  # noqa: E402
 
@@ -415,6 +416,18 @@ def proxy_dll(build, game, given=None):
     return os.path.join(out, "CEGUIBase.dll")
 
 
+def check_real_dll(game, exports_list=cegui_exports.LIST):
+    """SystemExit unless the game's real CEGUIBase.dll exports what the proxy forwards to
+    (proxy/cegui_exports.txt): another DLL would leave the game calling into nothing."""
+    dll, orig = os.path.join(game, "CEGUIBase.dll"), os.path.join(game, "CEGUIBase_orig.dll")
+    real = dll if os.path.isfile(dll) and not build_proxy.is_proxy(dll) else orig
+    if not os.path.isfile(real) or build_proxy.is_proxy(real):
+        raise SystemExit(f"{game}: the real CEGUIBase.dll is missing: reinstall the game's files.")
+    diff = cegui_exports.differences(real, exports_list)
+    if diff:
+        raise SystemExit(f"{real} is not the CEGUIBase.dll this mod is made for ({len(diff)} exports differ).")
+
+
 def pick_game(given):
     if given:
         game = os.path.realpath(given)
@@ -441,6 +454,7 @@ def do_install(args):
     if build not in PROXY_FILES:
         raise SystemExit(f"{game}: a build this version does not support yet.")
     print(f"the game: {game} ({build} build)")
+    check_real_dll(game)
     if build in EXPERIMENTAL and not (args.get("experimental") or Ask(args.get("console")).yes_no(
             f"This game's build ({build}) is supported experimentally: the mod was ported to it offline "
             "and has not been played on it yet. Install anyway?", default=False)):
