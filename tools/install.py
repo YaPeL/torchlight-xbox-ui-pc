@@ -3,7 +3,7 @@
 
     install.py [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]
                [--experimental]
-    install.py uninstall [--game DIR] [--yes] [--console]
+    install.py uninstall [--game DIR] [--yes] [--console] [--anyway]
     install.py list
 
 Install, as the recomp's first start does it (its src/game_setup):
@@ -23,11 +23,14 @@ Install, as the recomp's first start does it (its src/game_setup):
    kept); the proxy CEGUIBase.dll installed, the real one kept as CEGUIBase_orig.dll.
 
 Uninstall puts the real CEGUIBase.dll back and removes what the install wrote (the converted
-folders, x360_ui.ini, the mod's logs). Saves are not touched; with the 360's bag on they keep
-the 360's layout, and the backups are named.
+folders, x360_ui.ini, the mod's logs). Saves are not touched. With the 360's bag installed it warns
+first (the original game deletes the items that do not fit PC's bag) and offers PC's bag instead
+(the default; then load and save each character, and uninstall); uninstalling anyway (a yes, or
+--anyway) backs the saves up first.
 
 The questions are asked in windows (tkinter) when there is a display, else on the console
-(--console forces it); --yes takes the defaults (PC's bag) without asking.
+(--console forces it); --yes takes the defaults (PC's bag; at uninstall with the 360's bag, PC's
+bag installed instead) without asking.
 """
 import datetime
 import glob
@@ -58,12 +61,16 @@ X360_TITLE = 0x58410A7E                               # Torchlight's Xbox LIVE A
 X360_CONTENT_TYPE = 0x000D0000                        # an Arcade title's package
 PROXY_FILES = {"gog": "CEGUIBase.dll", "steam": "CEGUIBase-steam.dll"}   # a release's proxy per build, next to this script
 EXPERIMENTAL = {"steam"}   # ported offline, not yet played with the mod: installed only into a --game given
+NO_MOD_WARNING = (
+    "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
+    "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
+    "PC's bag, then load and save each character.")
 BAG_WARNING = (
-    "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21.\n\n"
-    "Your saves keep each item's slot number. With the 360's bag, items past its 50th slot in a "
-    "save are lost when it loads; uninstalling or going back to PC's bag later places the items "
-    "oddly, and some may be lost too.\n\n"
-    "The saves found are backed up first.\n\nUse the 360's bag?")
+    "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21 (any "
+    "item, spells, fish).\n\n"
+    "When a character changes bag, the mod moves the items that do not fit to free slots or to the "
+    "pet's bag; if some still do not fit, the game says so and closes without saving.\n\n"
+    + NO_MOD_WARNING + "\n\nThe saves found are backed up first.\n\nUse the 360's bag?")
 
 
 # ---- the PC game ----
@@ -498,12 +505,22 @@ def do_install(args):
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
     game, _ = pick_game(args.get("game"))
-    bag = read_ini(game).get("bag", "pc")
-    if bag == "360" and not ask.yes_no(
-            "The 360's bag is on. Your saves made with it keep its layout: without the mod some items "
-            "will be placed oddly or lost. The backups made at install are kept (their names end in "
-            "-backup-<date>).\n\nUninstall anyway?", default=True):
-        return 1
+    backups = []
+    if read_ini(game).get("bag", "pc") == "360":
+        if not args.get("anyway") and ask.yes_no(
+                "The 360's bag is installed. " + NO_MOD_WARNING + "\n\nSwitch to PC's bag now (recommended)? "
+                "Then load and save each character, and uninstall.", default=True):
+            write_ini(game, converted_folders(game)[0], "pc")
+            ask.info("PC's bag installed; nothing uninstalled. Load and save each character, then uninstall.")
+            return 0
+        if not args.get("anyway") and not ask.yes_no(
+                "Uninstall anyway? The original game will delete the items that do not fit PC's bag. "
+                "Your saves are backed up first.", default=False):
+            print("not uninstalled")
+            return 1
+        backups = back_up_saves(save_folders(game))
+        for b in backups:
+            print(f"saves backed up: {b}")
     if not build_proxy.remove(game):
         raise SystemExit("CEGUIBase.dll is not the proxy nor the real one; nothing removed")
     for folder in converted_folders(game) + glob.glob(os.path.join(game, "x360ui-build-*")) + glob.glob(
@@ -516,7 +533,7 @@ def do_uninstall(args):
             os.remove(os.path.join(game, name))
         except OSError:
             pass
-    ask.info(f"Uninstalled from {game}.")
+    ask.info(f"Uninstalled from {game}." + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
     return 0
 
 
@@ -533,7 +550,7 @@ def parse(argv):
     args, i = {"command": "install"}, 0
     if argv and argv[0] in ("install", "uninstall", "list"):
         args["command"], argv = argv[0], argv[1:]
-    flags = {"--yes": "yes", "--console": "console", "--experimental": "experimental"}
+    flags = {"--yes": "yes", "--console": "console", "--experimental": "experimental", "--anyway": "anyway"}
     values = {"--game": "game", "--package": "package", "--x360-dir": "x360_dir", "--bag": "bag", "--dll": "dll"}
     while i < len(argv):
         a = argv[i]

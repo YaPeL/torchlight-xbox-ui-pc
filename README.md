@@ -24,6 +24,7 @@ This is a **beta**, tested under Linux (Proton). See
 ## Contents
 
 - [Installing](#installing)
+- [The 360's bag and your saves](#the-360s-bag-and-your-saves)
 - [Playing](#playing)
 - [What works](#what-works)
 - [Known limitations](#known-limitations)
@@ -52,16 +53,26 @@ Nintendo), writes `x360_ui.ini` and installs the proxy. The game's real `CEGUIBa
 It also asks which bag you want:
 
 - **PC's** (the default): three sections of 21 slots.
-- **The 360's**: one section of 50 slots for every kind of item, as on the console. Your saves keep
-  each item's slot, so with it items past the 50th slot of a save are lost, and going back to PC's
-  bag later places items oddly. The installer backs up the saves it finds first.
+- **The 360's**: one section of 50 slots for every kind of item, as on the console. The installer
+  backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
 Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
 questions, PC's bag), `--console` (questions on the console, not in windows).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
-  install wrote. Saves are not touched.
+  install wrote. Saves are not touched. With the 360's bag installed it warns first and offers PC's
+  bag instead; `--anyway` uninstalls after backing the saves up.
 - `python3 tools/install.py list` prints the games it finds.
+
+## The 360's bag and your saves
+
+- **Changing bags:** when a character loads with the other bag, the mod moves the items that do not
+  fit to free slots or to the pet's bag. If some still do not fit, the game says so and closes
+  without saving: nothing is lost. Go back to the other bag and make room.
+- **Without the mod** (uninstalled, or removed by Steam or GOG when they verify, repair or update the
+  game), the original game deletes the items that do not fit PC's bag. Before uninstalling, install
+  PC's bag, then load and save each character. The uninstaller offers this when the 360's bag is
+  installed.
 
 ## Playing
 
@@ -102,10 +113,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 
 - **GOG and the Epic Games Store only.** Steam sells an older build (17685): every address the
   mod uses is already found in it, and its test is still to come.
-- **The bag.** With PC's bag (the default) the equipment section holds 21 items; the 360's bag
-  is an install option (above). Changing the bag of a save that has more items than the new bag
-  holds: the game says so and stops without saving (nothing is lost); go back to the other bag and
-  make room. A check in the installer, before changing the bag, is still to come.
+- **The bag.** With PC's bag (the default) the main section holds 21 items; the 360's bag is an
+  install option, with its notes on saves (above). A check of the saves in the installer, before
+  changing the bag, is still to come.
 - Windows-only binaries; on Linux the game runs under Proton or Wine.
 
 ## Tools
