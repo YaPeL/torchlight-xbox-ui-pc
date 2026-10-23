@@ -2877,6 +2877,9 @@ refusals).
 an item PC refuses goes to the first empty slot of its type's section; with none it is kept aside
 and, at the first frame in play (the pet waited for up to 10 s), put into the other one's bag;
 any left stops the game with a message and `TerminateProcess` (no game code runs after it, so no
-save). The personal stash is left out of the order (the owner's rule when it is not known to exist
+save). The pet is waited for without a clock (the owner: a slow machine must not stop the game):
+until it exists or the world is ready without it (the 360's HUD up, then 60 frames counted); with
+no pet the message says so. Pending (the owner, 2026-10-23): the installer's check of every save
+before a bag change (a read-only parser of the saves), left for later since the stop loses nothing. The personal stash is left out of the order (the owner's rule when it is not known to exist
 at load: a unit of the town's level, not the hero's). Not run yet.
 
