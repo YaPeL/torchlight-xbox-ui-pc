@@ -611,7 +611,7 @@ class InstallCppTest(unittest.TestCase):
         # and an uninstall leaves it.
         r = self.install("cpp", "--bag", "pc", env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1", X360UI_TEST_FAIL_UNDO="1"))
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("could not be undone", r.stderr)
+        self.assertIn("Not all could be undone", r.stderr)
         kept = [n for n in os.listdir(game) if n.startswith("x360ui-undo-")]
         self.assertEqual(len(kept), 1)
         self.assertIn(kept[0], r.stderr)
@@ -630,6 +630,7 @@ class InstallCppTest(unittest.TestCase):
         r = subprocess.run([BINARY, "uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue(os.path.isdir(marked))                         # a marked one is the user's to look at
+        self.assertIn(marked, r.stdout)
         __import__("shutil").rmtree(marked)
         self.assertEqual(_tree(game), before)
         self.assertEqual(sorted(os.listdir(game)), sorted(before))

@@ -499,24 +499,25 @@ class Change {
       std::error_code ec;
       if (it->kind == Step::Created) fs::remove_all(it->a, ec);
       else if (std::getenv("X360UI_TEST_FAIL_UNDO")) ec = std::make_error_code(std::errc::device_or_resource_busy);
+      else if (path_exists(it->a)) ec = std::make_error_code(std::errc::file_exists);   // a failed step left it: not overwritten
       else fs::rename(it->b, it->a, ec);
       if (ec) {
-        failed = true;
-        const std::string note = "could not undo a change to " + S(it->a) + ": " + ec.message();
-        std::cerr << note << "\n";
-        g_notes += "\n" + note;
+        failed_ = true;
+        g_notes += "\ncould not undo a change to " + S(it->a) + " (" + ec.message() + "); it is at " +
+                   S(it->kind == Step::Created ? it->a : it->b);
       }
     }
     std::error_code ec;
-    if (!failed) {
+    if (!failed_ || !path_exists(undo_) || fs::is_empty(undo_, ec)) {
       fs::remove_all(undo_, ec);
       return;
     }
     // What could not be put back is still in the undo folder: kept, marked so uninstall leaves it.
-    if (path_exists(undo_)) {
-      std::ofstream(undo_ / kKeepMark) << "The originals that could not be put back, in the order they were moved here.\n";
-      g_notes += "\nThe originals are in " + S(undo_) + ": put them back by hand.";
-    }
+    std::ofstream mark(undo_ / kKeepMark);
+    mark << "The originals that could not be put back, in the order they were moved here.\n";
+    mark.close();
+    g_notes += "\n" + S(undo_) + " holds the originals: put them back by hand" +
+               (mark ? "." : ", before uninstalling (it could not be marked to be kept).");
   }
 
  private:
@@ -527,7 +528,7 @@ class Change {
   static unsigned rand_id() { return unsigned(std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFF); }
   fs::path game_, undo_;
   std::vector<Step> steps_;
-  bool done_ = false, failed = false;
+  bool done_ = false, failed_ = false;
 };
 
 // build_proxy.install, as steps of a Change.
@@ -937,6 +938,9 @@ int do_uninstall(const Args& args) {
     throw;
   }
   std::string done = "Uninstalled from " + S(game) + ".";
+  std::error_code ec;
+  for (fs::directory_iterator it(game, ec), end; !ec && it != end; it.increment(ec))
+    if (path_exists(it->path() / kKeepMark)) done += "\n\nKept, with originals to put back by hand: " + S(it->path());
   if (!backups.empty()) {
     done += "\n\nYour saves were backed up:";
     for (const auto& b : backups) done += "\n" + S(b);
@@ -981,12 +985,12 @@ int installer_main(const std::vector<std::string>& argv) {
     if (a.command == "uninstall") return do_uninstall(a);
     return do_install(a);
   } catch (const Exit& e) {
-    report_error(e.what() + (g_notes.empty() ? "" : "\n\nThese changes could not be undone:" + g_notes), argv);
+    report_error(e.what() + (g_notes.empty() ? "" : "\n\nNot all could be undone:" + g_notes), argv);
     return 1;
   } catch (const std::exception& e) {
     report_error(std::string("error: ") + e.what() +
                      (g_notes.empty() ? "\nnothing was left half done (the game's folder is as it was)."
-                                      : "\n\nThese changes could not be undone:" + g_notes),
+                                      : "\n\nNot all could be undone:" + g_notes),
                  argv);
     return 1;
   }
