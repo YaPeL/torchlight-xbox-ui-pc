@@ -2840,3 +2840,19 @@ gets 50 too, as every unit with a bag on the 360). Steam: `0x49d752`, `0x4d925f`
 `0x4d926e` (checked: the next call, `push 0x15; push 2; call 0x4e7370`, Steam's addSection, read in
 its disassembly). Not run yet.
 
+## 21. Items placed at load, and the save tests on copies (2026-10-23)
+
+**Static reading (GOG).** A unit's saved data is applied by the function around `0x4acc3d`: for
+each saved item (the list at `+0x1e8`, each with its slot at `+0x88`) the item is made and put
+with `0x4e9480(item, slot, 1)` at `0x4acd4b`. For a slot above 19, `0x4e9480` takes the item's
+type (`0x4e8410`), its section (`0x4e84a0`) and checks the slot is in it (`0x4e77a0`); when not, it
+returns 0 and the loader destroys the item (`0x4acd5b`, its vtable's first entry with 1). So an
+item saved in a slot that the current bag does not have for its type (69 to 81 with the 360's bag;
+another type's section with PC's) is lost at load. The owner's plan: placed again at that call
+(a free slot of its section), and the installer refusing a bag change that would not fit.
+
+**`save_root=DIR`** (x360_ui.ini, a diagnosis, off by default): the game's application data
+folder made DIR (the executable's import of `SHGetSpecialFolderPathW` replaced, found by name;
+the game asks for CSIDL_APPDATA through its one wrapper `0x5cc6c0`), so a test runs on copies in
+DIR's `runic games\torchlight` and the user's own folder is neither read nor written. Not run yet.
+

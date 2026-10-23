@@ -52,6 +52,8 @@ IMPORT BOOL __stdcall DisableThreadLibraryCalls(HMODULE module);
 IMPORT HMODULE __stdcall GetModuleHandleA(const char *name);
 IMPORT BOOL __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *overlapped);
 IMPORT BOOL __stdcall CloseHandle(HANDLE file);
+IMPORT BOOL __stdcall VirtualProtect(void *address, DWORD size, DWORD protect, DWORD *old);
+IMPORT DWORD __stdcall GetFileAttributesA(const char *name);
 
 #define REAL_DLL "CEGUIBase_orig.dll"
 #define GENERIC_READ 0x80000000UL
@@ -193,6 +195,11 @@ static int starts(const char *s, const char *prefix) {
  * bag=360 makes the hero's and pet's bag the 360's (x360_bag_patch, proxy/x360_menu.c). */
 static char prompts_setting[24] = "auto";
 static int bag_360;
+/* save_root=DIR (a diagnosis for tests on copies, off by default): the folder the game takes as
+ * the user's application data (SHGetSpecialFolderPathW with CSIDL_APPDATA, called by the game's
+ * one wrapper 0x5cc6c0), so its "Runic Games\Torchlight" (saves, settings) is DIR's and the
+ * user's own is not read or written. DIR: a Windows path in ASCII that exists. */
+static char save_root[260];
 void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
 void x360_bag_patch(void);
 
@@ -234,6 +241,7 @@ static void read_config(void) {
         if (starts(line, "out=") && length(line + 4) < sizeof out_dir) memcpy(out_dir, line + 4, length(line + 4) + 1);
         if (starts(line, "prompts=") && length(line + 8) < sizeof prompts_setting) memcpy(prompts_setting, line + 8, length(line + 8) + 1);
         if (starts(line, "bag=360")) bag_360 = 1;
+        if (starts(line, "save_root=") && length(line + 10) < sizeof save_root) memcpy(save_root, line + 10, length(line + 10) + 1);
         if (starts(line, "console=") && length(line + 8) < sizeof x360_console_commands)
             memcpy(x360_console_commands, line + 8, length(line + 8) + 1);
         line = end;
@@ -609,6 +617,57 @@ int x360_exe_is_target(void) {
     return *(DWORD *)(nt + 8) == X360_EXE_TIMESTAMP && (DWORD)base == X360_EXE_BASE;
 }
 
+static unsigned short save_root_w[260];
+typedef BOOL (__stdcall *special_folder_fn)(void *window, unsigned short *path, int csidl, BOOL create);
+static special_folder_fn real_special_folder;
+static BOOL __stdcall special_folder_hook(void *window, unsigned short *path, int csidl, BOOL create) {
+    if ((csidl & 0xff) == 0x1a) {                /* CSIDL_APPDATA */
+        unsigned i;
+        for (i = 0; save_root_w[i]; i++) path[i] = save_root_w[i];
+        path[i] = 0;
+        return 1;
+    }
+    return real_special_folder(window, path, csidl, create);
+}
+
+static int same_name(const char *a, const char *b) {   /* ASCII, case-insensitive */
+    for (; *a && *b; a++, b++) {
+        char x = *a >= 'a' && *a <= 'z' ? *a - 32 : *a, y = *b >= 'a' && *b <= 'z' ? *b - 32 : *b;
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+
+/* The executable's import of SHELL32!SHGetSpecialFolderPathW replaced (found in its import table,
+ * by name: the same in every build). */
+static void save_root_install(void) {
+    unsigned char *base = (unsigned char *)GetModuleHandleA(0), *nt;
+    DWORD *desc, i, old;
+    if (!save_root[0]) return;
+    for (i = 0; save_root[i]; i++) {
+        if ((unsigned char)save_root[i] >= 0x80) { put("save_root: not ASCII, not used\r\n"); return; }
+        save_root_w[i] = (unsigned char)save_root[i];
+    }
+    save_root_w[i] = 0;
+    if (GetFileAttributesA(save_root) == 0xffffffff) { put("save_root: no such folder, not used\r\n"); return; }
+    nt = base + *(DWORD *)(base + 0x3c);
+    for (desc = (DWORD *)(base + *(DWORD *)(nt + 0x80)); desc[3]; desc += 5) {
+        DWORD *names = (DWORD *)(base + (desc[0] ? desc[0] : desc[4])), *slots = (DWORD *)(base + desc[4]);
+        if (!same_name((const char *)(base + desc[3]), "SHELL32.dll")) continue;
+        for (i = 0; names[i]; i++) {
+            if (names[i] & 0x80000000) continue;
+            if (!same_name((const char *)(base + names[i] + 2), "SHGetSpecialFolderPathW")) continue;
+            if (!VirtualProtect(&slots[i], 4, 0x04, &old)) return;
+            real_special_folder = (special_folder_fn)slots[i];
+            slots[i] = (DWORD)special_folder_hook;
+            VirtualProtect(&slots[i], 4, old, &old);
+            put("save_root: the game's application data folder is "); put(save_root); put("\r\n");
+            return;
+        }
+    }
+    put("save_root: SHGetSpecialFolderPathW not imported, not used\r\n");
+}
+
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
     if (reason == 1) {
         self_module = module;
@@ -625,6 +684,7 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
             pad = 0;
             bag_360 = 0;
         }
+        save_root_install();                        /* before the game asks for its folder */
         if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct, !pad_old_face, pad_log);
         if (bag_360 && mode_scheme) x360_bag_patch();   /* before any unit is made */
     }
