@@ -551,6 +551,49 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(len(backups), 1, who)
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
 
+    def test_the_360_bag_remembered_until_uninstall(self):
+        """The report's case: the 360's bag, then PC's (uninstall's switch), then uninstall: still a
+        question and a backup, until the player says each character was loaded and saved with PC's
+        bag; the same in both installers (ini, backups, the folder as it was)."""
+        before = {who: _tree(g) for who, (g, _) in self.games.items()}
+        cmd = lambda who: [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+        for who in ("py", "cpp"):
+            self.assertEqual(self.install(who, "--bag", "360").returncode, 0)
+            self.assertEqual(self.uninstall(who, "--yes").returncode, 0)            # switched to PC's bag
+            game, saves = self.games[who]
+            for d in os.listdir(os.path.dirname(saves)):
+                if "-backup-" in d:
+                    __import__("shutil").rmtree(os.path.join(os.path.dirname(saves), d))
+        self.same_install()
+        for who in ("py", "cpp"):                                                       # a reinstall keeps it
+            self.assertEqual(self.install(who, "--bag", "pc").returncode, 0)
+        self.same_install()
+        for who in ("py", "cpp"):
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "rb") as f:
+                ini = f.read()
+            self.assertIn(b"bag=pc\r\nbag_360_used=1\r\n", ini, who)
+        no_backup = lambda saves: not any("-backup-" in d for d in os.listdir(os.path.dirname(saves)))
+        for who in ("py", "cpp"):
+            game, saves = self.games[who]
+            installed = _tree(game)
+            r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
+                               env=self.env, input="n\n")
+            self.assertNotEqual(r.returncode, 0, who)                                  # not confirmed: not uninstalled
+            self.assertEqual(_tree(game), installed, who)
+            self.assertTrue(no_backup(saves), who)
+            r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--yes", "--console"], capture_output=True,
+                               text=True, env=self.env)
+            self.assertNotEqual(r.returncode, 0, who)                                  # --yes: the default, no
+            self.assertEqual(_tree(game), installed, who)
+            self.assertTrue(no_backup(saves), who)
+            r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
+                               env=self.env, input="y\n")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertEqual(_tree(game), before[who], who)
+            backups = [d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]
+            self.assertEqual(len(backups), 1, who)
+            self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""

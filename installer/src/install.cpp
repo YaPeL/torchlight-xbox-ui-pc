@@ -61,6 +61,9 @@ const std::string kNoModWarning =
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
     "PC's bag, then load and save each character.";
+const std::string kNoModWarningAfter =
+    "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
+    "them, and without the mod the original game deletes those that do not fit PC's bag.";
 const std::string kBagWarning =
     "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21 (any "
     "item, spells, fish).\n\n"
@@ -444,9 +447,14 @@ std::string wine_path(const fs::path& p) {
 }
 
 Bytes ini_text(const fs::path& game, const fs::path& out, const std::string& bag) {
-  const std::vector<std::pair<std::string, std::string>> owned = {
+  // Remembered once the 360's bag was used, until uninstall: a character not yet loaded and saved
+  // with PC's bag would lose what does not fit it.
+  auto old = read_ini(game);
+  const bool used = bag == "360" || old["bag"] == "360" || old["bag_360_used"] == "1";
+  std::vector<std::pair<std::string, std::string>> owned = {
       {"mode", "scheme"}, {"out", wine_path(out)}, {"pad", "1"}, {"pad_mode", "direct"}, {"prompts", "auto"}, {"bag", bag}};
-  std::set<std::string> keys = {"mode", "out", "pad", "pad_mode", "prompts", "bag", "update_check"};
+  if (used) owned.push_back({"bag_360_used", "1"});
+  std::set<std::string> keys = {"mode", "out", "pad", "pad_mode", "prompts", "bag", "bag_360_used", "update_check"};
   std::vector<U32> kept;
   for (const U32& line : ini_lines(game))
     if (!keys.count(utf8(py_strip(line.substr(0, line.find(U'=')))))) kept.push_back(line);
@@ -890,6 +898,14 @@ int do_uninstall(const Args& args) {
     if (!args.anyway && !ask.yes_no("Uninstall anyway? The original game will delete the items that do not fit PC's bag. "
                                     "Your saves are backed up first.", false)) {
       std::cout << "not uninstalled\n";
+      return 1;
+    }
+    backup = true;
+  } else if (read_ini(game)["bag_360_used"] == "1") {
+    if (!args.anyway && !ask.yes_no("PC's bag is installed, and the 360's was used before. " + kNoModWarningAfter +
+                                        "\n\nHave you loaded and saved each character with PC's bag? Your saves are backed up first.",
+                                    false)) {
+      std::cout << "not uninstalled (load and save each character with PC's bag first)\n";
       return 1;
     }
     backup = true;
