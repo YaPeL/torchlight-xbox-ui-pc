@@ -5404,8 +5404,46 @@ static void qd_mirror_text(const char *name) {
 /* A left click on PC's button (its centre, the mouse injected into CEGUI). */
 static void qd_press(const char *name) { press_pc(pc_qd_prefix, name); }
 
+/* The quest marker over the NPC ("?", "!") hidden while its dialog is up, as the 360's (town/42
+ * against 43). PC's markers are effects on the unit by name, "QUEST COMPLETE", "QUEST INCOMPLETE",
+ * "QUEST GIVING", "QUEST PASSIVE" (PC's own wide strings at 0xabad3c, 0xabad18, 0xabacfc,
+ * 0xabace0), each taken off by 0x482710 (the unit, the name), as the quest manager's update
+ * 0x5f0f50 does before it puts the one of the NPC's state back; that update (the manager
+ * *0xf25320, as 0x5efa20 returns it) is called again when the dialog closes. */
+void *x360_talked_unit;
+static void *marker_hidden_on;
+static void quest_marker(int hide) {
+    typedef void (__fastcall *unit_str_fn)(void *unit, void *edx, const void *name);
+    typedef void (__fastcall *update_fn)(void *manager, void *edx, void *unit);
+    static const unsigned names[] = {0x00abad3c, 0x00abad18, 0x00abacfc, 0x00abace0};
+    wstr_ctor_fn wctor;
+    wstr_dtor_fn wdtor;
+    unsigned char ws[32];
+    unsigned i;
+    if (hide) {
+        void *u = x360_talked_unit;
+        if (!u || !wstring_functions(&wctor, &wdtor)) return;
+        __try {
+            for (i = 0; i < 4; i++) {
+                wctor(ws, 0, (const unsigned short *)names[i]);
+                ((unit_str_fn)0x00482710)(u, 0, ws);
+                wdtor(ws, 0);
+            }
+            marker_hidden_on = u;
+            x360_log("x360 dialog: the NPC's quest marker hidden\r\n");
+        } __except (1) { x360_log("x360 dialog: hiding the quest marker threw\r\n"); }
+    } else if (marker_hidden_on) {
+        void *manager = *(void **)0x00f25320;
+        __try { if (manager) ((update_fn)0x005f0f50)(manager, 0, marker_hidden_on); }
+        __except (1) { x360_log("x360 dialog: the quest marker's update threw\r\n"); }
+        marker_hidden_on = 0;
+        x360_talked_unit = 0;
+    }
+}
+
 static void qd_show(int on) {
     if (on == qd_shown) return;
+    quest_marker(on);
     qd_shown = on;
     if (!on) overlay_closed_at = GetTickCount();
     /* A button held from before does not act (run B2: the A that talked, held, accepted the

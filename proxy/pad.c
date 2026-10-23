@@ -810,6 +810,8 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
                 }
                 {
                     void x360_dialog_expect(void);
+                    extern void *x360_talked_unit;
+                    x360_talked_unit = any_candidate;   /* its quest marker hidden under the dialog */
                     x360_dialog_expect();
                 }
                 /* approachAI measures to the target item first if one is set: clear it. */

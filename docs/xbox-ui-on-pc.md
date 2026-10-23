@@ -2454,3 +2454,9 @@ inventory (section 13), so each run's batch is one.
 - The quest marker ("?" or "!" over an NPC) is hidden on the 360 while the NPC's dialog is up
   (town/42 against 43). PC's marker is a 3D element, not CEGUI ("question", "exclamation" and
   their "gray" ones, named at GOG `0x42d910`, `0x42e330`); what shows it is not read yet. Open.
+  **Written (not run):** PC's markers are effects on the NPC by name, "QUEST COMPLETE",
+  "QUEST INCOMPLETE", "QUEST GIVING", "QUEST PASSIVE" (PC's wide strings `0xabad3c`, `0xabad18`,
+  `0xabacfc`, `0xabace0`); the quest manager's update (`0x5f0f50`, the manager `*0xf25320` as
+  `0x5efa20` returns it) takes each off with `0x482710` (the unit, the name) and puts the one of
+  the NPC's state back. The port takes them off the unit A talked to when the 360's dialog shows,
+  and calls that update when it closes.
