@@ -606,6 +606,14 @@ class InstallCppTest(unittest.TestCase):
                            env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1"))
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(_tree(game), installed)
+        # An undo folder a commit could not remove (a file in use): gone after an uninstall.
+        os.makedirs(os.path.join(game, "x360ui-undo-123"))
+        with open(os.path.join(game, "x360ui-undo-123", "0"), "wb") as f:
+            f.write(b"an old proxy")
+        r = subprocess.run([BINARY, "uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(_tree(game), before)
+        self.assertEqual(sorted(os.listdir(game)), sorted(before))
 
     def test_stores_found_and_steam_and_epic_installed_as_python(self):
         """A home with a Steam library (Steam's build) and a Legendary (Epic) install of GOG's

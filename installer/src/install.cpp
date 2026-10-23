@@ -44,6 +44,9 @@ extern const size_t kProxySteamSize;
 
 namespace {
 
+// What a rollback could not undo, added to the last message (an elevated run's console closes).
+std::string g_notes;
+
 const char* const kUsage =
     "x360ui-install [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]\n"
     "               [--experimental] [--dll FILE]\n"
@@ -358,7 +361,10 @@ std::vector<fs::path> back_up_saves(const std::vector<fs::path>& folders) {
     for (fs::recursive_directory_iterator it(f), end; it != end; ++it) {
       const fs::path rel = fs::relative(it->path(), f);
       if (it->is_directory()) dirs.push_back(rel);
-      else fs::last_write_time(copy / rel, fs::last_write_time(it->path()));
+      else {
+        fs::last_write_time(copy / rel, fs::last_write_time(it->path()));
+        fs::permissions(copy / rel, fs::status(it->path()).permissions());
+      }
     }
     for (auto d = dirs.rbegin(); d != dirs.rend(); ++d) fs::last_write_time(copy / *d, fs::last_write_time(f / *d));
     copies.push_back(copy);
@@ -493,7 +499,11 @@ class Change {
       if (it->kind == Step::Created) fs::remove_all(it->a, ec);
       else if (it->kind == Step::Renamed) fs::rename(it->b, it->a, ec);
       else fs::rename(it->b, it->a, ec);
-      if (ec) std::cerr << "could not undo a change to " << S(it->a) << ": " << ec.message() << "\n";
+      if (ec) {
+        const std::string note = "could not undo a change to " + S(it->a) + ": " + ec.message();
+        std::cerr << note << "\n";
+        g_notes += "\n" + note;
+      }
     }
     std::error_code ec;
     fs::remove_all(undo_, ec);
@@ -603,8 +613,9 @@ int run_elevated(const std::vector<std::string>& args) {
   sei.lpVerb = L"runas";
   sei.lpFile = self;
   sei.lpParameters = params.c_str();
-  const std::wstring cwd = fs::current_path().wstring();
-  sei.lpDirectory = cwd.c_str();
+  std::error_code ec;
+  const std::wstring cwd = fs::current_path(ec).wstring();
+  if (!ec) sei.lpDirectory = cwd.c_str();
   sei.nShow = SW_SHOWNORMAL;
   if (!ShellExecuteExW(&sei)) return -1;   // ERROR_CANCELLED: the user said no
   WaitForSingleObject(sei.hProcess, INFINITE);
@@ -657,7 +668,7 @@ int with_permission(Ask& ask, const fs::path& game, std::vector<std::string> ans
 #endif
 }
 
-// ---- the proxy to install (install.proxy_dll: given, the release's built in, or beside the executable) ----
+// ---- the proxy to install (install.proxy_dll: given, or the release's, here built in) ----
 fs::path proxy_file(const std::string& build, const std::string& given, const fs::path& tmp) {
   if (!given.empty()) return P(given);
   const unsigned char* data = build == "steam" ? kProxySteam : kProxyGog;
@@ -763,13 +774,18 @@ int do_install(const Args& args) {
   }
   // Every answer is in: the permission, before anything is changed.
   {
-    std::error_code ec;
-    std::vector<std::string> again = {"install", "--game", S(game), "--package", S(fs::absolute(P(source), ec)), "--bag", bag,
+    auto absolute = [](const std::string& p) {
+      std::error_code ec;
+      const fs::path a = fs::absolute(P(p), ec);
+      if (ec) throw Exit("Cannot find the full path of " + p + ": " + ec.message());
+      return S(a);
+    };
+    std::vector<std::string> again = {"install", "--game", S(game), "--package", absolute(source), "--bag", bag,
                                       "--yes", "--console", "--elevated", "--saves-known"};
     for (const auto& f : folders) again.insert(again.end(), {"--save-folder", S(f)});
     if (no_backup_ok) again.push_back("--no-backup-ok");
     if (experimental_ok) again.push_back("--experimental");
-    if (!args.dll.empty()) again.insert(again.end(), {"--dll", S(fs::absolute(P(args.dll), ec))});
+    if (!args.dll.empty()) again.insert(again.end(), {"--dll", absolute(args.dll)});
     if (!args.elevated) {
       const int code = with_permission(ask, game, again);
       if (code >= 0) return code;
@@ -888,13 +904,16 @@ int do_uninstall(const Args& args) {
   Change ch(game);
   try {
     if (!remove_proxy(ch, game)) throw Exit("CEGUIBase.dll is not the proxy nor the real one; nothing removed");
-    std::vector<fs::path> gone;
+    std::vector<fs::path> gone, leftovers;
     for (const fs::path& f : converted_folders(game)) { gone.push_back(f); gone.push_back(S(f) + ".partial"); }
     std::error_code ec;
     for (fs::directory_iterator it(game, ec), end; !ec && it != end; it.increment(ec)) {
       const std::string n = S(it->path().filename());
-      if (it->path() == ch.undo_folder()) continue;   // this uninstall's own
-      if (n.rfind("x360ui-build-", 0) == 0 || n.rfind("x360ui-work-", 0) == 0 || n.rfind("x360ui-undo-", 0) == 0 ||
+      if (n.rfind("x360ui-undo-", 0) == 0) {   // a commit's leftover (a file in use): removed after, as it can be
+        if (it->path() != ch.undo_folder()) leftovers.push_back(it->path());
+        continue;
+      }
+      if (n.rfind("x360ui-build-", 0) == 0 || n.rfind("x360ui-work-", 0) == 0 ||
           (n.rfind("x360_dump_", 0) == 0 && n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0))
         gone.push_back(it->path());
     }
@@ -902,6 +921,7 @@ int do_uninstall(const Args& args) {
     for (const fs::path& p : gone) ch.put_aside(p);
     if (std::getenv("X360UI_TEST_FAIL_AFTER_PROXY")) throw Exit("a failure asked for by a test");
     ch.commit();
+    for (const fs::path& p : leftovers) fs::remove_all(p, ec);
   } catch (...) {
     ch.rollback();
     throw;
@@ -927,10 +947,19 @@ int do_list() {
 bool is_x360_pak(const fs::path& path);
 
 namespace {
-void write_result(const std::string& text) {
-  if (g_result_file.empty()) return;
-  std::ofstream f(P(g_result_file), std::ios::binary);
-  f << text;
+// An error, where the user sees it: for the first run that asked for elevation (the result file),
+// else on the console and, without --console or --yes, in a window.
+void report_error(const std::string& text, const std::vector<std::string>& argv) {
+  if (!g_result_file.empty()) {
+    std::cerr << text << "\n";
+    std::ofstream f(P(g_result_file), std::ios::binary);
+    f << text;
+    return;
+  }
+  const bool console = std::find(argv.begin(), argv.end(), "--console") != argv.end();
+  const bool yes = std::find(argv.begin(), argv.end(), "--yes") != argv.end();
+  const bool list = !argv.empty() && argv[0] == "list";
+  Ask(console || list, yes).error(text);
 }
 }  // namespace
 
@@ -942,13 +971,10 @@ int installer_main(const std::vector<std::string>& argv) {
     if (a.command == "uninstall") return do_uninstall(a);
     return do_install(a);
   } catch (const Exit& e) {
-    std::cerr << e.what() << "\n";
-    write_result(e.what());
+    report_error(e.what() + g_notes, argv);
     return 1;
   } catch (const std::exception& e) {
-    const std::string text = std::string("error: ") + e.what() + "\nnothing was left half done (the game's folder is as it was).";
-    std::cerr << text << "\n";
-    write_result(text);
+    report_error(std::string("error: ") + e.what() + "\nnothing was left half done (the game's folder is as it was)." + g_notes, argv);
     return 1;
   }
 }
