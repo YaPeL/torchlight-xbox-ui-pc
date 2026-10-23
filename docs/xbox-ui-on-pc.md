@@ -2553,3 +2553,7 @@ Game), used with the mouse; Start or B close it; the pad does nothing in the wor
   closes it (the earlier freeze called `0x591200` from the pad's hook). The other menus asked
   (inventory, stats, pet, skill, journal, quest, merchant, enchant, combine, stash) have a plain
   state read at `+0x10` (`+0x30`, `+0x44`, `+0x34`, `+0x1c`, `+0xc8`, `+0x38`, `+0x54`).
+- The settings' window from the main menu showed the 360's tip over it, with no way out (QA runs
+  3 and 4): its confirmation uses PC's tip layout (prefix `14_`), and its text is none of PC's
+  tips. A window of that layout whose text is not one of PC's tips is now left to PC (used with
+  the mouse); the main menu has a hero and a level loaded, so "in play" does not tell them apart.

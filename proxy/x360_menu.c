@@ -6074,6 +6074,21 @@ static void tip_tick(void) {
         pass_mouse(tip_root);
         set_visible(tip_root, 0, 0);
     }
+    /* Out of play (the title, the main menu's settings: their confirmations use the tip's
+     * layout) PC's window is left as it is, used with the mouse (QA runs 3, 4: the 360's tip over
+     * the settings' window left no way out). */
+    {
+        /* Not a tip: its text is none of PC's tips (the settings' confirmations; the main menu has
+         * a hero and a level loaded, so being in play does not tell them apart). */
+        const char *x360_text_key_of(const char *prefix, const char *value);
+        char t[2048];
+        read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", t, sizeof t);
+        if (!x360_text_key_of("pctip.", t)) {
+            if (tip_shown) { tip_shown = 0; set_visible(tip_root, 0, 0); overlay_closed_at = GetTickCount(); }
+            prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
+            return;
+        }
+    }
     if (!tip_shown) {
         RECT r;
         HWND hw = active_window();
