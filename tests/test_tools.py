@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 
@@ -783,6 +784,9 @@ class InstallTest(unittest.TestCase):
             fake_game(wine_game)
             wine = save_in(os.path.join(home, ".wine"))
             self.assertEqual(install.save_folders(wine_game, home), [wine])
+            # Called as do_install calls it, without a home: the user's (it raised a TypeError).
+            with unittest.mock.patch.dict(os.environ, {"HOME": home}):
+                self.assertEqual(sorted(install.save_folders(game)), sorted([own, beside]))
 
     def test_uninstall_removes_what_the_install_wrote(self):
         with tempfile.TemporaryDirectory() as home:
