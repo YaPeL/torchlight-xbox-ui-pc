@@ -3025,3 +3025,25 @@ Here:
   showed: its fall before it and its rise after it were seen (the pet's return). It is now kept
   hidden always, the 360's modal showing every one of PC's modals. QA run 49: the pet's return, no board falling nor rising (the owner).
 
+## 24. The installer in C++, batch 2: the readers (2026-10-23)
+
+The owner's plan (2026-10-23): one executable per system (Windows `.exe`, Linux AppImage), the
+Python installer kept until the C++ one gives the same files byte for byte, then removed.
+`installer/` (CMake, C++17):
+- `src/stfs.cpp`: tools/stfs.py's reading, step for step (its generator's next-block reads
+  included, so a damaged package fails the same way).
+- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, its notice in
+  `installer/third_party/NOTICES.md`), Python's integers as 64-bit ones.
+- `src/xex.cpp`: tools/xex/xex_dump.py; AES-128 CBC by tiny-AES-c (The Unlicense, commit
+  `23856752`, one code path on every system, CBC only).
+- `src/main.cpp`: for now `dev stfs`, `dev xex-dump`, `dev aes-cbc`, whose output is the Python
+  tools'. Linux links libstdc++ and libgcc in (only libc needed); Windows the static runtime.
+- Tests: `installer/tests/core_test.cpp` (AES's FIPS-197 and SP 800-38A vectors, an uncompressed
+  LZX block, a synthetic XEX, synthetic STFS packages contiguous and chained), and
+  `tests/test_installer_cpp.py` (the binary against stfs.py and aes128.py on synthetic data; run
+  when X360UI_INSTALLER names the binary). CI's `installer` job builds and runs both on Linux and
+  Windows.
+- Against the owner's copy (2026-10-23): `dev stfs` lists the package as stfs.py does and
+  extracts its 57 files identical to stfs.py's; `dev xex-dump` writes the image identical to
+  xex_dump.py's (22 806 528 bytes, base 0x82000000), in 0.3 s against 17 s.
+
