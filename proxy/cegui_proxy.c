@@ -202,6 +202,7 @@ static int bag_360;
 static char save_root[260];
 void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
 void x360_bag_patch(void);
+void x360_load_hook_install(void);
 
 static void read_config(void) {
     char path[520], text[1024], *line;
@@ -687,6 +688,7 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
         save_root_install();                        /* before the game asks for its folder */
         if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct, !pad_old_face, pad_log);
         if (bag_360 && mode_scheme) x360_bag_patch();   /* before any unit is made */
+        if (mode_scheme && x360_exe_is_target()) x360_load_hook_install();   /* either bag: a save of the other one placed again */
     }
     return 1;
 }

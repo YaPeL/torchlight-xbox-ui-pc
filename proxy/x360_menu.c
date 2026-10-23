@@ -6881,6 +6881,129 @@ void x360_bag_patch(void) {
     x360_log("x360 bag: the 360's bag (one section of 50), the hero's and the pet's\r\n");
 }
 
+/* ---- items placed again at load (the owner's plan, docs 21) ----
+ * PC's loader of a unit's saved data puts each saved item at its saved slot (0x4e9480 at
+ * 0x4acd4b) and destroys it when that fails: a slot the bag lacks for its type (69 to 81 with the
+ * 360's bag, another type's section with PC's). The call goes through load_put_hook: for the
+ * hero's (ISA 28) and the pet's (ISA 87) bag slots (19 on; the equipped ones are left to PC), an
+ * item that PC refuses goes to the first empty slot of its type's section; with none it is kept
+ * aside (not destroyed: the loader is answered with the item, which it only reads for a gambler,
+ * ISA 127) and, at the first frame in play, put into the other one's bag (the pet's for the
+ * hero's, the hero's for the pet's). One that fits nowhere stops the game before anything is saved
+ * (the save is written on leaving the game or a level, not at load: QA run 28), with a message.
+ * A slot PC accepts is kept: loading twice moves nothing the second time. */
+#define GOG_LOAD_PUT_CALL 0x004acd4b   /* in the loader's loop (0x4acc3d), the call of 0x4e9480 */
+typedef int (__fastcall *load_put_fn)(void *inv, void *edx, void *item, int slot, int flag);
+#define LOAD_ASIDE_MAX 64
+static struct { void *item, *owner; int slot; } load_aside[LOAD_ASIDE_MAX];
+static int load_aside_count, load_moved, load_stopped;
+
+static void log_item_name(void *item) {
+    char name[96];
+    name[0] = 0;
+    __try { unit_name((unsigned char *)item, name, sizeof name); } __except (1) { name[0] = 0; }
+    x360_log(name[0] ? name : "(no name)");
+}
+
+/* The first empty slot of the item's section in a bag, or -1. */
+static int empty_slot_of_section(unsigned char *inv, void *item) {
+    typedef void *(__fastcall *at_fn)(void *self, void *edx, int slot);
+    int *starts = *(int **)(inv + INV_PANE_STARTS), nsec, sec, first, end, sl;
+    if (!starts) return -1;
+    nsec = (int)((*(int **)(inv + INV_PANE_STARTS + 4)) - starts);
+    sec = bag_section(inv, item);
+    if (sec < 0 || sec >= nsec) return -1;
+    first = starts[sec];
+    end = sec + 1 < nsec ? starts[sec + 1] : *(int *)(inv + INV_SLOTS);
+    for (sl = first; sl < end; sl++) if (!((at_fn)GOG_ITEM_AT_SLOT)(inv, 0, sl)) return sl;
+    return -1;
+}
+
+static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, int flag) {
+    load_put_fn put = (load_put_fn)GOG_PUT_AT_SLOT;
+    unsigned char *owner;
+    int r = put(inv, 0, item, slot, flag), to;
+    if (r || !inv || !item || slot < EQUIPPED_SLOTS) return r;
+    owner = *(unsigned char **)((unsigned char *)inv + 0x14);   /* CInventory's owner (0x4e953f reads it) */
+    if (!owner || !(isa(owner, 28) || isa(owner, 87))) {
+        x360_log("x360 load: PC drops "); log_item_name(item); x360_log(" from slot "); x360_log_num(slot);
+        x360_log(owner ? " (a unit not of type 28 or 87)\r\n" : " (no owner)\r\n");
+        return r;
+    }
+    to = empty_slot_of_section((unsigned char *)inv, item);
+    if (to >= 0 && (r = put(inv, 0, item, to, flag)) != 0) {
+        load_moved++;
+        x360_log("x360 load: "); log_item_name(item); x360_log(isa(owner, 87) ? " (the pet's)" : " (the hero's)");
+        x360_log(" from slot "); x360_log_num(slot); x360_log(" to "); x360_log_num(to); x360_log("\r\n");
+        return r;
+    }
+    if (load_aside_count < LOAD_ASIDE_MAX) {
+        load_aside[load_aside_count].item = item;
+        load_aside[load_aside_count].owner = owner;
+        load_aside[load_aside_count].slot = slot;
+        load_aside_count++;
+        x360_log("x360 load: "); log_item_name(item); x360_log(isa(owner, 87) ? " (the pet's)" : " (the hero's)");
+        x360_log(" from slot "); x360_log_num(slot); x360_log(": no room in its section, kept aside\r\n");
+        return (int)item;
+    }
+    x360_log("x360 load: too many items kept aside, PC drops "); log_item_name(item); x360_log("\r\n");
+    return 0;
+}
+
+__declspec(dllimport) int __stdcall MessageBoxA(void *window, const char *text, const char *title, unsigned type);
+__declspec(dllimport) void *__stdcall GetCurrentProcess(void);
+__declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
+
+/* At the first frame in play: the items kept aside into the other one's bag; any left stops the
+ * game, unsaved. */
+static void load_aside_tick(void) {
+    int k, left = 0;
+    char text[600], *p;
+    static unsigned since;
+    unsigned char *pet = the_pet();
+    if (!load_aside_count || load_stopped) return;
+    /* The pet may come a little after the hero: waited for up to 10 s. */
+    if (!since) since = GetTickCount();
+    if (!pet && GetTickCount() - since < 10000) return;
+    for (k = 0; k < load_aside_count; k++) {
+        void *item = load_aside[k].item;
+        unsigned char *other = isa(load_aside[k].owner, 87) ? hero : pet;
+        unsigned char *bag = other ? (unsigned char *)owner_bag(other) : 0;
+        int to = bag ? empty_slot_of_section(bag, item) : -1;
+        if (!item) continue;
+        if (to >= 0 && ((load_put_fn)GOG_PUT_AT_SLOT)(bag, 0, item, to, 1)) {
+            x360_log("x360 load: "); log_item_name(item); x360_log(other == pet ? " into the pet's bag, slot " : " into the hero's bag, slot ");
+            x360_log_num(to); x360_log("\r\n");
+            load_aside[k].item = 0;
+            load_moved++;
+        } else left++;
+    }
+    if (!left) { load_aside_count = 0; return; }
+    load_stopped = 1;
+    x360_log("x360 load: "); x360_log_num(left); x360_log(" item(s) fit nowhere: the game stops, unsaved\r\n");
+    p = text;
+    p = put_int(p, left);
+    copy(p, sizeof text - (unsigned)(p - text),
+         " item(s) of this character do not fit in its bag or its pet's with the bag chosen at install.\n\n"
+         "The game stops now, without saving: nothing is lost. Install again with the other bag, load "
+         "this character, make room (sell, stash or drop items), save, then change the bag.", 0);
+    MessageBoxA(0, text, "Torchlight: the Xbox 360 interface", 0x40030);   /* MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST */
+    TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+}
+
+void x360_load_hook_install(void) {
+    unsigned char *c = (unsigned char *)GOG_LOAD_PUT_CALL;
+    unsigned long old;
+    if (c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PUT_AT_SLOT) {
+        x360_log("x360 load: PC's loader not as expected, items not placed again\r\n");
+        return;
+    }
+    if (!VirtualProtect(c, 5, 0x40, &old)) return;
+    *(int *)(c + 1) = (int)(void *)load_put_hook - (int)(c + 5);
+    VirtualProtect(c, 5, old, &old);
+    x360_log("x360 load: saved items placed again when their slot does not fit\r\n");
+}
+
 static void side_panels_test(int off) {
     /* Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
      * (the other's, +8); 0x549b70, both, calls them (QA run 10: with only the first patched the world
@@ -7347,6 +7470,7 @@ void x360_frame_tick(void) {
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
     __try { pc_pause_tick(); } __except (1) { x360_log("x360 menu: exception in PC's pause menu\r\n"); }
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
