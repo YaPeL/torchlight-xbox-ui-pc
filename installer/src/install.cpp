@@ -356,7 +356,8 @@ std::vector<fs::path> back_up_saves(const std::vector<fs::path>& folders) {
   std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", std::localtime(&now));
   std::vector<fs::path> copies;
   for (const fs::path& f : folders) {
-    const fs::path copy = S(f) + "-backup-" + stamp;
+    fs::path copy = S(f) + "-backup-" + stamp;
+    for (int n = 2; path_exists(copy); n++) copy = S(f) + "-backup-" + stamp + "-" + std::to_string(n);   // one second, two backups
     fs::copy(f, copy, fs::copy_options::recursive);
     // shutil.copytree's copy2: the files' and folders' times kept (folders after their files).
     std::vector<fs::path> dirs = {fs::path()};
