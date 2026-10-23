@@ -5260,9 +5260,10 @@ static void hud_tick(void) {
  * at least 0x820aa464), the text's top at (1 - t/T) * (its height + 50) pixels (0x820aa388) below
  * its frame's top, at the 360's 720 rows.
  * The pad: A presses PC's Accept when shown, else its Ok; B its Decline when shown. X held makes
- * the text rise faster (sub_82192640, 0x821929c4: the frame's time times a factor, [r29+268], a
- * value of the running game not measured yet: x360_ui.ini's dialog_fast_scroll, 4 by default). */
-int x360_dialog_fast_scroll = 4;
+ * the text rise faster (sub_82192640, 0x821929c4: the dialog's frame time times [r29+268], r29 the
+ * constant pool 0x820AA2C0, its +0x10C 10.0; the mods agent's static reading). x360_ui.ini's
+ * dialog_fast_scroll overrides it. */
+int x360_dialog_fast_scroll = 10;
 int x360_dump_targets;                       /* x360_ui.ini dump_targets=1: a dump at the first target of each kind */
 int x360_dialog_pc;                          /* x360_ui.ini dialog_pc=1: PC's dialog left visible (a diagnosis) */
 int x360_dialog_markup = 0;                  /* x360_ui.ini dialog_markup=0: the colour markup taken out */

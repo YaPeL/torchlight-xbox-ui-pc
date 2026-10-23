@@ -2075,8 +2075,8 @@ what they still lack. The screens done are in section 14.
    the user to play: it takes reflexes.
 8. **Smaller:**
    - the quest NPC's "?" seen through the dialog's panel.
-   - The Fast Scroll factor: `dialog_fast_scroll`, 4, chosen here and not measured. The 360's
-     factor is `[r29+268]`, a value of the running game.
+   - The Fast Scroll factor: 10, the 360's (`[r29+268]` in `sub_82192640`, r29 the constant pool
+     `0x820AA2C0`, its `+0x10C` 10.0; the mods agent's static reading, 2026-10-23).
    - The gold hidden at the gem pages is not seen in a run.
    - The identify scroll's card text is PC's mouse text (the item's data, unchanged).
    - The card's price at the merchant is 3 pixels off (town/07).
@@ -2451,3 +2451,6 @@ inventory (section 13), so each run's batch is one.
   - **The label's dark frame:** StaticShared's "frame" (`-24, -9`, `+48, +18` pixels at 720 rows)
     copied into ItemTextButton as fractions of the label's height by the converter
     (`label_frame_relative`), as the A button was.
+- The quest marker ("?" or "!" over an NPC) is hidden on the 360 while the NPC's dialog is up
+  (town/42 against 43). PC's marker is a 3D element, not CEGUI ("question", "exclamation" and
+  their "gray" ones, named at GOG `0x42d910`, `0x42e330`); what shows it is not read yet. Open.
