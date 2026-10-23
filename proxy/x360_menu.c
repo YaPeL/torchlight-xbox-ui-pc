@@ -7117,6 +7117,7 @@ static unsigned stop_t0;               /* when (GetTickCount): the modal is wait
 #define STOP_WAIT_MS 120000          /* from the stop, while another modal is open (state 3) */
 #define STOP_BOX_MS 30000
 static unsigned short stop_wbody[700];
+static char stop_file[600];              /* x360_stop.txt, the stop's text beside the game */
 int x360_test_stop_modal_fails;        /* x360_ui.ini test_stop_modal_fails=1: a test, PC's modal never shows */
 
 static void utf8_to_wide(const char *text, unsigned short *w, unsigned size) {
@@ -7155,10 +7156,23 @@ static int open_pc_modal(const char *title, const unsigned short *wbody) {
     return done;
 }
 
-/* A Windows box, the last resort where PC's modal did not show (it may be blank under Proton, QA
+/* The last resort where PC's modal did not show: x360_stop.txt in Notepad, else a Windows box (it
+ * may be blank under Proton, QA
  * runs 34, 35, and behind the game's window): the game minimized, on top, and closed by itself after 30 s so a box
  * that cannot be seen does not keep the game open forever. user32's, looked up (no import). */
 static void last_resort_box(const unsigned short *text) {
+    /* First the stop's text file in Notepad: another process, which draws (QA run g1-2: a box
+     * from the game showed no text under Proton). The box only when Notepad cannot start. */
+    if (stop_file[0]) {
+        typedef unsigned (__stdcall *winexec_fn)(const char *cmd, unsigned show);
+        void *k = GetModuleHandleA("kernel32.dll");
+        winexec_fn run = k ? (winexec_fn)GetProcAddress(k, "WinExec") : 0;
+        char cmd[640];
+        copy(cmd, sizeof cmd, "notepad.exe \"", stop_file);
+        copy(cmd + length(cmd), sizeof cmd - length(cmd), "\"", 0);
+        if (run && run(cmd, 1) > 31) { x360_log("x360 load: the stop's text opened in Notepad\r\n"); return; }
+        x360_log("x360 load: Notepad did not start: a Windows box\r\n");
+    }
     typedef int (__stdcall *box_timeout_fn)(void *w, const unsigned short *t, const unsigned short *c, unsigned type, unsigned short lang, unsigned ms);
     typedef int (__stdcall *box_fn)(void *w, const unsigned short *t, const unsigned short *c, unsigned type);
     static const unsigned short caption[] = {'T','o','r','c','h','l','i','g','h','t',0};
@@ -7207,6 +7221,7 @@ static void stop_unsaved(const char *why, int count) {
         unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), done;
         while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
         copy(path + n, sizeof path - n, "x360_stop.txt", 0);
+        copy(stop_file, sizeof stop_file, path, 0);
         f = CreateFileA(path, 0x40000000, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
         if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
     }
