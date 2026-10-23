@@ -7329,7 +7329,7 @@ static void nav_change(void *w, int kind, int step) {
 }
 /* Nintendo's layout's checkbox in PC's settings screen (the owner: as the recomp's, enabled only
  * with a Nintendo pad found and not behind Steam Input; its text says it needs a restart). Made
- * once per screen below its last checkbox, of PC's own checkbox type, in the same parent; its
+ * once per screen in the free row under the resolution's, of PC's own checkbox type, in its parent; its
  * state saved to x360_settings.ini when changed (proxy/setup.c). */
 int x360_swap_setting(void);
 void x360_swap_setting_write(int on);
@@ -7345,7 +7345,10 @@ static void swap_checkbox_tick(const char *prefix) {
     static set_sel_fn set_sel;
     static set_en_fn set_en;
     static int last_state = -1, enabled;
-    void *box = win_of(prefix, "x360SwapAB"), *last = win_of(prefix, "NetbookMode"), *above = win_of(prefix, "ShowBlood");
+    /* Placed in the free row between the resolution's and the music's (QA run 41: below the last
+     * checkbox it covered one, the rows there being side by side): the second row's checkbox moved
+     * down twice the rows' step. */
+    void *box = win_of(prefix, "x360SwapAB"), *last = win_of(prefix, "Rimlights"), *above = win_of(prefix, "Fullscreen");
     if (!parent_of) parent_of = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
     if (!is_sel) is_sel = (is_sel_fn)need("?isSelected@Checkbox@CEGUI@@QBE_NXZ");
     if (!set_sel) set_sel = (set_sel_fn)need("?setSelected@Checkbox@CEGUI@@QAEX_N@Z");
@@ -7364,13 +7367,14 @@ static void swap_checkbox_tick(const char *prefix) {
         read_prop(above ? above : last, "UnifiedAreaRect", b, sizeof b);
         if (parse_rect(a, va) && parse_rect(b, vb)) {
             int i;
-            for (i = 0; i < 8; i++) if (i == 2 || i == 3 || i == 6 || i == 7) va[i] += va[i] - vb[i];   /* one row further down */
+            float step[8];
+            for (i = 0; i < 8; i++) step[i] = va[i] - vb[i];
+            for (i = 0; i < 8; i++) if (i == 2 || i == 3 || i == 6 || i == 7) va[i] += 2.0f * step[i];   /* two rows further down */
             write_rect(a, va);
             prop(box, "UnifiedAreaRect", a);
         }
         enabled = x360_pad_is_nintendo();
-        text(box, x360_pad_steam_input() ? "Nintendo layout: A confirms, B cancels (Steam Input: use Steam's own option)"
-                                         : "Nintendo layout: A confirms, B cancels (needs a restart)");
+        text(box, x360_pad_steam_input() ? "Nintendo layout (set it in Steam Input)" : "Nintendo layout (needs a restart)");
         set_sel(box, 0, (unsigned char)(x360_swap_setting() != 0));
         set_en(box, 0, (unsigned char)enabled);
         if (!enabled) prop(box, "Alpha", "0.5");
