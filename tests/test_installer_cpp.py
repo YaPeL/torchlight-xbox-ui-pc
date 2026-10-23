@@ -456,7 +456,7 @@ class InstallCppTest(unittest.TestCase):
 
     def setUp(self):
         from test_tools import fake_exe
-        self.root = tempfile.mkdtemp()
+        self.root = os.path.realpath(tempfile.mkdtemp())     # Windows: the long form the installers write
         self.addCleanup(__import__("shutil").rmtree, self.root, True)
         pak, pc, image = ConvertCppTest().paks(self.root)
         import zipfile
@@ -486,7 +486,7 @@ class InstallCppTest(unittest.TestCase):
             with open(os.path.join(saves, "0.svt"), "wb") as f:
                 f.write(b"a synthetic save")
             self.games[who] = (game, saves)
-        self.env = dict(os.environ, HOME=self.root)
+        self.env = dict(os.environ, HOME=self.root, USERPROFILE=self.root)   # USERPROFILE: Windows' home
 
     def install(self, who, *args, env=None):
         game = self.games[who][0]
@@ -528,6 +528,69 @@ class InstallCppTest(unittest.TestCase):
             r = self.uninstall(who, "--anyway")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(_tree(self.games[who][0]), before[who], f"{who}: the folder as it was")
+
+    def test_uninstall_anyway_with_the_360_bag_backs_up_as_python(self):
+        """The 360's bag still installed: a no to switching bags, then a yes to uninstalling anyway;
+        the saves backed up first, as install.py does, and the folder as it was."""
+        before = {who: _tree(g) for who, (g, _) in self.games.items()}
+        for who in ("py", "cpp"):
+            self.assertEqual(self.install(who, "--bag", "360").returncode, 0)
+            saves = self.games[who][1]
+            for d in os.listdir(os.path.dirname(saves)):
+                if "-backup-" in d:
+                    __import__("shutil").rmtree(os.path.join(os.path.dirname(saves), d))
+        for who in ("py", "cpp"):
+            game = self.games[who][0]
+            cmd = [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+            r = subprocess.run(cmd + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
+                               env=self.env, input="n\ny\n")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertEqual(_tree(game), before[who], f"{who}: the folder as it was")
+        for who, (_, saves) in self.games.items():
+            backups = [d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]
+            self.assertEqual(len(backups), 1, who)
+            self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
+
+    def test_an_ini_read_as_python(self):
+        """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
+        rewritten as install.py rewrites it."""
+        text = b"\xff\xfekey=1\r\nlone\rcr=2\n\xc2\xa0bag\xe2\x80\x83=360\n\xe3\x80\x80\n\xed\xa0\x80x=\xe2\x82\nlast=\xf0\x9f\x99\x82"
+        for who in ("py", "cpp"):
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "wb") as f:
+                f.write(text)
+            r = self.install(who, "--bag", "pc")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+        self.same_install()
+
+    def test_without_a_proxy_nothing_is_converted(self):
+        """No --dll and none built in: refused before the conversion, nothing left in the folder."""
+        game = self.games["cpp"][0]
+        before = sorted(os.listdir(game))
+        common = ["--game", game, "--x360-dir", self.x360, "--yes", "--console", "--bag", "pc"]
+        r = subprocess.run([BINARY, "install", *common], capture_output=True, text=True, env=self.env)
+        if r.returncode == 0:
+            self.skipTest("this build has its proxies built in")
+        self.assertIn("no proxy", r.stderr)
+        self.assertNotIn("converting", r.stdout)
+        self.assertEqual(sorted(os.listdir(game)), before)
+
+    def test_the_elevated_run_keeps_the_first_runs_answers(self):
+        """What the first run passes to the elevated one: the save folders it found (none here) and the
+        yes to no backup keep the 360's bag; the result is written where the first run reads it."""
+        game = self.games["cpp"][0]
+        result = os.path.join(self.root, "result.txt")
+        r = self.install("cpp", "--bag", "360", "--elevated", "--saves-known", "--no-backup-ok", "--result-file", result)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(game, "x360_ui.ini"), "rb") as f:
+            self.assertIn(b"bag=360\r\n", f.read())
+        self.assertNotIn("-backup-", " ".join(os.listdir(os.path.dirname(self.games["cpp"][1]))))
+        with open(result, encoding="utf-8") as f:
+            self.assertTrue(f.read().startswith("Installed."))
+        r = self.install("cpp", "--bag", "360", "--elevated", "--saves-known", "--result-file", result,
+                         env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1"))
+        self.assertNotEqual(r.returncode, 0)
+        with open(result, encoding="utf-8") as f:
+            self.assertIn("a failure asked for by a test", f.read())
 
     def test_a_failed_install_leaves_the_folder_as_it_was(self):
         game = self.games["cpp"][0]

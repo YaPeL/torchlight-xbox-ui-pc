@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 namespace x360ui {
 
-extern const char kCeguiExports[];   // proxy/cegui_exports.txt, built in (cmake/embed_text.cmake)
+extern const char kCeguiExports[];   // proxy/cegui_exports.txt, built in (cmake/embed_blob.cmake)
 
 namespace {
 

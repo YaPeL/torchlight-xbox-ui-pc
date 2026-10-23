@@ -121,6 +121,10 @@ class Ask {
     std::cout << text << "\n";
     if (gui_) gui_info(text);
   }
+  void error(const std::string& text) {
+    std::cerr << text << "\n";
+    if (gui_) gui_error(text);
+  }
 
  private:
   bool yes_, gui_;
@@ -135,6 +139,7 @@ class Ask {
   static bool gui_available() { return true; }
   static bool gui_yes_no(const std::string& t) { return MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_YESNO | MB_ICONQUESTION) == IDYES; }
   static void gui_info(const std::string& t) { MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_OK | MB_ICONINFORMATION); }
+  static void gui_error(const std::string& t) { MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_OK | MB_ICONERROR); }
   static std::string gui_file(const std::string& title) {
     wchar_t buf[4096] = L"";
     std::wstring wt = w(title);
@@ -188,6 +193,11 @@ class Ask {
   static void gui_info(const std::string& t) {
     run(is_zenity() ? std::vector<std::string>{tool(), "--info", "--title", kTitle, "--text", t, "--width", "500"}
                     : std::vector<std::string>{tool(), "--title", kTitle, "--msgbox", t},
+        nullptr);
+  }
+  static void gui_error(const std::string& t) {
+    run(is_zenity() ? std::vector<std::string>{tool(), "--error", "--title", kTitle, "--text", t, "--width", "500"}
+                    : std::vector<std::string>{tool(), "--title", kTitle, "--error", t},
         nullptr);
   }
   static std::string gui_file(const std::string& title) {
@@ -245,12 +255,15 @@ std::pair<fs::path, fs::path> read_360_copy(std::string source, const fs::path& 
     for (const auto& [name, dest] : {std::make_pair("pak.zip", pak), std::make_pair("default.xex", xex)}) {
       const StfsEntry* e = pkg->find(name);
       if (!e) throw Exit(std::string("The package has no ") + name + ".");
+      std::ofstream out(dest, std::ios::binary);
+      if (!out) throw Exit("cannot write " + S(dest));
       try {
-        std::ofstream out(dest, std::ios::binary);
         pkg->read_to(*e, out);
       } catch (const Error& err) {
         throw Exit(std::string("Cannot read ") + name + " from the package: " + err.what());
       }
+      out.close();
+      if (!out) throw Exit("cannot write " + S(dest));
     }
   } else if (is_dir(P(source))) {
     std::map<std::string, fs::path> found;
@@ -340,26 +353,74 @@ std::vector<fs::path> back_up_saves(const std::vector<fs::path>& folders) {
   for (const fs::path& f : folders) {
     const fs::path copy = S(f) + "-backup-" + stamp;
     fs::copy(f, copy, fs::copy_options::recursive);
+    // shutil.copytree's copy2: the files' and folders' times kept (folders after their files).
+    std::vector<fs::path> dirs = {fs::path()};
+    for (fs::recursive_directory_iterator it(f), end; it != end; ++it) {
+      const fs::path rel = fs::relative(it->path(), f);
+      if (it->is_directory()) dirs.push_back(rel);
+      else fs::last_write_time(copy / rel, fs::last_write_time(it->path()));
+    }
+    for (auto d = dirs.rbegin(); d != dirs.rend(); ++d) fs::last_write_time(copy / *d, fs::last_write_time(f / *d));
     copies.push_back(copy);
   }
   return copies;
 }
 
 // ---- the ini (install.read_ini, write_ini) ----
+// The ini's lines as Python reads them: UTF-8 with errors="ignore" (every byte outside a valid
+// sequence dropped), universal newlines (\r\n, \r and \n end a line), each line without its end.
+std::vector<U32> ini_lines(const fs::path& game) {
+  const fs::path path = game / "x360_ui.ini";
+  if (!is_file(path)) return {};
+  const Bytes b = read_file(path);
+  U32 text;
+  for (size_t i = 0; i < b.size();) {
+    const unsigned c = b[i];
+    size_t n = c < 0x80 ? 1 : c >= 0xC2 && c <= 0xDF ? 2 : c >= 0xE0 && c <= 0xEF ? 3 : c >= 0xF0 && c <= 0xF4 ? 4 : 0;
+    bool ok = n > 0 && i + n <= b.size();
+    for (size_t k = 1; ok && k < n; k++) ok = (b[i + k] & 0xC0) == 0x80;
+    if (ok && n >= 3) {   // no overlong form, no surrogate, nothing past U+10FFFF
+      const unsigned d = b[i + 1];
+      ok = !(c == 0xE0 && d < 0xA0) && !(c == 0xED && d > 0x9F) && !(c == 0xF0 && d < 0x90) && !(c == 0xF4 && d > 0x8F);
+    }
+    if (!ok) { i++; continue; }
+    char32_t v = n == 1 ? c : c & (0xFF >> (n + 1));
+    for (size_t k = 1; k < n; k++) v = (v << 6) | (b[i + k] & 0x3F);
+    text += v;
+    i += n;
+  }
+  std::vector<U32> lines;
+  U32 line;
+  for (size_t i = 0; i < text.size(); i++) {
+    if (text[i] == U'\r' || text[i] == U'\n') {
+      if (text[i] == U'\r' && i + 1 < text.size() && text[i + 1] == U'\n') i++;
+      lines.push_back(line);
+      line.clear();
+    } else {
+      line += text[i];
+    }
+  }
+  if (!line.empty()) lines.push_back(line);
+  return lines;
+}
+
+U32 py_strip(const U32& s) {   // str.strip()
+  size_t a = 0, z = s.size();
+  while (a < z && py_isspace(s[a])) a++;
+  while (z > a && py_isspace(s[z - 1])) z--;
+  return s.substr(a, z - a);
+}
+
+std::string utf8(const U32& s) {
+  const Bytes b = encode(s, Codec::Utf8);
+  return std::string(b.begin(), b.end());
+}
+
 std::map<std::string, std::string> read_ini(const fs::path& game) {
   std::map<std::string, std::string> v;
-  std::ifstream f(game / "x360_ui.ini", std::ios::binary);
-  for (std::string line; std::getline(f, line);) {
-    while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
-    const size_t eq = line.find('=');
-    if (eq == std::string::npos) continue;
-    auto strip = [](std::string s) {
-      while (!s.empty() && std::isspace((unsigned char)s.back())) s.pop_back();
-      size_t i = 0;
-      while (i < s.size() && std::isspace((unsigned char)s[i])) i++;
-      return s.substr(i);
-    };
-    v[strip(line.substr(0, eq))] = strip(line.substr(eq + 1));
+  for (const U32& line : ini_lines(game)) {
+    const size_t eq = line.find(U'=');
+    if (eq != U32::npos) v[utf8(py_strip(line.substr(0, eq)))] = utf8(py_strip(line.substr(eq + 1)));
   }
   return v;
 }
@@ -378,23 +439,13 @@ Bytes ini_text(const fs::path& game, const fs::path& out, const std::string& bag
   const std::vector<std::pair<std::string, std::string>> owned = {
       {"mode", "scheme"}, {"out", wine_path(out)}, {"pad", "1"}, {"pad_mode", "direct"}, {"prompts", "auto"}, {"bag", bag}};
   std::set<std::string> keys = {"mode", "out", "pad", "pad_mode", "prompts", "bag", "update_check"};
-  std::vector<std::string> kept;
-  std::ifstream f(game / "x360_ui.ini", std::ios::binary);
-  for (std::string line; std::getline(f, line);) {
-    if (!line.empty() && line.back() == '\r') line.pop_back();
-    std::string key = line.substr(0, line.find('='));
-    while (!key.empty() && std::isspace((unsigned char)key.back())) key.pop_back();
-    size_t i = 0;
-    while (i < key.size() && std::isspace((unsigned char)key[i])) i++;
-    if (!keys.count(key.substr(i))) kept.push_back(line);
-  }
+  std::vector<U32> kept;
+  for (const U32& line : ini_lines(game))
+    if (!keys.count(utf8(py_strip(line.substr(0, line.find(U'=')))))) kept.push_back(line);
   std::string t;
   for (const auto& [k, v] : owned) t += k + "=" + v + "\r\n";
-  for (const std::string& l : kept) {
-    bool blank = true;
-    for (char c : l) blank = blank && std::isspace((unsigned char)c);
-    if (!blank) t += l + "\r\n";
-  }
+  for (const U32& l : kept)
+    if (!py_strip(l).empty()) t += utf8(l) + "\r\n";
   return Bytes(t.begin(), t.end());
 }
 
@@ -419,18 +470,21 @@ class Change {
   }
   void write(const fs::path& p, const Bytes& d) {
     put_aside(p);
+    steps_.push_back({Step::Created, p, {}});   // before writing: a partial file is undone too
     write_file(p, d);
-    steps_.push_back({Step::Created, p, {}});
   }
   void copy(const fs::path& from, const fs::path& to) {
     put_aside(to);
-    fs::copy_file(from, to);
     steps_.push_back({Step::Created, to, {}});
+    fs::copy_file(from, to);
   }
+  const fs::path& undo_folder() const { return undo_; }
   void commit() {
     done_ = true;
     std::error_code ec;
     fs::remove_all(undo_, ec);
+    if (ec && path_exists(undo_))   // a file in use (Windows): left for uninstall, which removes x360ui-undo-*
+      std::cerr << "could not remove " << S(undo_) << " (" << ec.message() << "); it can be deleted by hand\n";
   }
   void rollback() {
     done_ = true;
@@ -549,6 +603,8 @@ int run_elevated(const std::vector<std::string>& args) {
   sei.lpVerb = L"runas";
   sei.lpFile = self;
   sei.lpParameters = params.c_str();
+  const std::wstring cwd = fs::current_path().wstring();
+  sei.lpDirectory = cwd.c_str();
   sei.nShow = SW_SHOWNORMAL;
   if (!ShellExecuteExW(&sei)) return -1;   // ERROR_CANCELLED: the user said no
   WaitForSingleObject(sei.hProcess, INFINITE);
@@ -559,17 +615,43 @@ int run_elevated(const std::vector<std::string>& args) {
 }
 #endif
 
+// The elevated run's last message (its result or its error), written where the first run reads it.
+std::string g_result_file;
+
+void finish(Ask& ask, const std::string& text) {
+  if (!g_result_file.empty()) {
+    std::ofstream f(P(g_result_file), std::ios::binary);
+    f << text;
+  }
+  ask.info(text);
+}
+
 // Before anything is changed: the folder can be written, or (Windows) the installer runs again
-// elevated with these answers. Returns -1 to go on here, else the status to end with.
-int ensure_permission(const fs::path& game, const std::vector<std::string>& answered) {
+// elevated with these answers, and its result is shown here. Returns -1 to go on here, else the
+// status to end with.
+int with_permission(Ask& ask, const fs::path& game, std::vector<std::string> answered) {
   if (can_write(game)) return -1;
 #ifdef _WIN32
   if (is_elevated()) throw Exit("Cannot write into " + S(game) + ", even as an administrator; nothing was changed.");
   std::cout << "the game's folder needs an administrator's permission: asking for it\n";
+  std::error_code ec;
+  const fs::path result = fs::temp_directory_path(ec) / ("x360ui-result-" + std::to_string(GetCurrentProcessId()) + ".txt");
+  fs::remove(result, ec);
+  answered.insert(answered.end(), {"--result-file", S(result)});
   const int code = run_elevated(answered);
   if (code < 0) throw Exit("No administrator's permission was given; nothing was changed.");
+  std::string text;
+  if (is_file(result)) {
+    const Bytes b = read_file(result);
+    text.assign(b.begin(), b.end());
+    fs::remove(result, ec);
+  }
+  if (text.empty()) text = code == 0 ? "Done." : "The installer, run as an administrator, ended with status " + std::to_string(code) + ".";
+  if (code == 0) ask.info(text);
+  else ask.error(text);
   return code;
 #else
+  (void)ask;
   (void)answered;
   throw Exit("Cannot write into " + S(game) + " (no permission); nothing was changed.");
 #endif
@@ -589,8 +671,12 @@ fs::path proxy_file(const std::string& build, const std::string& given, const fs
 }
 
 struct Args {
-  std::string command = "install", game, package, x360_dir, bag, dll;
+  std::string command = "install", game, package, x360_dir, bag, dll, result_file;
   bool yes = false, console = false, experimental = false, anyway = false, elevated = false;
+  // Given to the elevated run by the first one: the save folders it found (that account's, not the
+  // administrator's) and the answer that no backup is fine.
+  std::vector<std::string> saves;
+  bool saves_known = false, no_backup_ok = false;
 };
 
 Args parse(const std::vector<std::string>& argv) {
@@ -604,6 +690,10 @@ Args parse(const std::vector<std::string>& argv) {
     else if (s == "--experimental") a.experimental = true;
     else if (s == "--anyway") a.anyway = true;
     else if (s == "--elevated") a.elevated = true;
+    else if (s == "--saves-known") a.saves_known = true;
+    else if (s == "--no-backup-ok") a.no_backup_ok = true;
+    else if (i + 1 < argv.size() && s == "--save-folder") a.saves.push_back(argv[++i]);
+    else if (i + 1 < argv.size() && s == "--result-file") a.result_file = argv[++i];
     else if (i + 1 < argv.size() && (s == "--game" || s == "--package" || s == "--x360-dir" || s == "--bag" || s == "--dll")) {
       const std::string& v = argv[++i];
       (s == "--game" ? a.game : s == "--package" ? a.package : s == "--x360-dir" ? a.x360_dir : s == "--bag" ? a.bag : a.dll) = v;
@@ -652,22 +742,36 @@ int do_install(const Args& args) {
   if (source.empty()) throw Exit("No 360 package given (--package FILE or --x360-dir DIR).");
   std::string bag = !args.bag.empty() ? args.bag : ask.yes_no(kBagWarning, false) ? "360" : "pc";
   std::vector<fs::path> folders;
+  bool no_backup_ok = false;
   if (bag == "360") {
-    folders = save_folders(game);
-    if (folders.empty() && !ask.yes_no("No save folder of this game was found to back up (a Steam install's saves are in "
+    if (args.saves_known) for (const auto& f : args.saves) folders.push_back(P(f));
+    else folders = save_folders(game);
+    no_backup_ok = folders.empty() && (args.no_backup_ok || ask.yes_no("No save folder of this game was found to back up (a Steam install's saves are in "
                                        "Steam's prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves "
-                                       "yourself first.\n\nUse the 360's bag without a backup?", false)) {
+                                       "yourself first.\n\nUse the 360's bag without a backup?", false));
+    if (folders.empty() && !no_backup_ok) {
       bag = "pc";
       std::cout << "PC's bag kept\n";
     }
   }
+  // The proxy there is to install, before the slow part.
+  if (!args.dll.empty()) {
+    if (!is_file(P(args.dll))) throw Exit(args.dll + " does not exist.");
+    if (!is_proxy(args.dll)) throw Exit(args.dll + " is not the proxy; not installing it");
+  } else if (!(build == "steam" ? kProxySteamSize : kProxyGogSize)) {
+    throw Exit("This installer has no proxy for the " + build + " build; give one with --dll.");
+  }
   // Every answer is in: the permission, before anything is changed.
   {
-    std::vector<std::string> again = {"install", "--game", S(game), "--package", source, "--bag", bag, "--yes", "--console", "--elevated"};
+    std::error_code ec;
+    std::vector<std::string> again = {"install", "--game", S(game), "--package", S(fs::absolute(P(source), ec)), "--bag", bag,
+                                      "--yes", "--console", "--elevated", "--saves-known"};
+    for (const auto& f : folders) again.insert(again.end(), {"--save-folder", S(f)});
+    if (no_backup_ok) again.push_back("--no-backup-ok");
     if (experimental_ok) again.push_back("--experimental");
-    if (!args.dll.empty()) again.insert(again.end(), {"--dll", args.dll});
+    if (!args.dll.empty()) again.insert(again.end(), {"--dll", S(fs::absolute(P(args.dll), ec))});
     if (!args.elevated) {
-      const int code = ensure_permission(game, again);
+      const int code = with_permission(ask, game, again);
       if (code >= 0) return code;
     } else if (!can_write(game)) {
       throw Exit("Cannot write into " + S(game) + "; nothing was changed.");
@@ -689,7 +793,12 @@ int do_install(const Args& args) {
   }
   // The six interfaces converted into .partial folders: nothing in place is touched yet.
   const auto dests = converted_folders(game);
-  std::vector<fs::path> partials;
+  // The .partial folders removed however this ends (once in place, there is none left to remove).
+  struct Partials {
+    std::vector<fs::path> paths;
+    ~Partials() { for (const auto& p : paths) { std::error_code ec; fs::remove_all(p, ec); } }
+  } guard;
+  std::vector<fs::path>& partials = guard.paths;
   for (size_t k = 0; k < dests.size(); k++) {
     const fs::path partial = S(dests[k]) + ".partial";
     std::error_code ec;
@@ -704,12 +813,7 @@ int do_install(const Args& args) {
     o.style = style == "nintendo-swapped" ? "nintendo" : style;
     o.swap_confirm_cancel = style == "nintendo-swapped";
     std::cout << "converting the 360's interface (" << style << ")\n";
-    try {
-      convert_ui(o);
-    } catch (...) {
-      for (const auto& p : partials) fs::remove_all(p, ec);
-      throw;
-    }
+    convert_ui(o);
   }
   const fs::path proxy = proxy_file(build, args.dll, work);
   // One step: the old folders aside, the new in place, the ini, the proxy; undone if any fails.
@@ -725,8 +829,6 @@ int do_install(const Args& args) {
     ch.commit();
   } catch (...) {
     ch.rollback();
-    std::error_code ec;
-    for (const auto& p : partials) fs::remove_all(p, ec);
     throw;
   }
   std::string done = "Installed. Start Torchlight with a pad connected.";
@@ -734,7 +836,7 @@ int do_install(const Args& args) {
     done += "\n\nYour saves were backed up:";
     for (const auto& b : backups) done += "\n" + S(b);
   }
-  ask.info(done);
+  finish(ask, done);
   return 0;
 }
 
@@ -748,13 +850,13 @@ int do_uninstall(const Args& args) {
                                        "\n\nSwitch to PC's bag now (recommended)? Then load and save each character, and uninstall.",
                                    true)) {
       if (!args.elevated) {
-        const int code = ensure_permission(game, {"uninstall", "--game", S(game), "--yes", "--console", "--elevated"});
+        const int code = with_permission(ask, game, {"uninstall", "--game", S(game), "--yes", "--console", "--elevated"});
         if (code >= 0) return code;
       }
       Change ch(game);
       ch.write(game / "x360_ui.ini", ini_text(game, converted_folders(game)[0], "pc"));
       ch.commit();
-      ask.info("PC's bag installed; nothing uninstalled. Load and save each character, then uninstall.");
+      finish(ask, "PC's bag installed; nothing uninstalled. Load and save each character, then uninstall.");
       return 0;
     }
     if (!args.anyway && !ask.yes_no("Uninstall anyway? The original game will delete the items that do not fit PC's bag. "
@@ -764,15 +866,23 @@ int do_uninstall(const Args& args) {
     }
     backup = true;
   }
+  std::vector<fs::path> folders;
+  if (backup) {
+    if (args.saves_known) for (const auto& f : args.saves) folders.push_back(P(f));
+    else folders = save_folders(game);
+  }
   if (!args.elevated) {
     std::vector<std::string> again = {"uninstall", "--game", S(game), "--yes", "--console", "--elevated"};
-    if (backup) again.push_back("--anyway");
-    const int code = ensure_permission(game, again);
+    if (backup) {
+      again.insert(again.end(), {"--anyway", "--saves-known"});
+      for (const auto& f : folders) again.insert(again.end(), {"--save-folder", S(f)});
+    }
+    const int code = with_permission(ask, game, again);
     if (code >= 0) return code;
   }
   std::vector<fs::path> backups;
   if (backup) {
-    backups = back_up_saves(save_folders(game));
+    backups = back_up_saves(folders);
     for (const auto& b : backups) std::cout << "saves backed up: " << S(b) << "\n";
   }
   Change ch(game);
@@ -783,7 +893,8 @@ int do_uninstall(const Args& args) {
     std::error_code ec;
     for (fs::directory_iterator it(game, ec), end; !ec && it != end; it.increment(ec)) {
       const std::string n = S(it->path().filename());
-      if (n.rfind("x360ui-build-", 0) == 0 || n.rfind("x360ui-work-", 0) == 0 ||
+      if (it->path() == ch.undo_folder()) continue;   // this uninstall's own
+      if (n.rfind("x360ui-build-", 0) == 0 || n.rfind("x360ui-work-", 0) == 0 || n.rfind("x360ui-undo-", 0) == 0 ||
           (n.rfind("x360_dump_", 0) == 0 && n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0))
         gone.push_back(it->path());
     }
@@ -800,7 +911,7 @@ int do_uninstall(const Args& args) {
     done += "\n\nYour saves were backed up:";
     for (const auto& b : backups) done += "\n" + S(b);
   }
-  ask.info(done);
+  finish(ask, done);
   return 0;
 }
 
@@ -815,17 +926,29 @@ int do_list() {
 
 bool is_x360_pak(const fs::path& path);
 
+namespace {
+void write_result(const std::string& text) {
+  if (g_result_file.empty()) return;
+  std::ofstream f(P(g_result_file), std::ios::binary);
+  f << text;
+}
+}  // namespace
+
 int installer_main(const std::vector<std::string>& argv) {
   try {
     const Args a = parse(argv);
+    g_result_file = a.result_file;
     if (a.command == "list") return do_list();
     if (a.command == "uninstall") return do_uninstall(a);
     return do_install(a);
   } catch (const Exit& e) {
     std::cerr << e.what() << "\n";
+    write_result(e.what());
     return 1;
   } catch (const std::exception& e) {
-    std::cerr << "error: " << e.what() << "\nnothing was left half done (the game's folder is as it was).\n";
+    const std::string text = std::string("error: ") + e.what() + "\nnothing was left half done (the game's folder is as it was).";
+    std::cerr << text << "\n";
+    write_result(text);
     return 1;
   }
 }
