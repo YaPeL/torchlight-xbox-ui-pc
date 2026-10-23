@@ -18,6 +18,9 @@ struct StfsEntry {
   int parent = -1;
 };
 
+// Python's str.lower() on a UTF-8 name decoded from Latin-1 (ASCII and U+00C0-U+00DE but U+00D7).
+std::string lower_latin1(std::string s);
+
 class StfsPackage {
  public:
   explicit StfsPackage(const std::string& path);

@@ -57,10 +57,13 @@ class InstallerCppTest(unittest.TestCase):
         rng = random.Random(1234)
         same = 0
         with tempfile.TemporaryDirectory() as d:
-            for k in range(300):
+            kinds = {1: 0, 2: 0, 3: 0}
+            for k in range(600):
                 bits, size = rng.choice((15, 16, 17)), rng.randint(1, 20000)
-                head = rng.choice((0x1, 0x2, 0x3)) << 5        # after the E8 bit: the block type
-                data = bytes([rng.randrange(256), head | rng.randrange(32)]) + bytes(rng.randrange(256) for _ in range(rng.randint(8, 3000)))
+                # The first 16-bit word is little endian: its bit 15 (data[1]'s bit 7) is the E8 flag,
+                # kept 0, then the block type in data[1]'s bits 6..4: verbatim, aligned, uncompressed.
+                kind = rng.choice((1, 2, 3))
+                data = bytes([rng.randrange(256), (kind << 4) | rng.randrange(16)]) + bytes(rng.randrange(256) for _ in range(rng.randint(8, 3000)))
                 src, out = os.path.join(d, "in"), os.path.join(d, "out")
                 with open(src, "wb") as f:
                     f.write(data)
@@ -76,17 +79,19 @@ class InstallerCppTest(unittest.TestCase):
                     with open(out, "rb") as f:
                         self.assertEqual(f.read(), want, f"stream {k}")
                     same += 1
-        self.assertGreater(same, 50)   # enough streams decode for the test to mean something
+                    kinds[kind] += 1
+        self.assertGreater(same, 250)   # most streams decode, so the test means something
+        self.assertTrue(all(n > 50 for n in kinds.values()), kinds)   # each block type decoded
 
     def test_stfs_names_with_a_nul_refused(self):
         with tempfile.TemporaryDirectory() as d:
             pkg = os.path.join(d, "pkg")
             with open(pkg, "wb") as f:
-                f.write(stfs_package({"pak.zip\0": b"bad", "pak.zip": b"good"}))
+                f.write(stfs_package({"pak.zip": b"good", "pak.zip\0": b"bad"}))   # the good one first: the bad would overwrite it
             r = subprocess.run([BINARY, "dev", "stfs", pkg, os.path.join(d, "out")], capture_output=True)
             self.assertNotEqual(r.returncode, 0)
-            self.assertFalse(os.path.exists(os.path.join(d, "out", "pak.zip")) and
-                             open(os.path.join(d, "out", "pak.zip"), "rb").read() == b"bad")
+            with open(os.path.join(d, "out", "pak.zip"), "rb") as f:
+                self.assertEqual(f.read(), b"good")
 
     def test_refuses_what_is_not_a_package(self):
         with tempfile.TemporaryDirectory() as d:

@@ -32,18 +32,6 @@ void write_file(const std::string& path, const Bytes& data) {
   f.write(reinterpret_cast<const char*>(data.data()), std::streamsize(data.size()));
 }
 
-std::string lower(std::string s) {   // as stfs.cpp's (Python's lower() on Latin-1 names)
-  for (size_t i = 0; i < s.size(); i++) {
-    unsigned char c = (unsigned char)s[i];
-    if (c >= 'A' && c <= 'Z') s[i] = char(c - 'A' + 'a');
-    else if (c == 0xC3 && i + 1 < s.size()) {
-      unsigned char d = (unsigned char)s[i + 1];
-      if (d >= 0x80 && d <= 0x9E && d != 0x97) s[i + 1] = char(d + 0x20);
-      i++;
-    }
-  }
-  return s;
-}
 
 void print_line(const std::string& s) {   // the whole string, a NUL too (as Python prints it)
   std::fwrite(s.data(), 1, s.size(), stdout);
@@ -69,9 +57,9 @@ int dev_stfs(const std::vector<std::string>& a) {
     return 0;
   }
   std::set<std::string> names;
-  for (size_t i = 2; i < a.size(); i++) names.insert(lower(a[i]));
+  for (size_t i = 2; i < a.size(); i++) names.insert(lower_latin1(a[i]));
   for (const auto& e : p.files)
-    if (names.empty() || names.count(lower(e.path))) print_line(p.extract(e, a[1]));
+    if (names.empty() || names.count(lower_latin1(e.path))) print_line(p.extract(e, a[1]));
   return 0;
 }
 

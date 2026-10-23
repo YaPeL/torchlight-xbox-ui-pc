@@ -24,9 +24,11 @@ std::string latin1_to_utf8(const uint8_t* p, size_t n) {
   return out;
 }
 
+}  // namespace
+
 // Python's str.lower() on a name read as Latin-1 (and kept as UTF-8): ASCII and Latin-1's
 // capitals (U+00C0-U+00DE but U+00D7).
-std::string lower_ascii(std::string s) {
+std::string lower_latin1(std::string s) {
   for (size_t i = 0; i < s.size(); i++) {
     unsigned char c = (unsigned char)s[i];
     if (c >= 'A' && c <= 'Z') s[i] = char(c - 'A' + 'a');
@@ -38,7 +40,6 @@ std::string lower_ascii(std::string s) {
   }
   return s;
 }
-}  // namespace
 
 StfsPackage::StfsPackage(const std::string& path) : f_(fs_path(path), std::ios::binary) {
   if (!f_) throw Error("cannot open " + path);
@@ -160,9 +161,9 @@ void StfsPackage::read_table() {
 const StfsEntry* StfsPackage::find(const std::string& path) const {
   std::string low = path;
   std::replace(low.begin(), low.end(), '\\', '/');
-  low = lower_ascii(low);
+  low = lower_latin1(low);
   for (const auto& e : files)
-    if (lower_ascii(e.path) == low) return &e;
+    if (lower_latin1(e.path) == low) return &e;
   return nullptr;
 }
 

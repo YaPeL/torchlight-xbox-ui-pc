@@ -173,7 +173,13 @@ static void test_stfs() {
   fs::remove_all(dir);
 }
 
+static void test_lower() {
+  // Latin-1 C0 DE D7 5A, kept as UTF-8: lowered as Python lowers "\u00c0\u00de\u00d7Z".
+  CHECK(lower_latin1("\xC3\x80\xC3\x9E\xC3\x97Z") == "\xC3\xA0\xC3\xBE\xC3\x97z", "Latin-1 names lowered as Python");
+}
+
 int main() {
+  test_lower();
   test_aes();
   test_lzx();
   test_xex();
