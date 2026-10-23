@@ -4579,6 +4579,7 @@ static void pc_pause_tick(void) {
 int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); }
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
+static int x360_pc_settings_up;   /* PC's settings shown (pc_menus_nav_tick) */
 void x360_pause_pad(unsigned pressed, int ly) {
     static int held;
     int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
@@ -4587,7 +4588,8 @@ void x360_pause_pad(unsigned pressed, int ly) {
     (void)dir;
     if (pc_pause_menu()) {
         int open = pc_pause_open();
-        if ((pressed & 0x0010) || (open && (pressed & 0x2000))) pc_pause_request = open ? 2 : 1;   /* Start; B closes it */
+        /* Not while PC's settings are up over it: B is their Cancel there (pc_menus_nav_tick). */
+        if (!x360_pc_settings_up && ((pressed & 0x0010) || (open && (pressed & 0x2000)))) pc_pause_request = open ? 2 : 1;   /* Start; B closes it */
         return;
     }
     if (howto_open) {   /* the pause menu hidden under it (the catalog's menus/14), back after */
@@ -5489,6 +5491,7 @@ static void *find_pc_by_suffix(const char *suffix, const char *const *needs, cha
         nc = child_count(v, 0);
         for (c = 0; c < nc && sp < 255; c++) stack[sp++] = child_at(v, 0, c);
     }
+    prefix_out[0] = 0;   /* no candidate had its needs: none (the review: a failed one's was kept) */
     return 0;
 }
 
@@ -6707,7 +6710,8 @@ static void side_panels_test(int off) {
  * from the top one down: up and down (the d-pad or the left stick) move the focus, shown as PC
  * shows a hover (the CEGUI cursor, hidden, put on the button's centre); A clicks it there. Not in
  * PC's settings screen (Apply, Cancel), used with the mouse, which shows there; hidden elsewhere. */
-static void *nav_list[24], *nav_editing;
+#define NAV_MAX 64
+static void *nav_list[NAV_MAX], *nav_editing;
 static int nav_count, nav_focus;
 /* The windows the pad goes to, by their type's end: buttons, edit boxes (A clicks one: its caret,
  * the keyboard types the name), check boxes (difficulty's Hardcore), the character load's slots
@@ -6767,6 +6771,12 @@ static void nav_change(void *w, int kind, int step) {
     static select_fn select;
     static args_fn args_ctor;
     static accept_fn accepted;
+    typedef void *(__fastcall *item_at_fn)(const void *self, void *edx, unsigned i);
+    typedef const void *(__fastcall *item_text_fn)(const void *self, void *edx);
+    typedef void (__fastcall *set_text_fn)(void *self, void *edx, const void *text);
+    static item_at_fn item_at;
+    static item_text_fn item_text;
+    static set_text_fn set_text;
     if (!cur) {
         cur = (getf_fn)need("?getCurrentValue@Slider@CEGUI@@QBEMXZ");
         max = (getf_fn)need("?getMaxValue@Slider@CEGUI@@QBEMXZ");
@@ -6778,6 +6788,9 @@ static void nav_change(void *w, int kind, int step) {
         select = (select_fn)need("?setItemSelectState@Combobox@CEGUI@@QAEXI_N@Z");
         args_ctor = (args_fn)need("??0WindowEventArgs@CEGUI@@QAE@PAVWindow@1@@Z");
         accepted = (accept_fn)need("?onListSelectionAccepted@Combobox@CEGUI@@MAEXAAVWindowEventArgs@2@@Z");
+        item_at = (item_at_fn)need("?getListboxItemFromIndex@Combobox@CEGUI@@QBEPAVListboxItem@2@I@Z");
+        item_text = (item_text_fn)need("?getText@ListboxItem@CEGUI@@QBEABVString@2@XZ");
+        set_text = (set_text_fn)need("?setText@Window@CEGUI@@QAEXABVString@2@@Z");
     }
     if (kind == NAV_SLIDER && cur && max && click && set) {
         float m = max(w, 0), d = click(w, 0), v;
@@ -6793,6 +6806,8 @@ static void nav_change(void *w, int kind, int step) {
         if (step < 0 && i == 0) return;
         if (step > 0 && i + 1 >= n) return;
         select(w, 0, i + step, 1);
+        /* Its text as the list's click sets it (setItemSelectState alone leaves the box's text). */
+        if (item_at && item_text && set_text && (item = item_at(w, 0, i + step)) != 0) set_text(w, 0, item_text(item, 0));
         args_ctor(args, 0, w);
         accepted(w, 0, args);
     }
@@ -6804,7 +6819,7 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
     static vis_fn vis;
     unsigned i, n;
     const char *nm, *type;
-    if (!w || depth > 30 || nav_count >= 24) return;
+    if (!w || depth > 30 || nav_count >= NAV_MAX) return;
     if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
     if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
     if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
@@ -6889,7 +6904,7 @@ static void pc_menus_nav_tick(void) {
     static self_fn cursor_hide, cursor_show;
     static cvis_fn cursor_vis;
     static single_fn cursor_get;
-    static unsigned prev, last_collect, next_repeat;
+    static unsigned prev, last_collect, next_repeat, last_search;
     static int held_dir, settings_shown = -1;
     static char settings_prefix[64];
     static const char *const settings_needs[] = {"Cancel", 0};
@@ -6899,7 +6914,7 @@ static void pc_menus_nav_tick(void) {
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
-    rect6 r[24];
+    rect6 r[NAV_MAX];
     prev = buttons;
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     if (!cursor_get) {
@@ -6910,14 +6925,19 @@ static void pc_menus_nav_tick(void) {
     }
     if (!sheet || !rect_of) return;
     /* PC's settings screen: its Apply and Cancel shown. */
-    if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
+    /* The searches walk PC's whole GUI: every 250 ms at most (the review); the checks each frame. */
+    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer"))) {
+        last_search = now;
+        if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
+        if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
+    }
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
     settings = settings_prefix[0] && pc_attached(settings_prefix, "Apply");
     /* And PC's character creation (its name is typed): the mouse shown there too (the user). Told by
      * its Destroyer, always there (its CreatePlayer shows once a name is typed: QA run 16). */
-    if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
     create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
+    x360_pc_settings_up = settings;
     cursor_hook_install();
     if (nav_cursor_off != !(settings || create)) {
         nav_cursor_off = !(settings || create);
@@ -6933,7 +6953,10 @@ static void pc_menus_nav_tick(void) {
         }
     }
     if (in_play && !pc_pause_open() && !settings) { nav_count = 0; return; }
-    if (now - last_collect > 200) {
+    /* Collected every frame: no pointer kept from one frame to the next (the review: a window
+     * destroyed meanwhile, as a load ends, was used). */
+    (void)last_collect;
+    {
         void *was = nav_count > 0 && nav_focus < nav_count ? nav_list[nav_focus] : 0;
         int n_before = nav_count;
         last_collect = now;
@@ -6991,8 +7014,9 @@ static void pc_menus_nav_tick(void) {
                 r[j] = r[j - 1]; nav_list[j] = nav_list[j - 1];
                 r[j - 1] = t; nav_list[j - 1] = tw;
             }
+        int found = 0;
         nav_focus = 0;
-        for (i = 0; i < nav_count; i++) if (nav_list[i] == was) nav_focus = i;
+        for (i = 0; i < nav_count; i++) if (nav_list[i] == was) { nav_focus = i; found = 1; }
         if (nav_count != n_before) {
             typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
             static str_fn gn;
@@ -7002,12 +7026,13 @@ static void pc_menus_nav_tick(void) {
             for (i = 0; i < nav_count && gn; i++) { x360_log(" "); x360_log(c_str(gn(nav_list[i], 0), 0)); }
             x360_log("\r\n");
         }
-        if (nav_count && (!was || nav_count != n_before)) {
-            if (!was) nav_focus = 0;
+        /* A new screen (the focused window gone): its first, the cursor on it; not on the screens
+         * used with the mouse, where the user moves it. */
+        if (nav_count && !found && !(settings || create)) {
             nav_point((r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
         }
-    } else for (i = 0; i < nav_count; i++) nav_rect(nav_list[i], &r[i]);
-    if (!nav_count) return;
+    }
+    if (!nav_count) { nav_editing = 0; return; }
     {
         /* A direction (1 up, 2 down, 3 left, 4 right): the d-pad, or the left stick held (its
          * stronger axis, repeating). */
@@ -7025,7 +7050,7 @@ static void pc_menus_nav_tick(void) {
      * or down end that): the d-pad otherwise moves on past it (QA run 18: left and right always
      * changing it trapped the focus there). */
     if (nav_editing && (nav_editing != nav_list[nav_focus] || (pressed & (0x1000 | 0x2000)) || dir == 1 || dir == 2)) {
-        if (pressed & (0x1000 | 0x2000)) pressed &= ~0x1000u;
+        pressed &= ~(0x1000u | 0x2000u);   /* that A or B ends the change only */
         nav_editing = 0;
         x360_log("x360 menu: changing a setting ended\r\n");
     } else if (nav_editing && (dir == 3 || dir == 4)) {
@@ -7060,6 +7085,31 @@ static void pc_menus_nav_tick(void) {
             /* A character slot is selected as the focus comes (its highlight, PC's own, shows it; as
              * the 360's list, where moving selects). */
             if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
+        }
+    }
+    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings)) {
+        /* B: the screen's way back, its Cancel (settings, the delete popup) or Back (creation,
+         * difficulty, load), clicked (the user, QA run 19). In play PC's pause menu is closed by
+         * x360_pause_pad. */
+        typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
+        static str_fn gn;
+        static const char *const backs[] = {"Cancel", "Back"};
+        int b, hit = -1;
+        if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        for (b = 0; b < 2 && hit < 0 && gn; b++)
+            for (i = 0; i < nav_count && hit < 0; i++) {
+                const char *nm = c_str(gn(nav_list[i], 0), 0);
+                unsigned nl = length(nm), bl = length(backs[b]), c = 0;
+                if (nl < bl) continue;
+                while (c < bl && nm[nl - bl + c] == backs[b][c]) c++;
+                if (c == bl && (nl == bl || nm[nl - bl - 1] == '_')) hit = i;
+            }
+        if (hit >= 0) {
+            float x = (r[hit].left + r[hit].right) * 0.5f, y = (r[hit].top + r[hit].bottom) * 0.5f;
+            nav_point(x, y);
+            x360_inject_left(1, x, y);
+            x360_inject_left(0, x, y);
+            x360_log("x360 menu: B on PC's "); x360_log(c_str(gn(nav_list[hit], 0), 0)); x360_log("\r\n");
         }
     }
     if ((pressed & 0x1000) && nav_kind(nav_list[nav_focus]) != NAV_SLIDER && nav_kind(nav_list[nav_focus]) != NAV_COMBO) {
