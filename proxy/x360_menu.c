@@ -6932,7 +6932,8 @@ void x360_bag_patch(void) {
  * reaches nothing else (pad.c's poll asks x360_black_screen_take); A or Enter acts: the game ends
  * (unsaved) or the screen goes. It shows at the title as in play (the GUI sheet is there in both). */
 static void *bs_back, *bs_text, *bs_hint;
-static int bs_state;                   /* 0 none, 1 asked, 2 shown */
+static int bs_state;                   /* 0 none, 1 asked, 2 shown, 3 gone but A still held (QA run g1-3b:
+                                          * the held A reached the title's Continue the next frame) */
 static int bs_close, bs_act, bs_failed;
 static char bs_utf8[1400];
 static void (*bs_after)(void);         /* when it goes (not when it ends the game) */
@@ -6948,6 +6949,7 @@ int x360_black_screen_take(unsigned buttons) {   /* pad.c: 1 while it shows (the
     static unsigned last;
     int edge = (buttons & 0x1000) && !(last & 0x1000);
     last = buttons;
+    if (bs_state == 3) { if (!(buttons & 0x1000)) bs_state = 0; return bs_state == 3; }
     if (bs_state != 2) return 0;
     if (edge) bs_act = 1;
     return 1;
@@ -6988,7 +6990,7 @@ static void black_screen_tick(void) {
                     prop(list[i], "FrameEnabled", "False");
                     prop(list[i], "BackgroundEnabled", "False");
                     prop(list[i], "TextColour", "FFFFFFFF");
-                    prop(list[i], "HorzFormatting", "WordWrapCentred");
+                    prop(list[i], "HorzTextFormatting", "WordWrapCentred");   /* this scheme's StaticText (the journal's) */
                     prop(list[i], "VertFormatting", "CentreAligned");
                 }
             }
@@ -7015,7 +7017,7 @@ static void black_screen_tick(void) {
                 TerminateProcess(GetCurrentProcess(), 1);
             }
             set_visible(bs_back, 0, 0);
-            bs_state = 0;
+            bs_state = 3;   /* the pad kept until A is let go */
             x360_log("x360: the black screen closed\r\n");
             if (bs_after) bs_after();
         }
