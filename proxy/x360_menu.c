@@ -2317,6 +2317,23 @@ static void buy(void) {
         else ((pickup_fn)GOG_PICKUP_EQUIPMENT)(stock, 0, item, 1);
         hero_voice(47);
         x360_log("x360 shop: X: the bag is full\r\n");
+        {
+            /* Which of the bag's sections the item goes to and how full it is (PC's 0x4e85b0 looks
+             * for a free slot in the item's section only: 0x4e8410 its type, 0x4e84a0 the section,
+             * the sections' first slots at +0x60; 0x4e7890 the item at a slot). QA run 20: weapons
+             * refused with the bag at 23 of 63. */
+            typedef int (__fastcall *of_item_fn)(void *self, void *edx, void *item);
+            typedef int (__fastcall *of_int_fn)(void *self, void *edx, int v);
+            typedef void *(__fastcall *at_fn)(void *self, void *edx, int slot);
+            int type = ((of_item_fn)0x004e8410)(bag, 0, item);
+            int sec = ((of_int_fn)0x004e84a0)(bag, 0, type);
+            int *firsts = *(int **)(bag + 0x60), nsec = (int)((*(int **)(bag + 0x64)) - firsts);
+            int first = sec >= 0 && sec < nsec ? firsts[sec] : -1, end = sec + 1 < nsec ? firsts[sec + 1] : -1, used = 0, sl;
+            for (sl = first; first >= 0 && sl < end; sl++) if (((at_fn)0x004e7890)(bag, 0, sl)) used++;
+            x360_log("x360 shop:   type "); x360_log_num(type); x360_log(" section "); x360_log_num(sec);
+            x360_log(" of "); x360_log_num(nsec); x360_log(" slots "); x360_log_num(first); x360_log(".."); x360_log_num(end);
+            x360_log(" used "); x360_log_num(used); x360_log("\r\n");
+        }
         return;
     }
     if (isa(shop, 127)) {
@@ -2481,10 +2498,18 @@ static void enchant(void) {
     x360_log(got ? "x360 enchanter: A: done, the item moved back from slot 14\r\n" : "x360 enchanter: A: done\r\n");
 }
 
+/* With no recipe for what is in its places, the 360's transmute (sub_82379058: its recipe
+ * search's 0 sends it to 0x82379990) plays the sound 24 and redraws, no message: PC's does
+ * nothing. Told here by its places unchanged after PC's (QA run 20). */
 static void transmute(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + GOG_COMBINE_MENU) : 0;
+    void *bag = hero ? owner_bag(hero) : 0, *was[4];
+    int j, same = 1;
     if (!m) return;
+    for (j = 0; j < 4; j++) was[j] = bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0;
     ((void_fn)GOG_TRANSMUTE)(m, 0);
+    for (j = 0; j < 4; j++) if ((bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0) != was[j]) same = 0;
+    if (same && bag && tm_known) { shop_sound(24); x360_log("x360 transmuter: Y: no recipe (the sound 24)\r\n"); return; }
     x360_log("x360 transmuter: Y: transmuted\r\n");
 }
 
