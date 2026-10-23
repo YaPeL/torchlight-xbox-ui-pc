@@ -2424,3 +2424,10 @@ inventory (section 13), so each run's batch is one.
   - Open in the port: the bar's Use for a recharging potion and for the identify scroll (the
     port uses PC's useable test, `GOG_IS_USEABLE`); the 360's test before its Use prompt
     (`sub_8236C8D0` near `0x8236E100`, `sub_821D7E20`) is to read.
+- The bag closes after the town portal scroll (the mods agent's reading, static): the 360's bag
+  Use (`sub_8236BD80`) compares the item's definition (`+0x178`) with the unit index's entry of
+  that name (`0x8236BF68`; the name at `0x820C2010`) and, after using it (`sub_822B9A60`) and
+  refreshing the sheet, calls its menu's Show(false) (`+0x1c` with 0, `sub_8236F700`); nothing
+  else closes the bag on a use. The port reads the item's NAME from its property bag (`+0x178`,
+  `0x5c0190`, as PC reads DESCRIPTION at `0x4854dd`) against the converter's `item.townportal`
+  and closes the bag after PC's useItem. The name read is logged at each use (not run yet).

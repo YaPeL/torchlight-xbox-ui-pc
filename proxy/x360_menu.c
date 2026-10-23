@@ -1995,6 +1995,40 @@ static int identify(unsigned char *item) {
  * bag or dropped). An equipped item is taken off into the bag (removeEquipment, pickupEquipment);
  * if the bag is full, it goes back. */
 static void sock_begin(unsigned char *gem);
+void x360_inventory_toggle(void);
+/* Whether the item is the town portal scroll by its unit's name, as the 360's bag Use
+ * (sub_8236BD80 at 0x8236BF68: the item's definition, +0x178, against the unit index's entry of
+ * that name): its NAME property (PC's property bag at +0x178, read by 0x5c0190 as the item's
+ * DESCRIPTION is at 0x4854dd; 0xd5d9a4 the empty default). */
+static int town_portal_scroll(unsigned char *item) {
+    typedef const void *(__fastcall *prop_str_fn)(void *bag, void *edx, const void *key, const void *dflt);
+    static const unsigned short key_name[] = {'N', 'A', 'M', 'E', 0};
+    wstr_ctor_fn wctor;
+    wstr_dtor_fn wdtor;
+    unsigned char key[32];
+    char name[96];
+    const char *want = x360_text("item.townportal");
+    void *bag = *(void **)(item + 0x178);   /* GOG_ITEM_TEMPLATE */
+    int yes = 0;
+    unsigned n;
+    if (!bag || !want[0] || !wstring_functions(&wctor, &wdtor)) return 0;
+    wctor(key, 0, key_name);
+    __try {
+        const void *r = ((prop_str_fn)0x005c0190)(bag, 0, key, (const void *)0x00d5d9a4);
+        if (r && wstring_utf8((const unsigned char *)r, name, sizeof name)) {
+            unsigned w = length(want);
+            n = length(name);
+            while (n && name[n - 1] == ' ') n--;   /* the 360's text ends in spaces */
+            while (w && want[w - 1] == ' ') w--;
+            yes = n == w;
+            for (n = 0; yes && n < w; n++) if (want[n] != name[n]) yes = 0;
+            x360_log("x360 inv: the used item's unit name: "); x360_log(name); x360_log("\r\n");
+        }
+    } __except (1) { yes = 0; }
+    wdtor(key, 0);
+    return yes;
+}
+
 static void act(void) {
     void *inv = inventory();
     unsigned char *item, *owner = (unsigned char *)cur_owner;   /* the 360's A acts for the bag's owner (+0x174) */
@@ -2019,8 +2053,12 @@ static void act(void) {
         return;
     }
     if (((item_bool_fn)GOG_IS_USEABLE)(item, 0)) {
+        int portal = town_portal_scroll(item);
         if (ui) ((use_item_fn)GOG_USE_ITEM)(ui, 0, level, item);
         x360_log(ui ? "x360 inv: A: used\r\n" : "x360 inv: A: no CGameUI, not used\r\n");
+        /* The 360 closes the bag after using the town portal scroll (sub_8236BD80: its menu's
+         * Show(false), +0x1c with 0; in-game/27), and only then (a potion leaves it open, 29). */
+        if (ui && portal && inventory_open) { x360_log("x360 inv: the town portal used: the bag closed\r\n"); x360_inventory_toggle(); }
         return;
     }
     if (((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item)) {
