@@ -6993,10 +6993,17 @@ typedef int (__fastcall *load_put_fn)(void *inv, void *edx, void *item, int slot
 static struct { void *item, *owner, *inv; int slot; } load_aside[LOAD_ASIDE_MAX];
 static int load_aside_count, load_moved, load_stopped;
 int x360_test_no_stop;                 /* x360_ui.ini test_no_stop=1: a test, items kept aside never decided */
+static int load_overflow;              /* items past LOAD_ASIDE_MAX: kept alive (not tracked), the game stopped */
 static int load_items_aside(void) {
     int k;
+    if (load_overflow) return 1;
     for (k = 0; k < load_aside_count; k++) if (load_aside[k].item) return 1;
     return 0;
+}
+static int load_aside_left(void) {
+    int k, n = 0;
+    for (k = 0; k < load_aside_count; k++) if (load_aside[k].item) n++;
+    return n + load_overflow;
 }
 /* A load the player asked for: set when a menu out of play gives way to none (Continue, Load, a
  * new game pressed), cleared when a menu shows again or play is left. The title's own loads of the
@@ -7081,8 +7088,11 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
         x360_log(" from slot "); x360_log_num(slot); x360_log(": no room in its section, kept aside\r\n");
         return (int)item;
     }
-    x360_log("x360 load: too many items kept aside, PC drops "); log_item_name(item); x360_log("\r\n");
-    return 0;
+    /* More than can be tracked: not destroyed (the loader is answered with the item, never placed),
+     * and the game stops in play before any save. */
+    load_overflow++;
+    x360_log("x360 load: too many items kept aside: "); log_item_name(item); x360_log(" kept, the game will stop\r\n");
+    return (int)item;
 }
 
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
@@ -7098,10 +7108,11 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * strings by value), which the 360's modal shows (modal_tick) and which takes the pad, keyboard
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
  * blank under Proton (QA runs 34, 35): not used. */
-static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed */
+static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed, 3 waiting for another modal to close */
 static int stop_asked;                 /* a stop was decided */
 static unsigned stop_t0;               /* when (GetTickCount): the modal is waited for STOP_MODAL_MS */
 #define STOP_MODAL_MS 15000
+#define STOP_BOX_MS 30000
 static unsigned short stop_wbody[700];
 int x360_test_stop_modal_fails;        /* x360_ui.ini test_stop_modal_fails=1: a test, PC's modal never shows */
 
@@ -7142,7 +7153,7 @@ static int open_pc_modal(const char *title, const unsigned short *wbody) {
 }
 
 /* A Windows box, the last resort where PC's modal did not show (it may be blank under Proton, QA
- * runs 34, 35, and behind the game's window): on top, and closed by itself after a while so a box
+ * runs 34, 35, and behind the game's window): the game minimized, on top, and closed by itself after 30 s so a box
  * that cannot be seen does not keep the game open forever. user32's, looked up (no import). */
 static void last_resort_box(const unsigned short *text) {
     typedef int (__stdcall *box_timeout_fn)(void *w, const unsigned short *t, const unsigned short *c, unsigned type, unsigned short lang, unsigned ms);
@@ -7152,7 +7163,14 @@ static void last_resort_box(const unsigned short *text) {
     box_timeout_fn bt = u ? (box_timeout_fn)GetProcAddress(u, "MessageBoxTimeoutW") : 0;
     box_fn b = u ? (box_fn)GetProcAddress(u, "MessageBoxW") : 0;
     const unsigned type = 0x10 | 0x1000 | 0x10000 | 0x40000;   /* MB_ICONERROR, MB_SYSTEMMODAL, MB_SETFOREGROUND, MB_TOPMOST */
-    if (bt) bt(0, text, caption, type, 0, 120000);
+    {
+        /* The game's window out of the way first: a box behind a full-screen window is not seen. */
+        typedef int (__stdcall *show_fn)(void *w, int how);
+        show_fn show = u ? (show_fn)GetProcAddress(u, "ShowWindow") : 0;
+        void *w = (void *)GetActiveWindow();
+        if (show && w) show(w, 6);   /* SW_MINIMIZE */
+    }
+    if (bt) bt(0, text, caption, type, 0, STOP_BOX_MS);
     else if (b) b(0, text, caption, type);
 }
 
@@ -7190,10 +7208,13 @@ static void stop_unsaved(const char *why, int count) {
         if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
     }
     utf8_to_wide(text, stop_wbody, sizeof stop_wbody / sizeof stop_wbody[0]);
-    stop_state = x360_test_stop_modal_fails ? 0 : open_pc_modal("The bag", stop_wbody);
-    if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
+    stop_state = 3;   /* opened by stop_tick once no other modal is open (closing that one must not end the game) */
 }
 static void stop_tick(void) {
+    if (stop_state == 3 && !pc_modal_menu_open()) {
+        stop_state = x360_test_stop_modal_fails ? 1 : open_pc_modal("The bag", stop_wbody);   /* the test: asked, never shown */
+        if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
+    }
     if (stop_state == 1 && pc_modal_menu_open() && !x360_test_stop_modal_fails) { stop_state = 2; x360_log("x360 load: the stop's modal shows\r\n"); }
     /* Never playing on unsaved without knowing: PC's modal not opened, or not shown in
      * STOP_MODAL_MS, gives the text in a Windows box, then the game ends (nothing saved). */
@@ -7230,6 +7251,14 @@ static void load_aside_tick(void) {
         destroy_aside(k);
     }
     for (k = 0; k < load_aside_count; k++) if (load_aside[k].item && !isa(load_aside[k].owner, 87)) need_pet = 1;
+    if (load_overflow) {
+        load_stopped = 1;
+        x360_log("x360 load: more items kept aside than can be placed: the game stops, unsaved\r\n");
+        stop_unsaved(" item(s) do not fit in the bag chosen at install, too many to place. Nothing is saved, nothing is "
+                     "lost: press A to close the game. Then install again with the other bag, load this character, make "
+                     "room (sell, stash or drop items), save, and change the bag.", load_aside_left());
+        return;
+    }
     if (need_pet && !pet) {
         if (frames_ready < 60) return;
         load_stopped = 1;
@@ -7237,7 +7266,7 @@ static void load_aside_tick(void) {
         stop_unsaved(" item(s) do not fit in the bag chosen at install, and the pet, where they would go, is not "
                      "there. Nothing is saved, nothing is lost: press A to close the game. Then install again with the "
                      "other bag, load this character, make room (sell, stash or drop items), save, and change the bag.",
-                     load_aside_count);
+                     load_aside_left());
         return;
     }
     for (k = 0; k < load_aside_count; k++) {
