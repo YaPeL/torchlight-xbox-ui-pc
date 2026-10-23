@@ -8,10 +8,11 @@ appimagetool 1.9.1. It links these statically: musl libc, libfuse 3.15.0 (with t
 
 libfuse is LGPL-2.1. Its complete source goes with every release, as files of the release itself
 (`packaging/linux/get_sources.sh`, pinned by SHA-256): `fuse-3.15.0.tar.xz`, and
-`type2-runtime-8f39b89.tar.gz`, whose `patches/libfuse/mount.c.diff` and `scripts/` build the
-runtime from it. The runtime is open source (MIT), so a user can rebuild it with a modified
-libfuse and repack the image: `--appimage-extract`, then `appimagetool --runtime-file RUNTIME
-squashfs-root` (LGPL-2.1 section 6(a)).
+`type2-runtime-8f39b89.tar.gz`, whose `patches/libfuse/mount.c.diff` (also on its own,
+`libfuse-mount.c.diff`) and `scripts/` build the runtime from it. The runtime is open source
+(MIT), so a user can rebuild it with a modified libfuse and repack the image:
+`--appimage-extract`, then `appimagetool --runtime-file RUNTIME squashfs-root` (LGPL-2.1 section
+6(a)).
 
 The installer itself links libstdc++ and libgcc statically. That is allowed for any program by the
 GCC Runtime Library Exception 3.1; the installer's own code and its other parts are listed in

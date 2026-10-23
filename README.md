@@ -158,7 +158,10 @@ Tests use synthetic data only: `python3 -m unittest discover -s tests`.
 ## Credits
 
 - Torchlight is by Runic Games.
-- `tools/xex/lzx_decompress.py` is from [360tools](https://github.com/sp00nznet/360tools) (MIT).
+- `tools/xex/lzx_decompress.py` is from [360tools](https://github.com/sp00nznet/360tools) (MIT), and
+  derives from [libmspack](https://github.com/kyz/libmspack)'s LZX decoder (`lzxd.c` with `lzx.h`
+  and `readhuff.h`, (C) 2003-2023 Stuart Caie, originally LGPL-2.1); so does its C++ port in
+  `installer/src/lzx.cpp`.
 - The prompt icons in `data/prompts` are Kenney's
   [Input Prompts](https://kenney.nl/assets/input-prompts) (CC0).
 
@@ -166,7 +169,10 @@ Tests use synthetic data only: `python3 -m unittest discover -s tests`.
 
 GPL-3.0 ([LICENSE](LICENSE)), for the code. No file of either game is in this repository: the
 converted interface is made from your own copies, on your machine. `tools/xex/lzx_decompress.py`
-keeps its MIT license (`tools/xex/LICENSE-lzx_decompress`).
+and `installer/src/lzx.cpp` keep sp00nznet's MIT notice (`tools/xex/LICENSE-lzx_decompress`) and
+libmspack's copyright; derived from LGPL-2.1 code, they are under GPL-3.0 per the LGPL-2.1's
+section 3 ([installer/third_party/NOTICES.md](installer/third_party/NOTICES.md),
+[LGPL-2.1.txt](installer/third_party/LGPL-2.1.txt)).
 
 ## Other versions
 

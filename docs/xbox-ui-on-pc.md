@@ -3032,7 +3032,8 @@ Python installer kept until the C++ one gives the same files byte for byte, then
 `installer/` (CMake, C++17):
 - `src/stfs.cpp`: tools/stfs.py's reading, step for step (its generator's next-block reads
   included, so a damaged package fails the same way).
-- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, its notice in
+- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, and derived from libmspack's LZX
+  decoder, originally LGPL-2.1, under GPL-3.0 per its section 3: the notices in
   `installer/third_party/NOTICES.md`), Python's integers as 64-bit ones.
 - `src/xex.cpp`: tools/xex/xex_dump.py; AES-128 CBC by tiny-AES-c (The Unlicense, commit
   `23856752`, one code path on every system, CBC only).
@@ -3135,6 +3136,19 @@ release is made of, makes only the artifacts.
 - **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
   printed in the log, to compare with a local build), the actions by major version and the
   container images by tag.
+
+**Licences (the GPU agent's review, items 7 and 8; 2026-10-23).** The LZX decoder
+(`tools/xex/lzx_decompress.py` and its C++ port `installer/src/lzx.cpp`) mirrors libmspack's
+`lzxd.c` (with its `lzx.h` and `readhuff.h`): the same state (`header_read`, `block_remaining`,
+`intel_filesize`, `intel_started`, the length tables with `lzx.h`'s `LENTABLE_SAFETY` 64), the same
+frame by frame decoding, `readhuff.h`'s table build, and the Python file's own comments name
+`lzxd.c`. So it is taken as derived from libmspack ((C) 2003-2023 Stuart Caie, originally LGPL-2.1):
+credited in `installer/third_party/NOTICES.md`, `tools/xex/README.md` and both files' headers, the
+licence's text in `installer/third_party/LGPL-2.1.txt`, under GPL-3.0 per its section 3.
+The release carries `THIRD_PARTY_NOTICES.md`, `LGPL-2.1.txt`, `LICENSE.txt` and
+`APPIMAGE_NOTICES.md` beside the `.exe` (the AppImage carries them inside too), and the AppImage
+runtime's libfuse source: `fuse-3.15.0.tar.xz`, `type2-runtime-8f39b89.tar.gz` and the patch alone,
+`libfuse-mount.c.diff`.
 
 **The 360's bag remembered (the GPU agent's review, item 4; 2026-10-23).** Uninstall's switch to
 PC's bag wrote `bag=pc` alone, so the next uninstall neither warned nor backed up, though a

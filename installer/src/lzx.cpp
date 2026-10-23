@@ -1,4 +1,6 @@
-// The port of tools/xex/lzx_decompress.py (MIT License, Copyright (c) 2026 sp00nznet): names and
+// The port of tools/xex/lzx_decompress.py (MIT License, Copyright (c) 2026 sp00nznet), derived
+// from libmspack's LZX decoder ((C) 2003-2023 Stuart Caie, originally LGPL-2.1; under GPL-3.0 per
+// its section 3: installer/third_party/NOTICES.md): names and
 // steps kept, Python's unbounded integers replaced by 64-bit ones (the bit buffer never holds more
 // than 39 bits: 24 asked plus a 16-bit word less one).
 #include "lzx.h"
