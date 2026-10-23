@@ -6925,6 +6925,104 @@ void x360_bag_patch(void) {
     x360_log("x360 bag: the 360's bag (one section of 50), the hero's and the pet's\r\n");
 }
 
+/* ---- the proxy's own black screen (the owner: a Windows box showed blank under Proton, and on the
+ * Deck's gamescope neither it nor Notepad may show) ----
+ * A full-screen StaticImage of the converted UI's black image (set:X360_widgets2 image:black, the
+ * layouts' own), always on top, a text over it and a line with what A does. While it shows the pad
+ * reaches nothing else (pad.c's poll asks x360_black_screen_take); A or Enter acts: the game ends
+ * (unsaved) or the screen goes. It shows at the title as in play (the GUI sheet is there in both). */
+static void *bs_back, *bs_text, *bs_hint;
+static int bs_state;                   /* 0 none, 1 asked, 2 shown */
+static int bs_close, bs_act, bs_failed;
+static char bs_utf8[1400];
+static void (*bs_after)(void);         /* when it goes (not when it ends the game) */
+static void black_screen(const char *utf8, int close_game, void (*after)(void)) {
+    copy(bs_utf8, sizeof bs_utf8, utf8, 0);
+    bs_close = close_game;
+    bs_after = after;
+    bs_act = 0;
+    bs_state = 1;
+    x360_log("x360: the black screen asked for: "); x360_log(utf8); x360_log("\r\n");
+}
+int x360_black_screen_take(unsigned buttons) {   /* pad.c: 1 while it shows (the pad is its own) */
+    static unsigned last;
+    int edge = (buttons & 0x1000) && !(last & 0x1000);
+    last = buttons;
+    if (bs_state != 2) return 0;
+    if (edge) bs_act = 1;
+    return 1;
+}
+__declspec(dllimport) int __stdcall DeleteFileA(const char *name);
+__declspec(dllimport) int __stdcall ReadFile(void *file, void *data, unsigned long size, unsigned long *got, void *overlapped);
+__declspec(dllimport) void *__stdcall GetCurrentProcess(void);
+__declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
+static void black_screen_tick(void) {
+    static int enter_was;
+    int enter = (GetAsyncKeyState(0x0d) & 0x8000) != 0;
+    if (bs_state == 1) {
+        void *sys, *sheet;
+        RECT r;
+        HWND w = active_window();
+        float width = 1920.0f, height = 1080.0f;
+        if (!resolve()) return;
+        sys = system_ptr();
+        sheet = sys ? get_gui_sheet(sys, 0) : 0;
+        if (!sheet) return;                       /* not yet: the next frame */
+        if (w && GetClientRect(w, &r) && r.right > 0 && r.bottom > 0) { width = (float)r.right; height = (float)r.bottom; }
+        if (!bs_back) {
+            bs_back = create_window("x360bs_", "back", "ceguiWidget/StaticImage");
+            bs_text = create_window("x360bs_", "text", "ceguiWidget/StaticText");
+            bs_hint = create_window("x360bs_", "hint", "ceguiWidget/StaticText");
+            if (!bs_back || !bs_text || !bs_hint) { bs_failed = 1; bs_state = 0; x360_log("x360: the black screen could not be made\r\n"); return; }
+            prop(bs_back, "Image", "set:X360_widgets2 image:black");
+            prop(bs_back, "FrameEnabled", "False");
+            prop(bs_back, "BackgroundEnabled", "False");
+            prop(bs_back, "AlwaysOnTop", "True");
+            add_child(bs_back, 0, bs_text);
+            add_child(bs_back, 0, bs_hint);
+            {
+                void *list[2]; int i;
+                list[0] = bs_text; list[1] = bs_hint;
+                for (i = 0; i < 2; i++) {
+                    prop(list[i], "Font", "X360_Serif");
+                    prop(list[i], "FrameEnabled", "False");
+                    prop(list[i], "BackgroundEnabled", "False");
+                    prop(list[i], "TextColour", "FFFFFFFF");
+                    prop(list[i], "HorzFormatting", "WordWrapCentred");
+                    prop(list[i], "VertFormatting", "CentreAligned");
+                }
+            }
+        }
+        add_child(sheet, 0, bs_back);
+        set_size(bs_back, 0, 0, width, height);
+        set_size(bs_text, width * 0.15f, height * 0.25f, width * 0.7f, height * 0.4f);
+        set_size(bs_hint, width * 0.15f, height * 0.7f, width * 0.7f, height * 0.08f);
+        text(bs_text, bs_utf8);
+        text(bs_hint, bs_close ? "A: close the game" : "A: continue");
+        set_visible(bs_back, 0, 1);
+        move_to_front(bs_back, 0);
+        bs_state = 2;
+        x360_log("x360: the black screen shows\r\n");
+    }
+    if (bs_state == 2) {
+        move_to_front(bs_back, 0);
+        if (enter && !enter_was) bs_act = 1;
+        if (bs_act) {
+            bs_act = 0;
+            if (bs_close) {
+                x360_log("x360: the black screen closed: the game ends, unsaved\r\n");
+                if (bs_after) bs_after();
+                TerminateProcess(GetCurrentProcess(), 1);
+            }
+            set_visible(bs_back, 0, 0);
+            bs_state = 0;
+            x360_log("x360: the black screen closed\r\n");
+            if (bs_after) bs_after();
+        }
+    }
+    enter_was = enter;
+}
+
 /* ---- the save held back while a stop is pending (docs 21) ----
  * Every save of the character goes through 0x417380 (thiscall, 2 arguments, ret 8: its 9 callers
  * are the game's; it writes backup.tmp with "wb" at 0x41762d, renames it into the .svt at
@@ -6945,6 +7043,7 @@ static const unsigned char save_want[3] = {0x6a, 0xff, 0x68};
 static unsigned char save_tramp[16];
 int x360_save_held;                    /* also x360_ui.ini hold_saves=1: a test of the hold, off by default */
 int x360_test_save_hook_fails;         /* x360_ui.ini test_save_hook_fails=1: a test, as if the pattern differed */
+int x360_test_load_hook_fails;         /* x360_ui.ini test_load_hook_fails=1: a test, as if the loader's call differed */
 static int load_items_aside(void);
 static int __fastcall save_game_hook(void *self, void *edx, int a, int b) {
     typedef int (__fastcall *orig_fn)(void *self, void *edx, int a, int b);
@@ -6995,6 +7094,13 @@ static int load_aside_count, load_moved, load_stopped;
 int x360_test_no_stop;                 /* x360_ui.ini test_no_stop=1: a test, items kept aside never decided */
 static int load_overflow;              /* items past LOAD_ASIDE_MAX: kept alive (not tracked), the game stopped */
 static int load_puts;                  /* every item PC's loader put (logged per phase: which loads run when) */
+/* No save hook (the owner, after QA run g1-3): the load hook only stops. At the first item of the
+ * player's load that PC would destroy, the item is kept (the loader answered with it) and the game
+ * ends at once, before any save (Torchlight saves on closing, Alt+F4 too): its text in
+ * x360_stop.txt, shown on the black screen at the next start. Nothing is kept aside: no save
+ * could be held back. */
+static int load_cut_only;
+static void write_stop_file(const char *text);
 static int load_items_aside(void) {
     int k;
     if (load_overflow) return 1;
@@ -7059,6 +7165,15 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
         x360_log(owner ? " (a unit not of type 28 or 87)\r\n" : " (no owner)\r\n");
         return r;
     }
+    if (load_cut_only) {
+        x360_log("x360 load: no save hook: "); log_item_name(item); x360_log(" from slot "); x360_log_num(slot);
+        x360_log(" would be destroyed: the game ends now, unsaved\r\n");
+        write_stop_file("The game was closed by the mod while a character loaded: an item of it does not fit the bag "
+                        "chosen at install, and with this version of the game the mod cannot hold the save back. Nothing "
+                        "was saved, nothing was lost. Install again with the bag that character was saved with.");
+        TerminateProcess(GetCurrentProcess(), 1);
+        return (int)item;   /* not reached */
+    }
     to = empty_slot_of_section((unsigned char *)inv, item);
     if (to >= 0 && (r = put(inv, 0, item, to, flag)) != 0) {
         load_moved++;
@@ -7110,7 +7225,7 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * strings by value), which the 360's modal shows (modal_tick) and which takes the pad, keyboard
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
  * blank under Proton (QA runs 34, 35): not used. */
-static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed, 3 waiting for another modal to close */
+static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed, 3 waiting for another modal to close, 4 the black screen */
 static int stop_asked;                 /* a stop was decided */
 static unsigned stop_t0;               /* when (GetTickCount): the modal is waited for STOP_MODAL_MS */
 #define STOP_MODAL_MS 15000          /* from the stop's modal asked for */
@@ -7194,18 +7309,32 @@ static void last_resort_box(const unsigned short *text) {
 /* A message for the player that does not stop the game: shown in PC's modal once in play. */
 static unsigned short notice_text[600];
 static int notice_pending;
-static void queue_notice(const char *text) {
+__attribute__((unused)) static void queue_notice(const char *text) {
     utf8_to_wide(text, notice_text, sizeof notice_text / sizeof notice_text[0]);
     notice_pending = 1;
     x360_log("x360: a notice for the player: "); x360_log(text); x360_log("\r\n");
 }
 static void notice_tick(void) {
     if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
-    if (open_pc_modal("Xbox 360 interface", notice_text)) { notice_pending = 0; x360_log("x360: the notice shows\r\n"); }
+    if (open_pc_modal("The mod", notice_text)) { notice_pending = 0; x360_log("x360: the notice shows\r\n"); }
 }
 
+/* x360_stop.txt beside the game: the stop's text, kept until the player has seen it (the stop's
+ * modal or black screen closed by them); one left at the next start is shown then, at the title. */
+static char stop_utf8[700];
+static void write_stop_file(const char *text) {
+    char path[600];
+    void *f;
+    unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), done;
+    while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
+    copy(path + n, sizeof path - n, "x360_stop.txt", 0);
+    copy(stop_file, sizeof stop_file, path, 0);
+    f = CreateFileA(path, 0x40000000, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
+    if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
+}
+static void stop_seen(void) { if (stop_file[0]) DeleteFileA(stop_file); }
 static void stop_unsaved(const char *why, int count) {
-    char text[700], name[96], path[600], *p = text;
+    char text[700], name[96], *p = text;
     x360_save_held = 1;
     stop_asked = 1;
     stop_t0 = GetTickCount();
@@ -7216,15 +7345,8 @@ static void stop_unsaved(const char *why, int count) {
     if (count >= 0) p = put_int(p, count);
     copy(p, sizeof text - (unsigned)(p - text), why, 0);
     x360_log("x360 load: the stop's text: "); x360_log(text); x360_log("\r\n");
-    {
-        void *f;
-        unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), done;
-        while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
-        copy(path + n, sizeof path - n, "x360_stop.txt", 0);
-        copy(stop_file, sizeof stop_file, path, 0);
-        f = CreateFileA(path, 0x40000000, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
-        if (f != (void *)-1) { WriteFile(f, text, length(text), &done, 0); CloseHandle(f); }
-    }
+    write_stop_file(text);
+    copy(stop_utf8, sizeof stop_utf8, text, 0);
     utf8_to_wide(text, stop_wbody, sizeof stop_wbody / sizeof stop_wbody[0]);
     stop_state = 3;   /* opened by stop_tick once no other modal is open (closing that one must not end the game) */
 }
@@ -7236,15 +7358,24 @@ static void stop_tick(void) {
     }
     if (stop_state == 1 && pc_modal_menu_open() && !x360_test_stop_modal_fails) { stop_state = 2; x360_log("x360 load: the stop's modal shows\r\n"); }
     /* Never playing on unsaved without knowing: PC's modal not opened, or not shown in
-     * STOP_MODAL_MS, gives the text in a Windows box, then the game ends (nothing saved). */
-    if (stop_asked && stop_state != 2 &&
+     * STOP_MODAL_MS, gives the text on the proxy's black screen (A ends the game); if that cannot
+     * be made or does not show in 5 s, x360_stop.txt in Notepad or a Windows box, then the game
+     * ends (nothing saved; the file shows again at the next start). */
+    if (stop_asked && stop_state != 2 && stop_state != 4 &&
         (stop_state == 0 || GetTickCount() - stop_t0 > (stop_state == 3 ? STOP_WAIT_MS : STOP_MODAL_MS))) {
-        x360_log("x360 load: the stop's modal did not show: a Windows box, then the game ends, unsaved\r\n");
+        x360_log("x360 load: the stop's modal did not show: the black screen\r\n");
+        black_screen(stop_utf8[0] ? stop_utf8 : "The game stops: nothing is saved, nothing is lost.", 1, stop_seen);
+        stop_state = 4;
+        stop_t0 = GetTickCount();
+    }
+    if (stop_state == 4 && bs_state != 2 && (bs_failed || GetTickCount() - stop_t0 > 5000)) {
+        x360_log("x360 load: the black screen did not show: Notepad or a Windows box, then the game ends, unsaved\r\n");
         last_resort_box(stop_wbody);
         TerminateProcess(GetCurrentProcess(), 1);
     }
     if (stop_state == 2 && !pc_modal_menu_open()) {
         x360_log("x360 load: the stop's modal closed: the game ends, unsaved\r\n");
+        stop_seen();
         TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
     }
 }
@@ -7327,31 +7458,52 @@ static void load_aside_tick(void) {
                  "character, make room (sell, stash or drop items), save, and change the bag.", left);
 }
 
-/* The save's hook first: items are kept aside only when a save can be held back. Without it (or
- * without the loader's call as expected) nothing is placed again, as PC's game, and the player is
- * told, in the log and on screen. */
-static const char reflow_off_text[] =
-    "The mod could not hook this game's save or load, so items that do not fit the bag chosen at install are not "
-    "moved to free slots: the game deletes them when this character is saved. Do not load a character saved with "
-    "the other bag; if you did, close the game with Alt+F4 instead of saving, and install again with that bag.";
+/* The save's hook first. With it, the load hook keeps aside and places again; without it, the load
+ * hook only stops (load_cut_only). Without the load hook nothing protects the items (PC destroys at
+ * load what does not fit): a black screen at the title says so before any character is loaded. */
+static const char hooks_off_text[] =
+    "The mod cannot protect the items of a character with this version of the game: when a character is "
+    "loaded, the game deletes the items that do not fit the bag chosen at install. Install again with PC's "
+    "bag before loading a character. Characters saved with the 360's bag can lose items with the original game "
+    "too: load and save each with the mod's PC's bag first.";
 void x360_load_hook_install(void) {
     unsigned char *c = (unsigned char *)GOG_LOAD_PUT_CALL;
     unsigned long old;
-    if (!save_hook_install()) {
-        x360_log("x360 load: no save hook: items not placed again\r\n");
-        queue_notice(reflow_off_text);
-        return;
-    }
-    x360_log("x360 load: PC's save function hooked (held back while items are aside or a stop is pending)\r\n");
-    if (c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PUT_AT_SLOT ||
+    int saves = save_hook_install();
+    if (saves) x360_log("x360 load: PC's save function hooked (held back while items are aside or a stop is pending)\r\n");
+    else x360_log("x360 load: no save hook: the load hook only stops\r\n");
+    if (x360_test_load_hook_fails || c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PUT_AT_SLOT ||
         !VirtualProtect(c, 5, 0x40, &old)) {
-        x360_log("x360 load: PC's loader not as expected, items not placed again\r\n");
-        queue_notice(reflow_off_text);
+        x360_log("x360 load: PC's loader not as expected, items not protected: a warning at the title\r\n");
+        black_screen(hooks_off_text, 0, 0);
         return;
     }
+    load_cut_only = !saves;
     *(int *)(c + 1) = (int)(void *)load_put_hook - (int)(c + 5);
     VirtualProtect(c, 5, old, &old);
-    x360_log("x360 load: saved items placed again when their slot does not fit\r\n");
+    x360_log(saves ? "x360 load: saved items placed again when their slot does not fit\r\n"
+                   : "x360 load: the load hook in its stop-only mode\r\n");
+}
+
+/* A stop's text left by the last run (x360_stop.txt): the player did not see it (the game ended
+ * at once, or the stop's screens did not show). Shown at the title, then the file goes. */
+void x360_stop_file_check(void) {
+    static char textbuf[1200];
+    char path[600];
+    void *f;
+    unsigned long n = GetModuleFileNameA(0, path, sizeof path - 20), got = 0;
+    while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
+    copy(path + n, sizeof path - n, "x360_stop.txt", 0);
+    f = CreateFileA(path, 0x80000000, 1, 0, 3, 0x80, 0);   /* GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING */
+    if (f == (void *)-1) return;
+    copy(textbuf, sizeof textbuf, "The last game was closed by the mod, and this was not shown then:\n\n", 0);
+    n = length(textbuf);
+    ReadFile(f, textbuf + n, sizeof textbuf - n - 1, &got, 0);
+    CloseHandle(f);
+    textbuf[n + got] = 0;
+    copy(stop_file, sizeof stop_file, path, 0);
+    x360_log("x360 load: a stop's text from the last game: shown at the title\r\n");
+    black_screen(textbuf, 0, stop_seen);
 }
 
 static void side_panels_test(int off) {
@@ -7868,6 +8020,7 @@ static void pc_menus_nav_tick(void) {
 
 void x360_frame_tick(void) {
     static int logged, preloaded;
+    __try { black_screen_tick(); } __except (1) { bs_state = 0; bs_failed = 1; x360_log("x360: exception on the black screen\r\n"); }
     __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
     if (!find_world()) return;
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the
