@@ -1712,7 +1712,7 @@ static void show_info(void *item, float y, float list_left) {
          * (third column: 1172 against 1172.7) and + 3 (middle: 751 against 748.0); ours was 7-8
          * pixels right in both (QA run 2: 758; run B3: 1180), so the root goes 10.24 and 12.87
          * (base units) in. */
-        x = r.left + (panel_column(focus_panel) + 1 == 1 ? 12.87f : 10.24f) * k;
+        x = r.left + (panel_column(focus_panel) + 1 == 1 ? 12.87f : 7.4f) * k;   /* QA run 8: the third column 4 more left */
     }
     /* The card's bottom kept 36 rows (of 720) above the screen's bottom: the 360's dumps
      * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends
@@ -6533,21 +6533,50 @@ static void hotkeys_off(void) {
  * (Ogre's MovableObject::setVisible, exported) while the 360's modal or shop frame covers them,
  * and visible again after. */
 static void board_visible(unsigned char *menu, unsigned at, int visible) {
+    /* QA run 8: the entity alone made invisible left the boards seen. Now its scene node, with all
+     * it carries (SceneNode::setVisible with cascade), never the scene's root (a node with no
+     * parent). What is found is logged once per menu field. */
     typedef void (__fastcall *set_visible_fn)(void *self, void *edx, int visible);
+    typedef void (__fastcall *node_visible_fn)(void *self, void *edx, int visible, int cascade);
+    typedef void *(__fastcall *get_ptr_fn)(const void *self, void *edx);
     static set_visible_fn set_vis;
+    static node_visible_fn node_vis;
+    static get_ptr_fn parent_scene_node, node_parent;
     static void *entity_vtable;
+    static unsigned logged[16];
+    static int nlogged;
     unsigned char *board;
-    void *entity;
+    void *entity, *node = 0, *up = 0;
+    int i, seen = 0;
     if (!set_vis) {
         void *ogre = GetModuleHandleA("OgreMain.dll");
         set_vis = ogre ? (set_visible_fn)GetProcAddress(ogre, "?setVisible@MovableObject@Ogre@@UAEX_N@Z") : 0;
+        node_vis = ogre ? (node_visible_fn)GetProcAddress(ogre, "?setVisible@SceneNode@Ogre@@UAEX_N0@Z") : 0;
+        parent_scene_node = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParentSceneNode@MovableObject@Ogre@@UBEPAVSceneNode@2@XZ") : 0;
+        node_parent = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParent@Node@Ogre@@UBEPAV12@XZ") : 0;
         entity_vtable = ogre ? GetProcAddress(ogre, "??_7Entity@Ogre@@6B@") : 0;
     }
     if (!set_vis || !entity_vtable || !menu) return;
     __try {
         board = *(unsigned char **)(menu + at);
         entity = board ? *(void **)(board + 0x5c) : 0;
-        if (entity && *(void **)entity == entity_vtable) set_vis(entity, 0, visible);   /* an Ogre::Entity only */
+        for (i = 0; i < nlogged; i++) if (logged[i] == (unsigned)(unsigned long)menu + at) seen = 1;
+        if (!seen && nlogged < 16) {
+            logged[nlogged++] = (unsigned)(unsigned long)menu + at;
+            x360_log("x360 boards: menu vtable "); x360_log_num((long)*(unsigned *)menu);
+            x360_log(" board "); x360_log_num((long)board);
+            x360_log(" entity "); x360_log_num((long)entity);
+            x360_log(entity && *(void **)entity == entity_vtable ? " an Entity" : " not an Entity's vtable");
+            if (entity) { x360_log(" vtable "); x360_log_num((long)*(unsigned *)entity); }
+            x360_log("\r\n");
+        }
+        if (!entity || *(void **)entity != entity_vtable) return;
+        set_vis(entity, 0, visible);
+        if (parent_scene_node && node_vis && node_parent) {
+            node = parent_scene_node(entity, 0);
+            up = node ? node_parent(node, 0) : 0;
+            if (node && up) node_vis(node, 0, visible, 1);
+        }
     } __except (1) { }
 }
 static void boards_tick(void) {
