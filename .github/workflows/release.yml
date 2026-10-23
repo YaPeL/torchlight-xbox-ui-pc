@@ -57,7 +57,7 @@ jobs:
       - name: Build tools
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates file
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
