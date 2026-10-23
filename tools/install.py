@@ -28,6 +28,8 @@ folders, x360_ui.ini, the mod's logs). Saves are not touched. With the 360's bag
 first (the original game deletes the items that do not fit PC's bag) and offers PC's bag instead
 (the default; then load and save each character, and uninstall); uninstalling anyway (a yes, or
 --anyway) backs the saves up first.
+Once the 360's bag was used, uninstall with PC's bag back asks whether each character was loaded
+and saved with it (no by default, --yes included; --anyway answers yes) and backs the saves up.
 
 The questions are asked in windows (tkinter) when there is a display, else on the console
 (--console forces it); --yes takes the defaults (PC's bag; at uninstall with the 360's bag, PC's

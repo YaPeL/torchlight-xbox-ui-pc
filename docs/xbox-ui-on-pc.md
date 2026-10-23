@@ -3082,7 +3082,8 @@ the C++ one:
   aside, then removed. `X360UI_TEST_FAIL_AFTER_PROXY` makes a test's run fail at the end.
 - **The bag.** The 360's bag's warning (with uninstalling and the stores' verify, repair or
   update), the saves backed up first; the uninstaller with the 360's bag offering PC's bag (the
-  default) or uninstalling anyway with the saves backed up.
+  default) or uninstalling anyway with the saves backed up; once the 360's bag was used, with PC's bag
+  back, a question whether each character was loaded and saved with it, and a backup.
 - **The proxy.** Given with `--dll`, else the release's built in (`-DX360UI_PROXY_GOG`,
   `-DX360UI_PROXY_STEAM`). The real DLL is checked against proxy/cegui_exports.txt (built in).
 - **Questions.** Windows' own boxes and file dialog; on Linux zenity or kdialog when there is a
@@ -3142,4 +3143,5 @@ Both installers now write `bag_360_used=1` with the 360's bag and keep it throug
 and switches; with it and PC's bag, uninstall asks whether each character was loaded and saved
 with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then backs the saves up
 before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
-same ini, refusal, backup and folder).
+same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
+without the flag after a switch is out there.

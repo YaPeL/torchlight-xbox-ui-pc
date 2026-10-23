@@ -565,19 +565,27 @@ class InstallCppTest(unittest.TestCase):
                 if "-backup-" in d:
                     __import__("shutil").rmtree(os.path.join(os.path.dirname(saves), d))
         self.same_install()
+        for who in ("py", "cpp"):                                                       # a reinstall keeps it
+            self.assertEqual(self.install(who, "--bag", "pc").returncode, 0)
+        self.same_install()
         for who in ("py", "cpp"):
             with open(os.path.join(self.games[who][0], "x360_ui.ini"), "rb") as f:
                 ini = f.read()
             self.assertIn(b"bag=pc\r\nbag_360_used=1\r\n", ini, who)
+        no_backup = lambda saves: not any("-backup-" in d for d in os.listdir(os.path.dirname(saves)))
         for who in ("py", "cpp"):
             game, saves = self.games[who]
+            installed = _tree(game)
             r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
                                env=self.env, input="n\n")
             self.assertNotEqual(r.returncode, 0, who)                                  # not confirmed: not uninstalled
-            self.assertIn("x360_ui.ini", os.listdir(game))
+            self.assertEqual(_tree(game), installed, who)
+            self.assertTrue(no_backup(saves), who)
             r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--yes", "--console"], capture_output=True,
                                text=True, env=self.env)
             self.assertNotEqual(r.returncode, 0, who)                                  # --yes: the default, no
+            self.assertEqual(_tree(game), installed, who)
+            self.assertTrue(no_backup(saves), who)
             r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
                                env=self.env, input="y\n")
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
