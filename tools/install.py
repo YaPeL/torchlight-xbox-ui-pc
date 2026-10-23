@@ -448,7 +448,7 @@ def check_real_dll(game, exports_list=cegui_exports.LIST):
         raise SystemExit(f"{real} is not the CEGUIBase.dll this mod is made for ({len(diff)} exports differ).")
 
 
-def pick_game(given):
+def pick_game(given, ask=None):
     if given:
         game = os.path.realpath(given)
         if not is_game(game):
@@ -465,12 +465,22 @@ def pick_game(given):
             print(f"{store}: {path}: a build this version does not support yet, left alone.")
     if not supported:
         raise SystemExit("No supported PC Torchlight found; give its folder with --game.")
+    if len(supported) > 1:
+        # More than one: each shown, and the player says which (--yes: the first, said so).
+        found = f"{len(supported)} supported PC Torchlights were found:\n" + "\n".join(f"{s}: {p}" for s, p in supported)
+        if not ask or ask.yes:
+            print(found + f"\nusing {supported[0][0]}: {supported[0][1]} (--game picks another)")
+            return supported[0][1], build_of(supported[0][1])
+        for i, (store, path) in enumerate(supported):
+            if ask.yes_no(found + f"\n\nUse {store}: {path}?", default=i == 0):
+                return path, build_of(path)
+        raise SystemExit("No game chosen; give its folder with --game.")
     return supported[0][1], build_of(supported[0][1])
 
 
 def do_install(args):
     ask = Ask(args.get("console"), args.get("yes"))
-    game, build = pick_game(args.get("game"))
+    game, build = pick_game(args.get("game"), ask)
     if build not in PROXY_FILES:
         raise SystemExit(f"{game}: a build this version does not support yet.")
     print(f"the game: {game} ({build} build)")
@@ -516,7 +526,7 @@ def do_install(args):
 
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
-    game, _ = pick_game(args.get("game"))
+    game, _ = pick_game(args.get("game"), ask)
     backups = []
     if read_ini(game).get("bag", "pc") == "360":
         if not args.get("anyway") and ask.yes_no(

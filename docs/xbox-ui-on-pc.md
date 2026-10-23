@@ -3159,3 +3159,12 @@ with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then ba
 before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
 same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
 without the flag after a switch is out there.
+
+**Two games found (the GPU agent's review, a low point; 2026-10-23).** With more than one
+supported game and no `--game`, both installers list them; on the console or in windows each is
+offered in turn (the first by default) and the one taken is installed or uninstalled; `--yes`
+takes the first and prints which, so a run without a console still says where it went. Test:
+`test_two_games_shown_and_chosen` (both installers, the same lines). The elevated run passes
+`--game` (no second question). The junction risk (the elevated run writes backups into folders the
+first run names, which a junction could redirect) stays documented as low: UAC is not a security
+boundary, and the folders are the user's own.

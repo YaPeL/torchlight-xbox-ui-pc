@@ -594,6 +594,35 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(len(backups), 1, who)
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
 
+    def test_two_games_shown_and_chosen(self):
+        """Two supported games found: both installers name them; --yes takes the first and says so;
+        on the console a no to the first and a yes to the second installs into the second."""
+        import shutil
+        home = os.path.join(self.root, "home2")
+        games = [os.path.join(home, n, "p", "x", "drive_c", "GOG Games", "Torchlight") for n in ("a", "b")]
+        env = dict(self.env, HOME=home, USERPROFILE=home)
+        cmd = lambda who: [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+        outs = {}
+        for who in ("py", "cpp"):
+            shutil.rmtree(home, ignore_errors=True)
+            for g in games:
+                shutil.copytree(self.games["py"][0], g)
+            common = ["install", "--x360-dir", self.x360, "--console", "--dll", self.proxy, "--bag", "pc"]
+            r = subprocess.run(cmd(who) + common + ["--yes"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            outs[who] = [l for l in r.stdout.splitlines() if "supported PC Torchlights" in l or l.startswith(("gog: ", "using "))]
+            order = [l[len("gog: "):] for l in outs[who] if l.startswith("gog: ")]   # as found
+            self.assertEqual(sorted(order), sorted(os.path.realpath(g) for g in games), who)
+            self.assertIn("x360_ui.ini", os.listdir(order[0]), who)                   # --yes: the first
+            self.assertNotIn("x360_ui.ini", os.listdir(order[1]), who)
+            shutil.rmtree(order[0]); shutil.copytree(self.games["py"][0], order[0])
+            r = subprocess.run(cmd(who) + common, capture_output=True, text=True, env=env, input="n\ny\n")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertNotIn("x360_ui.ini", os.listdir(order[0]), who)                # no to the first, yes to the second
+            self.assertIn("x360_ui.ini", os.listdir(order[1]), who)
+        self.assertEqual(outs["cpp"], outs["py"])
+        self.assertEqual(len([l for l in outs["py"] if l.startswith("gog: ")]), 2)
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""

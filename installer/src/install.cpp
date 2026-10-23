@@ -736,7 +736,7 @@ Args parse(const std::vector<std::string>& argv) {
   return a;
 }
 
-std::pair<fs::path, std::string> pick_game(const std::string& given) {
+std::pair<fs::path, std::string> pick_game(const std::string& given, Ask& ask, bool yes) {
   if (!given.empty()) {
     std::error_code ec;
     const fs::path g = fs::weakly_canonical(fs::absolute(P(given)), ec);
@@ -749,14 +749,29 @@ std::pair<fs::path, std::string> pick_game(const std::string& given) {
       std::cout << store << ": " << path << ": its build is supported experimentally (not yet played with the mod); give it with --game to install there.\n";
   for (const auto& [store, path] : games)
     if (build_of(path) == "unknown") std::cout << store << ": " << path << ": a build this version does not support yet, left alone.\n";
+  std::vector<std::pair<std::string, std::string>> supported;
   for (const auto& [store, path] : games)
-    if (build_of(path) != "unknown" && !is_experimental(build_of(path))) return {P(path), build_of(path)};
-  throw Exit("No supported PC Torchlight found; give its folder with --game.");
+    if (build_of(path) != "unknown" && !is_experimental(build_of(path))) supported.push_back({store, path});
+  if (supported.empty()) throw Exit("No supported PC Torchlight found; give its folder with --game.");
+  if (supported.size() > 1) {
+    // More than one: each shown, and the player says which (--yes: the first, said so).
+    std::string found = std::to_string(supported.size()) + " supported PC Torchlights were found:";
+    for (const auto& [store, path] : supported) found += "\n" + store + ": " + path;
+    if (yes) {
+      std::cout << found << "\nusing " << supported[0].first << ": " << supported[0].second << " (--game picks another)\n";
+      return {P(supported[0].second), build_of(supported[0].second)};
+    }
+    for (size_t i = 0; i < supported.size(); i++)
+      if (ask.yes_no(found + "\n\nUse " + supported[i].first + ": " + supported[i].second + "?", i == 0))
+        return {P(supported[i].second), build_of(supported[i].second)};
+    throw Exit("No game chosen; give its folder with --game.");
+  }
+  return {P(supported[0].second), build_of(supported[0].second)};
 }
 
 int do_install(const Args& args) {
   Ask ask(args.console, args.yes);
-  auto [game, build] = pick_game(args.game);
+  auto [game, build] = pick_game(args.game, ask, args.yes);
   if (build == "unknown") throw Exit(S(game) + ": a build this version does not support yet.");
   std::cout << "the game: " << S(game) << " (" << build << " build)\n";
   check_real_dll(S(game));
@@ -878,7 +893,7 @@ int do_install(const Args& args) {
 
 int do_uninstall(const Args& args) {
   Ask ask(args.console, args.yes);
-  auto [game, build] = pick_game(args.game);
+  auto [game, build] = pick_game(args.game, ask, args.yes);
   (void)build;
   bool backup = false;
   if (read_ini(game)["bag"] == "360") {
