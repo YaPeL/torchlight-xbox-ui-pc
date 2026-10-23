@@ -6,17 +6,34 @@
 param([string]$Installer, [string]$Fixture, [string]$GogProxy, [string]$SteamProxy)
 $ErrorActionPreference = "Stop"
 function Fail($text) { Write-Error "check_release: $text"; exit 1 }
-function Tree($dir) {
-  Get-ChildItem -LiteralPath $dir -Recurse -File | Sort-Object FullName |
-    ForEach-Object { $_.FullName.Substring($dir.Length) + " " + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+function Tree($dir) {  # every folder and file (hidden ones too), with the files' hashes
+  Get-ChildItem -LiteralPath $dir -Recurse -Force | Sort-Object FullName | ForEach-Object {
+    if ($_.PSIsContainer) { "folder " + $_.FullName.Substring($dir.Length) }
+    else { $_.FullName.Substring($dir.Length) + " " + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+  }
 }
 function Hash($file) { (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash }
-if (Get-Command python -ErrorAction SilentlyContinue) { Fail "Python is on this machine" }
-if (Get-Command clang -ErrorAction SilentlyContinue) { Fail "clang is on this machine" }
+foreach ($tool in "python", "python3", "py", "clang", "clang-cl", "cl", "gcc", "g++", "cc") {
+  if (Get-Command $tool -ErrorAction SilentlyContinue) { Fail "$tool is on this machine" }
+}
 $env:USERPROFILE = Join-Path $Fixture "home"
 $env:APPDATA = Join-Path $Fixture "home\AppData\Roaming"
 New-Item -ItemType Directory -Force -Path $env:USERPROFILE | Out-Null
 $saves = Join-Path $Fixture "prefix\drive_c\users\me\AppData\Roaming\runic games\torchlight\save"
+# Windows' own layout: the game outside any drive_c, its saves in %APPDATA% (a copy of GOG's game).
+$winGame = Join-Path $Fixture "Program Files (x86)\GOG Galaxy\Games\Torchlight"
+$winSaves = Join-Path $env:APPDATA "runic games\torchlight\save"
+New-Item -ItemType Directory -Force -Path (Split-Path $winGame), $winSaves | Out-Null
+Copy-Item -LiteralPath (Join-Path $Fixture "prefix\drive_c\GOG Games\Torchlight") -Destination $winGame -Recurse
+Copy-Item -LiteralPath (Join-Path $saves "0.svt") -Destination $winSaves
+function CheckBackups($store, $savesDir) {
+  if ((Get-Content -Raw -LiteralPath (Join-Path $savesDir "0.svt")) -ne "a synthetic save") { Fail "${store}: the save was changed" }
+  $found = @(Get-ChildItem -LiteralPath (Split-Path $savesDir) -Directory | Where-Object { $_.Name -like "save-backup-*" })
+  if ($found.Count -lt 1) { Fail "${store}: no save backup" }
+  foreach ($b in $found) {
+    if ((Get-Content -Raw -LiteralPath (Join-Path $b.FullName "0.svt")) -ne "a synthetic save") { Fail "${store}: a backup differs from the save" }
+  }
+}
 
 function One($store, $game, $proxy, $bag, $extra) {
   $before = (Tree $game) -join "`n"
@@ -36,8 +53,8 @@ function One($store, $game, $proxy, $bag, $extra) {
 $out = & $Installer list 2>&1 | Out-String
 if ($LASTEXITCODE -eq 0 -or $out -notmatch "No PC Torchlight found.") { Fail "list: $out" }
 One "gog" (Join-Path $Fixture "prefix\drive_c\GOG Games\Torchlight") $GogProxy "360" @()
-$backups = @(Get-ChildItem -LiteralPath (Split-Path $saves) -Directory | Where-Object { $_.Name -like "save-backup-*" })
-if ($backups.Count -lt 1) { Fail "gog: no save backup" }
-foreach ($b in $backups) { if ((Hash (Join-Path $b.FullName "0.svt")) -ne (Hash (Join-Path $saves "0.svt"))) { Fail "gog: a backup differs" } }
+CheckBackups "gog" $saves
+One "gog-windows" $winGame $GogProxy "360" @()
+CheckBackups "gog-windows" $winSaves
 One "steam" (Join-Path $Fixture "steam\Torchlight") $SteamProxy "pc" @("--experimental")
 Write-Output "check_release: OK"

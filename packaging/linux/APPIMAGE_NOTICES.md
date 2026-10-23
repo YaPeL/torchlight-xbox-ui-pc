@@ -4,15 +4,14 @@ The Linux release, `x360ui-install-x86_64.AppImage`, starts with the AppImage ru
 program that mounts the image and starts the installer, which does not link it. It is
 type2-runtime `8f39b89`, pinned by SHA-256 in `packaging/linux/get_tools.sh` and passed to
 appimagetool 1.9.1. It links these statically: musl libc, libfuse 3.15.0 (with type2-runtime's
-`patches/libfuse/mount.c.diff`), squashfuse 0.5.2, zstd and zlib, from Alpine Linux 3.21.
+`patches/libfuse/mount.c.diff`), squashfuse 0.5.2, zstd and zlib 1.3.2, built on Alpine Linux.
 
-libfuse is LGPL-2.1. Its source is libfuse 3.15.0
-(`https://github.com/libfuse/libfuse/releases/tag/fuse-3.15.0`) with the patch and build scripts of
-type2-runtime at that version (`https://github.com/AppImage/type2-runtime/tree/8f39b89`:
-`patches/libfuse/mount.c.diff`, `scripts/`). The runtime is open source (MIT) and built by those
-public scripts, so a user can rebuild it with a modified libfuse and repack the image:
-`--appimage-extract`, then `appimagetool --runtime-file RUNTIME squashfs-root` (LGPL-2.1 section
-6(a)).
+libfuse is LGPL-2.1. Its complete source goes with every release, as files of the release itself
+(`packaging/linux/get_sources.sh`, pinned by SHA-256): `fuse-3.15.0.tar.xz`, and
+`type2-runtime-8f39b89.tar.gz`, whose `patches/libfuse/mount.c.diff` and `scripts/` build the
+runtime from it. The runtime is open source (MIT), so a user can rebuild it with a modified
+libfuse and repack the image: `--appimage-extract`, then `appimagetool --runtime-file RUNTIME
+squashfs-root` (LGPL-2.1 section 6(a)).
 
 The installer itself links libstdc++ and libgcc statically. That is allowed for any program by the
 GCC Runtime Library Exception 3.1; the installer's own code and its other parts are listed in
@@ -166,7 +165,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ### zlib (in the AppImage runtime)
 
 ```
- (C) 1995-2024 Jean-loup Gailly and Mark Adler
+ (C) 1995-2026 Jean-loup Gailly and Mark Adler
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages

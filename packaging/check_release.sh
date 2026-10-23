@@ -13,7 +13,11 @@ mkdir -p "$HOME"
 cd "$fx"
 fail() { echo "check_release: $*" >&2; exit 1; }
 same() { [ "$(sha256sum < "$1")" = "$(sha256sum < "$2")" ]; }   # no cmp: diffutils may be missing
-tree() { (cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do sha256sum "$f"; done) }
+tree() {  # every folder and file (hidden ones too), with the files' hashes
+  (cd "$1" && find . | LC_ALL=C sort | while read -r f; do
+    if [ -f "$f" ]; then sha256sum "$f"; else echo "folder $f"; fi
+  done)
+}
 saves="$fx/prefix/drive_c/users/me/AppData/Roaming/runic games/torchlight/save"
 
 out=$("$inst" list 2>&1) && fail "list found a game in an empty home: $out"
@@ -33,8 +37,9 @@ one() {  # STORE GAME PROXY BAG [EXTRA]
   echo "check_release: $store installed and uninstalled"
 }
 one gog "$fx/prefix/drive_c/GOG Games/Torchlight" "$gog_proxy" 360
+[ "$(cat "$saves/0.svt")" = "a synthetic save" ] || fail "gog: the save was changed"
 backups=$(ls -d "$saves"-backup-* 2>/dev/null | wc -l)
 [ "$backups" -ge 1 ] || fail "gog: no save backup"
-for b in "$saves"-backup-*; do same "$b/0.svt" "$saves/0.svt" || fail "gog: a backup differs from the save"; done
+for b in "$saves"-backup-*; do [ "$(cat "$b/0.svt")" = "a synthetic save" ] || fail "gog: a backup differs from the save"; done
 one steam "$fx/steam/Torchlight" "$steam_proxy" pc --experimental
 echo "check_release: OK"

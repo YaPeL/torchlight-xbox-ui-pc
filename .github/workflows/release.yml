@@ -2,15 +2,16 @@ name: Release
 # The installer's release: GOG's and Steam's proxies built from proxy/cegui_exports.txt, the
 # Windows executable and the Linux AppImage with both built in, each checked from the artifacts
 # where there is no Python or compiler (clean containers) on synthetic games, then SHA256SUMS. A
-# tag v* makes a draft release, which the owner reads and publishes; a manual run or a pull request
-# makes only the artifacts.
+# pushed tag v* makes a draft release, which the owner reads and publishes; a manual run or a pull
+# request makes only the artifacts.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
   # A pull request that changes what the release is made of runs it all but the draft.
   pull_request:
-    paths: ["installer/**", "packaging/**", "proxy/**", "tools/build_proxy.py", "tests/release_fixture.py",
+    paths: ["installer/**", "packaging/**", "proxy/**", "data/prompts/**", "tools/build_proxy.py", "tools/cegui_exports.py",
+            "tests/release_fixture.py", "tests/test_installer_cpp.py", "tests/test_tools.py", "LICENSE",
             ".github/workflows/release.yml"]
 permissions:
   contents: read
@@ -125,7 +126,7 @@ jobs:
           path: proxies
       - name: No Python or compiler here
         run: |
-          for tool in python3 python clang gcc cc; do
+          for tool in python3 python clang gcc g++ cc c++; do
             if command -v "$tool"; then echo "$tool is in this container" >&2; exit 1; fi
           done
       - name: Install and uninstall from the AppImage
@@ -159,27 +160,61 @@ jobs:
             -GogProxy C:\w\proxies\CEGUIBase-gog.dll -SteamProxy C:\w\proxies\CEGUIBase-steam.dll
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+  check-appimage-fuse:
+    # The AppImage as users start it (the runtime mounts it with FUSE), on a host: containers
+    # cannot mount without privileges, so the checks above extract and run it.
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: dist
+      - name: Mounted, not extracted
+        run: |
+          command -v fusermount3 || command -v fusermount || { sudo apt-get update && sudo apt-get install -y fuse3; }
+          chmod +x dist/x360ui-install-x86_64.AppImage
+          mkdir "$RUNNER_TEMP/home"
+          out=$(HOME="$RUNNER_TEMP/home" dist/x360ui-install-x86_64.AppImage list 2>&1) && { echo "$out"; exit 1; }
+          echo "$out"
+          echo "$out" | grep -q "No PC Torchlight found."
+
   release:
-    needs: [check-linux, check-windows]
+    needs: [check-linux, check-windows, check-appimage-fuse]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Files, notices, the runtime's LGPL source, and checksums
+        run: |
+          mkdir release
+          cp artifacts/linux/x360ui-install-x86_64.AppImage artifacts/windows/x360ui-install.exe \
+             artifacts/proxies/CEGUIBase-gog.dll artifacts/proxies/CEGUIBase-steam.dll release/
+          cp LICENSE release/LICENSE.txt
+          cp installer/third_party/NOTICES.md release/THIRD_PARTY_NOTICES.md
+          cp packaging/linux/APPIMAGE_NOTICES.md release/APPIMAGE_NOTICES.md
+          packaging/linux/get_sources.sh release
+          (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/
+
+  draft:
+    # Only a pushed v* tag: the one job that may write, and only a draft, which the owner publishes.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: release
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-      - name: Files and checksums
-        run: |
-          mkdir release
-          cp artifacts/linux/x360ui-install-x86_64.AppImage artifacts/windows/x360ui-install.exe \
-             artifacts/proxies/CEGUIBase-gog.dll artifacts/proxies/CEGUIBase-steam.dll release/
-          (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
-      - uses: actions/upload-artifact@v4
-        with:
           name: release
-          path: release/
+          path: release
       - name: Draft release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
