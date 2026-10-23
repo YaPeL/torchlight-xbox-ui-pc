@@ -1,5 +1,6 @@
 """Tests of the tools, on synthetic data only (no game file)."""
 import json
+import glob
 import os
 import struct
 import subprocess
@@ -766,6 +767,34 @@ class InstallTest(unittest.TestCase):
                 install.build_proxy.remove = saved
             self.assertEqual(removed, [os.path.realpath(game)])
             self.assertEqual(sorted(os.listdir(game)), ["CEGUIBase.dll", "Torchlight.exe"])
+
+    def test_uninstall_with_the_360_bag_warns_first(self):
+        with tempfile.TemporaryDirectory() as home:
+            game = os.path.join(home, "prefix", "drive_c", "GOG Games", "Torchlight")
+            fake_game(game)
+            saves = os.path.join(home, "prefix", "drive_c", "users", "me", "AppData", "Roaming", "runic games",
+                                 "torchlight", "save")
+            os.makedirs(saves)
+            write(os.path.join(saves, "0.svt"), "hero")
+            install.write_ini(game, os.path.join(game, "x360ui"), "360")
+            removed = []
+            saved = install.build_proxy.remove
+            try:
+                install.build_proxy.remove = lambda g: removed.append(g) or True
+                with unittest.mock.patch.dict(os.environ, {"HOME": home}), unittest.mock.patch("sys.stdout"):
+                    # --yes takes the safe default: PC's bag installed, nothing removed.
+                    self.assertEqual(install.main(["uninstall", "--game", game, "--yes"]), 0)
+                    self.assertEqual(install.read_ini(game)["bag"], "pc")
+                    self.assertEqual(removed, [])
+                    install.write_ini(game, os.path.join(game, "x360ui"), "360")
+                    # --anyway: uninstalled, the saves backed up first.
+                    self.assertEqual(install.main(["uninstall", "--game", game, "--anyway", "--console"]), 0)
+            finally:
+                install.build_proxy.remove = saved
+            self.assertEqual(removed, [os.path.realpath(game)])
+            backups = glob.glob(saves + "-backup-*")
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(Path(backups[0], "0.svt").read_text(), "hero")
 
 
 def stfs_package(files, title=0x58410A7E, content_type=0x000D0000, contiguous=True):

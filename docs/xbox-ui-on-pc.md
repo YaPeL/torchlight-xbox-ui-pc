@@ -2928,3 +2928,11 @@ in the log and in `x360_stop.txt` beside the game, and PC's own modal opened wit
 `0xa85418`), which the 360's modal shows and which takes the pad, keyboard and mouse as PC's modal
 does; when it closes, `TerminateProcess`. Not run yet.
 
+**The warning without the mod (the owner, 2026-10-23).** In three places, in English (the
+installer's only language): the installer's question for the 360's bag (`BAG_WARNING`, with
+`NO_MOD_WARNING`: without the mod, uninstalled or removed by a store's verify, repair or update,
+the original game deletes the items that do not fit PC's bag; before uninstalling, PC's bag, then
+load and save each character); the uninstaller with the 360's bag installed (PC's bag instead, the
+default and `--yes`'s; or uninstall anyway, confirmed or `--anyway`, the saves backed up first);
+the README's "The 360's bag and your saves".
+
