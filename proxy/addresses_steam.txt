@@ -60,9 +60,11 @@
 0x0049511b 0x004930bb verified   comment window, local
 0x00499e10 0x00497dc0 verified   code    window, body, callers x4
 0x0049a390 0x00498340 verified   code    window, body, callers
+0x0049f700 0x0049d580 verified   comment window, body, callers
 0x0049f85f 0x0049d6c3 verified   code    window, local
 0x0049f880 0x0049d6e4 verified   code    window, local
 0x0049f88f 0x0049d6f3 verified   code    window, local
+0x0049f8ee 0x0049d752 verified   code    window, local
 0x004a2220 0x004a0040 verified   code    callers x3
 0x004b2590 0x004b0230 verified   code    callers x3
 0x004b28f0 0x004b0570 verified   code    callers x5
@@ -83,6 +85,9 @@
 0x004d2780 0x004b1410 verified   code    window, callers x6
 0x004d90d0 0x004d6670 verified   code    window, callers x2
 0x004d90f0 0x004d6690 verified   code    window, body, callers x6
+0x004dbc40 0x004d9220 verified   comment window, body, callers
+0x004dbc8d 0x004d925f verified   code    window, local
+0x004dbc9c 0x004d926e checked    code    the call after 0x4d925f's twin (push 0x15, push 2, call 0x4e7370), read in Steam's disassembly
 0x004e71b0 0x004e4630 verified   comment window, callers x6
 0x004e7330 0x004e47b0 verified   comment window, callers x5
 0x004e75d0 0x004e4b10 verified   code    window, body, callers x2
