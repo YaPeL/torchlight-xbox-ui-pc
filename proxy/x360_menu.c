@@ -1971,7 +1971,8 @@ static void __fastcall modal_show_hook(void *gui, void *edx, msvc_wstring title,
         wide_to_utf8(&body, ench_result, sizeof ench_result);
         dtor(&title, 0);
         dtor(&body, 0);
-        x360_log("x360 enchanter: the result taken from the act, PC's modal not opened\r\n");
+        x360_log("x360 enchanter: the result taken from the act, PC's modal not opened: ");
+        x360_log(ench_result); x360_log("\r\n");
         return;
     }
     ((orig_fn)(void *)modal_tramp)(gui, edx, title, body, x);
@@ -2024,6 +2025,21 @@ static void ench_fill(unsigned char *item) {
     text(win_of(ENCH_PREFIX, "title"), x360_text("title.enchanter"));
     /* The result, yellow in the layout, under the disenchant chance until the next A (in-game/22-24). */
     text(win_of(ENCH_PREFIX, "resultofenchant"), ench_result);
+    {
+        /* A diagnosis (QA run 21: the result taken, not seen): the window's text and visibility. */
+        static char logged[64];
+        if (ench_result[0] && ench_result[0] != logged[0]) {
+            typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+            static vis_fn vis;
+            void *w = win_of(ENCH_PREFIX, "resultofenchant");
+            char now[256];
+            if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+            read_prop(w, "Text", now, sizeof now);
+            x360_log("x360 enchanter: the page's result window "); x360_log(w ? "found" : "missing");
+            x360_log(w && vis && vis(w, 0, 0) ? ", shown" : ", not shown"); x360_log(", text: "); x360_log(now); x360_log("\r\n");
+            logged[0] = ench_result[0];
+        } else if (!ench_result[0]) logged[0] = 0;
+    }
     if (!item) {
         text(win_of(ENCH_PREFIX, "priceofenchantment"), "");
         text(win_of(ENCH_PREFIX, "disenchantChance"), "");
