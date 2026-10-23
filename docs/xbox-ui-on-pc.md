@@ -2329,10 +2329,12 @@ inventory (section 13), so each run's batch is one.
     the effects (test/04);
   - the pet to town and its return modal with the bars (in-game/16).
 - Found:
-  - **The enchanter lost the item.** After A on Enchant (a "nothing happens" result), the item was
-    no longer in slot 14 right after `GOG_ENCHANT_ACT`, PC's menu closed and the item was in no
-    bag, the pet's or the floor. PC's act seems to keep the item until its modal is answered; the
-    port closes PC's menu before that. To read in `0x57a800` before any change.
+  - The enchanter seemed to lose the item (the user did not find it after a "nothing happens"
+    result), but it was not lost: the log lists it in the bag's slot 24 (where it was before) until
+    the run's end, and the card showed it later. PC's act itself takes the item out of slot 14
+    (`0x4e9ca0`, at `0x57b619`) and picks it up into the bag (`0x4e9a30`, `0x57b62a`), dropping it
+    at the hero (`0x4f5960`) only if the bag is full; the port's "the item is gone" log line only
+    meant slot 14 was empty. To reword.
   - **The gem goblins' and the enchanter's results** still went to the modal and closed the page:
     PC's modal does not exist yet when the act returns (the log shows neither "taken" nor "opened
     again"), so it has to be taken from the frame tick when it appears.
