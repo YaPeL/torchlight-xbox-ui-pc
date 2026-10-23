@@ -1942,6 +1942,60 @@ static void update_info(void) {
 #define ENCH_PREFIX "x360ench_"
 static void *ench_root;
 static char ench_result[512];            /* the last result of the enchanter or a gem goblin, shown in their page */
+/* PC's modal (CGameUI 0x54cad0, thiscall: title and text std::wstring by value, an int; callee
+ * pops 0x3c) is called by the enchant act itself (0x57a800, at 0x57b6c9 and its other branches),
+ * yet showed seconds later (QA runs 6, 20: after its 3D sign's fall). Hooked: during the act its
+ * text is taken there and then for the 360's page and PC's modal not opened, the result at once as
+ * the 360's (the user, QA run 20). Its first 7 bytes (push -1; push imm32) run from a copy. */
+typedef struct { void *al; union { unsigned short buf[8]; unsigned short *ptr; } bx; unsigned size, res; } msvc_wstring;
+static int ench_acting;
+static unsigned char modal_tramp[16];
+static void wide_to_utf8(const msvc_wstring *w, char *out, unsigned size) {
+    const unsigned short *p = w->res >= 8 ? w->bx.ptr : w->bx.buf;
+    unsigned i, o = 0;
+    for (i = 0; p && i < w->size && o + 4 < size; i++) {
+        unsigned c = p[i];
+        if (c >= 0xd800 && c < 0xdc00 && i + 1 < w->size) { c = 0x10000 + ((c - 0xd800) << 10) + (p[i + 1] - 0xdc00); i++; }
+        if (c < 0x80) out[o++] = (char)c;
+        else if (c < 0x800) { out[o++] = (char)(0xc0 | c >> 6); out[o++] = (char)(0x80 | (c & 0x3f)); }
+        else if (c < 0x10000) { out[o++] = (char)(0xe0 | c >> 12); out[o++] = (char)(0x80 | ((c >> 6) & 0x3f)); out[o++] = (char)(0x80 | (c & 0x3f)); }
+        else { out[o++] = (char)(0xf0 | c >> 18); out[o++] = (char)(0x80 | ((c >> 12) & 0x3f)); out[o++] = (char)(0x80 | ((c >> 6) & 0x3f)); out[o++] = (char)(0x80 | (c & 0x3f)); }
+    }
+    out[o] = 0;
+}
+static void __fastcall modal_show_hook(void *gui, void *edx, msvc_wstring title, msvc_wstring body, int x) {
+    typedef void (__fastcall *orig_fn)(void *gui, void *edx, msvc_wstring title, msvc_wstring body, int x);
+    typedef void (__fastcall *dtor_fn)(void *self, void *edx);
+    if (ench_acting) {
+        dtor_fn dtor = *(dtor_fn *)0x00a85390;   /* msvcp90's ~basic_string<wchar_t>, as PC's own */
+        wide_to_utf8(&body, ench_result, sizeof ench_result);
+        dtor(&title, 0);
+        dtor(&body, 0);
+        x360_log("x360 enchanter: the result taken from the act, PC's modal not opened\r\n");
+        return;
+    }
+    ((orig_fn)(void *)modal_tramp)(gui, edx, title, body, x);
+}
+static void modal_hook_install(void) {
+    static const unsigned char want[7] = {0x6a, 0xff, 0x68, 0xd2, 0xce, 0x70, 0x00};
+    static int done;
+    unsigned char *f = (unsigned char *)0x0054cad0;
+    unsigned long old;
+    unsigned i;
+    if (done) return;
+    done = 1;
+    for (i = 0; i < 7; i++) if (f[i] != want[i]) { x360_log("x360 menu: PC's modal function not as expected, left\r\n"); return; }
+    for (i = 0; i < 7; i++) modal_tramp[i] = f[i];
+    modal_tramp[7] = 0xe9;
+    *(int *)(modal_tramp + 8) = (int)(f + 7) - (int)(modal_tramp + 12);
+    if (!VirtualProtect(modal_tramp, sizeof modal_tramp, 0x40, &old)) return;
+    if (!VirtualProtect(f, 7, 0x40, &old)) return;
+    f[0] = 0xe9;
+    *(int *)(f + 1) = (int)(void *)modal_show_hook - (int)(f + 5);
+    f[5] = f[6] = 0x90;
+    VirtualProtect(f, 7, old, &old);
+    x360_log("x360 menu: PC's modal hooked (the enchanter's result)\r\n");
+}
 static unsigned ench_pending;             /* when an act was done whose result PC's modal has yet to show */
 static void ench_fill(unsigned char *item) {
     char buf[160], *p;
@@ -2480,7 +2534,10 @@ static void enchant(void) {
         return;
     }
     ench_result[0] = 0;
+    modal_hook_install();
+    ench_acting = 1;
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    ench_acting = 0;
     /* The 360 writes the result in the page, yellow, and the page stays open: the gem goblins' in
      * getsocketresult or destroysocketresult (in-game/14), the enchanter's in resultofenchant
      * (in-game/22-24). PC shows it in its modal (0x54cad0, called from the act: 0x57b6c9 and
@@ -6270,11 +6327,12 @@ static void enchant_result_tick(void) {
         x360_log("x360 enchanter: no modal from PC in 20 s\r\n");
         return;
     }
-    if (!x360_modal_take(ench_result, sizeof ench_result)) return;
+    /* Taken by the modal hook during the act (at once), else from PC's modal when it shows. */
+    if (ench_result[0]) x360_log("x360 enchanter: the result shown in the page\r\n");
+    else if (!x360_modal_take(ench_result, sizeof ench_result)) return;
+    else { modal_skip_until = GetTickCount() + 500; x360_log("x360 enchanter: the result taken from PC's modal\r\n"); }
     flow_lines(ench_result);
     ench_pending = 0;
-    modal_skip_until = GetTickCount() + 500;
-    x360_log("x360 enchanter: the result taken from PC's modal\r\n");
     if (!en[ENCHANT_OPEN]) {
         ((open_type_fn)0x00575990)(en, 0, 1, at_enchant);
         x360_log(en[ENCHANT_OPEN] ? "x360 enchanter: PC's enchant menu opened again\r\n"
