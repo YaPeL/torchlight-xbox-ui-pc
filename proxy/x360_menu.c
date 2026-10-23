@@ -6994,6 +6994,7 @@ static struct { void *item, *owner, *inv; int slot; } load_aside[LOAD_ASIDE_MAX]
 static int load_aside_count, load_moved, load_stopped;
 int x360_test_no_stop;                 /* x360_ui.ini test_no_stop=1: a test, items kept aside never decided */
 static int load_overflow;              /* items past LOAD_ASIDE_MAX: kept alive (not tracked), the game stopped */
+static int load_puts;                  /* every item PC's loader put (logged per phase: which loads run when) */
 static int load_items_aside(void) {
     int k;
     if (load_overflow) return 1;
@@ -7045,6 +7046,7 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
     load_put_fn put = (load_put_fn)GOG_PUT_AT_SLOT;
     unsigned char *owner;
     int r = put(inv, 0, item, slot, flag), to;
+    load_puts++;
     if (r || !inv || !item || slot < EQUIPPED_SLOTS) return r;
     owner = *(unsigned char **)((unsigned char *)inv + 0x14);   /* CInventory's owner (0x4e953f reads it) */
     if (!load_armed) {
@@ -7237,7 +7239,18 @@ static void load_aside_tick(void) {
     int k, left = 0, need_pet = 0;
     unsigned char *pet = the_pet();
     static int was_in_play;
-    if (was_in_play && !hud_in_play) load_armed = 0;   /* play left: the title's load may follow */
+    {
+        /* Which loads run when (the review's question: does a level change load the hero's items
+         * again with the load not armed?): the items PC's loader put since the last log. */
+        static int logged_puts;
+        if (load_puts != logged_puts) {
+            x360_log("x360 load: PC's loader put "); x360_log_num(load_puts - logged_puts);
+            x360_log(load_armed ? " item(s), the load armed, " : " item(s), the load not armed, ");
+            x360_log(hud_in_play ? "in play\r\n" : "out of play\r\n");
+            logged_puts = load_puts;
+        }
+    }
+    if (was_in_play && !hud_in_play) { load_armed = 0; x360_log("x360 load: play left: the load not armed\r\n"); }
     was_in_play = hud_in_play;
     if (!hud_in_play) { frames_ready = 0; return; }   /* the title or a load: the units may be the title's */
     if (pet && !pet_logged) { pet_logged = 1; x360_log("x360 load: the pet is there, "); x360_log_num(frames_ready); x360_log(" frames into play\r\n"); }
