@@ -50,5 +50,6 @@ jobs:
       - name: Against the Python tools
         shell: bash
         run: |
-          bin=$(ls build-installer/x360ui-install build-installer/Release/x360ui-install.exe 2>/dev/null | head -1)
+          bin=build-installer/x360ui-install
+          [ -f "$bin" ] || bin=build-installer/Release/x360ui-install.exe
           X360UI_INSTALLER="$PWD/$bin" python3 -m unittest tests.test_installer_cpp -v
