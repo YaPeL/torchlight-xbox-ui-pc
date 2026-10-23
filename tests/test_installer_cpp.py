@@ -602,16 +602,35 @@ class InstallCppTest(unittest.TestCase):
         # Installed, then a failed uninstall: the install as it was.
         self.assertEqual(self.install("cpp", "--bag", "pc").returncode, 0)
         installed = _tree(game)
+        __import__("shutil").copytree(game, os.path.join(self.root, "installed-copy"))
         r = subprocess.run([BINARY, "uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True,
                            env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1"))
         self.assertNotEqual(r.returncode, 0)
         self.assertEqual(_tree(game), installed)
+        # A rollback that cannot put an original back: the undo folder kept (marked), the message says where,
+        # and an uninstall leaves it.
+        r = self.install("cpp", "--bag", "pc", env=dict(self.env, X360UI_TEST_FAIL_AFTER_PROXY="1", X360UI_TEST_FAIL_UNDO="1"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("could not be undone", r.stderr)
+        kept = [n for n in os.listdir(game) if n.startswith("x360ui-undo-")]
+        self.assertEqual(len(kept), 1)
+        self.assertIn(kept[0], r.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(game, kept[0], "x360ui-keep.txt")))
+        shutil = __import__("shutil")
+        shutil.rmtree(game)
+        shutil.copytree(os.path.join(self.root, "installed-copy"), game)
         # An undo folder a commit could not remove (a file in use): gone after an uninstall.
         os.makedirs(os.path.join(game, "x360ui-undo-123"))
         with open(os.path.join(game, "x360ui-undo-123", "0"), "wb") as f:
             f.write(b"an old proxy")
+        marked = os.path.join(game, "x360ui-undo-456")
+        os.makedirs(marked)
+        with open(os.path.join(marked, "x360ui-keep.txt"), "wb") as f:
+            f.write(b"kept")
         r = subprocess.run([BINARY, "uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(os.path.isdir(marked))                         # a marked one is the user's to look at
+        __import__("shutil").rmtree(marked)
         self.assertEqual(_tree(game), before)
         self.assertEqual(sorted(os.listdir(game)), sorted(before))
 

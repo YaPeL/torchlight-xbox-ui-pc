@@ -46,6 +46,8 @@ namespace {
 
 // What a rollback could not undo, added to the last message (an elevated run's console closes).
 std::string g_notes;
+// In an undo folder whose originals a rollback could not put back: uninstall leaves it.
+const char* const kKeepMark = "x360ui-keep.txt";
 
 const char* const kUsage =
     "x360ui-install [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]\n"
@@ -362,8 +364,7 @@ std::vector<fs::path> back_up_saves(const std::vector<fs::path>& folders) {
       const fs::path rel = fs::relative(it->path(), f);
       if (it->is_directory()) dirs.push_back(rel);
       else {
-        fs::last_write_time(copy / rel, fs::last_write_time(it->path()));
-        fs::permissions(copy / rel, fs::status(it->path()).permissions());
+        fs::last_write_time(copy / rel, fs::last_write_time(it->path()));   // the modes: copy_file keeps them
       }
     }
     for (auto d = dirs.rbegin(); d != dirs.rend(); ++d) fs::last_write_time(copy / *d, fs::last_write_time(f / *d));
@@ -497,16 +498,25 @@ class Change {
     for (auto it = steps_.rbegin(); it != steps_.rend(); ++it) {
       std::error_code ec;
       if (it->kind == Step::Created) fs::remove_all(it->a, ec);
-      else if (it->kind == Step::Renamed) fs::rename(it->b, it->a, ec);
+      else if (std::getenv("X360UI_TEST_FAIL_UNDO")) ec = std::make_error_code(std::errc::device_or_resource_busy);
       else fs::rename(it->b, it->a, ec);
       if (ec) {
+        failed = true;
         const std::string note = "could not undo a change to " + S(it->a) + ": " + ec.message();
         std::cerr << note << "\n";
         g_notes += "\n" + note;
       }
     }
     std::error_code ec;
-    fs::remove_all(undo_, ec);
+    if (!failed) {
+      fs::remove_all(undo_, ec);
+      return;
+    }
+    // What could not be put back is still in the undo folder: kept, marked so uninstall leaves it.
+    if (path_exists(undo_)) {
+      std::ofstream(undo_ / kKeepMark) << "The originals that could not be put back, in the order they were moved here.\n";
+      g_notes += "\nThe originals are in " + S(undo_) + ": put them back by hand.";
+    }
   }
 
  private:
@@ -517,7 +527,7 @@ class Change {
   static unsigned rand_id() { return unsigned(std::chrono::steady_clock::now().time_since_epoch().count() & 0xFFFFFF); }
   fs::path game_, undo_;
   std::vector<Step> steps_;
-  bool done_ = false;
+  bool done_ = false, failed = false;
 };
 
 // build_proxy.install, as steps of a Change.
@@ -910,7 +920,7 @@ int do_uninstall(const Args& args) {
     for (fs::directory_iterator it(game, ec), end; !ec && it != end; it.increment(ec)) {
       const std::string n = S(it->path().filename());
       if (n.rfind("x360ui-undo-", 0) == 0) {   // a commit's leftover (a file in use): removed after, as it can be
-        if (it->path() != ch.undo_folder()) leftovers.push_back(it->path());
+        if (it->path() != ch.undo_folder() && !path_exists(it->path() / kKeepMark)) leftovers.push_back(it->path());
         continue;
       }
       if (n.rfind("x360ui-build-", 0) == 0 || n.rfind("x360ui-work-", 0) == 0 ||
@@ -971,10 +981,13 @@ int installer_main(const std::vector<std::string>& argv) {
     if (a.command == "uninstall") return do_uninstall(a);
     return do_install(a);
   } catch (const Exit& e) {
-    report_error(e.what() + g_notes, argv);
+    report_error(e.what() + (g_notes.empty() ? "" : "\n\nThese changes could not be undone:" + g_notes), argv);
     return 1;
   } catch (const std::exception& e) {
-    report_error(std::string("error: ") + e.what() + "\nnothing was left half done (the game's folder is as it was)." + g_notes, argv);
+    report_error(std::string("error: ") + e.what() +
+                     (g_notes.empty() ? "\nnothing was left half done (the game's folder is as it was)."
+                                      : "\n\nThese changes could not be undone:" + g_notes),
+                 argv);
     return 1;
   }
 }
