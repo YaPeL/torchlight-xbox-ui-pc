@@ -85,10 +85,12 @@ This repository is the whole of this project; the recomp's repository is only a 
 |------|--------------|
 | `pe_info.py` | Sections, imports and exports of an `.exe`/`.dll` |
 | `compare_installs.py` | Two installs' binaries compared: hash, link time, sections, imports, exports |
+| `port_addresses.py` | GOG's addresses found in another `Torchlight.exe` build by independent ways (section 16) |
+| `compare_offsets.py` | The struct offsets of two builds' copies of the same functions compared (section 16) |
 | `compare_ui.py` | A 360 catalog screen against PC's dump of the same screen, window by window (section 14) |
 | `layout_windows.py` | The named windows of a CEGUI layout, and how many of them another layout has |
 | `convert_x360_ui.py` | Stage 0: the 360 UI files from the user's `pak.zip` into `OUT/media/ui/x360/` (section 6) |
-| `build_proxy.py` | Stage 1: builds the proxy `CEGUIBase.dll` from the user's DLL (clang-cl, lld-link); installs and removes it in a game folder |
+| `build_proxy.py` | Stage 1: builds the proxy `CEGUIBase.dll` from the user's DLL (clang-cl, lld-link), for GOG's build or, with `--target steam`, Steam's (section 16); installs and removes it in a game folder |
 | `grab_window.py` | A screenshot of the game's window (X11 under Xwayland) |
 | `send_input.py` | Mouse and keyboard input for the game, sent from inside its prefix (`send_input.exe`, built by `build_proxy.py`) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
@@ -2104,42 +2106,144 @@ what they still lack. The screens done are in section 14.
   yet.
 - The target bar's size, checked here only for the enemy.
 
-## 16. The Steam test: plan (for the user's approval, 2026-10-21)
+## 16. Steam: the port, done offline (2026-10-23), and the test still to run
 
-**On hold (the user's decision, 2026-10-21):** adapting the port to Steam, and to the Epic
-version, is thought about only once the interface port works on GOG. Until then this plan is a
-draft, and `tools/port_addresses.py` is not run against another build.
+**State:** phase A below is done, offline, at the coordinator's request (2026-10-23; the plan of
+2026-10-21 had put it on hold until the GOG port worked). Branch `steam-port`. Nothing was run:
+no game, no Proton, no wine. Steam's install was only read (`Torchlight.exe`, `CEGUIBase.dll`
+and the DLLs the proxy names, in `steamapps/common/Torchlight`); `tools/steam_guard.py verify`
+against the last snapshot (`steam-guard-qa21.json`) printed UNCHANGED before the work. Phase B,
+the one run, still waits for the user's OK. README's Steam badge stays "planned".
 
-Nothing here has been done; each phase starts only with the user's OK. Section 4's precautions
-hold throughout, and `tools/steam_guard.py snapshot` runs before each phase that reads Steam's
-folders, `verify` after it (UNCHANGED, or stop and tell the user).
+**Why a port is needed:** the proxy names 305 addresses of GOG's `Torchlight.exe` in
+`proxy/*.c`: 164 in its code (functions it calls, patch sites, vtables, IAT slots, strings and
+floats in `.rdata`, globals in `.data`), 141 in comments only (the GOG sites the comments cite).
+Steam's executable is build 17685 (timestamp `0x4b5f7519`), GOG's 17870 (`0x4ffc6815`), section 5:
+none of those addresses holds there as it is.
 
-**Why a plan is needed:** the proxy calls about 150 addresses of GOG's `Torchlight.exe` (152
-constants in `proxy/*.c`; the CGameUI menus, the player's hotbar, the shops' actions, the pad's
-movement). Steam's executable is another build (17685 against GOG's 17870, section 5), so none of
-those addresses holds there as it is. With GOG's addresses the proxy would call into the wrong
-code. The layouts, imagesets and fonts do carry over (section 5).
+### 16a. What differs between the two executables (read)
 
-**Phase A, offline (reads Steam's install once, writes nothing there):**
-1. Copy Steam's `Torchlight.exe` and `CEGUIBase.dll` to a folder outside the repository
-   (`~/torchlight-steam/bin/`), with steam_guard around the copy. After that, only the copies are
-   read.
-2. `tools/port_addresses.py GOG_EXE STEAM_EXE --source proxy`: for each GOG address, the one
-   place in Steam's build with the same bytes, once call displacements and in-image values are
-   masked. Checked on GOG against itself: 152 of 152 map to themselves, all code. Every
-   address it does not find, or finds by a short window, is located by hand in Steam's build,
-   from its callers.
-3. The struct offsets (CGameUI `+0x2d8..+0x31c`, the player's `+0x860`, the menus' fields) are
-   compared through the code that uses them: a site matched byte for byte keeps the offsets
-   written in it. An offset used only by the proxy is checked against a Steam site reading it.
-4. The proxy gets one address table per build, chosen at load from `Torchlight.exe`'s PE
-   timestamp. On an unknown build it hooks nothing and only the converted layouts load, so a
-   wrong table cannot run. The CEGUIBase proxy is built from Steam's DLL, exports by name; the
-   one import that differs (`UVector2(UDim, UDim)`) is forwarded like the rest.
-5. Tests for the table choice, on synthetic PE headers. Committed: the table of addresses (they
-   are numbers, not game files); not the copies.
+- **Code generation.** GOG's build has stack cookies (`/GS`: `mov eax,[cookie]; xor eax,esp` in
+  every function with a frame) and sets up its exception frames as `push -1; push handler;
+  mov eax,fs:[0]`; Steam's has no cookies and starts `mov eax,fs:[0]; push -1; push handler`. So
+  the first bytes of most functions with a frame differ, and their stack offsets (`[esp+0x24]`)
+  too. The rest of the code is the same, but for register allocation here and there.
+- **Steam's executable can be relocated:** its DllCharacteristics are `0x8140` (DYNAMIC_BASE) and
+  it has a `.reloc` section; GOG's has neither. Both are linked for `0x400000`. The proxy's
+  addresses assume that base (see 16d).
+- **Struct layouts: the same** wherever compared (16c).
 
-**Phase B, one run (the user's approval, and the agents told before and after):**
+### 16b. The address map: `proxy/addresses_steam.txt`
+
+`tools/port_addresses.py GOG_EXE STEAM_EXE --source proxy` (now with `--code-only` and
+`--table`) looks for each address in independent ways, and writes down the ones that agree:
+
+| Way | What |
+|-----|------|
+| window | GOG's bytes at the address, call displacements and in-image values masked, grown until one match is left in Steam's code; values pointing into `.rdata` compared by what they point at when several matches remain |
+| body | windows from inside the function, each match's function start (the function starts: 16-aligned call targets, vtable entries, code after int3 padding); two must agree |
+| callers | each GOG call site of the function matched inside its own function's copy, Steam's call target read |
+| vtable | the function's slot in a GOG vtable, the same slot of the Steam vtable with the same RTTI class |
+| local | an address inside a function: the window looked for only inside the function's copy |
+| near | code 48 to 256 bytes before and after matched alone, the address's window looked for only where each anchor puts it |
+| strings | the strings a function names, unique in both builds: the functions naming each, in address order, are as many in each build |
+| refs | for data: each code site holding the address matched (inside its function's copy), the 4 bytes there read |
+| rtti, import, string | a vtable by its class's RTTI name and locator offsets; an IAT slot by its DLL and function name; a string by its whole content, unique |
+
+The window, body and local ways may mask the stack displacements (`[esp+d]`, `[ebp+d]`) when they
+search inside a small region. A call site or reference matched in the whole code instead of its
+function's copy is weak: it never overrules the others. **verified:** two independent ways agree
+and none disagrees (or three and more outvote one call site matched elsewhere, a small caller
+like many). **single:** one way only. **unresolved:** none, or the ways disagree.
+
+The table (numbers and the ways' names only, no bytes of the game) has every one of the 305
+addresses:
+
+| Where the proxy names it | verified | checked by hand | single | unresolved |
+|---|---|---|---|---|
+| code (164, used by the build) | 160 | 4 | 0 | 0 |
+| comments only (141) | 112 | 0 | 19 | 10 |
+
+The four checked by hand, each with its evidence in the table:
+- `0x56cd00` (CConsole::executeCommandLine *(OT)*) -> `0x567f60`: its body after the prologue,
+  stack offsets masked, is once in each build; 29 direct call sites in each.
+- `0x591200` (the options menu's open) -> `0x58bd20`: COptionsMenu's vtable slot `+0x18`, the
+  strings it names (7th of 12 functions in both), the same instructions but the prologue, and its
+  callees and globals map as the table says (`0xf60d9c` -> `0xf36e34`, `0x5366f0` -> `0x532710`).
+  The body windows had chosen `0x5788b0`, a copy of the same code for CInventoryMenu: the body
+  way alone is not trusted.
+- `0x5d68e0` (a skill's kind text) -> `0x5d0580`: its one call site in each build, the same
+  instructions but the prologue, its neighbours `0x5d5c00` and `0x5d7d40` moved by the same amount.
+- `0x70ced2` (the modal function's exception handler, which the hook checks) -> `0x707622`: the
+  handler pushed by the verified modal function `0x5482f0`; a frame handler stub as GOG's is.
+
+Sanity checks on the result: every function pair's instructions compared over the whole function
+(addresses and stack offsets normalized): the least alike are the ones whose prologue and
+register use differ, none with other code. The comments' unresolved addresses (no Steam address in
+the table): `0x546c9f`, `0x549b70` (the ways disagree), `0x54f01f`, `0x5588e8`, `0x55b21b`,
+`0x55fcf0`, `0x562fb0`, `0x574477`, `0x57de89`, `0xab72b8`; and 19 found one way only (in the
+table as single). The proxy's code uses none of them.
+
+### 16c. Struct offsets
+
+- `tools/compare_offsets.py GOG_EXE STEAM_EXE proxy/addresses_steam.txt` disassembles both copies
+  of each function in the table (GNU objdump, up to the first int3 or the next call target) and
+  aligns their object field displacements (`[esi+0x304]`; not the stack's). Of 162 function pairs,
+  **148 have the same list**. The 14 others were read: a jump table decoded as code, an extra load
+  from register allocation, or code one build inlines and the other calls (the merchant's and
+  stash's updates, the combine menu's, the enchant act `0x57a800`); no field at another offset
+  (e.g. the transmute, `0x569550`, keeps `+0x1e4`, `+0x20`, `+0x8` and differs only in which
+  register holds the object). One constant differs: in `0x5e0fc0` (the skill text writer the
+  proxy's comments cite; the proxy calls `0x5d8c60`) `lea ebp,[edi+0x22]` with `edi` 0 in GOG is
+  `0x34` in Steam, a number, not a field (a text or index the later build changed).
+- Of the 97 offsets the proxy adds to an object, 86 appear at the same place in a pair. The 11
+  others were checked at the GOG site the proxy's comments cite and its Steam copy: the font's
+  `+0x424` (`0x55f5b0` -> `0x55a950`, 4 writes each), CEquipment's icon `+0x24c` (createIcon,
+  `0x4b9b70` -> `0x4b75b0`), CGameUI's `+0x1074` (the shop's click, 3 reads each), `+0x13d0` and
+  the skill's `+0x43`, `+0x180`, `+0x184` (`0x5404c0` -> `0x53bf40`), `+0x13ec` (the console, stored
+  after the same call at `0x5636a9` -> `0x55ea43`), the fishing player's `+0x79c`, `+0x7a0`,
+  `+0x7ac` (`0x57c950` -> `0x577830`): all the same. The hero's `+0x224` is only logged.
+- CGameUI's menus `+0x2cc..+0x31c`, `+0x304`, `+0x318`, `+0x16b8`, `+0x173d`, `+0x13f8`,
+  `+0x106c` are in pairs with the same lists (CGameUI's update `0x55d0c0` -> `0x558510`, 62
+  operands; the modal; the side-panel tests; the cursor function; the label loop `0x5578e0`, 589
+  operands, one extra load).
+
+**The patch sites, read in Steam's build** (all as the proxy expects):
+- the six hotkey jumps (`0x55d206` -> `0x55863a`, `0x55d282` -> `0x5586b6`, `0x55d2a4` ->
+  `0x5586d8`, `0x55d2c5` -> `0x5586f9`, `0x55d2e7` -> `0x55871b`, `0x55d318` -> `0x55874c`): the
+  same two bytes, and the code up to each new jump's target the same, so `eb 16` / `eb 07` land on
+  the next test as in GOG;
+- the side-panel tests (`0x541090` -> `0x53cb10`, `0x541130` -> `0x53cbb0`): `push ebx; push esi;
+  mov`;
+- the cursor function (`0x547ca0` -> `0x543660`): its first 7 bytes and the rest the same;
+- the modal (`0x54cad0` -> `0x5482f0`): `mov eax,fs:[0]; push -1; push 0x707622`, `ret 0x3c` as
+  GOG's;
+- the bag (`0x49f85f` -> `0x49d6c3`, `0x49f880` -> `0x49d6e4`, `0x49f88f` -> `0x49d6f3`): `push 21`,
+  both calls to addSection (`0x4e9a00` -> `0x4e7370`), the same code between but stack offsets.
+
+### 16d. The build, and what the proxy checks at load
+
+- `tools/build_proxy.py build REAL_DLL OUT --target steam` copies `proxy/*.c` to `OUT/src` with
+  every address in their code (outside comments and literals) replaced from the table's
+  verified and checked lines, and compiles them with `X360_TARGET_STEAM` defined; an address
+  without one stops the build. `--target gog` (the default) builds `proxy/*.c` as written. The
+  build refuses a REAL_DLL whose folder holds a `Torchlight.exe` of another build than the
+  target. Built here (2026-10-23), both variants, into `~/torchlight-gog/steam-port-build/{gog,steam}`,
+  Steam's from Steam's own `CEGUIBase.dll` (read): 3839 exports, the 10 hooked ones present; every
+  name the proxy resolves in CEGUIBase, OgreMain and msvcp90 is exported by Steam's DLLs too.
+- `X360_TARGET_STEAM` changes only the target build's timestamp and the modal hook's prologue
+  (Steam's: `mov eax,fs:[0]; push -1`, 8 bytes moved to the copy; GOG's: `push -1; push handler`,
+  7). The bag patch now checks that its two calls go to addSection (the mapped address) instead
+  of their displacement bytes.
+- At load the proxy logs the build it was made for, and if `Torchlight.exe`'s PE timestamp is not
+  that build's, or the executable is not at `0x400000`, it logs both and leaves the pad, the
+  360's screens and the bag patch off: only the converted scheme and layouts load (through CEGUI
+  and Ogre by name). Every byte check at the patch sites stays.
+
+### 16e. Phase B, one run (the user's approval, and the agents told before and after)
+
+Section 4's precautions hold, and `tools/steam_guard.py snapshot` before, `verify` after
+(UNCHANGED, or stop and tell the user).
 1. A prefix of its own (`~/torchlight-steam/compat`), never `compatdata/41500`. The game folder
    is copied into `~/torchlight-steam/game/`, so the proxy never lands in Steam's install. The
    test save comes from GOG's prefix (the mine save), not from the user's Steam saves.
@@ -2147,15 +2251,21 @@ code. The layouts, imagesets and fonts do carry over (section 5).
    `steam_appid.txt` with 41500 next to the copied executable, so Steamworks does not restart the
    game through Steam (`SteamAPI_RestartApp`, which would open it in the real prefix). The run
    script refuses `compatdata/41500` as `run_gog.sh` does, and runs without `steam` on the PATH.
-3. If the game exits at once, or Steam starts: stop, `verify`, tell the user. No second try
+3. The proxy built with `--target steam` from the copy's `CEGUIBase.dll`. First thing to read in
+   `x360_ui.log`: "built for Steam's build 17685" and no "is not Steam's build" line (the base:
+   Wine normally loads an executable at its preferred base even with DYNAMIC_BASE; **not seen
+   yet**). Then that the patches logged themselves (cursor hooked, modal hooked, hotkeys off 6 of
+   6, the bag if `bag=360`).
+4. If the game exits at once, or Steam starts: stop, `verify`, tell the user. No second try
    without a new plan.
-4. The checks, short: the HUD, the inventory and Skills pages, a shop, an NPC dialog, a label,
+5. The checks, short: the HUD, the inventory and Skills pages, a shop, an NPC dialog, a label,
    pad movement. Then quit, `verify` (UNCHANGED), and say "done".
 
 **What may go wrong, known now:** Steam's executable needs `steam_api.dll` and may refuse to
 start without a running Steam. If `steam_appid.txt` does not make it start, the Steam test stops
 there and the user decides. Starting Steam would mean the real client near the user's prefix, and
-that is outside this plan.
+that is outside this plan. What the offline work cannot show: behaviour that differs between the
+builds without changing the code's shape (data, timing), and the executable's load address.
 
 ## 17. QA of the work written without the game (2026-10-21)
 

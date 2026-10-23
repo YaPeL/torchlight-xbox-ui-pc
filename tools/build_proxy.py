@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build and install the proxy CEGUIBase.dll (proxy/cegui_proxy.c) for a copy of the PC game.
 
-build_proxy.py build REAL_DLL BUILD_DIR   the .def from REAL_DLL's exports, then clang-cl and lld-link
+build_proxy.py build REAL_DLL BUILD_DIR [--target gog|steam]
+                                          the .def from REAL_DLL's exports, then clang-cl and lld-link
                                           into BUILD_DIR/CEGUIBase.dll (BUILD_DIR outside this repo)
 build_proxy.py install GAME_DIR PROXY     CEGUIBase.dll -> CEGUIBase_orig.dll (once), PROXY copied in
 build_proxy.py remove GAME_DIR            the real CEGUIBase.dll put back
@@ -11,6 +12,12 @@ The export table is read from the user's own DLL at build time and is not kept i
 Every export is forwarded by name, with its own ordinal, to CEGUIBase_orig.dll, except the members
 in HOOKS, which go to the proxy's thunks. Only use GAME_DIR on a copy of the game (GOG's, in its own
 prefix), never Steam's install.
+
+--target says which Torchlight.exe the proxy is for: gog (build 17870, the default: proxy/*.c as
+written) or steam (build 17685: every GOG address in proxy/*.c's code, outside comments and
+literals, replaced by its Steam address from proxy/addresses_steam.txt into copies under
+BUILD_DIR/src, compiled with X360_TARGET_STEAM defined). The build stops if an address has no
+accepted Steam address, or if a Torchlight.exe next to REAL_DLL is another build than the target.
 """
 import os
 import re
@@ -20,6 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pe_info import PE  # noqa: E402
+import port_addresses  # noqa: E402
 
 REAL = "CEGUIBase_orig"
 LLVM = "/usr/lib/llvm-21/bin"
@@ -51,6 +59,53 @@ USER32 = {"EnumWindows": 8, "GetWindowTextA": 12, "IsWindowVisible": 4, "IsIconi
           "GetActiveWindow": 0, "PostMessageW": 16, "GetAsyncKeyState": 4, "SetCursor": 4}
 # msvcr90's SEH handler, which clang-cl's __try/__except on x86 registers (cdecl: no @bytes).
 MSVCR90 = ["_except_handler3"]
+
+
+# The builds the proxy can be made for: Torchlight.exe's PE timestamp and the address table.
+TARGETS = {"gog": (0x4FFC6815, None), "steam": (0x4B5F7519, "addresses_steam.txt")}
+# A table line's status that a build may use: found by two independent ways (port_addresses.py),
+# or checked by hand with the evidence written in docs section 16.
+ACCEPTED = ("verified", "checked")
+
+
+def read_table(path):
+    """{GOG address: other address} of a table's accepted lines ("GOG OTHER status ..."; # comments)."""
+    out = {}
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            parts = line.split("#", 1)[0].split()
+            if not parts:
+                continue
+            if len(parts) < 3:
+                raise ValueError(f"{path}:{n}: expected GOG OTHER STATUS")
+            gog = int(parts[0], 16)
+            if gog in out:
+                raise ValueError(f"{path}:{n}: {gog:#x} twice")
+            if parts[2] in ACCEPTED and parts[1] != "-":
+                out[gog] = int(parts[1], 16)
+    return out
+
+
+def substitute(text, table):
+    """The C source with each address in its code replaced from table; and the addresses missing."""
+    out, last, missing = [], 0, set()
+    for start, end, value in port_addresses.addresses_in(text, code_only=True):
+        if value not in table:
+            missing.add(value)
+            continue
+        out.append(text[last:start])
+        out.append(f"{table[value]:#010x}")
+        last = end
+    out.append(text[last:])
+    return "".join(out), missing
+
+
+def exe_timestamp(folder):
+    path = os.path.join(folder, "Torchlight.exe")
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return PE(f.read(4096)).timestamp
 
 
 def proxy_def(exports):
@@ -107,19 +162,53 @@ def inside(path, root):
     return path == root or path.startswith(root + os.sep)
 
 
-def build(real_dll, out):
+def target_sources(repo, out, target):
+    """{name: path} of the proxy's .c files for the target: proxy/ itself for gog; for another
+    build, copies under out/src with the addresses substituted (SystemExit if one is missing)."""
+    folder = os.path.join(repo, "proxy")
+    names = sorted(n for n in os.listdir(folder) if n.endswith(".c"))
+    table_name = TARGETS[target][1]
+    if not table_name:
+        return {n: os.path.join(folder, n) for n in names}
+    table = read_table(os.path.join(folder, table_name))
+    src = os.path.join(out, "src")
+    os.makedirs(src, exist_ok=True)
+    paths, missing = {}, {}
+    for n in names:
+        with open(os.path.join(folder, n), encoding="utf-8") as f:
+            text, lacking = substitute(f.read(), table)
+        for v in lacking:
+            missing.setdefault(v, []).append(n)
+        paths[n] = os.path.join(src, n)
+        with open(paths[n], "w", encoding="utf-8") as f:
+            f.write(text)
+    if missing:
+        raise SystemExit(f"no accepted {target} address in proxy/{table_name} for:\n  "
+                         + "\n  ".join(f"{v:#010x} ({', '.join(fs)})" for v, fs in sorted(missing.items())))
+    return paths
+
+
+def build(real_dll, out, target="gog"):
     repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    if target not in TARGETS:
+        raise SystemExit(f"unknown target {target!r}: one of {', '.join(TARGETS)}")
     if inside(out, repo):
         raise SystemExit(f"{out} is inside this repository; build elsewhere.")
     with open(real_dll, "rb") as f:
         pe = PE(f.read())
     if is_proxy(real_dll):
         raise SystemExit(f"{real_dll} is the proxy, not the real DLL")
+    stamp = exe_timestamp(os.path.dirname(os.path.abspath(real_dll)))
+    if stamp is not None and stamp != TARGETS[target][0]:
+        known = [t for t, (ts, _) in TARGETS.items() if ts == stamp]
+        raise SystemExit(f"the Torchlight.exe next to {real_dll} is build {stamp:#x}"
+                         + (f" ({known[0]}): pass --target {known[0]}" if known else ", not one the proxy knows"))
     os.makedirs(out, exist_ok=True)
-    src = os.path.join(repo, "proxy", "cegui_proxy.c")
-    menu = os.path.join(repo, "proxy", "x360_menu.c")
-    ui_dump = os.path.join(repo, "proxy", "ui_dump.c")
-    setup = os.path.join(repo, "proxy", "setup.c")
+    sources = target_sources(repo, out, target)
+    src = sources["cegui_proxy.c"]
+    menu = sources["x360_menu.c"]
+    ui_dump = sources["ui_dump.c"]
+    setup = sources["setup.c"]
     missing = []
     for path in (src, menu, ui_dump, setup):
         with open(path) as f:
@@ -134,33 +223,31 @@ def build(real_dll, out):
         f.write(import_def("user32.dll", USER32))
     with open(os.path.join(out, "msvcr90.def"), "w") as f:
         f.write(import_def("msvcr90.dll", MSVCR90))
+    cc = ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding"]
+    if target != "gog":
+        cc.append(f"/DX360_TARGET_{target.upper()}")
     steps = [
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "kernel32.def", "-l", "kernel32.lib"],
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],
         [f"{LLVM}/llvm-dlltool", "-m", "i386", "-k", "-d", "user32.def", "-l", "user32.lib"],
-        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Focegui_proxy.obj", src],
-        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fopad.obj",
-         os.path.join(repo, "proxy", "pad.c")],
-        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fox360_menu.obj",
-         menu],
-        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Foui_dump.obj",
-         ui_dump],
-        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding", "/Fosetup.obj",
-         setup],
+        cc + ["/Focegui_proxy.obj", src],
+        cc + ["/Fopad.obj", sources["pad.c"]],
+        cc + ["/Fox360_menu.obj", menu],
+        cc + ["/Foui_dump.obj", ui_dump],
+        cc + ["/Fosetup.obj", setup],
         ["lld-link", "/dll", "/machine:x86", "/nodefaultlib", "/entry:DllMain", "/safeseh:no",
          "/def:proxy.def", "cegui_proxy.obj", "pad.obj", "x360_menu.obj", "ui_dump.obj", "setup.obj", "kernel32.lib", "user32.lib", "msvcr90.lib", "/out:CEGUIBase.dll"],
     ]
-    helper = os.path.join(repo, "proxy", "send_input.c")
+    helper = sources["send_input.c"]
     steps += [
-        ["clang-cl", "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding",
-         "/Fosend_input.obj", helper],
+        cc + ["/Fosend_input.obj", helper],
         ["lld-link", "/subsystem:console", "/machine:x86", "/nodefaultlib", "/entry:start", "/safeseh:no",
          "send_input.obj", "kernel32.lib", "user32.lib", "/out:send_input.exe"],
     ]
     for step in steps:
         subprocess.run(step, cwd=out, check=True)
-    print(f"built {os.path.join(out, 'CEGUIBase.dll')}: {len(pe.exports())} exports, {len(HOOKS)} hooked; "
-          f"and send_input.exe")
+    print(f"built {os.path.join(out, 'CEGUIBase.dll')} for {target}: {len(pe.exports())} exports, "
+          f"{len(HOOKS)} hooked; and send_input.exe")
 
 
 def install(game, proxy):
@@ -193,10 +280,21 @@ def status(game):
 
 def main():
     cmds = {"build": (build, 2), "install": (install, 2), "remove": (remove, 1), "status": (status, 1)}
-    if len(sys.argv) < 2 or sys.argv[1] not in cmds or len(sys.argv) != 2 + cmds[sys.argv[1]][1]:
+    args, target = sys.argv[1:], None
+    if "--target" in args:
+        i = args.index("--target")
+        if i + 1 >= len(args):
+            print(__doc__)
+            return 2
+        target = args[i + 1]
+        del args[i:i + 2]
+    if not args or args[0] not in cmds or len(args) != 1 + cmds[args[0]][1] or (target and args[0] != "build"):
         print(__doc__)
         return 2
-    cmds[sys.argv[1]][0](*sys.argv[2:])
+    if target:
+        build(*args[1:], target=target)
+    else:
+        cmds[args[0]][0](*args[1:])
     return 0
 
 

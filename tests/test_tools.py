@@ -920,5 +920,222 @@ class PortAddressesTest(unittest.TestCase):
             self.assertEqual(port_addresses.source_addresses(d), [0x40c8f0, 0x5dc320])
 
 
+
+def sections_pe(sections, timestamp=1, import_dir=(0, 0)):
+    """A minimal PE32 of [(name, rva, bytes)] sections, with an optional import directory."""
+    head = bytearray(0x400)
+    head[0:2] = b"MZ"
+    struct.pack_into("<I", head, 0x3C, 0x40)
+    head[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HHI", head, 0x44, 0x14C, len(sections), timestamp)
+    struct.pack_into("<H", head, 0x40 + 20, 224)
+    opt = 0x40 + 24
+    struct.pack_into("<H", head, opt, 0x10B)
+    struct.pack_into("<I", head, opt + 28, 0x400000)
+    struct.pack_into("<I", head, opt + 92, 16)
+    struct.pack_into("<II", head, opt + 104, *import_dir)
+    sec = opt + 224
+    raw = len(head)
+    body = b""
+    for i, (name, rva, data) in enumerate(sections):
+        o = sec + 40 * i
+        head[o:o + 8] = name.ljust(8, b"\0")
+        struct.pack_into("<IIII", head, o + 8, len(data), rva, len(data), raw)
+        raw += len(data)
+        body += data
+    return bytes(head) + body
+
+
+class PortEvidenceTest(unittest.TestCase):
+    """The ways port_addresses.py finds an address when a window at it does not."""
+
+    def build(self, gog):
+        """One synthetic build: .text with a function F (its prologue the build's own), two callers
+        that read a global, padding between them; .rdata with F's vtable, its RTTI locator and a wide
+        string; .data with the type descriptor and the global. Returns (image, addresses)."""
+        import random
+        rng = random.Random(7)                 # the code both builds share
+        fill = random.Random(1 if gog else 2)  # what is each build's own
+        shift = 0 if gog else 0x230   # the other build's code and data sit elsewhere
+        text_rva, rdata_rva, data_rva = 0x1000, 0x4000, 0x6000
+        a = {}
+        code = bytearray(fill.randrange(256) for _ in range(0x100 + shift))
+        code += b"\xcc" * (-len(code) % 16)
+
+        def at(name):
+            a[name] = 0x400000 + text_rva + len(code)
+
+        body = bytes(rng.randrange(1, 0xe0) for _ in range(96))   # no E8/E9/0F: no displacements
+        at("F")
+        # GOG: push -1; push handler; mov eax, fs:[0]  /  other: mov eax, fs:[0]; push -1; push handler
+        handler = struct.pack("<I", 0x400000 + text_rva + 0x10)
+        prologue = (b"\x6a\xff\x68" + handler + b"\x64\xa1\0\0\0\0" if gog
+                    else b"\x64\xa1\0\0\0\0\x6a\xff\x68" + handler)
+        code += prologue + body + b"\xc3"
+        code += b"\xcc" * (-len(code) % 16)
+        data_global = 0x400000 + data_rva + 0x40 + (0x18 if not gog else 0)
+        callers = []
+        for n in range(2):
+            at(f"G{n}")
+            lead = bytes(rng.randrange(1, 0xe0) for _ in range(24))
+            code += lead + b"\xa1" + struct.pack("<I", data_global) + b"\x8b\xc8"
+            callers.append(len(code))
+            code += b"\xe8\0\0\0\0" + bytes(rng.randrange(1, 0xe0) for _ in range(24)) + b"\xc3"
+            code += b"\xcc" * (-len(code) % 16)
+        for site in callers:
+            struct.pack_into("<i", code, site + 1, (a["F"] - 0x400000 - text_rva) - (site + 5))
+        code += bytes(fill.randrange(256) for _ in range(0x100))
+        rdata = bytearray(0x200 + shift)
+        data = bytearray(0x100 + shift)
+        td = 0x400000 + data_rva + 0x80 + shift
+        data[0x88 + shift:0x88 + shift + 13] = b".?AVCThing@@\0"
+        col = 0x400000 + rdata_rva + 0x10 + shift
+        struct.pack_into("<IIIII", rdata, 0x10 + shift, 0, 0, 0, td, 0)
+        struct.pack_into("<III", rdata, 0x40 + shift, col, a["F"], a["G0"])
+        a["vtable"] = 0x400000 + rdata_rva + 0x44 + shift
+        text = "QUEST COMPLETE".encode("utf-16-le") + b"\0\0"
+        rdata[0x100 + shift:0x100 + shift + len(text)] = text
+        a["string"] = 0x400000 + rdata_rva + 0x100 + shift
+        a["global"] = data_global
+        image = port_addresses.Image(sections_pe([(b".text", text_rva, bytes(code)), (b".rdata", rdata_rva, bytes(rdata)),
+                                                  (b".data", data_rva, bytes(data))]))
+        return image, a
+
+    def setUp(self):
+        self.gog, self.ga = self.build(True)
+        self.other, self.oa = self.build(False)
+        self.porter = port_addresses.Porter(self.gog, self.other)
+
+    def test_function_by_callers_and_body(self):
+        value, status, how = self.porter.port(self.ga["F"])
+        self.assertEqual(value, self.oa["F"], how)
+        self.assertEqual(status, "verified", how)
+        self.assertIn("callers", how)
+        self.assertNotIn("window", how)   # the prologues differ
+
+    def test_vtable_by_rtti(self):
+        value, status, how = self.porter.port(self.ga["vtable"])
+        self.assertEqual(value, self.oa["vtable"], how)
+        self.assertIn("rtti .?AVCThing@@", how)
+
+    def test_global_by_references(self):
+        value, status, how = self.porter.port(self.ga["global"])
+        self.assertEqual((value, status), (self.oa["global"], "verified"), how)
+
+    def test_wide_string(self):
+        value, status, how = self.porter.port(self.ga["string"])
+        self.assertEqual(value, self.oa["string"], how)
+        self.assertIn("content 30 bytes equal", how)
+
+    def test_import_slot(self):
+        gog = port_addresses.Image(synthetic_pe({"msvcp90.dll": ["a", "b"]}, []))
+        other = port_addresses.Image(synthetic_pe({"kernel32.dll": ["x"], "msvcp90.dll": ["b", "a"]}, []))
+        slot = next(s for s, imp in gog.iat().items() if imp == ("msvcp90.dll", "b"))
+        there = next(s for s, imp in other.iat().items() if imp == ("msvcp90.dll", "b"))
+        self.assertNotEqual(slot, there)
+        value, status, how = port_addresses.Porter(gog, other).port(slot)
+        self.assertEqual((value, status), (there, "single"), how)
+
+    def test_verdict(self):
+        ev = port_addresses.Evidence()
+        self.assertEqual(ev.verdict()[1], "unresolved")
+        ev.add(0x10, "window 16")
+        self.assertEqual(ev.verdict()[:2], (0x10, "single"))
+        ev.add(0x10, "local 0+16 in f")
+        self.assertEqual(ev.verdict()[:2], (0x10, "verified"))
+        ev.add(0x20, "refs-global 0x401000")   # weak: does not overrule
+        self.assertEqual(ev.verdict()[:2], (0x10, "verified"))
+        ev.add(0x30, "callers 0x401000")       # strong and different: unresolved
+        self.assertEqual(ev.verdict()[:2], (None, "unresolved"))
+        many = port_addresses.Evidence()
+        for site in (1, 2, 3):
+            many.add(0x10, f"callers {site:#x}")
+        many.add(0x40, "callers 0x9")         # one small caller matched elsewhere: outvoted
+        self.assertEqual(many.verdict()[:2], (0x10, "verified"))
+        many.add(0x40, "refs 0x8")
+        self.assertEqual(many.verdict()[:2], (None, "unresolved"))
+        weak = port_addresses.Evidence()
+        weak.add(0x20, "refs-global 0x401000")
+        self.assertEqual(weak.verdict()[:2], (0x20, "single"))
+
+    def test_code_addresses_in_source(self):
+        text = ('a(0x4e9a30u); /* 0x500000 */ s("0x600000"); c(\'"\'); // 0x650000\n'
+                'd(0x00700000); e(0x2d8); f(0x82381D18);')
+        self.assertEqual([v for _, _, v in port_addresses.addresses_in(text, code_only=True)], [0x4e9a30, 0x700000])
+        self.assertEqual([v for _, _, v in port_addresses.addresses_in(text)],
+                         [0x4e9a30, 0x500000, 0x600000, 0x650000, 0x700000])
+
+
+class BuildTargetTest(unittest.TestCase):
+    def test_table_and_substitution(self):
+        with tempfile.TemporaryDirectory() as d:
+            table = os.path.join(d, "t.txt")
+            write(table, "# comment\n0x0054cad0 0x005482f0 verified callers\n"
+                         "0x00547ca0 0x00543660 checked by hand  # trailing\n"
+                         "0x00525579 - unresolved no way\n0x00410000 0x00420000 single window\n")
+            t = build_proxy.read_table(table)
+            self.assertEqual(t, {0x54cad0: 0x5482f0, 0x547ca0: 0x543660})
+            src = ("#define GOG_MODAL 0x0054cad0   /* GOG 0x54cad0, 0x525579 */\n"
+                   "f((void *)0x547ca0u); g(\"0x525579\"); h(0x2cc);\n")
+            out, missing = build_proxy.substitute(src, t)
+            self.assertEqual(out, "#define GOG_MODAL 0x005482f0   /* GOG 0x54cad0, 0x525579 */\n"
+                                  "f((void *)0x00543660u); g(\"0x525579\"); h(0x2cc);\n")
+            self.assertEqual(missing, set())
+            _, missing = build_proxy.substitute("x(0x00525579); y(0x410000);", t)
+            self.assertEqual(missing, {0x525579, 0x410000})
+            write(table, "0x1 0x2 verified\n0x1 0x3 verified\n")
+            with self.assertRaises(ValueError):
+                build_proxy.read_table(table)
+
+    def test_build_refuses_another_exe(self):
+        with tempfile.TemporaryDirectory() as d:
+            game = os.path.join(d, "game")
+            fake_game(game, timestamp=build_proxy.TARGETS["gog"][0])
+            with open(os.path.join(game, "CEGUIBase.dll"), "wb") as f:
+                f.write(synthetic_pe({}, list(build_proxy.HOOKS)))
+            with self.assertRaises(SystemExit) as e:
+                build_proxy.build(os.path.join(game, "CEGUIBase.dll"), os.path.join(d, "out"), target="steam")
+            self.assertIn("--target gog", str(e.exception))
+            with self.assertRaises(SystemExit):
+                build_proxy.build(os.path.join(game, "CEGUIBase.dll"), os.path.join(d, "out"), target="epic")
+
+    def test_committed_steam_table(self):
+        """proxy/addresses_steam.txt covers every address in the proxy's code, numbers only."""
+        repo = os.path.join(os.path.dirname(__file__), "..")
+        table = build_proxy.read_table(os.path.join(repo, "proxy", "addresses_steam.txt"))
+        need = port_addresses.source_addresses(os.path.join(repo, "proxy"), code_only=True)
+        self.assertEqual([hex(v) for v in need if v not in table], [])
+        with open(os.path.join(repo, "proxy", "addresses_steam.txt")) as f:
+            for line in f:
+                body = line.split("#", 1)[0].split()
+                if body:
+                    self.assertRegex(body[0], r"^0x[0-9a-f]{8}$")
+                    self.assertRegex(body[1], r"^(0x[0-9a-f]{8}|-)$")
+
+
+class CompareOffsetsTest(unittest.TestCase):
+    DUMP = """
+  54cad0:\t6a ff                \tpush   0xffffffff
+  54caf3:\t83 be 04 03 00 00 00 \tcmp    DWORD PTR [esi+0x304],0x0
+  54cafa:\tc7 44 24 10 01 00 00 00 \tmov    DWORD PTR [esp+0x10],0x1
+  54cb04:\t80 be 3d 17 00 00 00 \tcmp    BYTE PTR [esi+0x173d],0x0
+  54cb10:\t8b 4c 81 08          \tmov    ecx,DWORD PTR [ecx+eax*4+0x8]
+  54cb14:\t8b 45 f0             \tmov    eax,DWORD PTR [ebp-0x10]
+"""
+
+    def test_field_offsets(self):
+        import compare_offsets
+        instrs = compare_offsets.instructions(self.DUMP)
+        self.assertEqual(len(instrs), 6)
+        self.assertEqual(compare_offsets.field_offsets(instrs), [("cmp", 0x304), ("cmp", 0x173d), ("mov", 0x8)])
+
+    def test_compare(self):
+        import compare_offsets
+        a = [("cmp", 0x304), ("mov", 0x2bc), ("mov", 0x338)]
+        self.assertEqual(compare_offsets.compare(a, list(a)), [])
+        diffs = compare_offsets.compare(a, [("cmp", 0x304), ("mov", 0x2c0), ("mov", 0x338)])
+        self.assertEqual(diffs, [("replace", [("mov", 0x2bc)], [("mov", 0x2c0)])])
+
+
 if __name__ == "__main__":
     unittest.main()

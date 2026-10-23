@@ -584,12 +584,47 @@ void x360_inject_left(int down, float x, float y) {
     else inject_up(system, 0, 0);
 }
 
+/* The build of Torchlight.exe this proxy was compiled for (tools/build_proxy.py --target): the
+ * addresses in the sources are GOG's build 17870; for Steam's build 17685 the build substitutes
+ * them from proxy/addresses_steam.txt and defines X360_TARGET_STEAM. In any other executable, or
+ * in this one loaded away from its preferred base (Steam's has relocations), every part that
+ * touches the executable's code or data (the pad, the 360's screens, the bag patch) stays off:
+ * the converted scheme and layouts load through CEGUI and Ogre by name only. */
+#ifdef X360_TARGET_STEAM
+#define X360_EXE_TIMESTAMP 0x4b5f7519UL
+#define X360_TARGET "Steam's build 17685"
+#else
+#define X360_EXE_TIMESTAMP 0x4ffc6815UL
+#define X360_TARGET "GOG's build 17870"
+#endif
+#define X360_EXE_BASE (4UL << 20)   /* the image base both builds are linked for */
+
+/* 1 if the process's executable is the build this proxy was made for, at its preferred base. */
+int x360_exe_is_target(void) {
+    unsigned char *base = (unsigned char *)GetModuleHandleA(0);
+    unsigned char *nt;
+    if (!base || base[0] != 'M' || base[1] != 'Z') return 0;
+    nt = base + *(DWORD *)(base + 0x3c);
+    if (nt[0] != 'P' || nt[1] != 'E' || nt[2] || nt[3]) return 0;
+    return *(DWORD *)(nt + 8) == X360_EXE_TIMESTAMP && (DWORD)base == X360_EXE_BASE;
+}
+
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
     if (reason == 1) {
         self_module = module;
         DisableThreadLibraryCalls(module);
         open_log();
         read_config();
+        put("built for " X360_TARGET "\r\n");
+        if (!x360_exe_is_target()) {
+            unsigned char *base = (unsigned char *)GetModuleHandleA(0);
+            put("Torchlight.exe is not " X360_TARGET " at its preferred base (its timestamp ");
+            put_hex(base ? *(DWORD *)(base + *(DWORD *)(base + 0x3c) + 8) : 0);
+            put(", base "); put_hex((unsigned long)base);
+            put("): the pad, the 360's screens and the bag patch stay off\r\n");
+            pad = 0;
+            bag_360 = 0;
+        }
         if (pad) x360_pad_start(pad_file, pad_edges_msg, pad_direct, !pad_old_face, pad_log);
         if (bag_360 && mode_scheme) x360_bag_patch();   /* before any unit is made */
     }
