@@ -28,3 +28,6 @@
   Tenacious Software LLC. Used for reading the zip files and for inflate (the icons' PNG data).
 - **The pad prompts' icons** (`../../data/prompts`, built into the executable): Kenney's "Input
   Prompts", CC0 (`data/prompts/LICENSE.txt`).
+
+The Linux release's AppImage also carries the AppImage runtime, a separate program that mounts it:
+its notices are `packaging/linux/APPIMAGE_NOTICES.md`.

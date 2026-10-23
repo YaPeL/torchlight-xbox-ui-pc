@@ -3095,3 +3095,42 @@ the C++ one:
   write permission (Linux) and one whose ACL denies writing (Windows, the elevation declined):
   nothing changed.
 
+- **After the reviews.** The elevated run gets the first run's answers, its save folders (that
+  account's, not the administrator's) and its yes to no backup, and writes its result or error to
+  a file the first run shows in a window. Errors are shown in a window whenever the installer
+  runs with its windows. The proxy is checked before the conversion. A rollback that cannot put
+  an original back keeps its undo folder (marked `x360ui-keep.txt`, left by uninstall) and says
+  where it is; leftover undo folders without the mark are removed on uninstall. The ini is read as
+  Python reads it (UTF-8 ignoring errors, universal newlines, Unicode spaces). Backups keep their
+  times, and a second backup in the same second gets a suffix instead of failing.
+
+**Batch 5: the release** (`.github/workflows/release.yml`). A pushed tag `v*` makes a draft
+release (the only job that may write); a manual run, or a pull request that changes what the
+release is made of, makes only the artifacts.
+- **Built.** GOG's and Steam's proxies from proxy/cegui_exports.txt (LLVM 21, as CI); the
+  Windows executable (MSVC, static runtime) and the Linux one (Ubuntu 22.04's GCC, libstdc++ and
+  libgcc inside it, so it needs only glibc 2.35 or newer) with both proxies built in. The AppImage
+  (`packaging/linux/make_appimage.sh`) is made by appimagetool 1.9.1 with the type2-runtime
+  `8f39b89`, both pinned by SHA-256 (`packaging/linux/get_tools.sh`); its notices are
+  `packaging/linux/APPIMAGE_NOTICES.md`, inside the image with the installer's.
+- **Checked from the artifacts, where there is no Python or compiler** (the jobs fail if
+  python, python3, clang, gcc, g++, cc or c++ is there; on Windows also py, clang-cl and cl): the
+  AppImage in clean `ubuntu:22.04` and `archlinux:latest` containers
+  (`packaging/check_release.sh`, extracted and run: containers cannot mount it), the executable in
+  a Windows Server Core container (`packaging/check_release.ps1`). On `tests/release_fixture.py`'s
+  synthetic games: GOG's in a Wine prefix with the 360's bag and Steam's (experimental) with PC's
+  bag, and on Windows also GOG's in Windows' own layout (its saves in `%APPDATA%`); each install
+  puts the release's own proxy in place and backs the save up unchanged, each uninstall leaves
+  the folder's folders, files and hashes as they were (hidden ones too); `list` in an empty home
+  finds nothing. The AppImage is also started mounted (FUSE) on a runner host.
+- **Published.** The two installers, the two proxies, the licence and the notices
+  (`LICENSE.txt`, `THIRD_PARTY_NOTICES.md`, `APPIMAGE_NOTICES.md`), the AppImage runtime's LGPL
+  source (`fuse-3.15.0.tar.xz`, `type2-runtime-8f39b89.tar.gz`, `packaging/linux/get_sources.sh`,
+  pinned by SHA-256) and `SHA256SUMS` of all, in a draft release that the owner reads before
+  publishing (the README's support claims stay as played).
+- **The type2-runtime source** is GitHub's archive of that commit, pinned by its SHA-256: GitHub
+  does not promise those bytes stay the same, and if they change the release job stops (nothing
+  wrong published); a mirror beside the runtime's would avoid it.
+- **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
+  printed in the log, to compare with a local build), the actions by major version and the
+  container images by tag.
