@@ -113,7 +113,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
   texts) converted from your 360 `pak.zip` and decrypted image into a folder for the PC game.
 - `tools/stfs.py`: lists and extracts the files of an Xbox 360 package (CON, LIVE or PIRS).
 - `tools/xex/xex_dump.py`: decrypts and decompresses the 360's `default.xex`.
-- `tools/build_proxy.py`: builds the proxy `CEGUIBase.dll` (`proxy/`) from your game's own DLL.
+- `tools/build_proxy.py`: builds the proxy `CEGUIBase.dll` (`proxy/`).
+- `tools/cegui_exports.py`: makes and checks `proxy/cegui_exports.txt`, the export table the
+  proxy forwards.
 - `tools/port_addresses.py`: GOG's addresses found in another build of `Torchlight.exe`, offline.
 - `tools/pe_info.py`, `tools/compare_installs.py`, `tools/layout_windows.py`: reading the PC
   game's files.
@@ -129,9 +131,13 @@ How the port is made, screen by screen, with the 360 functions it follows:
 The proxy is built with `clang-cl` and `lld-link` (LLVM) for 32-bit Windows:
 
 ```sh
-python3 tools/build_proxy.py build "<game folder>/CEGUIBase_orig.dll" <output folder>
+python3 tools/build_proxy.py build <output folder> [--target gog|steam]
 python3 tools/build_proxy.py install "<game folder>" <output folder>/CEGUIBase.dll
 ```
+
+The proxy's export table is `proxy/cegui_exports.txt`: CEGUI's exported names and ordinals only,
+compared with CEGUI 0.6.2's official build (docs, section 18). Give `build` the game's
+`CEGUIBase_orig.dll` before the output folder to check it against that list first.
 
 Tests use synthetic data only: `python3 -m unittest discover -s tests`.
 
