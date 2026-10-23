@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import build_proxy  # noqa: E402
 import cegui_exports  # noqa: E402
 import check_no_game_files  # noqa: E402
+import save_items  # noqa: E402
 import compare_installs  # noqa: E402
 import compare_ui  # noqa: E402
 import convert_x360_ui  # noqa: E402
@@ -1248,6 +1249,31 @@ class CompareOffsetsTest(unittest.TestCase):
         self.assertEqual(compare_offsets.compare(a, list(a)), [])
         diffs = compare_offsets.compare(a, [("cmp", 0x304), ("mov", 0x2c0), ("mov", 0x338)])
         self.assertEqual(diffs, [("replace", [("mov", 0x2bc)], [("mov", 0x2c0)])])
+
+
+class SaveItemsTest(unittest.TestCase):
+    @staticmethod
+    def record(name, slot, suffix="", instance=b"\x01" * 6, tail=b"tail"):
+        n, m = name.encode("utf-16-le"), suffix.encode("utf-16-le")
+        return (b"\xde\x11" + b"\x22" * 6 + struct.pack("<H", len(name)) + n + b"\0\0" + struct.pack("<H", len(suffix))
+                + m + b"\xf1\x11" + instance + b"\x00" * 33 + struct.pack("<i", slot) + b"\x00\x01\x01\x01" + tail)
+
+    def test_reads_and_compares_the_items(self):
+        a = b"head" + self.record("Sword", 20, "[ITEM] of the Bear") + self.record("Potion", 70) + self.record("Barrel", -1)
+        b = b"head" + self.record("Potion", 19, instance=b"\x02" * 6) + self.record("Sword", 33, "[ITEM] of the Bear") \
+            + self.record("Barrel", -1)
+        with tempfile.TemporaryDirectory() as d:
+            pa, pb = os.path.join(d, "a.svt"), os.path.join(d, "b.svt")
+            write(pa, a)
+            write(pb, b)
+            _, recs = save_items.items(pa)
+            self.assertEqual([(r[2], r[3], r[5]) for r in recs],
+                             [("Sword", "[ITEM] of the Bear", 20), ("Potion", "", 70), ("Barrel", "", -1)])
+            with unittest.mock.patch("sys.stdout"):
+                self.assertEqual(save_items.main(["compare", pa, pb]), 0)   # slots and instance ids aside, the same
+            write(pb, b"head" + self.record("Sword", 33, "[ITEM] of the Bear") + self.record("Barrel", -1))
+            with unittest.mock.patch("sys.stdout"):
+                self.assertEqual(save_items.main(["compare", pa, pb]), 1)   # the potion lost
 
 
 if __name__ == "__main__":
