@@ -2422,6 +2422,9 @@ static unsigned char *pc_inventory_menu(void) {
 }
 
 #define DOLL_ZOOM_OUT 1.6f
+/* The pet's: run B3 showed it about 2.2 times the 360's (in-game/19: the whole lynx, small, its feet
+ * on the Stats header), its head under the header; a first value, to measure against 19. */
+#define PET_DOLL_ZOOM_OUT 2.2f
 
 /* tan and atan without a C library (the proxy links none), for angles under a right angle. */
 static float tangent(float x) {
@@ -2523,10 +2526,10 @@ static void show_doll_of(int pet, int on) {
         /* PC frames the doll for its own 166x192 viewport; in the 360's taller window it would fill
          * the height and lose its sides, so the camera's field of view is widened (tan of half
          * the angle times DOLL_ZOOM_OUT) while the screen is open, and given back on closing. */
-        if (!pet && fovy && set_fovy && !fovy_saved[pet]) {   /* the pet is framed small already */
+        if (fovy && set_fovy && !fovy_saved[pet]) {
             fovy_saved[pet] = *fovy(camera, 0);
             {
-                float wide = 2.0f * arctan(DOLL_ZOOM_OUT * tangent(fovy_saved[pet] / 2.0f));
+                float wide = 2.0f * arctan((pet ? PET_DOLL_ZOOM_OUT : DOLL_ZOOM_OUT) * tangent(fovy_saved[pet] / 2.0f));
                 set_fovy(camera, 0, &wide);
             }
         }

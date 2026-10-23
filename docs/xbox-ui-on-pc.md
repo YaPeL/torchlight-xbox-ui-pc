@@ -2412,3 +2412,5 @@ inventory (section 13), so each run's batch is one.
   `[0xf60c90]` of the vector at `+0x80` of CGameUI's `+0x3c` (`0x5c53d0`), 1 when on
   (`0x557af8`); the port sets it on. The labels keep PC's colour when it is not plain; plain ones
   white as the candidate, grey otherwise.
+- The pet's doll: its camera's field of view is widened as the hero's (the hero's factor 1.6, the
+  pet's 2.2: a first value from run B3's photo against in-game/19, to measure in the next run).
