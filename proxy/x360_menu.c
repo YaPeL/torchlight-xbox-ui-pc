@@ -6142,6 +6142,30 @@ void x360_dump_after(const char *name, unsigned ms);
 #define MODAL_PREFIX "x360modal_"
 static void *modal_root;
 static char pc_modal_prefix[48];
+static int pc_modal_menu_open(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + 0x304) : 0;
+    return m && *(unsigned *)m == 0x00ab7d04 && m[0x18];
+}
+/* PC's modal frame drawn its parchment and chains though made transparent (QA run 5): it is moved
+ * off the screen while the 360's shows, and put back for the moment its button is pressed (a click
+ * at its centre) and when it closes. */
+static void modal_frame_away(int away) {
+    static char kept[128];
+    static int is_away;
+    void *f = win_of(pc_modal_prefix, "Frame");
+    if (!f || away == is_away) return;
+    if (away) {
+        float v[8];
+        char moved[128];
+        read_prop(f, "UnifiedAreaRect", kept, sizeof kept);
+        if (!parse_rect(kept, v)) return;
+        v[1] += 10000.0f; v[5] += 10000.0f;
+        write_rect(moved, v);
+        prop(f, "UnifiedAreaRect", moved);
+    } else prop(f, "UnifiedAreaRect", kept);
+    fresh_rects(f);   /* the buttons' cached pixel rects follow (press_pc reads them) */
+    is_away = away;
+}
 static int modal_failed;
 
 /* After an enchanting or a gem goblin's act: PC's modal taken when it shows (its text into the
@@ -6201,11 +6225,15 @@ static void modal_tick(void) {
     }
     if (!pc_modal) return;
     if (ench_pending || (modal_skip_until && (int)(modal_skip_until - now) > 0)) return;   /* an enchanting's result: its page takes it (0: none asked; a 0 compared would read as the future after 24.8 days of uptime) */
-    if (!pc_attached(pc_modal_prefix, "Frame")) {
+    /* PC's modal only while CGameUI's CModalMenu (+0x304, vtable 0xab7d04, a CMenu: its open
+     * byte +0x18) is open: the settings' screen has windows of the same names (QA run 5: the
+     * bars over the settings). */
+    if (!pc_attached(pc_modal_prefix, "Frame") || !pc_modal_menu_open()) {
         if (modal_shown) {
             modal_shown = 0;
             overlay_closed_at = GetTickCount();
             set_visible(modal_root, 0, 0);
+            modal_frame_away(0);
             prop(win_of(pc_modal_prefix, "Frame"), "Alpha", "1");
         }
         return;
@@ -6228,6 +6256,7 @@ static void modal_tick(void) {
         modal_shown = 1;
         set_visible(modal_root, 0, 1);
         prop(win_of(pc_modal_prefix, "Frame"), "Alpha", "0");
+        modal_frame_away(1);
         move_to_front(modal_root, 0);
         prev = x360_pad_buttons();
         {
@@ -6253,8 +6282,8 @@ static void modal_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
-    if (pressed & 0x1000) press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok");   /* A */
-    if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) press_pc(pc_modal_prefix, "Decline");   /* B */
+    if (pressed & 0x1000) { modal_frame_away(0); press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok"); }   /* A */
+    if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) { modal_frame_away(0); press_pc(pc_modal_prefix, "Decline"); }   /* B */
 }
 
 /* ---- the bars at the screen's top and bottom (the 360's CInteractiveMenu, interactivemenu.layout:
@@ -6322,6 +6351,7 @@ int x360_modal_take(char *out, unsigned size) {
     if (!pc_modal_prefix[0]) find_pc_by_suffix("Accept", needs, pc_modal_prefix, sizeof pc_modal_prefix);
     if (!pc_modal_prefix[0] || !pc_attached(pc_modal_prefix, "Frame")) return 0;
     read_prop(win_of(pc_modal_prefix, "Dialog"), "Text", out, size);
+    modal_frame_away(0);
     press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok");
     return 1;
 }

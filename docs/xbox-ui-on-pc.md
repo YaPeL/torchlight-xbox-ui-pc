@@ -2557,3 +2557,11 @@ Game), used with the mouse; Start or B close it; the pad does nothing in the wor
   3 and 4): its confirmation uses PC's tip layout (prefix `14_`), and its text is none of PC's
   tips. A window of that layout whose text is not one of PC's tips is now left to PC (used with
   the mouse); the main menu has a hero and a level loaded, so "in play" does not tell them apart.
+
+**QA run 5 (2026-10-23).** Steam's folders UNCHANGED. Closed by the user: PC's hotkeys off, Start
+and PC's pause menu, R3's map states, the floor labels, the inventory's items (potion, identify scroll, the pet's sheet and commands), the town portal scroll. Fixed after it (not run): the bars
+showed over PC's settings screen (its windows have the modal's names): the modal now also needs
+CGameUI's CModalMenu (`+0x304`, vtable `0xab7d04`, a CMenu: open byte `+0x18`) open; PC's modal
+frame still drew its parchment and chains behind the 360's though transparent: it is moved
+10000 pixels off the screen while the 360's shows, and back for the click on its button and on
+closing.
