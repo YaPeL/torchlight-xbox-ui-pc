@@ -2961,3 +2961,15 @@ Here:
   on and a Nintendo pad.
 `pad_detect=nintendo|steam-nintendo|xbox` in x360_ui.ini (a test, off by default) makes the search report that pad, for trying it with the owner's 8BitDo (no Switch mode). Pending: the detection itself with a real Nintendo pad, with and without Steam Input (whether Proton shows the physical pad's HID device beside Steam Input's is not known). QA runs 41-45 (GOG, the owner's 8BitDo): with `pad_detect=nintendo` the checkbox enabled (run 41 found it over one of PC's: moved to the free row under the resolution), set, and at the next start the swapped icons' folder and A and B swapped in play; without `pad_detect`, the setting still on: Xbox's icons, no swap, the checkbox greyed and set; with `pad_detect=steam-nintendo`: Nintendo's unswapped icons, no swap, the checkbox greyed with its Steam Input text. Steam's folders UNCHANGED.
 
+## 23. PC's UI seen at a load, and its modal's board (2026-10-23)
+
+- **At a load** PC's bottom HUD and pet HUD showed for the first frames of play (the owner): the
+  HUD tick made them transparent only once play was entered. They are now made transparent as PC
+  loads their layouts at the game's start (`x360_pc_layout_loaded`, from `hook_load_layout2`:
+  BOTTOMHUD, PETHUD; PC changes their visibility, never their alpha). QA run 46 (before: the owner
+  saw it), runs 47-48 (after): a recording of the screen's bottom middle, 13 734 frames over the
+  menu, the load and play, no frame with PC's orbs; the owner saw none.
+- **PC's modal's board** (a 3D sign, CModalMenu `+0x38`) was hidden only while the 360's modal
+  showed: its fall before it and its rise after it were seen (the pet's return). It is now kept
+  hidden always, the 360's modal showing every one of PC's modals. Not run yet.
+
