@@ -2636,3 +2636,11 @@ parchment.
   GOG's build only), the pad prompts by the connected pad (`proxy/setup.c`, HID vendor and product),
   the update check (GitHub's latest release, offered at the next start; run 10's log: "no answer"
   as there is no release yet), the GPL-3.0 license.
+- **PC's menus with the pad** (the user, for the first beta; written, not run): out of play (the
+  main menu `mainmenuframe`: ContinueLast, NewGame, ContinueGame, Settings, ExitGame; character
+  load and create, difficulty) and, in play, PC's pause menu (COptionsMenu's root, CMenu `+0xc`):
+  their visible buttons (PC's windows of a Button type) in a circular list from the top one down;
+  up and down (d-pad, or the left stick with repeat) move the focus, shown as PC's own hover (the
+  CEGUI cursor, hidden, injected at the button's centre); A clicks there. The CEGUI mouse cursor is
+  hidden everywhere except while PC's settings screen shows (its Apply and Cancel), kept so each
+  frame as PC shows it again.

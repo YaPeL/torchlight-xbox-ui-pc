@@ -579,6 +579,7 @@ void x360_inject_left(int down, float x, float y) {
     system = get_system();
     if (!system) return;
     inject_position(system, 0, x, y);
+    if (down < 0) return;   /* the position only: the hover of the window there */
     if (down) inject_down(system, 0, 0 /* LeftButton */);
     else inject_up(system, 0, 0);
 }

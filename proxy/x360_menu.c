@@ -6692,8 +6692,135 @@ static void side_panels_test(int off) {
                  : "x360 menu: PC's side panels test put back\r\n");
 }
 
+/* PC's own menus with the pad (the user, for the first beta): the main menu (mainmenuframe: Continue
+ * Last, New Game, Continue Game, Settings, Exit Game; and the screens after it, character load and
+ * create, difficulty) and, in play, PC's pause menu (optionsmenu: Settings, Exit Game, Return to
+ * Game). Their visible buttons (PC's windows of a Button type, not the port's) in a circular list
+ * from the top one down: up and down (the d-pad or the left stick) move the focus, shown as PC
+ * shows a hover (the CEGUI cursor, hidden, put on the button's centre); A clicks it there. Not in
+ * PC's settings screen (Apply, Cancel), used with the mouse, which shows there; hidden elsewhere. */
+static void *nav_list[24];
+static int nav_count, nav_focus;
+static void nav_collect(void *w, int depth, int only_under_pause) {
+    typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
+    typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    static str_fn get_type, gn;
+    static vis_fn vis;
+    unsigned i, n;
+    const char *nm, *type;
+    if (!w || depth > 30 || nav_count >= 24) return;
+    if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+    if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!get_type || !gn || !vis) return;
+    nm = c_str(gn(w, 0), 0);
+    if (nm && nm[0] == 'x' && nm[1] == '3' && nm[2] == '6' && nm[3] == '0') return;   /* the port's */
+    if (!vis(w, 0, 1)) return;   /* hidden here: nothing under it shows */
+    type = c_str(get_type(w, 0), 0);
+    if (type && depth > 0) {
+        unsigned k = length(type);
+        if (k >= 6 && type[k - 6] == 'B' && type[k - 5] == 'u' && type[k - 4] == 't' && type[k - 3] == 't' && type[k - 2] == 'o' && type[k - 1] == 'n') {
+            nav_list[nav_count++] = w;
+            return;
+        }
+    }
+    n = child_count(w, 0);
+    for (i = 0; i < n; i++) nav_collect(child_at(w, 0, i), depth + 1, only_under_pause);
+}
+static int pc_pause_open(void);
+static unsigned char *pc_pause_menu(void);
+int x360_pad_ly(void);
+static void pc_menus_nav_tick(void) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    typedef void (__fastcall *self_fn)(void *self, void *edx);
+    typedef void *(__cdecl *single_fn)(void);
+    void x360_inject_left(int down, float x, float y);
+    int x360_in_play(void);
+    static pixel_rect_fn6 rect_of;
+    typedef unsigned char (__fastcall *cvis_fn)(const void *self, void *edx);
+    static self_fn cursor_hide, cursor_show;
+    static cvis_fn cursor_vis;
+    static single_fn cursor_get;
+    static unsigned prev, last_collect, next_repeat;
+    static int held_dir, settings_shown = -1;
+    static char settings_prefix[64];
+    static const char *const settings_needs[] = {"Cancel", 0};
+    unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
+    int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
+    rect6 r[24];
+    prev = buttons;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!cursor_get) {
+        cursor_get = (single_fn)need("?getSingletonPtr@?$Singleton@VMouseCursor@CEGUI@@@CEGUI@@SAPAVMouseCursor@2@XZ");
+        cursor_hide = (self_fn)need("?hide@MouseCursor@CEGUI@@QAEXXZ");
+        cursor_show = (self_fn)need("?show@MouseCursor@CEGUI@@QAEXXZ");
+        cursor_vis = (cvis_fn)need("?isVisible@MouseCursor@CEGUI@@QBE_NXZ");
+    }
+    if (!sheet || !rect_of) return;
+    /* PC's settings screen: its Apply and Cancel shown. */
+    if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
+    settings = settings_prefix[0] && pc_shown_in(settings_prefix, "Apply");
+    if (cursor_get && cursor_hide && cursor_show && cursor_vis && cursor_get()) {
+        /* Kept so each frame: PC shows its cursor again on its own. */
+        if ((cursor_vis(cursor_get(), 0) != 0) != (settings != 0)) (settings ? cursor_show : cursor_hide)(cursor_get(), 0);
+        if (settings != settings_shown) {
+            settings_shown = settings;
+            x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
+        }
+    }
+    if (settings || (in_play && !pc_pause_open())) { nav_count = 0; return; }
+    if (now - last_collect > 200) {
+        void *was = nav_count > 0 && nav_focus < nav_count ? nav_list[nav_focus] : 0;
+        int n_before = nav_count;
+        last_collect = now;
+        nav_count = 0;
+        /* In play, PC's pause menu's own windows only (CMenu's root at +0xc): PC's HUD buttons are
+         * visible there, made transparent. */
+        if (in_play) { unsigned char *pm = pc_pause_menu(); if (pm && *(void **)(pm + 0xc)) nav_collect(*(void **)(pm + 0xc), 0, 1); }
+        else nav_collect(sheet, 0, 0);
+        /* From the top one down, then left to right. */
+        for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
+        for (i = 1; i < nav_count; i++)
+            for (j = i; j > 0 && (r[j].top < r[j - 1].top - 4.0f || (r[j].top < r[j - 1].top + 4.0f && r[j].left < r[j - 1].left)); j--) {
+                rect6 t = r[j]; void *tw = nav_list[j];
+                r[j] = r[j - 1]; nav_list[j] = nav_list[j - 1];
+                r[j - 1] = t; nav_list[j - 1] = tw;
+            }
+        nav_focus = 0;
+        for (i = 0; i < nav_count; i++) if (nav_list[i] == was) nav_focus = i;
+        if (nav_count && (!was || nav_count != n_before)) {
+            if (!was) nav_focus = 0;
+            x360_inject_left(-1, (r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+        }
+    } else for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
+    if (!nav_count) return;
+    {
+        /* Up and down: the d-pad, or the left stick held (repeating). */
+        int ly = x360_pad_ly();
+        int stick = ly > 500 ? -1 : ly < -500 ? 1 : 0;
+        if (pressed & 0x0001) dir = -1;
+        else if (pressed & 0x0002) dir = 1;
+        else if (stick && (stick != held_dir || (int)(now - next_repeat) >= 0)) { dir = stick; next_repeat = now + (stick != held_dir ? 400 : 180); }
+        held_dir = stick;
+    }
+    if (dir) {
+        nav_focus = (nav_focus + (dir > 0 ? 1 : nav_count - 1)) % nav_count;
+        x360_inject_left(-1, (r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+    }
+    if (pressed & 0x1000) {
+        float x = (r[nav_focus].left + r[nav_focus].right) * 0.5f, y = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
+        x360_inject_left(1, x, y);
+        x360_inject_left(0, x, y);
+        last_collect = 0;   /* the next screen's buttons */
+        x360_log("x360 menu: A on PC's button\r\n");
+    }
+}
+
 void x360_frame_tick(void) {
     static int logged, preloaded;
+    __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
     if (!find_world()) return;
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the
      * in-game sheet), not at the first Back (run B2: the user asked for no wait there). */

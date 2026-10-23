@@ -244,6 +244,7 @@ static void poll(void) {
 /* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
  * dialogs stop the GetCursorPos polls that drive order()). */
 unsigned x360_pad_buttons(void) { poll(); return buttons; }
+int x360_pad_ly(void) { poll(); return ly; }
 /* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
 void *x360_pad_candidate(void);
 
