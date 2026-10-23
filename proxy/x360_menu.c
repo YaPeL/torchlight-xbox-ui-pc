@@ -2339,26 +2339,29 @@ static void act(void) {
     {
         void *first = 0, *second = 0;
         ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
-        /* The old items into the bag, or to the ground when it is full (as PC's swap drops them). */
+        int equipped;
+        if (!first && !(isa(item, 10) && second)) { x360_log("x360 inv: A: cannot equip\r\n"); return; }
+        /* The old items out, the new one in; when it does not go in, the old ones back on. Then the
+         * old items into the bag, or to the ground when it is full (as PC's swap drops them). */
         if (isa(item, 10) && second) move_out(inv, second, -1);
-        if (!first && second && ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item)) {   /* only the other hand's */
+        if (first) move_out(inv, first, -1);
+        equipped = ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item);
+        if (!equipped) {
+            /* Back on: nothing left for the bag below (one that does not go back goes there). */
+            if (first && ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, first)) first = 0;
+            if (isa(item, 10) && second && ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, second)) second = 0;
+            x360_log("x360 inv: A: not equipped, the old items back on\r\n");
+        } else {
             ((int_fn)GOG_RENDER_BEHIND)(owner, 0, 1);
             ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(owner + 0x58));
         }
-        if (first) {
-            move_out(inv, first, -1);
-            if (((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item)) {
-                ((int_fn)GOG_RENDER_BEHIND)(owner, 0, 1);
-                ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(owner + 0x58));
-            }
-            if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, first, 1)) { to_ground(first); x360_log("x360 inv: A: the old item to the ground\r\n"); }
-        }
+        if (first && !((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, first, 1)) { to_ground(first); x360_log("x360 inv: A: the old item to the ground\r\n"); }
         if (isa(item, 10) && second && !((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, second, 1)) {
             to_ground(second);
             x360_log("x360 inv: A: the old second item to the ground\r\n");
         }
         move_done();
-        x360_log("x360 inv: A: swapped\r\n");
+        if (equipped) x360_log("x360 inv: A: swapped\r\n");
     }
 }
 
@@ -2637,7 +2640,9 @@ static void move_cut_short(void) {
     x360_log("x360 inv: a move was cut short: the game stops, unsaved\r\n");
     stop_unsaved("A move between bags was interrupted. Nothing is saved, nothing is lost: press A to close the game, "
                  "then load this character again.", -1);
-}static void transmute_swap(void) {
+}
+
+static void transmute_swap(void) {
     void *bag = owner_bag(hero);
     unsigned char *item;
     int j;
@@ -5071,10 +5076,14 @@ void x360_shop_tick(void) {
  * Up and down (the stick or the d-pad) move the selection, repeating while held; LB and RB the
  * filter; A acts on the row; B or Back closes. */
 static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
+static int stop_asked;   /* a stop was decided (stop_unsaved): the menus take no input after it */
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
+    static int logged;
+    if (stop_asked) return;
     __try { inventory_pad(pressed, buttons, lx, ly); }
-    __except (1) { x360_log("x360 inv: exception in the menus' input\r\n"); }
-    __try { move_cut_short(); } __except (1) { x360_save_held = 1; x360_log("x360 inv: exception stopping a cut move: saves held\r\n"); }
+    __except (1) { if (!logged++) x360_log("x360 inv: exception in the menus' input (logged once)\r\n"); }
+    __try { move_cut_short(); }
+    __except (1) { x360_save_held = 1; stop_asked = 1; x360_log("x360 inv: exception stopping a cut move: saves held\r\n"); }
 }
 static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     static unsigned next_repeat;
@@ -7204,7 +7213,7 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
  * blank under Proton (QA runs 34, 35): not used. */
 static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed, 3 waiting for another modal to close */
-static int stop_asked;                 /* a stop was decided */
+static int stop_asked;                 /* a stop was decided (also declared above, for the menus' input) */
 static unsigned stop_t0;               /* when (GetTickCount): the modal is waited for STOP_MODAL_MS */
 #define STOP_MODAL_MS 15000          /* from the stop's modal asked for */
 #define STOP_WAIT_MS 120000          /* from the stop, while another modal is open (state 3) */
@@ -7300,6 +7309,7 @@ static void notice_tick(void) {
 static void stop_unsaved(const char *why, int count) {
     char text[700], name[96], path[600], *p = text;
     x360_save_held = 1;
+    if (stop_asked) return;   /* one stop: a second would replace the modal being shown */
     stop_asked = 1;
     stop_t0 = GetTickCount();
     name[0] = 0;
