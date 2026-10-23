@@ -57,11 +57,13 @@ It also asks which bag you want:
   backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
 Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
-questions, PC's bag), `--console` (questions on the console, not in windows).
+questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
   install wrote. Saves are not touched. With the 360's bag installed it warns first and offers PC's
-  bag instead; `--anyway` uninstalls after backing the saves up.
+  bag instead; `--anyway` uninstalls after backing the saves up. Once the 360's bag was used, it
+  also asks, with PC's bag back, whether each character was loaded and saved with it, and backs
+  the saves up before uninstalling.
 - `python3 tools/install.py list` prints the games it finds.
 
 ## The 360's bag and your saves

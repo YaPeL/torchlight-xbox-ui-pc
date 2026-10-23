@@ -3083,7 +3083,8 @@ the C++ one:
   aside, then removed. `X360UI_TEST_FAIL_AFTER_PROXY` makes a test's run fail at the end.
 - **The bag.** The 360's bag's warning (with uninstalling and the stores' verify, repair or
   update), the saves backed up first; the uninstaller with the 360's bag offering PC's bag (the
-  default) or uninstalling anyway with the saves backed up.
+  default) or uninstalling anyway with the saves backed up; once the 360's bag was used, with PC's bag
+  back, a question whether each character was loaded and saved with it, and a backup.
 - **The proxy.** Given with `--dll`, else the release's built in (`-DX360UI_PROXY_GOG`,
   `-DX360UI_PROXY_STEAM`). The real DLL is checked against proxy/cegui_exports.txt (built in).
 - **Questions.** Windows' own boxes and file dialog; on Linux zenity or kdialog when there is a
@@ -3148,3 +3149,13 @@ The release carries `THIRD_PARTY_NOTICES.md`, `LGPL-2.1.txt`, `LICENSE.txt` and
 `APPIMAGE_NOTICES.md` beside the `.exe` (the AppImage carries them inside too), and the AppImage
 runtime's libfuse source: `fuse-3.15.0.tar.xz`, `type2-runtime-8f39b89.tar.gz` and the patch alone,
 `libfuse-mount.c.diff`.
+
+**The 360's bag remembered (the GPU agent's review, item 4; 2026-10-23).** Uninstall's switch to
+PC's bag wrote `bag=pc` alone, so the next uninstall neither warned nor backed up, though a
+character not yet loaded and saved with PC's bag still had its items where the 360's put them.
+Both installers now write `bag_360_used=1` with the 360's bag and keep it through later installs
+and switches; with it and PC's bag, uninstall asks whether each character was loaded and saved
+with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then backs the saves up
+before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
+same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
+without the flag after a switch is out there.
