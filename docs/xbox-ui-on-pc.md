@@ -2908,3 +2908,27 @@ folder made DIR (the executable's import of `SHGetSpecialFolderPathW` replaced, 
 the game asks for CSIDL_APPDATA through its one wrapper `0x5cc6c0`), so a test runs on copies in
 DIR's `runic games\torchlight` and the user's own folder is neither read nor written. Not run yet.
 
+**QA run 28 (2026-10-23, the copy of the test hero, its health potion's slot made 70 with the 360's
+bag).** The potion was not in the bag after loading (the HUD's count gone) nor in the file after
+saving: the static reading confirmed. `backup.tmp`, written at load, is the loaded file as it was
+(a copy, not a save of the new state); the save itself was written on leaving.
+
+**The bags, read (GOG).** A bag's sections have types (`+0x48`, codes into `0xaa9530`): 0 any item
+(ISA 31), 1 spells (129), 2 fish (124), 3 weapons (8), 4 armour (13); `0x4e8410` gives an item the
+last section whose type it is, else the first. The hero's and the pet's (PC): 21 any, 21 spells,
+21 fish; with `bag=360`, 50 any. A merchant's (ISA 41, the ctor's branch 0x29): 42 any, 42
+weapons, 42 armour. The ctor's branch of ISA 128: one of 42. The shared stash (`0xe40900`, its
+CInventory made at `0x52df16` and again by its loader at `0x52e177`): one section of 42, owner
+none, the same with either bag; its loader (`0x52e33e`) destroys an item PC refuses as the unit
+loader does (`0x52e34f`). Which ISA the personal stash is, and so whether the ctor's last branch
+(made 50 by `bag=360`) reaches it, is to be read in the next run (the hook logs each unit's
+refusals).
+
+**The hook** (`x360_load_hook_install`, either bag): the loader's call at `0x4acd4b` (Steam
+`0x4aaae5`) goes through `load_put_hook`. For the hero's (ISA 28) and the pet's (ISA 87) bag slots,
+an item PC refuses goes to the first empty slot of its type's section; with none it is kept aside
+and, at the first frame in play (the pet waited for up to 10 s), put into the other one's bag;
+any left stops the game with a message and `TerminateProcess` (no game code runs after it, so no
+save). The personal stash is left out of the order (the owner's rule when it is not known to exist
+at load: a unit of the town's level, not the hero's). Not run yet.
+

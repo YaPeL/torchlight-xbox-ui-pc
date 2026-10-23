@@ -66,6 +66,7 @@
 0x0049f88f 0x0049d6f3 verified   code    window, local
 0x0049f8ee 0x0049d752 verified   code    window, local
 0x004a2220 0x004a0040 verified   code    callers x3
+0x004acd4b 0x004aaae5 checked    code    the loader loop's call of 0x4e6ce0 (Steam's 0x4e9480) before its push 0x7f test, in 0x4aa580 (0x4ac7c0's twin), read in Steam's disassembly
 0x004b2590 0x004b0230 verified   code    callers x3
 0x004b28f0 0x004b0570 verified   code    callers x5
 0x004b388b 0x004b149b verified   comment window, local
