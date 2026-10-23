@@ -542,6 +542,30 @@ class LabelLookTest(unittest.TestCase):
                          "<WidgetLook name=\"x\"></WidgetLook>")
 
 
+class LabelFrameTest(unittest.TestCase):
+    def test_label_frame_made_relative_in_the_label_look_only(self):
+        text = ('<WidgetLook name="ceguiWidget/StaticShared"><ImagerySection name="frame"><FrameComponent>'
+                '<Area><Dim type="LeftEdge" ><AbsoluteDim value="-24" /></Dim>'
+                '<Dim type="TopEdge" ><AbsoluteDim value="-9" /></Dim>'
+                '<Dim type="Width" ><UnifiedDim scale="1" type="Width" ><DimOperator op="Add">'
+                '<AbsoluteDim value="48" /></DimOperator></UnifiedDim></Dim>'
+                '<Dim type="Height" ><UnifiedDim scale="1" type="Height" ><DimOperator op="Add">'
+                '<AbsoluteDim value="18" /></DimOperator></UnifiedDim></Dim></Area>'
+                '</FrameComponent></ImagerySection></WidgetLook>'
+                '<WidgetLook name="ceguiWidget/ItemTextButton"><ImagerySection name="label" />'
+                '<StateImagery name="Enabled"><Layer><Section look="ceguiWidget/StaticShared" section="frame" />'
+                '</Layer></StateImagery></WidgetLook>')
+        out = convert_x360_ui.label_frame_relative(text)
+        shared = out[:out.find('<WidgetLook name="ceguiWidget/ItemTextButton">')]
+        label = out[out.find('<WidgetLook name="ceguiWidget/ItemTextButton">'):]
+        self.assertIn('<AbsoluteDim value="-24" />', shared)
+        self.assertIn('<ImagerySection name="labelframe">', label)
+        self.assertIn('<Section section="labelframe" />', label)
+        self.assertIn('<UnifiedDim scale="-1.3897" type="Height" />', label)
+        self.assertIn('<UnifiedDim scale="2.7794" type="Height" />', label)
+        self.assertLess(label.find("labelframe"), label.find("<StateImagery"))
+
+
 class ImageStringsTest(unittest.TestCase):
     def test_reads_the_texts_at_their_addresses(self):
         image = bytearray(0x200)

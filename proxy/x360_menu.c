@@ -581,9 +581,15 @@ static void hide_pc_ui(int hide) {
     }
     if (!sheet || !is_visible) return;
     n = child_count(sheet, 0);
-    for (i = 0; i < n && hidden_count < MAX_HIDDEN; i++) {
+    for (i = 0; i < n; i++) {
         void *w = child_at(sheet, 0, i);
+        int q, known = 0;
         if (is_ours(w) || !is_visible(w, 0, 1)) continue;
+        /* Hidden again when PC shows it again (a shop's menus), kept once in the list: run B3's
+         * side panels showed once the list, then filled with the same windows, stopped hiding. */
+        for (q = 0; q < hidden_count; q++) if (hidden_pc[q] == w) { known = 1; break; }
+        if (known) { set_visible(w, 0, 0); continue; }
+        if (hidden_count >= MAX_HIDDEN) { set_visible(w, 0, 0); continue; }
         if (!logged) {
             typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
             static name_fn gn;
@@ -709,6 +715,7 @@ static int find_world(void) {
 }
 
 static int isa(void *unit, int type) { return ((isa_fn)GOG_ISA)(unit, 0, type) != 0; }
+static int usable_now(unsigned char *item, unsigned char *user);
 
 /* The 360's category of an item (sub_82369C48): 0 weapons, 1 armour, 2 jewellery, 3 potions and
  * scrolls, 4 gems, 5 fish, 6 any. Unit types: WEAPON 8, ARMOR 13, RING 17, NECKLACE 24, POTION 33,
@@ -1454,7 +1461,8 @@ static void refresh(void) {
                 a = label[0] ? label : x360_text(equipped ? "act.unequip"
                                                  : isa(item, 129) ? "act.learn"
                                                  : isa(item, 120) ? "act.socket"
-                                                 : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? "act.use" : "act.equip");
+                                                 : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? (usable_now(item, (unsigned char *)cur_owner) ? "act.use" : "")
+                                                 : "act.equip");
                 x = x360_text("act.swap"); y = x360_text("act.drop");
             }
             place_buttons(a, y, x);
@@ -1995,19 +2003,22 @@ static int identify(unsigned char *item) {
  * bag or dropped). An equipped item is taken off into the bag (removeEquipment, pickupEquipment);
  * if the bag is full, it goes back. */
 static void sock_begin(unsigned char *gem);
+static void hide_info(void);
 void x360_inventory_toggle(void);
 /* Whether the item is the town portal scroll by its unit's name, as the 360's bag Use
  * (sub_8236BD80 at 0x8236BF68: the item's definition, +0x178, against the unit index's entry of
  * that name): its NAME property (PC's property bag at +0x178, read by 0x5c0190 as the item's
  * DESCRIPTION is at 0x4854dd; 0xd5d9a4 the empty default). */
-static int town_portal_scroll(unsigned char *item) {
+static int unit_named(unsigned char *item, const char *key);
+static int town_portal_scroll(unsigned char *item) { return unit_named(item, "item.townportal"); }
+static int unit_named(unsigned char *item, const char *text_key) {
     typedef const void *(__fastcall *prop_str_fn)(void *bag, void *edx, const void *key, const void *dflt);
     static const unsigned short key_name[] = {'N', 'A', 'M', 'E', 0};
     wstr_ctor_fn wctor;
     wstr_dtor_fn wdtor;
     unsigned char key[32];
     char name[96];
-    const char *want = x360_text("item.townportal");
+    const char *want = x360_text(text_key);
     void *bag = *(void **)(item + 0x178);   /* GOG_ITEM_TEMPLATE */
     int yes = 0;
     unsigned n;
@@ -2022,11 +2033,36 @@ static int town_portal_scroll(unsigned char *item) {
             while (w && want[w - 1] == ' ') w--;
             yes = n == w;
             for (n = 0; yes && n < w; n++) if (want[n] != name[n]) yes = 0;
-            x360_log("x360 inv: the used item's unit name: "); x360_log(name); x360_log("\r\n");
         }
     } __except (1) { yes = 0; }
     wdtor(key, 0);
     return yes;
+}
+
+/* Whether the item can be used now, as the 360's sub_822B9DA8 tells its bag (its Use prompt and
+ * action): PC's item use (GOG 0x4b7470) refuses an item of one with no charges left (+0x1e4 the
+ * stack, +0x1f0 the charges, -9999 endless) and asks the user, for each of the item's skills
+ * (+0x17c: entries +0x28, count +0x2c, each one's skill +0x40), whether it can (the unit's virtual
+ * +0x118 with the target, the skill and the entry): no, while a potion recharges (in-game/29).
+ * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30). */
+static int usable_now(unsigned char *item, unsigned char *user) {
+    typedef unsigned char (__fastcall *can_fn)(void *unit, void *edx, void *target, void *skill, void *entry);
+    unsigned char *skills;
+    unsigned i, n;
+    int ok = 1;
+    if (!item || !user || !((item_bool_fn)GOG_IS_USEABLE)(item, 0)) return 0;
+    if (unit_named(item, "item.identify")) return 0;
+    if (*(int *)(item + 0x1e4) <= 1 && *(int *)(item + 0x1f0) <= 0 && *(int *)(item + 0x1f0) != -9999) return 0;
+    __try {
+        skills = *(unsigned char **)(item + 0x17c);
+        n = skills ? *(unsigned *)(skills + 0x2c) : 0;
+        for (i = 0; i < n && ok; i++) {
+            void *entry = (*(void ***)(skills + 0x28))[i];
+            void *skill = entry ? *(void **)((unsigned char *)entry + 0x40) : 0;
+            if (skill && !((can_fn)(*(void ***)user)[0x118 / 4])(user, 0, user, skill, entry)) ok = 0;
+        }
+    } __except (1) { ok = 1; }
+    return ok;
 }
 
 static void act(void) {
@@ -2054,8 +2090,10 @@ static void act(void) {
     }
     if (((item_bool_fn)GOG_IS_USEABLE)(item, 0)) {
         int portal = town_portal_scroll(item);
+        if (!usable_now(item, owner)) { x360_log("x360 inv: A: not usable now (no Use on the 360)\r\n"); return; }
         if (ui) ((use_item_fn)GOG_USE_ITEM)(ui, 0, level, item);
         x360_log(ui ? "x360 inv: A: used\r\n" : "x360 inv: A: no CGameUI, not used\r\n");
+        hide_info();   /* the 360's card closes after a use (in-game/29) */
         /* The 360 closes the bag after using the town portal scroll (sub_8236BD80: its menu's
          * Show(false), +0x1c with 0; in-game/27), and only then (a potion leaves it open, 29). */
         if (ui && portal && inventory_open) { x360_log("x360 inv: the town portal used: the bag closed\r\n"); x360_inventory_toggle(); }
@@ -6075,6 +6113,30 @@ void x360_dump_after(const char *name, unsigned ms) {
     dump_after_at = GetTickCount() + ms;
 }
 
+/* PC's own screens kept shut (the user: neither by their hotkeys, I, C, S, J, Q, P, which also took
+ * the 360's doll away): CGameUI's CInventoryMenu +0x2cc, CStatsMenu +0x2d0, CPetMenu +0x2d4,
+ * CSkillMenu +0x30c, CJournalMenu +0x310, CQuestMenu +0x314 (made at GOG 0x562d96-0x563445, named
+ * by their RTTI), closed by their setOpen as they open (a shop's own are the shop's code's); and
+ * PC's interface hidden every frame while the 360's frame is open. */
+static void pc_menus_guard(void) {
+    typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+    static const unsigned at[] = {GOG_INVENTORY_MENU, 0x2d0, GOG_PET_MENU, 0x30c, 0x310, 0x314};
+    unsigned i;
+    int closed = 0;
+    if (!ui) return;
+    if (inventory_open) hide_pc_ui(1);
+    if (shop) return;
+    for (i = 0; i < sizeof at / sizeof at[0]; i++) {
+        unsigned char *m = *(unsigned char **)(ui + at[i]);
+        if (!m || !((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) continue;
+        ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 0);
+        x360_log("x360 menu: PC's own screen at CGameUI + "); x360_log_num((long)at[i]); x360_log(" closed as it opened\r\n");
+        closed = 1;
+    }
+    /* PC's closing takes its doll's viewport (the 360's doll uses the same camera and target): made again. */
+    if (closed && inventory_open && doll_shown >= 0) { doll_shown = -1; show_doll(page < 2); }
+}
+
 void x360_frame_tick(void) {
     static int logged, preloaded;
     if (!find_world()) return;
@@ -6091,6 +6153,7 @@ void x360_frame_tick(void) {
         x360_log("x360: dumped the UI after a talk\r\n");
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
+    __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
     __try { enchant_result_tick(); } __except (1) { ench_pending = 0; x360_log("x360 enchanter: exception taking the result\r\n"); }

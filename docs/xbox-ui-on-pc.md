@@ -2431,3 +2431,23 @@ inventory (section 13), so each run's batch is one.
   else closes the bag on a use. The port reads the item's NAME from its property bag (`+0x178`,
   `0x5c0190`, as PC reads DESCRIPTION at `0x4854dd`) against the converter's `item.townportal`
   and closes the bag after PC's useItem. The name read is logged at each use (not run yet).
+- After the user's list (2026-10-23), written, not run:
+  - **PC's screens kept shut.** CGameUI's menus, by their RTTI (made at GOG `0x562d96`-`0x563488`):
+    CInventoryMenu `+0x2cc`, CStatsMenu `+0x2d0`, CPetMenu `+0x2d4`, CMerchantMenu `+0x2d8`,
+    CEnchantMenu `+0x2dc`, CCombineMenu `+0x2e0`, CStashMenu `+0x2e4`, COptionsMenu `+0x2e8`,
+    CSettingsMenu `+0x2ec`, CDieMenu `+0x2f0`, CWaypointMenu `+0x2f4`, CDialogMenu `+0x2f8`,
+    CQuestDialogMenu `+0x2fc`, CCinematicMenu `+0x300`, CModalMenu `+0x304`, CTipMenu `+0x308`,
+    CSkillMenu `+0x30c`, CJournalMenu `+0x310`, CQuestMenu `+0x314`, CInteractiveMenu `+0x318`,
+    CFishingMenu `+0x31c`. Out of a shop, the inventory, stats, pet, skill, journal and quest
+    menus are closed as they open (PC's hotkeys); the 360's doll, whose viewport PC's closing takes,
+    is made again.
+  - **PC's interface hidden every frame** while the 360's frame is open: the hidden list kept PC's
+    sheets once, but was filled with the same two windows after 64 ticks at a shop and then hid
+    nothing more (likely run B3's side panels: CEGUI's dump had them hidden at first).
+  - **Use as the 360's:** the bar's Use and A only when the item can be used now (the 360's
+    `sub_822B9DA8`; PC's item use `0x4b7470`: no charges left refuses, and each of the item's
+    skills is asked of the user by its virtual `+0x118`, false while a potion recharges); none for
+    the identify scroll (its unit name, `item.identify`, `0x820C2038`); the card closed after a use.
+  - **The label's dark frame:** StaticShared's "frame" (`-24, -9`, `+48, +18` pixels at 720 rows)
+    copied into ItemTextButton as fractions of the label's height by the converter
+    (`label_frame_relative`), as the A button was.

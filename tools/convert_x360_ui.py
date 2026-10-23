@@ -192,6 +192,7 @@ def convert(files):
         text, unknown = rename_sets(text, names)
         text = rename_fonts(text, fonts)
         text = label_button_relative(text)
+        text = label_frame_relative(text)
         report["looknfeel_unknown_imagesets"] = unknown
         return set_attr(tag, "Filename", put(basename(src), text.encode(enc)))
 
@@ -275,6 +276,7 @@ STRINGS = {
     "req.weapons": 0x820D0BE0, "wt.melee1": 0x820D4420, "wt.melee2": 0x820D4448, "wt.melee": 0x820D446C,
     "wt.ranged1": 0x820D4478, "wt.ranged2": 0x820D44A4, "wt.ranged": 0x820D44C8, "wt.any": 0x820D44D8,
     "item.townportal": 0x820C2010,   # the unit name sub_8236BD80 compares (the bag closes after it)
+    "item.identify": 0x820C2038,     # the other name it compares (no Use: A identifies on the item)
     "compare.enable": 0x820D0FEC, "compare.disable": 0x820D0FC0,
     "filter.0": 0x820D0BE0, "filter.1": 0x820C0CB4, "filter.2": 0x820D0BF0, "filter.3": 0x820D0C00,
     "filter.4": 0x820D0C1C, "filter.5": 0x820D0C34,
@@ -319,6 +321,40 @@ def label_button_relative(text):
         body = body.replace(f'<Dim type="{kind}" ><AbsoluteDim value="{value}" /></Dim>',
                             f'<Dim type="{kind}" >{rel(value)}</Dim>')
     return text[:section] + body + text[close:]
+
+
+def label_frame_relative(text):
+    """The object label's dark frame (StaticShared's "frame", which ItemTextButton draws: its area
+    -24, -9 and 48, 18 wider, pixels at the 360's 720 rows) copied into the label's look as
+    fractions of the label's height, so that it frames the text as on the 360 at any resolution
+    (run B3's labels showed it thin); the shared section itself, drawn by other looks, is left."""
+    start = text.find(f'<WidgetLook name="{LABEL_LOOK}">')
+    shared = text.find('<WidgetLook name="ceguiWidget/StaticShared"')
+    if start < 0 or shared < 0:
+        return text
+    end = text.find("</WidgetLook>", start)
+    ref = '<Section look="ceguiWidget/StaticShared" section="frame" />'
+    if text.find(ref, start, end) < 0:
+        return text
+    sec = text.find('<ImagerySection name="frame">', shared, text.find("</WidgetLook>", shared))
+    if sec < 0:
+        return text
+    body = text[sec:text.find("</ImagerySection>", sec) + len("</ImagerySection>")]
+
+    def rel(v):
+        return f'<UnifiedDim scale="{v / LABEL_HEIGHT_720:.4f}" type="Height" />'
+
+    body = body.replace('<ImagerySection name="frame">', '<ImagerySection name="labelframe">')
+    body = body.replace('<Dim type="LeftEdge" ><AbsoluteDim value="-24" /></Dim>', f'<Dim type="LeftEdge" >{rel(-24)}</Dim>')
+    body = body.replace('<Dim type="TopEdge" ><AbsoluteDim value="-9" /></Dim>', f'<Dim type="TopEdge" >{rel(-9)}</Dim>')
+    body = re.sub(r'<AbsoluteDim value="48" />', rel(48), body)
+    body = re.sub(r'<AbsoluteDim value="18" />', rel(18), body)
+    label = text[start:end].replace(ref, '<Section section="labelframe" />')
+    first_state = label.find("<StateImagery")
+    if first_state < 0:
+        return text
+    label = label[:first_state] + body + "\n" + label[first_state:]
+    return text[:start] + label + text[end:]
 
 
 def image_strings(image):
