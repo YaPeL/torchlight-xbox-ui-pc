@@ -1853,7 +1853,8 @@ static void update_info(void) {
  * other pages (getsocket, destroysocket, retire, enchantshrine) stay hidden. */
 #define ENCH_PREFIX "x360ench_"
 static void *ench_root;
-static char gem_result[512];             /* the gem goblins' last result, shown in their page */
+static char ench_result[512];            /* the last result of the enchanter or a gem goblin, shown in their page */
+static unsigned ench_pending;             /* when an act was done whose result PC's modal has yet to show */
 static void ench_fill(unsigned char *item) {
     char buf[160], *p;
     /* The gem pages (the 360's sub_82360EC0, its modes 3 and 2): the goblin of type 132 (PC's
@@ -1868,8 +1869,8 @@ static void ench_fill(unsigned char *item) {
         show(win_of(ENCH_PREFIX, "destroysocket"), !get);
         /* The result lines start empty (the 360's catalog: town/02, 03; the layout has a sample)
          * and hold the last result until the next A (in-game/14). */
-        text(win_of(ENCH_PREFIX, "getsocketresult"), get ? gem_result : "");
-        text(win_of(ENCH_PREFIX, "destroysocketresult"), get ? "" : gem_result);
+        text(win_of(ENCH_PREFIX, "getsocketresult"), get ? ench_result : "");
+        text(win_of(ENCH_PREFIX, "destroysocketresult"), get ? "" : ench_result);
         show(win_of(ENCH_PREFIX, get ? "pressbuttongetsocket" : "pressbuttondestroysocket"), has_gems(item));
         return;
     }
@@ -1879,7 +1880,8 @@ static void ench_fill(unsigned char *item) {
     show(win_of(ENCH_PREFIX, "retire"), 0);
     show(win_of(ENCH_PREFIX, "enchantshrine"), 0);
     text(win_of(ENCH_PREFIX, "title"), x360_text("title.enchanter"));
-    text(win_of(ENCH_PREFIX, "resultofenchant"), "");
+    /* The result, yellow in the layout, under the disenchant chance until the next A (in-game/22-24). */
+    text(win_of(ENCH_PREFIX, "resultofenchant"), ench_result);
     if (!item) {
         text(win_of(ENCH_PREFIX, "priceofenchantment"), "");
         text(win_of(ENCH_PREFIX, "disenchantChance"), "");
@@ -2295,31 +2297,23 @@ static void enchant(void) {
         x360_log("x360 enchanter: A: not placed\r\n");
         return;
     }
-    gem_result[0] = 0;
+    ench_result[0] = 0;
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
-    if (at_enchant == 0x19 || at_enchant == 0x1a) {
-        /* The 360 writes the gem goblins' result in their page, yellow, and stays open
-         * (in-game/14: getsocketresult, "The gems within the ... are destroyed!"; no modal). PC
-         * shows it in its modal (0x54cad0, from the act's gem branch, 0x57c3cc-0x57c411), which
-         * closes PC's menus: its text is taken, its Ok pressed, and PC's enchant menu opened
-         * again with the goblin's type (CEnchantMenu 0x575990: thiscall (open, type), its
-         * setOpen 0x576540 passing 0x15). Not run yet. */
-        typedef void (__fastcall *open_type_fn)(void *self, void *edx, int open, int type);
-        int x360_modal_take(char *out, unsigned size);
-        if (x360_modal_take(gem_result, sizeof gem_result)) x360_log("x360 enchanter: the gem result taken from PC's modal\r\n");
-        if (!m[ENCHANT_OPEN]) {
-            ((open_type_fn)0x00575990)(m, 0, 1, at_enchant);
-            x360_log(m[ENCHANT_OPEN] ? "x360 enchanter: PC's enchant menu opened again\r\n"
-                                     : "x360 enchanter: PC's enchant menu did not open again\r\n");
-        }
-    }
+    /* The 360 writes the result in the page, yellow, and the page stays open: the gem goblins' in
+     * getsocketresult or destroysocketresult (in-game/14), the enchanter's in resultofenchant
+     * (in-game/22-24). PC shows it in its modal (0x54cad0, called from the act: 0x57b6c9 and
+     * others), which closes PC's menus a frame or two later (run B3: neither was done yet when the
+     * act returned). So the frame tick waits for the modal (enchant_result_tick). */
+    ench_pending = GetTickCount();
     got = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT);
     if (got) {
         ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, got);
         ((put_at_fn)GOG_PUT_AT_SLOT)(from, 0, got, slot, 1);
         if (((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot) != got) ((pickup_fn)GOG_PICKUP_EQUIPMENT)(from, 0, got, 1);
     }
-    x360_log(got ? "x360 enchanter: A: done\r\n" : "x360 enchanter: A: done, the item is gone\r\n");
+    /* PC's act itself takes the item out of slot 14 and puts it back in the bag (0x4e9ca0 and
+     * 0x4e9a30, at 0x57b619; dropped at the hero by 0x4f5960 only with the bag full). */
+    x360_log(got ? "x360 enchanter: A: done, the item moved back from slot 14\r\n" : "x360 enchanter: A: done\r\n");
 }
 
 static void transmute(void) {
@@ -2545,6 +2539,7 @@ static void show_doll(int on) {
 }
 
 static void *hud_root, *pet_hud_root;
+static int modal_shown;                   /* the 360's modal shows (no HUD under it, in-game/16) */
 static unsigned overlay_closed_at;     /* when a tip, modal or NPC dialog of the 360's last closed */
 static int qd_shown;                         /* the 360's NPC dialog is shown (its section, at the end) */
 static int shop_closing;
@@ -4441,7 +4436,7 @@ void x360_shop_tick(void) {
             if (inventory_open) x360_inventory_toggle();
             shop = *(unsigned char **)(en + ENCHANT_OWNER);
             at_enchant = mode;
-            gem_result[0] = 0;
+            ench_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
@@ -4484,6 +4479,7 @@ void x360_shop_tick(void) {
         hide_pc_ui(1);
     }
     if (at_stash) m = st;
+    if (at_enchant && ench_pending) return;   /* PC's modal closes its menu: enchant_result_tick opens it again */
     if (shop && (at_enchant ? !(en && en[ENCHANT_OPEN]) : at_transmute ? !(tm && tm[COMBINE_OPEN]) : !(m && m[MENU_OPEN]))) {
         x360_log(at_enchant ? "x360 shop: PC's enchant menu closed\r\n" : at_transmute ? "x360 shop: PC's transmuter menu closed\r\n"
                  : at_stash ? "x360 shop: PC's stash menu closed\r\n" : "x360 shop: PC's merchant menu closed\r\n");
@@ -5050,7 +5046,7 @@ static void hud_tick(void) {
         if (!faded) { prop(pc_hud_root, "Alpha", "0"); pass_mouse(pc_hud_root); faded = 1; }
     }
     hud_stage = "bars";
-    show(hud_root, !qd_shown);                     /* no HUD under a dialog (town/13) */
+    show(hud_root, !qd_shown && !modal_shown);     /* no HUD under a dialog or a modal (town/13, in-game/16) */
     mirror_bar("PlayerHealthBar", "PlayerHealthBarSub", 0, health);
     mirror_bar("PlayerManaBar", "PlayerManaBarSub", 0, mana);
     mirror_bar("ExperienceBar", "ExperienceBarSub", 1, xp);
@@ -5092,7 +5088,7 @@ static void hud_tick(void) {
         if (p != pc_pet) { pc_pet = p; if (pc_pet) { prop(pc_pet, "Alpha", "0"); pass_mouse(pc_pet); } }
         if (!pc_pet && pet_root) show(pet_root, 0);
         if (pet_root && vis && pc_pet) {
-            show(pet_root, vis(pc_pet, 0, 0) && !qd_shown);
+            show(pet_root, vis(pc_pet, 0, 0) && !qd_shown && !modal_shown);
             mirror_bar_of(PETHUD_PREFIX, "PetHealthBar", "PetHealth", 1, pet_health);
             mirror_bar_of(PETHUD_PREFIX, "PetManaBar", "PetMana", 1, pet_mana);
             mirror_text_of(PETHUD_PREFIX, "FleeingText");
@@ -5758,7 +5754,49 @@ void x360_dump_after(const char *name, unsigned ms);
 #define MODAL_PREFIX "x360modal_"
 static void *modal_root;
 static char pc_modal_prefix[48];
-static int modal_failed, modal_shown;
+static int modal_failed;
+
+/* After an enchanting or a gem goblin's act: PC's modal taken when it shows (its text into the
+ * page, its Ok pressed) and PC's enchant menu opened again with its type (CEnchantMenu 0x575990,
+ * thiscall (open, type); its setOpen 0x576540 passes 0x15), so the 360's page stays as it was. */
+/* PC's modal texts break their lines themselves ("you\n15 Gold\nfrom the sale of items."); the
+ * 360's flow in the window (in-game/16): a single line break made a space, a blank line kept. */
+static void flow_lines(char *t) {
+    char *c;
+    for (c = t; *c; c++) {
+        if (*c == '\r') *c = ' ';
+        else if (*c == '\n') {
+            if (c[1] == '\n' || (c > t && c[-1] == '\n')) continue;
+            *c = ' ';
+        }
+    }
+}
+
+int x360_modal_take(char *out, unsigned size);
+static unsigned modal_skip_until;          /* PC's modal pressed by enchant_result_tick: not shown as the 360's meanwhile */
+static void enchant_result_tick(void) {
+    typedef void (__fastcall *open_type_fn)(void *self, void *edx, int open, int type);
+    unsigned char *en = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0;
+    if (!ench_pending) return;
+    if (!at_enchant || !en) { ench_pending = 0; return; }
+    if (GetTickCount() - ench_pending > 2000) {
+        ench_pending = 0;
+        x360_log("x360 enchanter: no modal from PC in 2 s\r\n");
+        return;
+    }
+    if (!x360_modal_take(ench_result, sizeof ench_result)) return;
+    flow_lines(ench_result);
+    ench_pending = 0;
+    modal_skip_until = GetTickCount() + 500;
+    x360_log("x360 enchanter: the result taken from PC's modal\r\n");
+    if (!en[ENCHANT_OPEN]) {
+        ((open_type_fn)0x00575990)(en, 0, 1, at_enchant);
+        x360_log(en[ENCHANT_OPEN] ? "x360 enchanter: PC's enchant menu opened again\r\n"
+                                  : "x360 enchanter: PC's enchant menu did not open again\r\n");
+    }
+    pc_inventory_close();
+    if (inventory_open) refresh_all();
+}
 
 static void modal_tick(void) {
     static unsigned last_search, prev;
@@ -5774,6 +5812,7 @@ static void modal_tick(void) {
         pc_modal = find_pc_by_suffix("Accept", needs, pc_modal_prefix, sizeof pc_modal_prefix);
     }
     if (!pc_modal) return;
+    if (ench_pending || (int)(modal_skip_until - now) > 0) return;   /* an enchanting's result: its page takes it */
     if (!pc_attached(pc_modal_prefix, "Frame")) {
         if (modal_shown) {
             modal_shown = 0;
@@ -5818,6 +5857,7 @@ static void modal_tick(void) {
     read_prop(win_of(pc_modal_prefix, "Title"), "Text", v, sizeof v);
     text(win_of(MODAL_PREFIX, "Title"), v);
     read_prop(win_of(pc_modal_prefix, "Dialog"), "Text", v, sizeof v);
+    flow_lines(v);
     text(win_of(MODAL_PREFIX, "Dialog"), v);
     show(win_of(MODAL_PREFIX, "Ok"), pc_shown_in(pc_modal_prefix, "Ok"));
     show(win_of(MODAL_PREFIX, "Accept"), pc_shown_in(pc_modal_prefix, "Accept"));
@@ -5837,26 +5877,54 @@ static void modal_tick(void) {
  * them at 0, hiding its HUD (the UI's +60) while they show (town/04, in-game/16). Of those the port
  * shows the modal and the NPC dialog. */
 #define BARS_PREFIX "x360bars_"
+static void bars_place(float y_top, float y_bottom) {
+    /* The bars' rects in screen fractions (the layout's 10 % each, no offsets), only their y moved. */
+    char rect[128];
+    float vr[8] = {0, 0, 0, 0, 1, 0, 0, 0};
+    vr[2] = y_top; vr[6] = y_top + 0.1f;
+    write_rect(rect, vr);
+    prop(win_of(BARS_PREFIX, "TopBar"), "UnifiedAreaRect", rect);
+    vr[2] = y_bottom; vr[6] = y_bottom + 0.1f;
+    write_rect(rect, vr);
+    prop(win_of(BARS_PREFIX, "BottomBar"), "UnifiedAreaRect", rect);
+}
 static void bars_tick(void) {
     static void *root;
     static int failed, on;
+    static unsigned last;
+    static float t;                              /* the slide's time left, s (the 360's +32) */
+    unsigned now = GetTickCount();
+    float dt = last ? (float)(now - last) / 1000.0f : 0.0f, q;
     int want = modal_shown || qd_shown;
-    if (failed || want == on) return;
-    if (!root) {
-        RECT r;
-        HWND hw = active_window();
-        root = load("media/ui/x360/interactivemenu.layout", BARS_PREFIX);
-        if (!root) { failed = 1; return; }
-        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
-        scale_tree(root, k, 0);
-        pass_mouse(root);
+    last = now;
+    if (failed) return;
+    if (want != on) {
+        if (!root) {
+            RECT r;
+            HWND hw = active_window();
+            root = load("media/ui/x360/interactivemenu.layout", BARS_PREFIX);
+            if (!root) { failed = 1; return; }
+            if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+            scale_tree(root, k, 0);
+            pass_mouse(root);
+        }
+        on = want;
+        t = 0.2f;   /* the 360's setOpen 0x82353068: 0.2 s either way (closing: the bar's height 0.1 times 2) */
+        if (on) { set_visible(root, 0, 1); move_to_front(root, 0); }
+        if (hud_root) set_visible(hud_root, 0, !on);
+        if (pet_hud_root) set_visible(pet_hud_root, 0, !on);
+        x360_log(on ? "x360 bars: shown\r\n" : "x360 bars: hidden\r\n");
     }
-    on = want;
-    set_visible(root, 0, on);
-    if (on) move_to_front(root, 0);
-    if (hud_root) set_visible(hud_root, 0, !on);
-    if (pet_hud_root) set_visible(pet_hud_root, 0, !on);
-    x360_log(on ? "x360 bars: shown\r\n" : "x360 bars: hidden\r\n");
+    if (!root || t <= 0.0f) return;
+    /* The 360's tick 0x821FFD50: q = t * 5, from 1 to 0; opening, TopBar's y -0.1 q and BottomBar's
+     * 0.9 + 0.1 q (sliding in from beyond the screen's edges); closing, the reverse, the menu
+     * hidden at the end. */
+    t -= dt;
+    q = t * 5.0f;
+    if (q < 0.0f) q = 0.0f;
+    if (on) bars_place(-0.1f * q, 0.9f + 0.1f * q);
+    else bars_place(-0.1f * (1.0f - q), 0.9f + 0.1f * (1.0f - q));
+    if (!on && q <= 0.0f) set_visible(root, 0, 0);
 }
 
 /* PC's modal taken without showing it (the gem goblins' result, written in their page as the
@@ -5904,6 +5972,7 @@ void x360_frame_tick(void) {
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
+    __try { enchant_result_tick(); } __except (1) { ench_pending = 0; x360_log("x360 enchanter: exception taking the result\r\n"); }
     __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
     __try { bars_tick(); } __except (1) { x360_log("x360 bars: exception\r\n"); }
     __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }

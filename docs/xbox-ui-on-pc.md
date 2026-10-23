@@ -2360,3 +2360,30 @@ inventory (section 13), so each run's batch is one.
   - a melee skill shows "Mana Cost: 8" (and the rank's name line) where the 360's capture shows
     none: PC's data or the wrong field (rank `+0x4c`); to check against PC's own description.
   - The PC side panels at the gem goblins and the enchanter, already known.
+- The mods agent's captures after the run (in-game/19-24):
+  - 19, the pet's sheet (RB from the hero's bag): left panel "<pet name> / Pet", two "No Spell
+    Equipped" rows, HP/MP, no level, XP or fame; the lynx whole and small, its feet on the Stats
+    header, the viewport's upper half empty. The viewport's rect is the hero's.
+  - 20, an item on the floor: the 360 labels it ("A" and its name, gold) above it, next to the
+    hero.
+  - 21-24, the enchanter: its result is written in its page, not a modal: `resultofenchant`
+    (SerifBig, yellow, 357,617 to 721,841 at 1080), between the disenchant chance and Enchant (A);
+    the price and the chance go up after each try; the item's new name shows in the bag.
+- Fixed after the run (not run yet):
+  - The results of the enchanter and the gem goblins: the act marks a result pending; the frame
+    tick (`enchant_result_tick`) waits up to 2 s for PC's modal, takes its text (line breaks
+    flowed), presses its Ok, opens PC's enchant menu again with its type (`0x575990`) and closes
+    PC's inventory; the shop tick does not close the 360's page meanwhile, and the 360's modal is
+    not shown for it. The enchanter's text goes in `resultofenchant`.
+  - The HUD (and the pet's) hidden under the 360's modal too (the HUD tick showed it again each
+    frame).
+  - PC's modal text: a single line break made a space, a blank line kept.
+  - The bars slide in and out over 0.2 s as the 360's (`0x82353068`, `0x821FFD50`).
+- Still open, read so far:
+  - The floor items' labels: PC's label loop (`0x55a8db`) makes a unit's label only for the unit
+    under the mouse (its object's `+0x34`, a type-30 unit excepted) or while the show-items key
+    (`[0xf60bdc]`, with the toggle at `+0x328`) is down. Which object that is, and so how to give
+    the pad's candidate the mouse's place, is not read yet.
+  - The parchment: no visible PC window covers it in the dumps (PC's modal `20_Frame` and its
+    children at effective alpha 0, no image on its parents). Next: see whether hiding `20_Frame`
+    (not only its alpha) removes it, and where `0x54cad0` draws.
