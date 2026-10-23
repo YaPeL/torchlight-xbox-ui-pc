@@ -6732,6 +6732,7 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
 static int pc_pause_open(void);
 static unsigned char *pc_pause_menu(void);
 int x360_pad_ly(void);
+int x360_pad_lx(void);
 /* PC reads Windows' cursor each frame (0x4e7330: GetCursorPos, ScreenToClient on its window) and
  * injects it into CEGUI, then a 1 px move (0x4016c0) for the hover: a position injected alone lasts
  * one frame (QA run 12). So Windows' cursor is put on (x, y), the window's client pixels, and PC
@@ -6775,7 +6776,9 @@ static void pc_menus_nav_tick(void) {
     if (!sheet || !rect_of) return;
     /* PC's settings screen: its Apply and Cancel shown. */
     if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
-    settings = settings_prefix[0] && pc_shown_in(settings_prefix, "Apply");
+    /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
+     * stayed shown and the pad off after Settings was left). */
+    settings = settings_prefix[0] && pc_attached(settings_prefix, "Apply");
     if (cursor_get && cursor_hide && cursor_show && cursor_vis && cursor_get()) {
         /* Kept so each frame: PC shows its cursor again on its own. */
         if ((cursor_vis(cursor_get(), 0) != 0) != (settings != 0)) (settings ? cursor_show : cursor_hide)(cursor_get(), 0);
@@ -6792,8 +6795,16 @@ static void pc_menus_nav_tick(void) {
         nav_count = 0;
         /* In play, PC's pause menu's own windows only (CMenu's root at +0xc): PC's HUD buttons are
          * visible there, made transparent. */
-        if (in_play) { unsigned char *pm = pc_pause_menu(); if (pm && *(void **)(pm + 0xc)) nav_collect(*(void **)(pm + 0xc), 0, 1); }
-        else nav_collect(sheet, 0, 0);
+        if (in_play) {
+            static unsigned char *logged_pm;
+            unsigned char *pm = pc_pause_menu();
+            if (pm && *(void **)(pm + 0xc)) nav_collect(*(void **)(pm + 0xc), 0, 1);
+            if (!nav_count && pm != logged_pm) {
+                logged_pm = pm;
+                x360_log("x360 menu: no button found in PC's pause menu, its root ");
+                x360_log_num(pm ? (long)*(void **)(pm + 0xc) : -1); x360_log("\r\n");
+            }
+        } else nav_collect(sheet, 0, 0);
         /* From the top one down, then left to right. */
         for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
         for (i = 1; i < nav_count; i++)
@@ -6820,11 +6831,12 @@ static void pc_menus_nav_tick(void) {
     } else for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
     if (!nav_count) return;
     {
-        /* Up and down: the d-pad, or the left stick held (repeating). */
-        int ly = x360_pad_ly();
-        int stick = ly > 500 ? -1 : ly < -500 ? 1 : 0;
-        if (pressed & 0x0001) dir = -1;
-        else if (pressed & 0x0002) dir = 1;
+        /* Back (up, left) and on (down, right): the d-pad, or the left stick held (repeating). PC's
+         * main menu is a row, its pause menu a column (QA run 13). */
+        int ly = x360_pad_ly(), lx = x360_pad_lx();
+        int stick = ly > 500 || lx < -500 ? -1 : ly < -500 || lx > 500 ? 1 : 0;
+        if (pressed & (0x0001 | 0x0004)) dir = -1;
+        else if (pressed & (0x0002 | 0x0008)) dir = 1;
         else if (stick && (stick != held_dir || (int)(now - next_repeat) >= 0)) { dir = stick; next_repeat = now + (stick != held_dir ? 400 : 180); }
         held_dir = stick;
     }

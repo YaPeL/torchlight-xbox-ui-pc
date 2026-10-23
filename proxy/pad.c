@@ -245,6 +245,7 @@ static void poll(void) {
  * dialogs stop the GetCursorPos polls that drive order()). */
 unsigned x360_pad_buttons(void) { poll(); return buttons; }
 int x360_pad_ly(void) { poll(); return ly; }
+int x360_pad_lx(void) { poll(); return lx; }
 /* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
 void *x360_pad_candidate(void);
 
