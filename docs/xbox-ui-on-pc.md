@@ -2903,3 +2903,13 @@ UNCHANGED).**
   (INNATEARMOR twice, then the level), which the partial reading does not cut. The merchants'
   stock differs (restocked between runs).
 
+**The stop, QA runs 33 and 34 (2026-10-23, `savetest3`: a fresh copy, the owner's folders' hashes
+the same after both runs, Steam's UNCHANGED).** Run 33 (the 360's bag): the hero's bag filled to 50
+(30 blades by the console), saved (N1). Run 34 (PC's bag): the title's loads left to PC, the
+hook neither moving nor keeping aside anything (each refusal logged as the title's); the player's
+load: 21 items into the pet's main section, 6 blades (slots 63-68) listed as fitting nowhere,
+"6 item(s) fit nowhere", the stop. The save afterwards byte for byte N1's (`0.SVT` and
+`sharedstash.bin`, their times unchanged). The message box showed blank over the full-screen
+game (accepted with Enter): the game's window is now minimized first, and the text says Enter or
+OK; the pad does not reach a Windows box.
+

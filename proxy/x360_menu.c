@@ -37,6 +37,7 @@ static HWND active_window(void) {
     return cached;
 }
 __declspec(dllimport) int __stdcall GetClientRect(HWND w, RECT *r);
+__declspec(dllimport) int __stdcall ShowWindow(HWND w, int how);
 __declspec(dllimport) int __stdcall ClientToScreen(HWND w, long *point);
 __declspec(dllimport) int __stdcall SetCursorPos(int x, int y);
 __declspec(dllimport) void *__stdcall SetCursor(void *cursor);
@@ -7009,7 +7010,9 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
 static void stop_unsaved(const char *why, int count) {
     char text[700], *p = text;
     if (count >= 0) p = put_int(p, count);
-    copy(p, sizeof text - (unsigned)(p - text), why, 0);
+    copy(p, sizeof text - (unsigned)(p - text), why, "\n\nPress Enter or click OK to close the game.");
+    /* The game's window minimized first: over it, full screen, the box showed blank (QA run 34). */
+    if (active_window()) ShowWindow(active_window(), 6);   /* SW_MINIMIZE */
     MessageBoxA(0, text, "Torchlight: the Xbox 360 interface", 0x40030);   /* MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST */
     TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
 }
