@@ -3011,5 +3011,5 @@ Here:
 - **The icons:** the installer converts a sixth folder, `x360ui-nintendo-swapped`
   (`convert_x360_ui.py --prompts nintendo --swap-confirm-cancel`), chosen at start with the setting
   on and a Nintendo pad.
-Not run yet. Whether Proton shows the physical pad's HID device beside Steam Input's is not known.
+`pad_detect=nintendo|steam-nintendo|xbox` in x360_ui.ini (a test, off by default) makes the search report that pad, for trying it with the owner's 8BitDo (no Switch mode). Pending: the detection itself with a real Nintendo pad, with and without Steam Input (whether Proton shows the physical pad's HID device beside Steam Input's is not known). Not run yet.
 

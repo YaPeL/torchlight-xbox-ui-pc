@@ -73,6 +73,9 @@ int x360_pad_steam_input(void) { return steam_virtual; }
 
 /* The connected pad's style: the first Sony or Nintendo HID device, else "xbox". Steam Input's
  * virtual pad is noted (x360_pad_steam_input) and the search goes on for the physical one. */
+/* x360_ui.ini pad_detect=nintendo|steam-nintendo|xbox (a test, off by default): what the search
+ * below reports, for trying Nintendo's layout without such a pad. */
+char x360_pad_detect_test[24];
 const char *x360_pad_style(void) {
     static const GUID_ hid = {0x4D1E55B2, 0xF16F, 0x11CF, {0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30}};
     HMODULE m = LoadLibraryA("setupapi.dll");
@@ -84,6 +87,10 @@ const char *x360_pad_style(void) {
     void *set;
     DWORD i;
     steam_virtual = 0;
+    if (x360_pad_detect_test[0]) {
+        steam_virtual = has(x360_pad_detect_test, "steam");
+        return has(x360_pad_detect_test, "nintendo") ? "nintendo" : "xbox";
+    }
     if (!get_devs || !enum_ifaces || !detail_of || !destroy) return style;
     set = get_devs(&hid, 0, 0, 0x2 | 0x10);   /* DIGCF_PRESENT | DIGCF_DEVICEINTERFACE */
     if (!set || set == (void *)(long)-1) return style;
