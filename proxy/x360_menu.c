@@ -6704,6 +6704,76 @@ static void side_panels_test(int off) {
  * PC's settings screen (Apply, Cancel), used with the mouse, which shows there; hidden elsewhere. */
 static void *nav_list[24];
 static int nav_count, nav_focus;
+/* The windows the pad goes to, by their type's end: buttons, edit boxes (A clicks one: its caret,
+ * the keyboard types the name), check boxes (difficulty's Hardcore), the character load's slots
+ * (QA run 16), and the settings' sliders and drop-downs (left and right change them, QA run 17). */
+enum { NAV_NONE, NAV_BUTTON, NAV_EDIT, NAV_CHECK, NAV_SLOT, NAV_SLIDER, NAV_COMBO };
+static int nav_kind_of(const char *type) {
+    static const char *const kinds[] = {"Button", "Editbox", "Checkbox", "CharacterSlot", "Slider", "Combobox"};
+    unsigned q, k = type ? length(type) : 0;
+    for (q = 0; q < 6; q++) {
+        unsigned m = length(kinds[q]), c = 0;
+        if (k < m) continue;
+        while (c < m && type[k - m + c] == kinds[q][c]) c++;
+        if (c == m) return (int)q + 1;
+    }
+    return NAV_NONE;
+}
+static int nav_kind(void *w) {
+    typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
+    static str_fn get_type;
+    if (!get_type) get_type = (str_fn)need("?getType@Window@CEGUI@@QBEABVString@2@XZ");
+    return w && get_type ? nav_kind_of(c_str(get_type(w, 0), 0)) : NAV_NONE;
+}
+/* Left or right (step -1, 1) on a slider (its click step, else a tenth) or a drop-down (the item
+ * before or after, accepted as a click on it would: its text, PC's handler). */
+static void nav_change(void *w, int kind, int step) {
+    typedef float (__fastcall *getf_fn)(const void *self, void *edx);
+    typedef void (__fastcall *setf_fn)(void *self, void *edx, float v);
+    typedef unsigned (__fastcall *count_fn)(const void *self, void *edx);
+    typedef void *(__fastcall *item_fn)(const void *self, void *edx);
+    typedef unsigned (__fastcall *index_fn)(const void *self, void *edx, const void *item);
+    typedef void (__fastcall *select_fn)(void *self, void *edx, unsigned i, unsigned char on);
+    typedef void (__fastcall *args_fn)(void *self, void *edx, void *window);
+    typedef void (__fastcall *accept_fn)(void *self, void *edx, void *args);
+    static getf_fn cur, max, click;
+    static setf_fn set;
+    static count_fn count;
+    static item_fn selected_fn;
+    static index_fn index_of;
+    static select_fn select;
+    static args_fn args_ctor;
+    static accept_fn accepted;
+    if (!cur) {
+        cur = (getf_fn)need("?getCurrentValue@Slider@CEGUI@@QBEMXZ");
+        max = (getf_fn)need("?getMaxValue@Slider@CEGUI@@QBEMXZ");
+        click = (getf_fn)need("?getClickStep@Slider@CEGUI@@QBEMXZ");
+        set = (setf_fn)need("?setCurrentValue@Slider@CEGUI@@QAEXM@Z");
+        count = (count_fn)need("?getItemCount@Combobox@CEGUI@@QBEIXZ");
+        selected_fn = (item_fn)need("?getSelectedItem@Combobox@CEGUI@@QBEPAVListboxItem@2@XZ");
+        index_of = (index_fn)need("?getItemIndex@Combobox@CEGUI@@QBEIPBVListboxItem@2@@Z");
+        select = (select_fn)need("?setItemSelectState@Combobox@CEGUI@@QAEXI_N@Z");
+        args_ctor = (args_fn)need("??0WindowEventArgs@CEGUI@@QAE@PAVWindow@1@@Z");
+        accepted = (accept_fn)need("?onListSelectionAccepted@Combobox@CEGUI@@MAEXAAVWindowEventArgs@2@@Z");
+    }
+    if (kind == NAV_SLIDER && cur && max && click && set) {
+        float m = max(w, 0), d = click(w, 0), v;
+        if (d <= 0.0f) d = m * 0.1f;
+        v = cur(w, 0) + d * (float)step;
+        set(w, 0, v < 0.0f ? 0.0f : v > m ? m : v);
+    } else if (kind == NAV_COMBO && count && selected_fn && index_of && select && args_ctor && accepted) {
+        unsigned n = count(w, 0), i;
+        void *item = selected_fn(w, 0);
+        unsigned char args[32];
+        if (!n) return;
+        i = item ? index_of(w, 0, item) : 0;
+        if (step < 0 && i == 0) return;
+        if (step > 0 && i + 1 >= n) return;
+        select(w, 0, i + step, 1);
+        args_ctor(args, 0, w);
+        accepted(w, 0, args);
+    }
+}
 static void nav_collect(void *w, int depth, int only_under_pause) {
     typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
@@ -6725,20 +6795,12 @@ static void nav_collect(void *w, int depth, int only_under_pause) {
     type = c_str(get_type(w, 0), 0);
     if (type && depth > 0) {
         unsigned k = length(type);
-        /* Buttons, edit boxes (A clicks one: its caret, the keyboard types the name), check boxes
-         * (difficulty's Hardcore) and the character load's slots (QA run 16). */
-        static const char *const kinds[] = {"Button", "Editbox", "Checkbox", "CharacterSlot"};
-        unsigned q, hit = 0;
-        for (q = 0; q < 4 && !hit; q++) {
-            unsigned m = length(kinds[q]), c = 0;
-            if (k < m) continue;
-            while (c < m && type[k - m + c] == kinds[q][c]) c++;
-            hit = c == m;
-        }
-        if (hit) {
+        int kind = nav_kind_of(type);
+        (void)k;
+        if (kind) {
             nav_list[nav_count++] = w;
             /* A slot holds windows too: the load's DeleteConfirm, its DeleteConfirmButton and Cancel. */
-            if (q != 4) return;
+            if (kind != NAV_SLOT) return;
         }
     }
     n = child_count(w, 0);
@@ -6847,7 +6909,7 @@ static void pc_menus_nav_tick(void) {
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
         }
     }
-    if (settings || (in_play && !pc_pause_open())) { nav_count = 0; return; }
+    if (in_play && !pc_pause_open() && !settings) { nav_count = 0; return; }
     if (now - last_collect > 200) {
         void *was = nav_count > 0 && nav_focus < nav_count ? nav_list[nav_focus] : 0;
         int n_before = nav_count;
@@ -6855,7 +6917,25 @@ static void pc_menus_nav_tick(void) {
         nav_count = 0;
         /* In play, PC's pause menu's own windows only (CMenu's root at +0xc): PC's HUD buttons are
          * visible there, made transparent. */
-        if (in_play) {
+        if (settings) {
+            /* PC's settings' own windows: from Apply up to its last ancestor of its prefix (in play
+             * it is on PC's in-game sheet, with the HUD's buttons). */
+            typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+            typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
+            static parent_fn gp;
+            static str_fn gn;
+            void *top = win_of(settings_prefix, "Apply"), *up;
+            unsigned pl = length(settings_prefix), c;
+            if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+            if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+            while (top && gp && gn && (up = gp(top, 0)) != 0) {
+                const char *un = c_str(gn(up, 0), 0);
+                for (c = 0; c < pl && un[c] == settings_prefix[c]; c++) {}
+                if (c < pl) break;
+                top = up;
+            }
+            if (top) nav_collect(top, 0, 1);
+        } else if (in_play) {
             static unsigned char *logged_pm;
             unsigned char *pm = pc_pause_menu();
             if (pm && *(void **)(pm + 0xc)) nav_collect(*(void **)(pm + 0xc), 0, 1);
@@ -6865,6 +6945,21 @@ static void pc_menus_nav_tick(void) {
                 x360_log_num(pm ? (long)*(void **)(pm + 0xc) : -1); x360_log("\r\n");
             }
         } else nav_collect(sheet, 0, 0);
+        /* A popup over the screen (a slot holding windows of the list: the load's DeleteConfirm):
+         * only its windows while it is open (QA run 17). */
+        {
+            typedef unsigned char (__fastcall *anc_fn)(const void *self, void *edx, const void *w);
+            static anc_fn is_under;
+            if (!is_under) is_under = (anc_fn)need("?isAncestor@Window@CEGUI@@QBE_NPBV12@@Z");
+            for (i = 0; i < nav_count && is_under; i++) {
+                int under = 0, keep = 0;
+                for (j = 0; j < nav_count; j++) if (j != i && is_under(nav_list[j], 0, nav_list[i])) under++;
+                if (!under) continue;
+                for (j = 0; j < nav_count; j++) if (j != i && is_under(nav_list[j], 0, nav_list[i])) nav_list[keep++] = nav_list[j];
+                nav_count = keep;
+                break;
+            }
+        }
         /* From the top one down, then left to right. */
         for (i = 0; i < nav_count; i++) rect_of(nav_list[i], 0, &r[i]);
         for (i = 1; i < nav_count; i++)
@@ -6903,6 +6998,10 @@ static void pc_menus_nav_tick(void) {
         else if (stick && (stick != held_dir || (int)(now - next_repeat) >= 0)) { dir = stick; next_repeat = now + (stick != held_dir ? 400 : 180); }
         held_dir = stick;
     }
+    if ((dir == 3 || dir == 4) && (nav_kind(nav_list[nav_focus]) == NAV_SLIDER || nav_kind(nav_list[nav_focus]) == NAV_COMBO)) {
+        nav_change(nav_list[nav_focus], nav_kind(nav_list[nav_focus]), dir == 3 ? -1 : 1);
+        dir = 0;
+    }
     if (dir) {
         /* The nearest window that way (its centre's distance along it, plus twice the distance across:
          * PC's main menu is a row, its pause menu a column, its character creation two columns and its
@@ -6921,11 +7020,15 @@ static void pc_menus_nav_tick(void) {
         }
         if (pick < 0) pick = around;
         if (pick >= 0) {
+            float x = (r[pick].left + r[pick].right) * 0.5f, y = (r[pick].top + r[pick].bottom) * 0.5f;
             nav_focus = pick;
-            nav_point((r[nav_focus].left + r[nav_focus].right) * 0.5f, (r[nav_focus].top + r[nav_focus].bottom) * 0.5f);
+            nav_point(x, y);
+            /* A character slot is selected as the focus comes (its highlight, PC's own, shows it; as
+             * the 360's list, where moving selects). */
+            if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
         }
     }
-    if (pressed & 0x1000) {
+    if ((pressed & 0x1000) && nav_kind(nav_list[nav_focus]) != NAV_SLIDER && nav_kind(nav_list[nav_focus]) != NAV_COMBO) {
         float x = (r[nav_focus].left + r[nav_focus].right) * 0.5f, y = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
         nav_point(x, y);
         x360_inject_left(1, x, y);
