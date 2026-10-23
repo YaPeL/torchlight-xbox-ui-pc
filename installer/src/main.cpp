@@ -17,6 +17,7 @@
 #include "paths.h"
 #include "stfs.h"
 #include "convert.h"
+#include "install.h"
 #include "lzx.h"
 #include "xex.h"
 
@@ -136,7 +137,8 @@ int main(int argc, char** argv) {
         return 0;
       }
     }
-    return usage();
+    if (!args.empty() && args[0] == "dev") return usage();
+    return installer_main(args);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "%s\n", e.what());
     return 1;
