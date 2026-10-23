@@ -4515,16 +4515,31 @@ static void howto_show(int on) {
  * opens and closes it; PC pauses the game under it. */
 static unsigned char *pc_pause_menu(void) {
     unsigned char *m;
-    /* Only in play: at the title CGameUI is not whole and its +0x2e8 is not a menu (QA run 4: the
-     * game closed at the main menu when this was asked there). */
+    /* Only in play: at the title CGameUI is not whole. COptionsMenu is a CMenu, not a CSubMenu as
+     * the shops' screens: its vtable (0xab7d78) has the open state at +0x18 (its onClick 0x591050
+     * acts only then) and setOpen (thiscall, bool) at slot 6, 0x591200; slot 4 and 7 are others
+     * (QA run 4: calling the shops' isOpen slot on it closed the game at the main menu). */
     if (!find_world() || !ui) return 0;
     m = *(unsigned char **)(ui + 0x2e8);
-    return m && *(unsigned *)m == 0x00ab7d78 ? m : 0;   /* COptionsMenu's vtable (its RTTI) */
+    return m && *(unsigned *)m == 0x00ab7d78 ? m : 0;
 }
 static int pc_pause_open(void) {
-    typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
     unsigned char *m = pc_pause_menu();
-    return m && ((is_open_fn)(*(void ***)m)[0x10 / 4])(m, 0);   /* MENU_IS_OPEN */
+    return m && m[0x18];
+}
+/* Asked by the pad (inside PC's GetCursorPos), done from the frame tick: the earlier try that
+ * called 0x591200 from the pad's hook froze the game. 1 open, 2 close. */
+static int pc_pause_request;
+static void pc_pause_tick(void) {
+    typedef void (__fastcall *open_fn)(void *self, void *edx, int open);
+    unsigned char *m;
+    int want = pc_pause_request;
+    if (!want) return;
+    pc_pause_request = 0;
+    m = pc_pause_menu();
+    if (!m || (m[0x18] != 0) == (want == 1)) return;
+    ((open_fn)0x00591200)(m, 0, want == 1);
+    x360_log(want == 1 ? "x360 menu: PC's pause menu opened\r\n" : "x360 menu: PC's pause menu closed\r\n");
 }
 
 int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); }
@@ -4536,16 +4551,10 @@ void x360_pause_pad(unsigned pressed, int ly) {
     held = ly > 500 || ly < -500;
     if (!resolve()) return;
     (void)dir;
-    {
-        unsigned char *m = pc_pause_menu();
-        if (m && find_world()) {
-            int open = pc_pause_open();
-            if ((pressed & 0x0010) || (open && (pressed & 0x2000))) {   /* Start; B closes it */
-                ((set_bool_fn)(*(void ***)m)[0x1c / 4])(m, 0, !open);   /* MENU_SET_OPEN */
-                x360_log(open ? "x360 menu: PC's pause menu closed\r\n" : "x360 menu: PC's pause menu opened\r\n");
-            }
-            return;
-        }
+    if (pc_pause_menu()) {
+        int open = pc_pause_open();
+        if ((pressed & 0x0010) || (open && (pressed & 0x2000))) pc_pause_request = open ? 2 : 1;   /* Start; B closes it */
+        return;
     }
     if (howto_open) {   /* the pause menu hidden under it (the catalog's menus/14), back after */
         if (pressed & 0x2000) { howto_show(0); if (pause_root) set_visible(pause_root, 0, 1); }
@@ -6384,8 +6393,9 @@ static void pc_menu_tick(void) {
     }
     m = *(unsigned char **)(ui + 0x2e8);
     if (!m) { x360_pc_menu_request = 0; return; }
+    if (*(unsigned *)m != 0x00ab7d78) { x360_pc_menu_request = 0; return; }
     if (!opened) {
-        ((set_bool_fn)(*(void ***)m)[MENU_SET_OPEN])(m, 0, 1);
+        ((void (__fastcall *)(void *, void *, int))0x00591200)(m, 0, 1);   /* COptionsMenu's setOpen, slot 6 */
         opened = 1;
         x360_log("x360 menu: PC's pause menu opened\r\n");
         return;
@@ -6476,6 +6486,7 @@ void x360_frame_tick(void) {
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { pc_pause_tick(); } __except (1) { x360_log("x360 menu: exception in PC's pause menu\r\n"); }
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }

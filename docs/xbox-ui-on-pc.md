@@ -2545,3 +2545,11 @@ settings with a window the pad could not leave. The user's decision for the firs
 opens PC's own pause menu (COptionsMenu, CGameUI's `+0x2e8`: Settings, Exit Game, Return to
 Game), used with the mouse; Start or B close it; the pad does nothing in the world meanwhile. The
 360's pause menu and walking PC's menus with the pad are left for later.
+- QA run 4 closed twice at the main menu (a hero and a level are loaded there, so the pad's tick
+  runs): the pad asked whether PC's pause menu was open through the shops' isOpen slot (`+0x10`),
+  but COptionsMenu is a CMenu, not a CSubMenu: its `+0x10` is another function (`0x574bd0`, a
+  vector insert) and `+0x1c` its onClick (`0x591050`). Its open state is its byte `+0x18` and its
+  setOpen slot 6 (`0x591200`, thiscall bool). The pad now only asks, and the frame tick opens or
+  closes it (the earlier freeze called `0x591200` from the pad's hook). The other menus asked
+  (inventory, stats, pet, skill, journal, quest, merchant, enchant, combine, stash) have a plain
+  state read at `+0x10` (`+0x30`, `+0x44`, `+0x34`, `+0x1c`, `+0xc8`, `+0x38`, `+0x54`).
