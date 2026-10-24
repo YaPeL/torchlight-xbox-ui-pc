@@ -1600,8 +1600,8 @@ static void order(void) {
                 aim_lx = lx;
                 aim_ly = ly;
                 {
-                    /* Its cost, in the log every 5 s while the stick walks: a path request each
-                     * frame on the game's thread (the review). */
+                    /* Its cost, in the log every 5 s while the stick walks, with pad_log or a
+                     * trace on: a path request each frame on the game's thread (the review). */
                     static long long sum, worst, qpf;
                     static unsigned count, since;
                     long long t0, t1;
@@ -1612,7 +1612,7 @@ static void order(void) {
                     sum += t1 - t0;
                     if (t1 - t0 > worst) worst = t1 - t0;
                     count++;
-                    if (now - since >= 5000) {
+                    if ((verbose || x360_pad_trace) && now - since >= 5000) {
                         if (!qpf) QueryPerformanceFrequency(&qpf);
                         if (since && count && qpf) {
                             /* In floating point: 64-bit division needs the CRT's __alldiv. */

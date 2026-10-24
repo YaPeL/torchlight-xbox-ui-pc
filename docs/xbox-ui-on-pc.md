@@ -3552,7 +3552,8 @@ At 0.6, 0.7, 0.9 and full tilt the three agree within 0.03. So b brings the fast
 360's and makes nothing else worse; its earlier result (section 30) came before the dead zone,
 when the factor read the raw stick. The 0.1 s timer stays as a backstop (a frame listener that
 stopped would else hold the hero), and the call's cost goes to the log every 5 s while the stick
-walks (`pad: setDestination us avg ... max ... n ...`): a path request each frame, against
+walks with `pad_log=1` or a trace on (`pad: setDestination us avg ... max ... n ...`): a path
+request each frame, against
 walls too, to be read in a run before it is integrated.
 
 ## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
