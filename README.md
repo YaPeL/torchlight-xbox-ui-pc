@@ -39,8 +39,8 @@ This is a **beta**, tested under Linux (Proton). See
 You need:
 
 - Torchlight for PC, from **GOG** or the **Epic Games Store**. Steam's build is experimental: the mod
-  was ported to it but not yet played on it, and the installer installs there only when given its
-  folder with `--game` and a yes, or `--experimental`.
+  was ported to it but not yet played on it, and the installer installs there only into the folder
+  given with `--game`, after a yes (or with `--experimental`, which skips the question).
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
 
@@ -59,16 +59,18 @@ else to install:
 
 Run it: its questions are shown in windows. To uninstall, run it with `uninstall`
 (`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
-prints the games it finds. The options below are the same.
+prints the games it finds. The options are the same for both (below).
 
 ### From this repository
 
 Python 3 and `python3 tools/install.py` (nothing else: the package is
 read and its executable decrypted in plain Python; pycryptodome, if installed, makes it faster).
 
-Either one finds the PC game (GOG, Steam libraries, Epic through Legendary or its launcher, Heroic's
-GOG installs, and a GOG install in a Wine prefix up to three folders deep in your home; anywhere
-else, give its folder with `--game DIR`), asks for your 360 package, checks that it is Torchlight's, converts the
+### What it does
+
+Either installer finds the PC game (GOG, Steam libraries, Epic through Legendary or its launcher,
+Heroic's GOG installs, and a GOG install in a Wine prefix up to three folders deep in your home,
+not in hidden folders but `~/.wine`; anywhere else, give its folder with `--game DIR`), asks for your 360 package, checks that it is Torchlight's, converts the
 360's interface into the game's folder (one copy per pad style: Xbox, PlayStation 3/4/5 and
 Nintendo), writes `x360_ui.ini` and installs the proxy. The game's real `CEGUIBase.dll` is kept as
 `CEGUIBase_orig.dll`. It takes about a minute.
@@ -80,7 +82,7 @@ It also asks which bag you want:
   backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
 Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--experimental`
-(install on Steam's experimental build without asking), `--yes` (no
+(with `--game`, install on Steam's experimental build without asking), `--yes` (no
 questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
