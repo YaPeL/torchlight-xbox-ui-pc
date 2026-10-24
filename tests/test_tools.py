@@ -513,6 +513,88 @@ int main(int argc, char **argv) {
             self.assertEqual(parse(b"a=1\r\nb=2\r\nc=3\r\n", cap=2), ["[a]=[1]", "[b]=[2]"])
 
 
+class TextLfTest(unittest.TestCase):
+    """The rule: every text the mod reads tolerates CRLF (docs/regressions.md). The proxy's one
+    reader's line-end step (x360_lf, between markers in cegui_proxy.c) compiled on the host: the
+    contents of each text file the proxy reads, written with LF, CRLF and a lone CR, come out the
+    same (the readers' own loops then see only LF); and no reader of the proxy or the installer
+    goes around x360_read_text or text_lines."""
+
+    SAMPLES = {   # synthetic contents of each file the proxy reads, one line per item
+        "x360_strings.txt": ["pctip.TIP_A=Synthetic tip, a = sign", "tip.TIP_A=x", "key=value"],
+        "x360_ui.ini": ["mode=scheme", "out=Z:\\home\\me\\x360ui", "pad=1", "pad_mode=direct", "bag=360"],
+        "x360_settings.ini": ["swap_confirm_cancel=1"],
+        "x360_stop.txt": ["A synthetic stop's text,", "", "on three lines."],
+        "pad_replay": ["# x360ui pad replay v1", "# start_ms 3000", "0 0 32767 0 0 0", "2000 0 0 0 0 0"],
+        "pad_file": ["250 -1000 4096"],
+        "x360_dump.req": ["inventory-1"],
+    }
+
+    def build(self, root):
+        import shutil as sh
+        cc = sh.which("cc") or sh.which("gcc") or sh.which("clang")
+        if not cc:
+            self.skipTest("no C compiler")
+        text = (Path(__file__).resolve().parent.parent / "proxy" / "cegui_proxy.c").read_text()
+        lf = text[text.index("/* text-lf: begin */"):text.index("/* text-lf: end */")]
+        parse = text[text.index("/* texts-parse: begin */"):text.index("/* texts-parse: end */")]
+        main = lf + parse + r"""
+#include <stdio.h>
+int main(int argc, char **argv) {
+    static char buf[8192];
+    const char *k[64], *v[64];
+    FILE *f = fopen(argv[1], "rb");
+    unsigned long n = (unsigned long)fread(buf, 1, sizeof buf - 1, f), m;
+    int i, c;
+    m = x360_lf(buf, n);
+    fwrite(buf, 1, m, stdout);
+    printf("\n--\n");
+    c = x360_parse_texts(buf, k, v, 64);
+    for (i = 0; i < c; i++) printf("[%s]=[%s]\n", k[i], v[i]);
+    return 0;
+}
+"""
+        c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
+        write(c_file, main)
+        subprocess.run([cc, "-Wall", "-Werror", "-o", exe, c_file], check=True, capture_output=True)
+        return exe
+
+    def test_every_file_the_same_with_any_line_end(self):
+        with tempfile.TemporaryDirectory() as root:
+            exe = self.build(root)
+            path = os.path.join(root, "f")
+            for name, lines in self.SAMPLES.items():
+                want = "\n".join(lines).encode()
+                parsed = set()
+                for eol in (b"\n", b"\r\n", b"\r"):
+                    for ended in (True, False):
+                        write(path, eol.join(line.encode() for line in lines) + (eol if ended else b""))
+                        out = subprocess.run([exe, path], check=True, capture_output=True).stdout
+                        text, parse = out.split(b"\n--\n", 1)
+                        self.assertEqual(text.rstrip(b"\n"), want, f"{name}, {eol!r}, ended {ended}")
+                        parsed.add(parse)
+                self.assertEqual(len(parsed), 1, f"{name}: the strings' parse differs by line end")
+
+    def test_no_reader_around_it(self):
+        import re
+        repo = Path(__file__).resolve().parent.parent
+        read_file = re.compile(r"\bReadFile\b")
+        for c in sorted((repo / "proxy").glob("*.[ch]")):
+            for n, line in enumerate(c.read_text().splitlines(), 1):
+                if read_file.search(line) and "IMPORT" not in line and "dllimport" not in line:
+                    self.assertIn("if (!ReadFile(f, buf, size - 1, &got, 0))", line,
+                                  f"{c.name}:{n}: a file read outside x360_read_text")
+        line_reads = [
+            re.compile(r"getline\((?!std::cin)[^,()]+,\s*[^,()]+\)"),          # a line (not a split by '/')
+            re.compile(r"getline\([^,()]+,\s*[^,()]+,\s*'\\[nr]'\)"),        # a line, its end named
+            re.compile(r"\bifstream\b[^;]*;[^\n]*>>|\bf\s*>>\s*\w"),        # words from a text stream
+        ]
+        for c in sorted(p for p in (repo / "installer" / "src").rglob("*") if p.suffix in (".cpp", ".h", ".inc")):
+            for n, line in enumerate(c.read_text().splitlines(), 1):
+                for r in line_reads:
+                    self.assertIsNone(r.search(line), f"{c.name}:{n}: a line read outside text_lines")
+
+
 class SaveGuardTest(unittest.TestCase):
     REG = ("WINE REGISTRY Version 2\n\n"
            "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\User Shell Folders] 1\n"

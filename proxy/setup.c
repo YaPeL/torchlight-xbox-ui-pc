@@ -21,7 +21,6 @@ IMPORT FARPROC __stdcall GetProcAddress(HMODULE module, const char *name);
 IMPORT HANDLE __stdcall CreateFileA(const char *name, DWORD access, DWORD share, void *security,
                                     DWORD disposition, DWORD flags, HANDLE templ);
 IMPORT BOOL __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD *written, void *overlapped);
-IMPORT BOOL __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *overlapped);
 IMPORT BOOL __stdcall CloseHandle(HANDLE file);
 IMPORT DWORD __stdcall GetFileAttributesA(const char *name);
 IMPORT DWORD __stdcall GetModuleFileNameA(HMODULE module, char *out, DWORD size);
@@ -119,17 +118,16 @@ const char *x360_pad_style(void) {
 int x360_swap_active;
 static int swap_setting = -1;
 HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);   /* cegui_proxy.c */
+DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
 int x360_swap_setting(void) {
     if (swap_setting < 0) {
         char text[256];
-        DWORD got = 0;
         HANDLE f;
         swap_setting = 0;
         f = x360_data_open("x360_settings.ini", 0x80000000UL, 1, 3);   /* GENERIC_READ, OPEN_EXISTING */
         if (f != (HANDLE)(long)-1) {
-            ReadFile(f, text, sizeof text - 1, &got, 0);
+            x360_read_text(f, text, sizeof text, 0);
             CloseHandle(f);
-            text[got] = 0;
             swap_setting = has(text, "swap_confirm_cancel=1");
         }
     }

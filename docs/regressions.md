@@ -135,6 +135,26 @@ here. Games' texts are named by role, never quoted.
   PC's tips were read (`x360: x360_strings.txt: N texts, M of PC's tips`). QA checklist: on
   Windows, the first tip is the 360's and the log has its `x360 tip:` line.
 
+## The mod's texts read with CRLF (the rule, after three bugs)
+
+- **What happened:** three times a text the mod wrote or read on Windows with CRLF broke something
+  that worked on Linux, in the owner's count: `notices` printed CR CR LF (above), the QA
+  checklist's line, and PC's tips never matched (above: every text kept a CR).
+- **Should have been caught by:** one rule for every reader, with a test, instead of each reader's
+  own line splitting.
+- **The rule:** every text file the mod reads tolerates CRLF, a lone CR and LF alike (Python's
+  universal newlines), and a last line without its end. The proxy reads every text file through
+  `x360_read_text` (its line ends made LF in place: `x360_ui.ini`, `x360_strings.txt`,
+  `x360_settings.ini`, `x360_stop.txt`, the dump request, `pad_file`, `pad_replay`); the installer
+  splits every text through `text_lines` (`installer/src/text_lines.h`: `x360_ui.ini`, the export
+  list, the elevated run's progress, the wizard's test scripts and run output); the Python tools
+  read in text mode, which does the same.
+- **Covered now:** `TextLfTest` compiles the proxy's line-end step (`x360_lf`) on the host and
+  gives it the contents of each of those files written with LF, CRLF and a lone CR, ended or not,
+  which must come out the same (the readers' loops then see only LF); it also fails if a
+  `ReadFile` in `proxy/` or a line read in `installer/src` goes around the two functions. The
+  C++ `core_test` tests `text_lines` with the same cases. A new reader of text uses them.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:

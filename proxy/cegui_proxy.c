@@ -189,7 +189,38 @@ static char out_dir[400];
  * repository holds only the keys; a key not found gives "". */
 static char texts[196608];                   /* the 360 code's texts and both games' tips (--pc-pak) */
 static const char *text_key[1200], *text_value[1200];
-static int texts_count, texts_loaded;
+static int texts_count, texts_loaded, texts_full;
+
+/* text-lf: begin */
+/* Every text file the mod reads goes through here (x360_read_text): its line ends made LF in
+ * place, CRLF and a lone CR alike (Python's universal newlines), then a NUL after it. The
+ * installer writes its files with CRLF on Windows, and three bugs came of readers that did not
+ * expect it (docs/regressions.md, "The mod's texts read with CRLF"). Between the two markers a
+ * test compiles it on the host (tests/test_tools.py, TextLfTest). */
+static unsigned long x360_lf(char *s, unsigned long n) {
+    unsigned long r = 0, w = 0;
+    while (r < n) {
+        char c = s[r++];
+        if (c == '\r') {
+            if (r < n && s[r] == '\n') r++;
+            c = '\n';
+        }
+        s[w++] = c;
+    }
+    s[w] = 0;
+    return w;
+}
+/* text-lf: end */
+
+/* A text file's bytes into buf (size includes the NUL; 0 writes nothing), line ends made LF: the
+ * length then. *full, if given, says whether the file filled buf (it may have been cut). */
+DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full) {
+    DWORD got = 0;
+    if (!size) return 0;
+    if (!ReadFile(f, buf, size - 1, &got, 0)) got = 0;
+    if (full) *full = got == size - 1;
+    return (DWORD)x360_lf(buf, got);
+}
 
 /* texts-parse: begin */
 /* x360_strings.txt's lines, "KEY=VALUE", cut in place: keys[i] and values[i] point into buf. LF or
@@ -219,7 +250,7 @@ static int starts_with(const char *s, const char *prefix) {
 
 static void load_texts(void) {
     char path[520];
-    DWORD got = 0, i, n = 0;
+    DWORD i, n = 0;
     HANDLE f;
     texts_loaded = 1;
     if (!out_dir[0]) return;
@@ -227,9 +258,8 @@ static void load_texts(void) {
     memcpy(path + n, "\\x360_strings.txt", 18);
     f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     if (f == INVALID_HANDLE) { put("x360: no x360_strings.txt (convert with --image)\r\n"); return; }
-    ReadFile(f, texts, sizeof texts - 1, &got, 0);
+    x360_read_text(f, texts, sizeof texts, &texts_full);
     CloseHandle(f);
-    texts[got] = 0;
     texts_count = x360_parse_texts(texts, text_key, text_value, 1200);
     {
         int tips = 0;
@@ -237,7 +267,7 @@ static void load_texts(void) {
             if (starts_with(text_key[i], "pctip.")) tips++;
         put("x360: x360_strings.txt: "); put_dec((unsigned long)texts_count);
         put(" texts, "); put_dec((unsigned long)tips); put(" of PC's tips");
-        if (got == sizeof texts - 1 || texts_count == 1200) put(" (the file cut: over the reader's room)");
+        if (texts_full || texts_count == 1200) put(" (the file cut: over the reader's room)");
         put("\r\n");
     }
 }
@@ -291,16 +321,18 @@ void x360_test_options_notice(const char *names);
 static void read_config(void) {
     static char text[4096];   /* static: over a page on the stack needs __chkstk, which is in the CRT */
     char path[520], *line, test_names[160];
-    DWORD n = GetModuleFileNameA(self_module, path, 500), got = 0;
+    DWORD n = GetModuleFileNameA(self_module, path, 500);
     HANDLE f;
     while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
     memcpy(path + n, "x360_ui.ini", 12);
     f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     if (f == INVALID_HANDLE) { put("no x360_ui.ini: mode log\r\n"); return; }
-    ReadFile(f, text, sizeof text - 1, &got, 0);
+    {
+        int full;
+        x360_read_text(f, text, sizeof text, &full);
+        if (full) put("x360_ui.ini over 4 KB: the rest is not read\r\n");
+    }
     CloseHandle(f);
-    text[got] = 0;
-    if (got == sizeof text - 1) put("x360_ui.ini over 4 KB: the rest is not read\r\n");
     test_names[0] = 0;
     for (line = text; *line;) {
         char *end = line;

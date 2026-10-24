@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include "miniz.h"
+#include "text_lines.h"
 #include "wizard.h"
 #include "wizard_screens.h"
 
@@ -91,13 +93,14 @@ struct Step {
 
 std::vector<Step> read_script(const std::string& path, std::string& error) {
   std::vector<Step> steps;
-  std::ifstream f(path);
+  std::ifstream f(path, std::ios::binary);
   if (!f) {
     error = "cannot read the script " + path;
     return steps;
   }
-  for (std::string line; std::getline(f, line);) {
-    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+  const std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  for (std::string line : text_lines(all)) {
+    while (!line.empty() && line.back() == ' ') line.pop_back();
     if (line.empty() || line[0] == '#') continue;
     Step s;
     const size_t sp = line.find(' ');
