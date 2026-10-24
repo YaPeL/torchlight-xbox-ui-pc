@@ -2,7 +2,7 @@
 """The pad's movement measured (docs/xbox-ui-on-pc.md section 9 ("The movement measured")): recorded stick routes, and the
 hero's traces compared.
 
-pad_trace.py routes OUT_DIR [--angle A] [--prelude MS:BUTTONS]
+pad_trace.py routes OUT_DIR [--angle A]
                                             write the standard routes (pad replay v1 files)
 pad_trace.py summary TRACE...               per trace: path length, net displacement, the
                                             farthest point from the start, the speed, as text
@@ -43,9 +43,8 @@ def stick(x, y):
     return int(round(max(-1.0, min(1.0, x)) * RAW)), int(round(max(-1.0, min(1.0, y)) * RAW))
 
 
-def route_lines(samples, start_ms=3000, prelude=()):
+def route_lines(samples, start_ms=3000):
     out = ["# x360ui pad replay v1", f"# start_ms {start_ms}"]
-    out += [f"# prelude {t} {b}" for t, b in prelude]
     for t, x, y in samples:
         lx, ly = stick(x, y)
         out.append(f"{int(t)} {lx} {ly} 0 0 0")
@@ -90,11 +89,11 @@ ROUTES = {
 }
 
 
-def write_routes(out_dir, angle=ANGLE, prelude=()):
+def write_routes(out_dir, angle=ANGLE):
     os.makedirs(out_dir, exist_ok=True)
     for name, make in ROUTES.items():
         with open(os.path.join(out_dir, name + ".txt"), "w", newline="\n") as f:
-            f.write(route_lines(make(angle), prelude=prelude))
+            f.write(route_lines(make(angle)))
     return sorted(ROUTES)
 
 
@@ -223,9 +222,6 @@ def main(argv=None):
     r = sub.add_parser("routes")
     r.add_argument("out_dir")
     r.add_argument("--angle", type=float, default=ANGLE, help="the stick's starting angle (0 right, 90 up)")
-    r.add_argument("--prelude", action="append", default=[], metavar="MS:BUTTONS",
-                   help="buttons pressed before t=0 (the proxy's # prelude; e.g. 1000:4096, A on the "
-                        "test options' notice); a comment for the recompiled build")
     s = sub.add_parser("summary")
     s.add_argument("traces", nargs="+")
     s.add_argument("--svg")
@@ -235,8 +231,7 @@ def main(argv=None):
     c.add_argument("--svg")
     a = ap.parse_args(argv)
     if a.cmd == "routes":
-        prelude = [tuple(int(v) for v in p.split(":")) for p in a.prelude]
-        for name in write_routes(a.out_dir, a.angle, prelude):
+        for name in write_routes(a.out_dir, a.angle):
             print(os.path.join(a.out_dir, name + ".txt"))
         return 0
     if a.cmd == "summary":

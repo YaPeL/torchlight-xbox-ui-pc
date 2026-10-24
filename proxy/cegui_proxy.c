@@ -825,6 +825,10 @@ static void save_root_install(void) {
 void *x360_self_module(void) { return self_module; }
 
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
+    if (reason == 0) {   /* DLL_PROCESS_DETACH: the measurement's files written to their end */
+        void x360_pad_shutdown(void);
+        x360_pad_shutdown();
+    }
     if (reason == 1) {
         self_module = module;
         DisableThreadLibraryCalls(module);

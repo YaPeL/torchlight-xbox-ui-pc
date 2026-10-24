@@ -858,7 +858,11 @@ and on the recompiled 360's whatever their frame rates; each change to the walk 
 playing the same recording and comparing the traces (`pad_trace.py compare`). A replay file is
 loaded on the process heap (64 MB at most), so a long recording fits. The save: a copy of a hero
 saved in town, through `save_root=`, so the session starts at the town's start point, as the
-recompiled build's does from a town save.
+recompiled build's does from a town save. The recording is written to its end when the game
+exits (`DLL_PROCESS_DETACH`), and when the pad drops out its line at rest is written too; a replay
+is cut at 70 minutes (the trace's microseconds in 32 bits). The tool's own routes
+(`pad_trace.py routes`) start to the left (`--angle`, 180 by default), the open ground at the
+town's start point.
 
 **Doors and barrels (2026-10-15, two regressions the user found).** **[read; the logs]**
 - GOG keeps doors and levers as `CTriggerUnit` and barrels as `CBreakable` in the level's item

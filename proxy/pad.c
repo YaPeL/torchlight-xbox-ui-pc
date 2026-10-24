@@ -43,6 +43,7 @@ IMPORT BOOL __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD
 IMPORT DWORD __stdcall GetFileSize(HANDLE file, DWORD *high);
 IMPORT HANDLE __stdcall GetProcessHeap(void);
 IMPORT void *__stdcall HeapAlloc(HANDLE heap, DWORD flags, unsigned long bytes);
+IMPORT BOOL __stdcall HeapFree(HANDLE heap, DWORD flags, void *mem);
 typedef struct { WORD year, month, day_of_week, day, hour, minute, second, ms; } SYSTEMTIME_;
 IMPORT void __stdcall GetLocalTime(SYSTEMTIME_ *t);
 IMPORT HWND __stdcall GetActiveWindow(void);
@@ -248,7 +249,7 @@ static void replay_load(const char *path) {
     CloseHandle(f);
     for (i = 0; text[i]; i++) if (text[i] == '\n') lines++;
     replay = (struct replay_sample *)HeapAlloc(GetProcessHeap(), 0, lines * sizeof *replay);
-    if (!replay) { x360_log("pad: no memory for the replay\r\n"); return; }
+    if (!replay) { HeapFree(GetProcessHeap(), 0, text); x360_log("pad: no memory for the replay\r\n"); return; }
     p = text;
     while (*p) {
         const char *line = p;
@@ -279,6 +280,8 @@ static void replay_load(const char *path) {
         }
         if (*p) p++;
     }
+    HeapFree(GetProcessHeap(), 0, text);
+    while (replay_n && replay[replay_n - 1].t > 4200000) replay_n--;   /* 70 min: the trace's microseconds in 32 bits */
     replay_armed = replay_n != 0;
     x360_log("pad: replay of ");
     x360_log_num((long)replay_n);
@@ -357,6 +360,7 @@ static void record_tick(unsigned now) {
         record_put("# x360ui pad replay v1\r\n# start_ms 0\r\n# pad_record: t=0 the first frame in play\r\n");
     }
     if (record_file == (HANDLE)(long)-1) return;
+    if (now - record_flushed_at >= 500) { record_flushed_at = now; record_flush(); }   /* also at rest */
     cur[0] = raw_lx; cur[1] = raw_ly; cur[2] = raw_lt; cur[3] = raw_rt; cur[4] = (long)(buttons & 0xffff);
     for (i = 0; i < 5; i++) if (cur[i] != last[i]) same = 0;
     if (same) return;
@@ -364,8 +368,8 @@ static void record_tick(unsigned now) {
     record_num((long)(now - first_play_at));
     for (i = 0; i < 5; i++) { record_put(" "); record_num(cur[i]); }
     record_put("\r\n");
-    if (now - record_flushed_at >= 500) { record_flushed_at = now; record_flush(); }
 }
+
 
 /* The replay's sample at now: 1 while it runs (the pad then reads it), 0 before t=0 and after. */
 static int replay_sample(unsigned now) {
@@ -536,7 +540,11 @@ static void poll(void) {
                 x360_log("\r\n");
                 last_result = result;
             }
-            if (result != 0) { lx = ly = ry = 0; buttons = 0; raw_lx = raw_ly = 0; raw_lt = raw_rt = 0; return; }
+            if (result != 0) {
+                lx = ly = ry = 0; buttons = 0; raw_lx = raw_ly = 0; raw_lt = raw_rt = 0;
+                record_tick(qms());   /* the pad gone: the recording at rest too */
+                return;
+            }
         }
         raw_lx = st.lx; raw_ly = st.ly; raw_lt = st.lt; raw_rt = st.rt;
         lx = st.lx * 1000 / 32767;
@@ -1506,4 +1514,13 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
     if (pad_file[0]) { x360_log(pad_file); x360_log("\r\n"); }
+}
+
+/* The process ends (DLL_PROCESS_DETACH: the game's own exit, Alt+F4 too): the recording's and the
+ * trace's last lines written, the line at rest among them. */
+void x360_pad_shutdown(void) {
+    record_flush();
+    if (record_file != (HANDLE)(long)-1) { CloseHandle(record_file); record_file = (HANDLE)(long)-1; }
+    trace_flush();
+    if (trace_file != (HANDLE)(long)-1) { CloseHandle(trace_file); trace_file = (HANDLE)(long)-1; }
 }
