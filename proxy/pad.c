@@ -1346,6 +1346,10 @@ static void walk_patch_install(void) {
     x360_log(")\r\n");
 }
 
+extern unsigned x360_frames;            /* proxy/x360_menu.c's frame listener */
+int x360_walk_dest_on = 1;              /* x360_ui.ini pad_walk_dest=0: the old destination (to compare) */
+static unsigned dest_frame;
+
 static int direction_changed(void) {
     /* More than about 5 degrees between the stick now and at the last probe. */
     long dot = (long)lx * probed_lx + (long)ly * probed_ly;
@@ -1573,12 +1577,21 @@ static void order(void) {
             }
             if (have_world && face_each_frame)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
-            if (have_world && now - last_order >= 100 && !skill_locks_movement(hero)) {
+            /* The 360's walk (sub_82199E08, change b): a destination each frame, 5 times the
+             * stick's length along it; pad_walk_dest=0 (or no frame count) keeps the old one, 2
+             * units every 0.1 s (sub_8221B8E8's, the 360's walk after a held action). */
+            if (have_world && !skill_locks_movement(hero) &&
+                (x360_walk_dest_on && x360_frames ? x360_frames != dest_frame : now - last_order >= 100)) {
+                float ahead = 2.0f;
+                if (x360_walk_dest_on && x360_frames) {
+                    ahead = 5.0f * root(((float)lx * lx + (float)ly * ly) / 1000000.0f);
+                    dest_frame = x360_frames;
+                }
                 last_order = now;
                 aim_lx = lx;
                 aim_ly = ly;
-                ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * world_x,
-                                                          pos[2] + 2.0f * world_z);
+                ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + ahead * world_x,
+                                                          pos[2] + ahead * world_z);
                 dest_calls++;
                 note(3, "pad: setDestination called\r\n");
             }

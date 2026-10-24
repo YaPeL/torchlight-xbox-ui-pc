@@ -8437,8 +8437,10 @@ static void pc_menus_nav_tick(void) {
     }
 }
 
+unsigned x360_frames;   /* the game's frames, counted by the frame listener (proxy/pad.c: one destination a frame) */
 void x360_frame_tick(void) {
     static int logged, preloaded;
+    x360_frames++;
     __try { black_screen_tick(); }
     __except (1) {
         bs_state = 0; bs_failed = 1;
