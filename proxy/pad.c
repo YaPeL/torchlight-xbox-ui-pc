@@ -1162,7 +1162,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
     real_get_cursor_pos = (get_cursor_pos_fn)patch_import("user32.dll", "GetCursorPos", (void *)pad_get_cursor_pos);
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
-    x360_pad_running = real_get_cursor_pos != 0;
+    x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
