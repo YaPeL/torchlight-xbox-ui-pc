@@ -3204,6 +3204,13 @@ next start: the stop's text on the black screen at the title, A dismissed it wit
 title's menu; 4, `test_save_hook_fails` and `test_load_hook_fails`: the warning on the black screen
 at the title, wrapped, before any character was loaded.
 
+**The test options (the GPU agent's review, item 6; 2026-10-23).** `save_root=` (the saves in
+another folder, where no installer's backup looks), `hold_saves=1` (every save held back),
+`pad_detect=`, `console=` and every `test_*` option are for runs on copies. Both installers drop
+them when they write the ini (`install.is_test_option`); the proxy names any it finds at start in
+a notice on screen (PC's modal, once in play), so a forgotten one is never silent. Test:
+`test_test_options_not_kept` (both installers, the same ini).
+
 **Two games found (the GPU agent's review, a low point; 2026-10-23).** With more than one
 supported game and no `--game`, both installers list them; on the console or in windows each is
 offered in turn (the first by default) and the one taken is installed or uninstalled; `--yes`

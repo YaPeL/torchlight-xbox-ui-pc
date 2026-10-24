@@ -376,6 +376,28 @@ def read_ini(game):
     return values
 
 
+# The proxy's test options (x360_ui.ini, for runs on copies): never kept by an install; the proxy
+# also warns on screen when it finds one. The same list in installer/src/install.cpp (ini_text) and
+# proxy/cegui_proxy.c (read_config).
+TEST_OPTIONS = ("save_root", "hold_saves", "pad_detect", "console")
+
+
+def is_test_option(key):
+    return key in TEST_OPTIONS or key.startswith("test_")
+
+
+def mod_data_folders(game):
+    """The proxy's own folder, %LOCALAPPDATA%\\x360ui (x360_stop.txt): beside each save folder's AppData
+    (under Wine, the prefix's), and Windows' own."""
+    found = []
+    for folder in save_folders(game):   # .../AppData/Roaming/runic games/torchlight/save
+        appdata = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(folder))))
+        found.append(os.path.join(appdata, "Local", "x360ui"))
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        found.append(os.path.join(os.environ["LOCALAPPDATA"], "x360ui"))
+    return [f for f in dict.fromkeys(found) if os.path.isdir(f)]
+
+
 def write_ini(game, out, bag="pc"):
     """x360_ui.ini with the keys the installer owns set; other lines kept."""
     path = os.path.join(game, "x360_ui.ini")
@@ -388,7 +410,8 @@ def write_ini(game, out, bag="pc"):
     lines = []
     if os.path.isfile(path):
         with open(path, encoding="utf-8", errors="ignore") as f:
-            lines = [l.rstrip("\r\n") for l in f if l.split("=", 1)[0].strip() not in owned]
+            lines = [l.rstrip("\r\n") for l in f
+                     if l.split("=", 1)[0].strip() not in owned and not is_test_option(l.split("=", 1)[0].strip())]
     with open(path, "w", encoding="utf-8", newline="\r\n") as f:
         for k, v in owned.items():
             if v is not None:
@@ -572,6 +595,8 @@ def do_uninstall(args):
             os.remove(os.path.join(game, name))
         except OSError:
             pass
+    for folder in mod_data_folders(game):
+        shutil.rmtree(folder, ignore_errors=True)
     ask.info(f"Uninstalled from {game}." + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
     return 0
 

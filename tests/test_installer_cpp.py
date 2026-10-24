@@ -594,6 +594,37 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(len(backups), 1, who)
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
 
+    def test_test_options_not_kept(self):
+        """The proxy's test options (save_root moves the saves where no backup looks, hold_saves holds
+        every save): dropped by an install in both installers, the user's other lines kept."""
+        text = (b"save_root=Z:\\somewhere\r\n hold_saves=1\r\ntest_no_stop =1\r\npad_detect=057e\r\n"
+                b"console=MONEY 1\r\ntest_bare\r\nfont_diff=1\r\ndialog_markup=1\r\n")
+        for who in ("py", "cpp"):
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "wb") as f:
+                f.write(text)
+            r = self.install(who, "--bag", "pc")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "rb") as f:
+                ini = f.read()
+            for key in (b"save_root", b"hold_saves", b"test_no_stop", b"pad_detect", b"console", b"test_bare"):
+                self.assertNotIn(key, ini, who)
+            self.assertTrue(ini.endswith(b"font_diff=1\r\ndialog_markup=1\r\n"), who)
+        self.same_install()
+
+    def test_uninstall_removes_the_mods_data_folder(self):
+        """The proxy's %LOCALAPPDATA%\\x360ui (x360_stop.txt): removed by both uninstallers."""
+        for who in ("py", "cpp"):
+            game, saves = self.games[who]
+            local = os.path.join(saves.split(os.sep + "Roaming" + os.sep)[0], "Local", "x360ui")
+            self.assertEqual(self.install(who, "--bag", "pc").returncode, 0)
+            os.makedirs(local)
+            with open(os.path.join(local, "x360_stop.txt"), "w") as f:
+                f.write("a stop's text")
+            r = self.uninstall(who, "--yes")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertFalse(os.path.exists(local), who)
+            self.assertTrue(os.path.isdir(os.path.dirname(local)), who)               # AppData/Local itself kept
+
     def test_two_games_shown_and_chosen(self):
         """Two supported games found: both installers name them, in the order they are found (the
         folders' own order, the same in both); --yes takes the first and says so; on the console a

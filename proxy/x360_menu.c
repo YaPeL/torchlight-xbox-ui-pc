@@ -7467,16 +7467,28 @@ static void last_resort_box(const unsigned short *text) {
 }
 
 /* A message for the player that does not stop the game: shown in PC's modal once in play. */
-static unsigned short notice_text[600];
+static char notice_utf8[1400];
 static int notice_pending;
-__attribute__((unused)) static void queue_notice(const char *text) {
-    utf8_to_wide(text, notice_text, sizeof notice_text / sizeof notice_text[0]);
+static void queue_notice(const char *text) {   /* appended to any notice not shown yet */
+    unsigned n = length(notice_utf8);
+    if (n && n + 2 < sizeof notice_utf8) { notice_utf8[n++] = '\n'; notice_utf8[n++] = '\n'; notice_utf8[n] = 0; }
+    copy(notice_utf8 + n, sizeof notice_utf8 - n, text, 0);
     notice_pending = 1;
     x360_log("x360: a notice for the player: "); x360_log(text); x360_log("\r\n");
 }
 static void notice_tick(void) {
+    static unsigned short wide[1400];
     if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
-    if (open_pc_modal("The mod", notice_text)) { notice_pending = 0; x360_log("x360: the notice shows\r\n"); }
+    utf8_to_wide(notice_utf8, wide, sizeof wide / sizeof wide[0]);
+    if (open_pc_modal("The mod", wide)) { notice_pending = 0; notice_utf8[0] = 0; x360_log("x360: the notice shows\r\n"); }
+}
+/* x360_ui.ini's test options found at start (proxy/cegui_proxy.c): told on screen once in play. */
+void x360_test_options_notice(const char *names) {
+    char text[400];
+    copy(text, sizeof text, "Test options are on in x360_ui.ini (", names);
+    copy(text + length(text), sizeof text - length(text), "). They are for test runs on copies and may hold "
+         "saves back or move the save folder: remove those lines, or install again.", 0);
+    queue_notice(text);
 }
 
 /* x360_stop.txt (stop_path): the stop's text, kept until the player has seen it (the stop's

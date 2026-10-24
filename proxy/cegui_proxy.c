@@ -204,8 +204,9 @@ void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
 void x360_bag_patch(void);
 void x360_load_hook_install(void);
 
+void x360_test_options_notice(const char *names);
 static void read_config(void) {
-    char path[520], text[1024], *line;
+    char path[520], text[1024], *line, test_names[160];
     DWORD n = GetModuleFileNameA(self_module, path, 500), got = 0;
     HANDLE f;
     while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
@@ -215,10 +216,25 @@ static void read_config(void) {
     ReadFile(f, text, sizeof text - 1, &got, 0);
     CloseHandle(f);
     text[got] = 0;
+    test_names[0] = 0;
     for (line = text; *line;) {
         char *end = line;
         while (*end && *end != '\r' && *end != '\n') end++;
         if (*end) *end++ = 0;
+        {
+            /* The test options (runs on copies): named in a notice on screen (x360_menu.c). */
+            static const char *const tests[] = {"save_root=", "hold_saves=", "pad_detect=", "console=", "test_", 0};
+            int k;
+            for (k = 0; tests[k]; k++)
+                if (starts(line, tests[k])) {
+                    const char *c = line;
+                    unsigned m = length(test_names);
+                    if (m && m + 2 < sizeof test_names) { test_names[m++] = ','; test_names[m++] = ' '; }
+                    while (*c && *c != '=' && m + 1 < sizeof test_names) test_names[m++] = *c++;
+                    test_names[m] = 0;
+                    break;
+                }
+        }
         if (starts(line, "mode=scheme")) mode_scheme = 1;
         if (starts(line, "trace=1")) trace = 1;
         if (starts(line, "pad=1")) pad = 1;
@@ -254,6 +270,8 @@ static void read_config(void) {
         line = end;
         while (*line == '\r' || *line == '\n') line++;
     }
+    if (test_names[0]) { put("test options on: "); put(test_names); put("\r\n"); }
+    if (test_names[0] && mode_scheme) x360_test_options_notice(test_names);
     put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"");
     put(trace ? ", trace\r\n" : "\r\n");
 }
