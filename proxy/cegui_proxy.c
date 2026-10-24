@@ -10,7 +10,7 @@
  * argument has the same convention (this in ecx, edx unused, the callee pops the stack
  * arguments), so the thunks are plain C and need no MSVC C++ ABI. CEGUI::String is only read,
  * through the real DLL's String::c_str(). No CRT: kernel32 only, plus msvcr90's SEH handler.
- * The log is x360_ui.log next to this DLL. The export table is made by tools/build_proxy.py from
+ * The log is x360_ui.log in %LOCALAPPDATA%\x360ui (x360_data_path). The export table is made by tools/build_proxy.py from
  * the user's own CEGUIBase.dll.
  *
  * x360_ui.ini next to this DLL (optional; without it the proxy only logs):
@@ -101,13 +101,67 @@ static void put_dec(unsigned long v) {
     put(buf + i);
 }
 
+/* ---- the mod's own files (x360_ui.log, x360_settings.ini; x360_stop.txt in x360_menu.c) ----
+ * In %LOCALAPPDATA%\x360ui (under Wine or Proton, the prefix's): the game's folder may be Program
+ * Files, which the game cannot write and Windows would redirect into VirtualStore, where no
+ * uninstaller looks. Beside this DLL only when there is no LOCALAPPDATA or its folder cannot be
+ * made. Wide paths (any user name); kernel32's W functions, looked up (no import). */
+typedef unsigned short wchar16;
+static FARPROC kernel32_proc(const char *name) {
+    HMODULE k = GetModuleHandleA("kernel32.dll");
+    return k ? GetProcAddress(k, name) : 0;
+}
+static void wcat16(wchar16 *d, unsigned size, const char *ascii) {
+    unsigned n = 0;
+    while (d[n]) n++;
+    while (*ascii && n + 1 < size) d[n++] = (unsigned char)*ascii++;
+    d[n] = 0;
+}
+int x360_data_path(const char *name, wchar16 *out, unsigned size) {
+    typedef DWORD (__stdcall *getenv_fn)(const wchar16 *n, wchar16 *o, DWORD s);
+    typedef BOOL (__stdcall *mkdir_fn)(const wchar16 *n, void *sec);
+    typedef DWORD (__stdcall *attr_fn)(const wchar16 *n);
+    typedef DWORD (__stdcall *module_fn)(HMODULE m, wchar16 *o, DWORD s);
+    static const wchar16 var[] = {'L','O','C','A','L','A','P','P','D','A','T','A',0};
+    getenv_fn env = (getenv_fn)kernel32_proc("GetEnvironmentVariableW");
+    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryW");
+    attr_fn attr = (attr_fn)kernel32_proc("GetFileAttributesW");
+    module_fn mod = (module_fn)kernel32_proc("GetModuleFileNameW");
+    DWORD n = env ? env(var, out, size - 48) : 0;
+    if (n && n < size - 48 && mkdir && attr) {
+        wcat16(out, size, "\\x360ui");
+        mkdir(out, 0);
+        DWORD at = attr(out);
+        if (at != (DWORD)-1 && (at & 0x10)) {   /* FILE_ATTRIBUTE_DIRECTORY */
+            wcat16(out, size, "\\");
+            wcat16(out, size, name);
+            return 1;
+        }
+    }
+    n = mod ? mod(self_module, out, size - 48) : 0;
+    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
+    out[n] = 0;
+    wcat16(out, size, name);
+    return 0;
+}
+/* CreateFileW on x360_data_path(name). */
+HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition) {
+    typedef HANDLE (__stdcall *create_fn)(const wchar16 *n, DWORD a, DWORD s, void *sec, DWORD d, DWORD f, HANDLE t);
+    create_fn create = (create_fn)kernel32_proc("CreateFileW");
+    wchar16 path[600];
+    path[0] = 0;
+    x360_data_path(name, path, 600);
+    return create && path[0] ? create(path, access, share, 0, disposition, 0x80, 0) : INVALID_HANDLE;
+}
+
 static void open_log(void) {
-    char path[520];
-    DWORD n = GetModuleFileNameA(self_module, path, 500);
-    while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
-    memcpy(path + n, "x360_ui.log", 12);
-    log_file = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
+    int local;
+    wchar16 path[600];
+    path[0] = 0;
+    local = x360_data_path("x360_ui.log", path, 600);
+    log_file = x360_data_open("x360_ui.log", GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS);
     put("x360_ui proxy CEGUIBase.dll: loaded\r\n");
+    put(local ? "the log in %LOCALAPPDATA%\\x360ui\r\n" : "the log beside the DLL (no LOCALAPPDATA)\r\n");
 }
 
 /* For proxy/pad.c. */
