@@ -13,7 +13,7 @@
  * (sticks from -1 to 1 as numbers times 1000, buttons as XInput's decimal mask), re-read every
  * 50 ms, so a test can drive it without a hand on the pad. With pad_replay=PATH, a recorded stick
  * (the format below, replay_load) replaces XInput; with pad_trace=1 the hero's path is written to
- * x360_trace.csv (trace_tick): the two halves of the movement's measurement (doc section 27b).
+ * x360_trace.csv (trace_tick): the two halves of the movement's measurement (doc section 9, "The movement measured").
  */
 
 typedef unsigned long DWORD;
@@ -187,7 +187,7 @@ static int parse_int(const char **s) {
     return neg ? -v : v;
 }
 
-/* ---- The movement's measurement (doc section 27b): a recorded stick in, the hero's path out ----
+/* ---- The movement's measurement (doc section 9, "The movement measured"): a recorded stick in, the hero's path out ----
  *
  * The replay file, the same for this proxy and for the recompiled 360 build:
  *   # x360ui pad replay v1
@@ -342,7 +342,10 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     if (!replay_t0) return;
     if ((int)(now - replay_t0) < 0) return;
     end = replay_n ? replay[replay_n - 1].t + 2000 : 600000;
-    if (replay_n && !disturbed && now - replay_t0 <= replay[replay_n - 1].t && now - world_at > 100) {
+    /* The previous frame that reached the world fell inside the replay and the pad has been held
+     * since: by a menu, a tip, a cinematic, a load (also when play comes back only after the end). */
+    if (replay_n && !disturbed && world_at && (int)(world_at - replay_t0) >= 0 &&
+        world_at - replay_t0 <= replay[replay_n - 1].t && now - world_at > 100) {
         disturbed = 1;   /* the last frames went to a menu, a tip or a cinematic, not the world */
         x360_log("pad: replay disturbed (the pad held by a menu, a tip or a cinematic): this run does not count\r\n");
     }
@@ -406,6 +409,8 @@ static void poll(void) {
         lx = parse_int(&p);
         ly = parse_int(&p);
         buttons = (unsigned)parse_int(&p);
+        raw_lx = lx * 32767 / 1000;   /* for the trace */
+        raw_ly = ly * 32767 / 1000;
     } else {
         struct { DWORD packet; WORD buttons; unsigned char lt, rt; short lx, ly, rx, ry; } st;
         if (!xinput_tried) {
@@ -425,7 +430,7 @@ static void poll(void) {
                 x360_log("\r\n");
                 last_result = result;
             }
-            if (result != 0) { lx = ly = ry = 0; buttons = 0; return; }
+            if (result != 0) { lx = ly = ry = 0; buttons = 0; raw_lx = raw_ly = 0; raw_lt = raw_rt = 0; return; }
         }
         raw_lx = st.lx; raw_ly = st.ly; raw_lt = st.lt; raw_rt = st.rt;
         lx = st.lx * 1000 / 32767;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The pad's movement measured (docs/xbox-ui-on-pc.md section 27b): recorded stick routes, and the
+"""The pad's movement measured (docs/xbox-ui-on-pc.md section 9 ("The movement measured")): recorded stick routes, and the
 hero's traces compared.
 
 pad_trace.py routes OUT_DIR                 write the standard routes (pad replay v1 files)
@@ -29,7 +29,7 @@ import sys
 RAW = 32767
 DEAD_ZONE = 0.1                 # the 360's (sub_82199E08)
 SPAN_US = 250_000
-# The tolerances (section 27b): the paths at most this far apart at any time, in world units ...
+# The tolerances (section 9 ("The movement measured")): the paths at most this far apart at any time, in world units ...
 MAX_GAP = 0.5
 # ... and each 250 ms span's speed within this ratio of the reference's, where the reference moves.
 SPEED_TOLERANCE = 0.10
