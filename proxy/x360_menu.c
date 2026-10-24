@@ -6458,17 +6458,39 @@ static int pc_tip_up(void) {
  * brought in front again. */
 static void press_tip(const char *name) {
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    typedef void *(__fastcall *get_target_fn)(const void *self, void *edx);
+    typedef void (__fastcall *set_target_fn)(void *self, void *edx, void *w);
     static vis_fn vis;
-    void *top = pc_tip_sheet();
-    int was_hidden;
+    static get_target_fn get_target;
+    static set_target_fn set_target;
+    static parent_of_fn gp;
+    void *top = pc_tip_sheet(), *sys = system_ptr(), *target = 0, *up;
+    int was_hidden, depth = 0;
     if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!get_target) get_target = (get_target_fn)need("?getModalTarget@System@CEGUI@@QBEPAVWindow@2@XZ");
+    if (!set_target) set_target = (set_target_fn)need("?setModalTarget@System@CEGUI@@QAEXPAVWindow@2@@Z");
+    if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    /* Another window modal (PC's modal opened before or after the tip, as the mod's notice: the
+     * owner's run of 2026-10-24) would take the click: let go for the click only, unless it is
+     * the tip's own. */
+    if (sys && get_target && set_target && gp) {
+        target = get_target(sys, 0);
+        for (up = target; up && depth++ < 32; up = gp(up, 0))
+            if (up == top) { target = 0; break; }
+        if (target) { set_target(sys, 0, 0); x360_log("x360 tip: another window was modal, let go for the click\r\n"); }
+    }
     was_hidden = top && vis && !vis(top, 0, 1);
     if (was_hidden) set_visible(top, 0, 1);
     if (top && inventory_open) move_to_front(top, 0);
     press_pc(pc_tip_prefix, name);
     if (was_hidden) set_visible(top, 0, 0);
     if (inventory_open && master_root) move_to_front(master_root, 0);
+    if (target) set_target(sys, 0, target);
 }
+
+/* A tip up: the 360's shown, or PC's window shown and not yet seen by tip_tick (which runs after
+ * the notice and the stop). PC's modal is not opened over it: it would take the tip's clicks. */
+static int tip_up_now(void) { return x360_tip_open() || (pc_tip_prefix[0] && pc_tip_up()); }
 
 /* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
 static void pc_tip_alpha(const char *a) {
@@ -7667,7 +7689,9 @@ static void queue_notice(const char *text) {   /* appended to any notice not sho
 }
 static void notice_tick(void) {
     static unsigned short wide[1400];
-    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
+    /* Not while a tip is up (the owner's run of 2026-10-24: the new game's welcome tip, then the
+     * notice over it, and neither closed): shown once the tip is closed. */
+    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open() || tip_up_now()) return;
     utf8_to_wide(notice_utf8, wide, sizeof wide / sizeof wide[0]);
     if (open_pc_modal("The mod", wide)) { notice_pending = 0; notice_utf8[0] = 0; x360_log("x360: the notice shows\r\n"); }
 }
@@ -7768,7 +7792,7 @@ static void stop_unsaved(const char *why, int count) {
     stop_state = 3;   /* opened by stop_tick once no other modal is open (closing that one must not end the game) */
 }
 static void stop_tick(void) {
-    if (stop_state == 3 && !pc_modal_menu_open()) {
+    if (stop_state == 3 && !pc_modal_menu_open() && !tip_up_now()) {   /* a tip closed first; STOP_WAIT_MS still holds */
         stop_state = x360_test_stop_modal_fails ? 1 : open_pc_modal("The bag", stop_wbody);   /* the test: asked, never shown */
         stop_t0 = GetTickCount();   /* its own 15 s, from now */
         if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
