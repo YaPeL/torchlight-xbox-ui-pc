@@ -3496,7 +3496,7 @@ a partial tilt): merged only with the owner's OK after a test by hand.
 
 The replay reproduces the recording (the 0.94 straight: 32.20 units against the recording's
 32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).
-## 30. A destination each frame (the movement plan's change b, 2026-10-24; parked)
+## 30. A destination each frame (the movement plan's change b, 2026-10-24)
 
 The 360's plain stick walk (`sub_82199E08`) sends a destination each frame, at 5 times the stick's
 length along the stick turned by the camera; the pad sent one every 0.1 s, 2 units ahead
@@ -3527,6 +3527,27 @@ frame is then a different rate), and the 360's per-frame `sub_8219C070`, left ou
 tried later and changed nothing (a replay each); then the 360's stick dead zone was found
 (section 32), which changes the factor's input, and (b) was measured again on top of it (30a).
 
+
+### 30a. Change b again, on top of the 360's dead zone (2026-10-24, the owner's new route)
+
+With changes a, the yaw and c integrated, the owner's new route (section 32) left one difference:
+the fastest spins (the stick turning 650 to 720 degrees a second at full tilt), where PC walked 3.4
+to 4.8 units a second against the 360's 5.2 to 5.5. Change b (a destination each frame) replayed
+on the same route, against the 360 and develop's replay:
+
+| | 360 | develop | develop + b |
+|---|---|---|---|
+| fast spins, 27.75 / 28.0 / 28.25 s (units a second) | 5.51 / 5.35 / 5.22 | 3.87 / 3.43 / 3.90 | 4.99 / 5.32 / 5.21 |
+| fast spins, 51.0 / 51.25 s | 5.42 / 5.31 | 4.78 / 4.32 | 5.11 / 5.33 |
+| path, 27 to 29 s and 51 to 53 s | 9.20, 9.90 | 8.05, 9.44 | 9.14, 9.95 |
+| start | 860 ms | 860 ms | 861 ms |
+| whole path | 193.6 | 191.1 | 193.2 |
+| gap to the 360, every 0.1 s: largest, mean | | 1.34, 0.35 | 0.96, 0.30 |
+| speed at a steady tilt of 0.75 / 0.80 / 0.85 | 3.16 / 3.71 / 4.54 | 3.27 / 3.67 / 4.43 | 3.17 / 3.68 / 4.53 |
+
+At 0.6, 0.7, 0.9 and full tilt the three agree within 0.03. So b brings the fast spins to the
+360's and makes nothing else worse; its earlier result (section 30) came before the dead zone,
+when the factor read the raw stick. Ready to integrate on the owner's word.
 
 ## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
 
