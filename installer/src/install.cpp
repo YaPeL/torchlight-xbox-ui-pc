@@ -1039,8 +1039,11 @@ int do_uninstall(const Args& args) {
 
 // The licence and the third-party notices this executable carries (miniz's MIT notice among them).
 int do_notices() {
-  std::cout << "x360ui-install is free software under the GNU General Public License 3.0 (below); its source is\n"
-               "https://github.com/YaPeL/torchlight-xbox-ui-pc at the release's tag.\n\n"
+#ifdef _WIN32
+  SetConsoleOutputCP(65001);   // the texts are UTF-8 (the manifest's code page is not the console's)
+#endif
+  std::cout << "x360ui-install " << X360UI_VERSION << " is free software under the GNU General Public License 3.0\n"
+               "(below); its source is https://github.com/YaPeL/torchlight-xbox-ui-pc at the tag " << X360UI_VERSION << ".\n\n"
                "==== Third-party code in this executable ====\n\n"
             << kNoticesText << "\n==== GNU Lesser General Public License 2.1 (libmspack's LZX decoder) ====\n\n"
             << kLgplText << "\n==== GNU General Public License 3.0 ====\n\n" << kLicenseText;
