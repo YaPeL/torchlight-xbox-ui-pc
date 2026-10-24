@@ -410,7 +410,8 @@ def unit_texts(raw, keys=("NAME", "DESCRIPTION")):
 
 def item_descriptions(pak, pc_pak):
     """{"desc.<unit name>": "~" + the 360's description} for the items both paks have whose
-    description differs: the 360's, empty when it has none (PC's mouse texts, as the identify scroll's, have no counterpart there)."""
+    description differs: the 360's, empty when it has none (PC's mouse texts, as the identify
+    scroll's, have no counterpart there)."""
     out = {}
     with zipfile.ZipFile(pak) as z3, zipfile.ZipFile(pc_pak) as zp:
         n3 = {n.lower(): n for n in z3.namelist() if n.lower().startswith("media/units/items/") and n.lower().endswith(".adm")}
