@@ -1,0 +1,320 @@
+# GOG's Torchlight.exe build 17870 (timestamp 0x4ffc6815) -> Steam's build 17685 (0x4b5f7519).
+# Every address written in proxy/*.c (code and comments), its Steam address and how it was found:
+# tools/port_addresses.py's ways (docs section 16), numbers only. Columns: GOG, Steam (- when not
+# found), status, where the proxy names it (code: used by the build; comment: documentation only),
+# the ways that agree. tools/build_proxy.py --target steam takes the "verified" and "checked" lines
+# for the code; a code address without one stops the build.
+0x004016c0 0x00401640 verified   comment window, body, callers x2
+0x0040276c 0x004026bc verified   comment window, local
+0x0040c8f0 0x0040c7c0 verified   code    window, body, callers
+0x0040e6e0 0x0040e5b0 verified   code    window, body, callers x6
+0x0040e720 0x0040e5f0 verified   code    window, body, callers x6
+0x00411b8f 0x0041198f verified   comment window, local
+0x00411d60 0x00411b60 verified   code    window, body, callers x6
+0x004142a0 0x004140e0 verified   comment window, body, callers
+0x00414608 0x00414448 verified   comment window, local
+0x004146c2 0x00414502 verified   comment window, local
+0x004146f8 0x00414538 verified   comment window, local
+0x00417380 0x00417110 verified   code    body +0x58,+0x78,+0x88, callers 0x402559, 0x419d62, 0x41b919, 0x41ba70 (port_addresses)
+0x0041b56b 0x0041b171 verified   comment window, local
+0x00480760 0x0047eaf0 verified   code    window, body, callers x6
+0x004818f0 0x0047fbf0 verified   code    window, body, callers x6
+0x00482710 0x004809f0 verified   code    window, callers x5
+0x00482740 0x00480a20 verified   code    window, callers x6
+0x00484ff0 0x00483270 verified   code    window, body, callers
+0x004854a0 0x004836e0 verified   code    callers, strings
+0x004854dd 0x00483712 verified   comment local, near x2
+0x00485780 0x00483980 verified   code    window, callers x6
+0x00486150 0x00484360 verified   code    window, body, callers x6
+0x00486180 0x00484390 verified   code    window, callers x3
+0x004863b0 0x004845c0 verified   code    window, body, callers x6
+0x00486550 0x00484760 verified   code    window, body, callers x6
+0x00487d00 0x00485e90 verified   code    window, body, callers x6
+0x00487d70 0x00485f00 verified   code    window, body, callers x6
+0x00487e00 0x00485f90 verified   comment window, callers x6
+0x00487e60 0x00485ff0 verified   code    window, body, callers x6
+0x00487ec0 0x00486050 verified   code    window, body, callers x4
+0x00487f20 0x004860b0 verified   code    window, body, callers x5, callers-global
+0x00488430 0x004865c0 verified   code    window, callers
+0x00488450 0x004865e0 verified   code    window, callers x3
+0x00488470 0x00486600 verified   code    window, callers x2 (one other match outvoted)
+0x00488490 0x00486620 verified   code    window, callers x2
+0x004884b0 0x00486640 verified   code    window, callers x3
+0x004884d0 0x00486660 verified   code    window, callers
+0x004884f0 0x00486680 verified   code    window, callers
+0x00488510 0x004866a0 verified   code    window, callers
+0x00488530 0x004866c0 verified   code    window, callers
+0x004885b0 0x00486740 verified   code    window, body, callers x4, callers-global
+0x0048ffe0 0x0048e060 verified   code    window, callers x5
+0x004900d0 0x0048e150 verified   code    window, body, callers-global, callers x4
+0x00490150 0x0048e1d0 verified   code    window, body, callers x2
+0x004901b0 0x0048e230 verified   code    window, body, callers
+0x004901e0 0x0048e260 verified   code    window, body, callers x6
+0x00490330 0x0048e3b0 verified   code    window, body, callers x6
+0x00491bc0 0x0048fbd0 verified   code    body, callers x4
+0x00492160 0x00490180 verified   code    window, body, callers x6
+0x00492f60 0x00490f70 verified   code    window, callers x5
+0x004944e0 0x0040f6e0 verified   code    window, body, callers x6
+0x004949d0 0x00492970 verified   code    window, body, callers x6
+0x00494ab0 0x00492a50 verified   code    window, body, callers x6
+0x00494b30 0x00492ad0 verified   code    window, body, callers x5
+0x0049511b 0x004930bb verified   comment window, local
+0x00499e10 0x00497dc0 verified   code    window, body, callers x4
+0x0049a390 0x00498340 verified   code    window, body, callers
+0x0049f700 0x0049d580 verified   comment window, body, callers
+0x0049f85f 0x0049d6c3 verified   code    window, local
+0x0049f880 0x0049d6e4 verified   code    window, local
+0x0049f88f 0x0049d6f3 verified   code    window, local
+0x0049f8ee 0x0049d752 verified   code    window, local
+0x004a2220 0x004a0040 verified   code    callers x3
+0x004acd4b 0x004aaae5 checked    code    the loader loop's call of 0x4e6ce0 (Steam's 0x4e9480) before its push 0x7f test, in 0x4aa580 (0x4ac7c0's twin), read in Steam's disassembly
+0x004b2590 0x004b0230 verified   code    callers x3
+0x004b28f0 0x004b0570 verified   code    callers x5
+0x004b388b 0x004b149b verified   comment window, local
+0x004b3a90 0x004b16a0 verified   code    window, body, callers x4
+0x004b3b70 0x004b1780 verified   code    window, body, callers x4
+0x004b3c20 0x004b1830 verified   comment window, body
+0x004b3fe0 0x004b1be0 verified   code    body, callers
+0x004b4470 0x004b2030 verified   comment callers x4
+0x004b7470 0x004b4fb0 verified   comment window, body, callers x2
+0x004b84d0 0x004b5fb0 verified   comment window, local
+0x004b8660 0x004b6140 verified   comment window, vtable, body
+0x004b8f10 0x004b6980 verified   code    window, body
+0x004b9510 0x004b6f80 verified   code    window, body, callers x2
+0x004b9b70 0x004b75b0 verified   code    body, callers x3
+0x004c01b0 0x004bdbf0 verified   code    window, body, callers x6
+0x004d1cc0 0x004cf410 verified   code    window, body, callers x6
+0x004d2780 0x004b1410 verified   code    window, callers x6
+0x004d90d0 0x004d6670 verified   code    window, callers x2
+0x004d90f0 0x004d6690 verified   code    window, body, callers x6
+0x004dbc40 0x004d9220 verified   comment window, body, callers
+0x004dbc8d 0x004d925f verified   code    window, local
+0x004dbc9c 0x004d926e checked    code    the call after 0x4d925f's twin (push 0x15, push 2, call 0x4e7370), read in Steam's disassembly
+0x004e71b0 0x004e4630 verified   comment window, callers x6
+0x004e7330 0x004e47b0 verified   comment window, callers x5
+0x004e75d0 0x004e4b10 verified   code    window, body, callers x2
+0x004e7890 0x004e4dd0 verified   code    window, body, callers x6
+0x004e7b90 0x004e50d0 verified   code    window, body, callers x4
+0x004e7c80 0x004e51c0 verified   code    window, body, callers x5
+0x004e8410 0x004e5940 verified   code    window, body, callers x6
+0x004e84a0 0x004e59d0 verified   code    window, body, callers x4
+0x004e85b0 0x004e5ae0 verified   comment window, body, callers
+0x004e9110 0x004e6980 verified   code    body, callers x4
+0x004e9480 0x004e6ce0 verified   code    body, callers x5
+0x004e9820 0x004e7170 verified   comment body, callers x6
+0x004e9a00 0x004e7370 verified   code    window, body, callers x6
+0x004e9a30 0x004e73a0 verified   code    window, body, callers x6
+0x004e9ca0 0x004e7610 verified   code    window, body, callers x6
+0x004e9fe0 0x004e7950 verified   code    body, callers x5 (one other match outvoted)
+0x004ea6b0 0x004e8020 verified   code    window, body, callers x5
+0x004ea910 0x004e8280 verified   comment window, body, callers x3
+0x004ee7c0 0x004ec0e0 verified   code    window, body, callers x3
+0x004eec80 0x004ec5a0 verified   code    window, body, callers
+0x004f5960 0x004f3070 verified   code    body, callers x4
+0x004fc062 0x004f9974 verified   comment window, local
+0x004fdd60 0x004fb640 verified   code    window, body, callers x2
+0x005006c0 0x004fdf60 verified   code    body, callers x6
+0x00500a50 0x004fe2f0 verified   code    window, body, callers x2
+0x00510eb0 0x0050e3f0 verified   code    window, body, callers x5
+0x00524d40 0x005219b0 verified   code    window, callers x6
+0x00525579 0x005221db single     comment local
+0x0052577e 0x005223e0 single     comment local
+0x00528130 0x00524e20 verified   code    window, callers x3
+0x00528180 0x00524e70 verified   code    window, callers x2
+0x005281d0 0x00524ec0 verified   code    window, callers x6
+0x0052dfe0 0x0052a4d0 verified   comment window, callers x6
+0x005366f0 0x00532710 verified   code    window, body, callers x5, callers-global
+0x005368d0 0x005328f0 verified   code    window, body, callers x4
+0x0053ea10 0x0053a4d0 verified   code    window, body, callers x3
+0x00540601 0x0053c081 verified   comment window, local
+0x00540623 0x0053c0a3 verified   comment window, local
+0x00541090 0x0053cb10 verified   code    window, callers x6
+0x00541130 0x0053cbb0 verified   code    window, callers x6
+0x00541800 0x0053d260 verified   comment window, body, callers x2
+0x00541886 0x0053d2e6 verified   comment window, local
+0x00541c60 0x0053d6e0 verified   code    window, body, callers x6
+0x00541e80 0x0053d900 verified   code    callers x3
+0x0054281f 0x0053e259 verified   comment window, local
+0x0054289a 0x0053e2d8 single     comment local
+0x005431a5 0x0053ebed verified   comment window, local
+0x005438d9 0x0053f321 single     comment local
+0x00543d2f 0x0053f789 single     comment local
+0x00546c9f - unresolved comment no way found it
+0x005471bc 0x00542bbc verified   comment local, near x2
+0x00547ca0 0x00543660 verified   code    body, callers x5
+0x00549b70 - unresolved comment ways disagree
+0x0054cad0 0x005482f0 verified   code    body, callers x5
+0x0054d465 0x00548c65 verified   comment window, local
+0x0054ddfb 0x005495f0 verified   comment window, local
+0x0054de5c 0x00549651 verified   comment window, local
+0x0054eec2 0x0054a719 verified   comment window, local
+0x0054eeff 0x0054a756 verified   comment local, near x2
+0x0054ef28 0x0054a77f verified   comment window, local
+0x0054ef2f 0x0054a786 verified   comment window, local
+0x0054f003 0x0054a858 verified   comment window, local
+0x0054f01f - unresolved comment no way found it
+0x0054f474 0x0054acbc verified   comment window, local
+0x0054f5d7 0x0054ae1f verified   comment local, near x2
+0x005501b0 0x0054ba00 verified   code    window, body, callers x2
+0x005578e0 0x00552da0 verified   comment body, callers
+0x00557af8 0x00552f74 verified   comment window, local
+0x00557d3f 0x005531b8 verified   comment window, local
+0x00557dcd 0x00553246 verified   comment window, local
+0x00557ddf 0x00553258 verified   comment window, local
+0x00557e23 0x0055329c verified   comment window, local
+0x005582c3 0x0055372a verified   comment window, local
+0x0055832e 0x00553795 verified   comment window, local
+0x00558413 0x0055387a verified   comment window, local
+0x00558750 0x00553bb7 verified   comment window, local
+0x005588e8 - unresolved comment no way found it
+0x005589a5 0x00553e0c single     comment local
+0x005589ff 0x00553e66 verified   comment local, near
+0x00558a8f 0x00553ef9 verified   comment window, local
+0x005598c5 0x00554d4a verified   comment window, local
+0x0055a8db 0x00555d75 verified   comment local, near x2
+0x0055a8e0 0x00555d7a verified   comment local, near x2
+0x0055a942 0x00555ddc verified   comment window, local
+0x0055a9ef 0x00555e89 verified   comment local, near x2
+0x0055aa5e 0x00555ef2 verified   comment local, near x2
+0x0055b21b - unresolved comment no way found it
+0x0055b248 0x005566d6 verified   comment local, near x2
+0x0055b263 0x005566f1 verified   comment local, near
+0x0055d206 0x0055863a verified   code    window, local
+0x0055d282 0x005586b6 verified   code    window, local
+0x0055d2a4 0x005586d8 verified   code    window, local
+0x0055d2c5 0x005586f9 verified   code    window, local
+0x0055d2e7 0x0055871b verified   code    window, local
+0x0055d318 0x0055874c verified   code    window, local
+0x0055d380 0x005587b4 verified   comment window, local
+0x0055de74 0x00559279 verified   comment window, local
+0x0055e156 0x0055955b verified   comment window, local
+0x0055e28a 0x0055968f verified   comment local, near x2
+0x0055eb18 0x00559f18 verified   comment local, near x2
+0x0055eb8e 0x00559f8e verified   comment local, near x2
+0x0055f570 0x0055a8f0 verified   code    window, body, callers x5
+0x0055fcf0 - unresolved comment no way found it
+0x0055fd1d 0x0055b0ba verified   comment local, near
+0x0055fd26 0x0055b0c3 single     comment local
+0x00562953 0x0055dcf6 verified   comment window, near
+0x00562d96 0x0055e130 verified   comment near x2
+0x00562fb0 - unresolved comment no way found it
+0x00562ff7 0x0055e391 single     comment near
+0x005630c9 0x0055e463 single     comment near
+0x00563445 0x0055e7df verified   comment window, near x2
+0x00563478 0x0055e812 verified   comment window, near x2
+0x005636a9 0x0055ea43 verified   comment window, near x2
+0x005656a0 0x005609b0 verified   comment vtable, strings
+0x00569550 0x00564830 verified   code    window, body, callers
+0x00569663 0x00564930 verified   comment window, local
+0x0056a197 0x0056542b verified   comment window, local
+0x0056a350 0x00565650 verified   comment window, vtable
+0x0056a490 0x00565780 verified   comment window, vtable, body
+0x0056cd00 0x00567f60 checked    code    by hand: its body after the prologue, loosely masked, once in each build; 29 direct calls in each
+0x00574477 - unresolved comment no way found it
+0x005752d0 0x00570320 verified   comment vtable, strings
+0x00575950 0x00570970 verified   comment window, vtable
+0x00575990 0x005709c0 verified   code    body, callers x4, callers-global x2
+0x00576540 0x00571560 verified   comment window, vtable
+0x0057a800 0x00575740 verified   code    body, callers
+0x0057aea4 0x00575dc5 verified   comment window, local
+0x0057b619 0x0057652e verified   comment window, local
+0x0057b6c9 0x005765db verified   comment window, local
+0x0057c173 0x00577076 verified   comment window, local
+0x0057c900 0x005777e0 verified   comment window, vtable, body
+0x0057c997 0x00577866 verified   comment window, local
+0x0057d060 0x00577f30 verified   comment window, vtable, body
+0x0057da90 0x005788b0 verified   comment vtable, strings
+0x0057de89 - unresolved comment no way found it
+0x0057e850 0x00579620 verified   comment window, vtable x3
+0x00580f80 0x0057bd40 verified   comment vtable, strings
+0x00586c00 0x005818c0 verified   comment vtable, body
+0x0058ac50 0x00585980 verified   comment vtable, strings
+0x0058dcd0 0x005889a0 verified   comment window, vtable x3
+0x00591050 0x0058bb90 single     comment vtable
+0x00591200 0x0058bd20 checked    code    by hand: vtable slot (COptionsMenu +0x18), strings 7 of 12, the same instructions but the prologue; the body windows chose a copy of it (0x5788b0)
+0x005920c0 0x00578ab3 single     comment window
+0x005980e7 0x00592b4d verified   comment window, local
+0x0059f180 0x00599b40 verified   code    window, callers x6
+0x005a0330 0x0059acb0 verified   comment vtable, body
+0x005a58b0 0x005a0120 verified   comment window, body
+0x005aac2d 0x005a543d verified   comment window, local
+0x005aadb0 0x005a5500 verified   comment vtable, strings
+0x005b0d90 0x005ab3e0 verified   comment vtable, body
+0x005b146e 0x005abaa2 verified   comment window, local
+0x005c0190 0x005baaf0 verified   code    window, body, callers x2, callers-global x2
+0x005c53d0 0x005bf870 verified   comment window, body, callers x5
+0x005d5930 0x005cf600 verified   code    window, callers x5
+0x005d5950 0x005cf620 verified   code    window, callers, callers-global
+0x005d59b0 0x005cf680 verified   code    window, callers
+0x005d5c00 0x005cf8d0 verified   code    window, body, callers x2
+0x005d68e0 0x005d0580 checked    code    by hand: callers (its one call site in each), the same instructions but the prologue, its neighbours 0x5d5c00 and 0x5d7d40 moved alike
+0x005d7d40 0x005d19f0 verified   code    body, callers x6
+0x005d88f0 0x005d25a0 verified   comment callers x4
+0x005d8c60 0x005d2910 verified   code    window, callers x3
+0x005d8d80 0x005d2a30 verified   comment body, strings
+0x005dd660 0x005d70e0 verified   code    callers x6
+0x005de550 0x005d8000 verified   code    body, callers
+0x005df280 0x005d8ce0 verified   code    window, body, callers x2
+0x005dfb72 0x005d9632 single     comment local
+0x005e0fc0 0x005daa70 verified   comment callers, strings
+0x005e65f0 0x005e05d0 verified   comment window, body, callers
+0x005e8730 0x005e2640 verified   code    window, callers x2
+0x005e8750 0x005e2660 verified   code    window, callers, near x2 (one other match outvoted)
+0x005e8770 0x005e2680 verified   code    window, near x2 (one other match outvoted)
+0x005e9200 0x005e30b0 verified   code    window, body, callers x5
+0x005ea120 0x005e4010 verified   code    callers x5
+0x005efa20 0x005e9750 verified   comment window, callers x6
+0x005f0f50 0x005eaf90 verified   code    callers x2
+0x005f9e70 0x005f3d10 verified   code    window, body, callers x4
+0x005f9f90 0x005f3e30 verified   code    window, callers x4, callers-global
+0x005fa360 0x005f4360 verified   code    window, body, callers-global, callers x5
+0x005fe190 0x005fb380 verified   code    window, callers x5
+0x005ff150 0x005fc2f0 verified   code    body, callers x4, callers-global
+0x0060a15a 0x00609df0 checked    code    by hand: the handler pushed by the save function 0x417110 (its push imm32 after mov eax, fs:[0]; push -1), read in Steam's disassembly
+0x0070ced2 0x00707622 checked    code    by hand: the handler pushed by the modal function 0x5482f0 (verified), a frame handler stub as GOG is
+0x00a85390 0x00a5c398 verified   code    import, refs x5
+0x00a85418 0x00a5c420 verified   code    import msvcp90 basic_string<wchar_t>(const wchar_t *)
+0x00a85428 0x00a5c430 verified   code    import, refs x8
+0x00a85f64 0x00a5cf78 verified   code    import, refs x3
+0x00a85fc4 0x00a5cff8 verified   code    import, refs x7
+0x00a85fd4 0x00a5d008 verified   code    import, refs x12
+0x00a85fd8 0x00a5d00c verified   code    import, refs x8
+0x00a85fdc 0x00a5d010 verified   code    import, refs x7
+0x00a85fe0 0x00a5d014 verified   code    import, refs x7
+0x00a8ec04 0x00a65c54 verified   code    refs x12; content equal (4 bytes)
+0x00aa75f4 0x00a7e734 verified   code    refs x4; content equal (4 bytes)
+0x00ab2150 0x00a892a0 single     comment refs; content equal (4 bytes)
+0x00ab2154 0x00a892a4 verified   comment refs-global x2; content equal (4 bytes)
+0x00ab2c4c 0x00a89d9c verified   code    rtti, refs x2
+0x00ab6c0c 0x00a8dd5c verified   code    rtti, refs x2
+0x00ab72a0 0x00a8e3f0 verified   comment rtti, refs x2
+0x00ab72b8 - unresolved comment no way found it
+0x00ab731c 0x00a8e46c verified   code    rtti, refs x2
+0x00ab73e0 0x00a8e530 verified   code    rtti, refs x2
+0x00ab7b58 0x00a8eca8 verified   code    rtti, refs x2
+0x00ab7d04 0x00a8ee54 verified   code    rtti, refs
+0x00ab7d78 0x00a8eec8 verified   code    rtti, refs
+0x00ab7de0 0x00a8ef30 verified   code    rtti, refs x2
+0x00ab7ff0 0x00a8f140 verified   comment rtti, refs
+0x00ab8730 0x00a8f880 verified   code    rtti, refs x2
+0x00ab87c4 0x00a8f914 verified   code    rtti, refs x2
+0x00aba608 0x00a91758 verified   code    refs x5; content equal (4 bytes)
+0x00aba60c 0x00a9175c verified   code    refs x7; content equal (4 bytes)
+0x00abace0 0x00a91e30 verified   code    refs x5; content equal (28 bytes)
+0x00abacfc 0x00a91e4c verified   code    string, refs x5; content equal (26 bytes)
+0x00abad18 0x00a91e68 verified   code    string, refs x5; content equal (34 bytes)
+0x00abad3c 0x00a91e8c verified   code    string, refs x4; content equal (30 bytes)
+0x00abbac4 0x00a93514 verified   comment rtti, refs
+0x00c1ad64 0x00bf0e0c verified   code    refs x2
+0x00d5d9a4 0x00d33a4c verified   code    refs x8, refs-global
+0x00e40900 0x00e169a8 verified   code    refs x2, refs-global
+0x00e5575c 0x00e2b804 verified   code    refs x6, refs-global x3
+0x00f25320 0x00efb3c8 verified   code    refs-global, refs x3
+0x00f60bf8 0x00f36c90 single     comment refs
+0x00f60bfc 0x00f36c94 single     comment refs
+0x00f60c00 0x00f36c98 single     comment refs
+0x00f60c04 0x00f36c9c single     comment refs
+0x00f60c08 0x00f36ca0 single     comment refs
+0x00f60c0c 0x00f36ca4 single     comment refs
+0x00f60c90 0x00f36d28 verified   code    refs x3, refs-global x3
+0x00f60c94 0x00f36d2c verified   comment refs x4
