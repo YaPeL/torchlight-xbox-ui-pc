@@ -41,7 +41,8 @@ function and the rule read.
 
 - Work goes to `develop` by a pull request from a branch (`CONTRIBUTING.md`). `main` receives
   `develop` through a pull request from a `to-main-<name>` branch made at `develop`'s head, never
-  with `develop` itself as the head: the repository deletes a merged head branch.
+  with `develop` itself as the head (the repository deletes a merged head branch; the rulesets
+  refuse that for `develop`, and the merge would not have to rely on it).
 - `main` and `develop` are protected (the rulesets `main` and `main-checks`): no deletion, no force
   push, changes only by pull request with CI's checks green (`tests`, `no-game-files`, `proxy`,
   `installer (ubuntu-24.04)`, `installer (windows-2022)`), no approval required. The owner's

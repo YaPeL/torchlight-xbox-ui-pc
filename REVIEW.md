@@ -11,8 +11,11 @@ How a review is done in this repository, for people and agents. The project's ru
 - A change that can write, move or lose the player's saves or items: a save written while items
   are kept aside, an item destroyed or duplicated by a move cut short, a stop that lets the game
   save before it ends (Torchlight saves on closing, Alt+F4 too).
-- A file of the mod written beside the game instead of `%LOCALAPPDATA%\x360ui` (Program Files and
-  VirtualStore), or an uninstaller that leaves the mod's folders behind or removes the player's.
+- A file the mod writes at run time put beside the game instead of `%LOCALAPPDATA%\x360ui`
+  (Program Files and VirtualStore), beyond the documented exceptions (`x360_ui.ini`, which the
+  installer writes; the developer dumps; the fallbacks when LOCALAPPDATA is missing or cannot be
+  written: doc section 24, "The mod's own files out of the game's folder"), or an uninstaller that
+  leaves the mod's folders behind or removes the player's.
 - `tools/install.py` and `installer/src/install.cpp` doing different things: the C++ installer
   keeps the Python one's behaviour, and `tests/test_installer_cpp.py` checks it on synthetic games.
 - Pad behaviour (moving, targeting, attacking, the 360's screens) that copies PC's mouse where the

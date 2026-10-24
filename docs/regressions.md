@@ -3,7 +3,7 @@
 Every bug that reached a hand pass (a QA run of the owner's) or a release, and every one caught only
 after the change was taken as done (by a pull request's review or a run before the merge, where
 the tests had passed): what happened, which layer should have caught it, and what catches it now (a
-test, a log line, a test option or a checklist item of the QA runs). A new entry is added when a
+test, a log line, a test option or an item of the QA checklist at the end of this file). A new entry is added when a
 bug is found that late; the lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only
 here. Games' texts are named by role, never quoted.
 
@@ -58,10 +58,11 @@ here. Games' texts are named by role, never quoted.
   uninstaller did not look.
 - **Should have been caught by:** the review's rule that the mod writes only in its data folder.
 - **Caught by:** the owner, reading the stop's design.
-- **Covered now:** everything in `%LOCALAPPDATA%\x360ui` (`x360_data_path`, `x360_data_open`);
+- **Covered now:** the files the mod writes at run time in `%LOCALAPPDATA%\x360ui` (`x360_data_path`,
+  `x360_data_open`; beside the game or the DLL only as the documented fallbacks, doc section 24);
   `test_uninstall_removes_the_mods_data_folder` and `test_uninstall_removes_steams_prefix_data_folder`
   (Steam's Proton prefix); the uninstallers remove an older version's VirtualStore copy.
-  `REVIEW.md` lists a file written beside the game as a failure.
+  `REVIEW.md` lists such a file written beside the game as a failure.
 
 ## `notices` printing CR CR LF on Windows (fixed in c890a46, before the merge)
 
@@ -74,3 +75,13 @@ here. Games' texts are named by role, never quoted.
 - **Covered now:** `embed_blob.cmake` drops CRs from every embedded text; `test_notices_carried`
   on Windows CI, now a required check of `develop` and `main` (`AGENTS.md`: CI green before a
   review is asked).
+
+## QA checklist
+
+What a QA run checks by hand, from the entries above, besides the change it is for:
+
+- a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
+- the stop's black screen closed with A held: the title does not take the A;
+- a stop's text on the black screen at 1280x720 and on the Steam Deck: wrapped, all of it seen;
+- with `test_save_hook_fails=1` and with `test_load_hook_fails=1`, on a copy of a save: the game
+  ends before any save, the save byte for byte the same after.
