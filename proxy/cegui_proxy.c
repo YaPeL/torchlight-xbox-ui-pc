@@ -191,11 +191,36 @@ static char texts[196608];                   /* the 360 code's texts and both ga
 static const char *text_key[1200], *text_value[1200];
 static int texts_count, texts_loaded;
 
+/* texts-parse: begin */
+/* x360_strings.txt's lines, "KEY=VALUE", cut in place: keys[i] and values[i] point into buf. LF or
+ * CRLF (the installer writes the file with CRLF on Windows); a line without '=' is skipped. Between
+ * the two markers a test compiles it on the host (tests/test_tools.py, ProxyTextsTest). */
+static int x360_parse_texts(char *buf, const char **keys, const char **values, int max) {
+    char *line = buf;
+    int count = 0;
+    while (*line && count < max) {
+        char *end = line, *eq = 0;
+        while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
+        /* The line's own CR, before the cut: the check after it looked at the cut itself, so every
+         * text kept a CR on Windows and no tip of PC's matched (the owner's run, 2026-10-24). */
+        if (end > line && end[-1] == '\r') end[-1] = 0;
+        if (*end) *end++ = 0;
+        if (eq) { *eq = 0; keys[count] = line; values[count++] = eq + 1; }
+        line = end;
+    }
+    return count;
+}
+/* texts-parse: end */
+
+static int starts_with(const char *s, const char *prefix) {
+    while (*prefix) if (*s++ != *prefix++) return 0;
+    return 1;
+}
+
 static void load_texts(void) {
     char path[520];
     DWORD got = 0, i, n = 0;
     HANDLE f;
-    char *line;
     texts_loaded = 1;
     if (!out_dir[0]) return;
     for (i = 0; out_dir[i] && n < 480; i++) path[n++] = out_dir[i];
@@ -205,13 +230,15 @@ static void load_texts(void) {
     ReadFile(f, texts, sizeof texts - 1, &got, 0);
     CloseHandle(f);
     texts[got] = 0;
-    for (line = texts; *line && texts_count < 1200;) {
-        char *end = line, *eq = 0;
-        while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
-        if (*end) *end++ = 0;
-        if (end > line && end[-1] == '\r') end[-1] = 0;
-        if (eq) { *eq = 0; text_key[texts_count] = line; text_value[texts_count++] = eq + 1; }
-        line = end;
+    texts_count = x360_parse_texts(texts, text_key, text_value, 1200);
+    {
+        int tips = 0;
+        for (i = 0; i < (DWORD)texts_count; i++)
+            if (starts_with(text_key[i], "pctip.")) tips++;
+        put("x360: x360_strings.txt: "); put_dec((unsigned long)texts_count);
+        put(" texts, "); put_dec((unsigned long)tips); put(" of PC's tips");
+        if (got == sizeof texts - 1 || texts_count == 1200) put(" (the file cut: over the reader's room)");
+        put("\r\n");
     }
 }
 
