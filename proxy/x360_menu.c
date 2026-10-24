@@ -6414,6 +6414,11 @@ static void add_frame_listener(void) {
 static void *tip_root;
 static char pc_tip_prefix[48];
 static int tip_failed, tip_shown;
+static unsigned tip_closed_at;   /* the press that closed a tip does not reach the inventory under it */
+
+/* A tip of the 360's has the pad (or closed less than 0.3 s ago): the inventory it shows over gets
+ * no buttons then (the 360's CTipMenu keeps the buttons it gets, sub_823589A0 returns 1). */
+int x360_tip_open(void) { return tip_shown || GetTickCount() - tip_closed_at < 300; }
 
 /* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
 static void pc_tip_alpha(const char *a) {
@@ -6449,7 +6454,7 @@ static void tip_tick(void) {
     if (!pc_attached(pc_tip_prefix, "Frame")) {
         if (tip_shown) {
             tip_shown = 0;
-            overlay_closed_at = GetTickCount();
+            overlay_closed_at = tip_closed_at = GetTickCount();
             set_visible(tip_root, 0, 0);
         }
         pc_tip_alpha("0");   /* ready unseen for the next one */
@@ -6464,6 +6469,7 @@ static void tip_tick(void) {
         scale_tree(tip_root, k, 0);
         pass_mouse(tip_root);
         set_visible(tip_root, 0, 0);
+        prop(tip_root, "AlwaysOnTop", "True");   /* over the 360's inventory, which asks for its tip */
     }
     /* Out of play (the title, the main menu's settings: their confirmations use the tip's
      * layout) PC's window is left as it is, used with the mouse (QA runs 3, 4: the 360's tip over
@@ -6491,6 +6497,7 @@ static void tip_tick(void) {
         move_to_front(tip_root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
     }
+    move_to_front(tip_root, 0);   /* each frame: the inventory, shown in the same frame, comes after */
     read_prop(win_of(pc_tip_prefix, "Title"), "Text", v, sizeof v);
     text(win_of(TIP_PREFIX, "Title"), v);
     read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", v, sizeof v);

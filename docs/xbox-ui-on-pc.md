@@ -3361,3 +3361,9 @@ saw it, so PC's showed until then. PC loads `tipmenu.layout` once, at the game's
 (`Frame`) is now made transparent there, in `x360_pc_layout_loaded` as the HUDs are, and kept so
 `tip_tick` finds the window at once. It is shown again only when its text is none of PC's tips (the
 settings' confirmations, used with the mouse), and made transparent again each time it closes.
+The inventory's tip (TIP_INVENTORY, asked for as the 360's inventory opens) showed behind the
+inventory: the tip was moved to the front once, as it showed, in the frame the inventory was
+shown in. The 360's tip is now AlwaysOnTop and moved to the front each frame it shows. On the 360
+the tip keeps every button it gets (sub_823589A0 returns 1), so while one shows (and 0.3 s after
+it closes) the inventory gets no buttons, nor do Back (the inventory) and Start (the pause):
+`x360_tip_open`, read by `proxy/pad.c`.

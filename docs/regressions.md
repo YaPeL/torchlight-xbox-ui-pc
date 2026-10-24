@@ -28,6 +28,9 @@ here. Games' texts are named by role, never quoted.
 - **Caught by:** the owner's run on the GOG copy (2026-10-24), after the first Windows test.
 - **Covered now:** PC's `tipmenu.layout` transparent as it loads (`x360_pc_layout_loaded`). QA
   checklist: a new game, the welcome's tip watched frame by frame.
+- **Seen in the same run:** the inventory's tip behind the 360's inventory (moved to the front only
+  once); now AlwaysOnTop and moved to the front each frame, with the pad its own over the
+  inventory. QA checklist: a new character's first inventory, the tip in front, B closing only it.
 
 ## The game saving on Alt+F4 after a stop without the save hook (fixed in a45a7c6)
 
@@ -93,6 +96,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
+- a new character's first inventory: its tip in front of it, B closing the tip only;
 - the stop's black screen closed with A held: the title does not take the A;
 - a stop's text on the black screen at 1280x720 and on the Steam Deck: wrapped, all of it seen;
 - with `test_save_hook_fails=1` and with `test_load_hook_fails=1`, on a copy of a save: the game

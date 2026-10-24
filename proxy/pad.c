@@ -1004,15 +1004,19 @@ static void order(void) {
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
-    if (!x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
+    int x360_tip_open(void);
+    if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
         x360_pause_pad(pressed, ly);
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
-    if (pressed & BUTTON_BACK) {
+    if ((pressed & BUTTON_BACK) && !x360_tip_open()) {   /* a tip keeps every button (the 360's) */
         x360_inventory_toggle();
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
-    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
+    if (x360_inventory_open()) {
+        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, lx, ly);   /* a tip over it has the pad */
+        return;
+    }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
     zoom_tick(client);
     if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
