@@ -7968,7 +7968,9 @@ void x360_stop_file_check(void) {
 }
 
 static void side_panels_test(int off) {
-    /* Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
+    /* Told closed always (QA run 10 did it while the 360's shop frame was open only; given back,
+     * PC's merchant still closing narrowed the world, its strips blue with the boards hidden for
+     * good: the owner's run of 2026-10-24). Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
      * (the other's, +8); 0x549b70, both, calls them (QA run 10: with only the first patched the world
      * stayed narrowed, its strips the background's blue once the boards were hidden). */
     static const unsigned tests[2] = {0x00541090, 0x00541130};
@@ -8528,7 +8530,7 @@ void x360_frame_tick(void) {
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
     __try { pc_bars_off(); } __except (1) { x360_log("x360 bars: exception hiding PC's\r\n"); }
-    __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
+    __try { side_panels_test(1); }   /* always: PC's side panels never show under the 360's screens, and with their boards hidden their closing showed the blue strips (the owner's run of 2026-10-24, after a merchant) */ __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     /* The tip first: on the frame it shows, the screens under it already leave it the pad. */
