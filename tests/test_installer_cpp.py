@@ -685,12 +685,43 @@ class InstallCppTest(unittest.TestCase):
                 f.write("not the mod's")
             cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY])
             r = subprocess.run(cmd + ["install", "--game", game, "--x360-dir", self.x360, "--yes", "--console",
-                                      "--dll", self.proxy, "--bag", "pc", "--experimental"], capture_output=True, text=True, env=self.env)
+                                      "--dll", self.proxy, "--bag", "pc"], capture_output=True, text=True, env=self.env)
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             r = subprocess.run(cmd + ["uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             self.assertFalse(os.path.exists(os.path.join(local, "x360ui")), who)
             self.assertTrue(os.path.isfile(os.path.join(local, "other.txt")), who)
+
+    def test_uninstall_without_saves_found_asks(self):
+        """A Steam install under Proton (a fake library): its saves are in Steam's prefix, which the
+        installers leave alone. Uninstalling after the 360's bag says no save folder was found and
+        asks (no by default) before going on without a backup; --anyway goes on and says so."""
+        import shutil
+        from test_tools import fake_exe
+        for who in ("py", "cpp"):
+            apps = os.path.join(self.root, "nosave-" + who, "steamapps")
+            game = os.path.join(apps, "common", "Torchlight")
+            os.makedirs(game)
+            fake_exe(os.path.join(game, "Torchlight.exe"), 0x4B5F7519)
+            _real_cegui_dll(os.path.join(game, "CEGUIBase.dll"))
+            shutil.copyfile(os.path.join(self.games["py"][0], "Pak.zip"), os.path.join(game, "Pak.zip"))
+            cmd = [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+            r = subprocess.run(cmd + ["install", "--game", game, "--x360-dir", self.x360, "--yes", "--console",
+                                      "--dll", self.proxy, "--bag", "pc"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            ini = os.path.join(game, "x360_ui.ini")
+            with open(ini, "ab") as f:
+                f.write(b"bag_360_used=1\r\n")
+            installed = _tree(game)
+            u = cmd + ["uninstall", "--game", game, "--console"]
+            r = subprocess.run(u, capture_output=True, text=True, env=self.env, input="y\nn\n")
+            self.assertNotEqual(r.returncode, 0, who)
+            self.assertIn("No save folder of this game was found", r.stdout, who)
+            self.assertEqual(_tree(game), installed, who)
+            r = subprocess.run(u + ["--anyway"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertIn("none backed up", r.stdout, who)
+            self.assertNotIn("x360_ui.ini", os.listdir(game), who)
 
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
@@ -806,7 +837,8 @@ class InstallCppTest(unittest.TestCase):
                 "install", "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, "--bag", "pc"]
             r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
-            took[who] = [l for l in r.stdout.splitlines() if l.startswith(("using ", "the game: "))]
+            took[who] = [l for l in r.stdout.splitlines() if l.startswith(("using ", "the game: ", "gog: ", "steam: ", "epic: "))
+                         or "supported PC Torchlights" in l]                # the whole list, in its order
             self.assertIn("x360_ui.ini", os.listdir(steam_game), who)
             r = subprocess.run(([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) +
                                ["uninstall", "--game", steam_game, "--yes", "--console"], capture_output=True, text=True, env=self.env)

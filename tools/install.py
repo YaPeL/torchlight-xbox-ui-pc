@@ -67,6 +67,9 @@ NO_MOD_WARNING = (
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
     "PC's bag, then load and save each character.")
+NO_SAVES_FOUND = (
+    "No save folder of this game was found to back up (a Steam install's saves are in Steam's "
+    "prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves yourself first.")
 NO_MOD_WARNING_AFTER = (
     "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
     "them, and without the mod the original game deletes those that do not fit PC's bag.")
@@ -563,7 +566,7 @@ def do_install(args):
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
     game, _ = pick_game(args.get("game"), ask, installed_only=True)
-    backups = []
+    backups, need_backup = [], False
     if read_ini(game).get("bag", "pc") == "360":
         if not args.get("anyway") and ask.yes_no(
                 "The 360's bag is installed. " + NO_MOD_WARNING + "\n\nSwitch to PC's bag now (recommended)? "
@@ -576,9 +579,7 @@ def do_uninstall(args):
                 "Your saves are backed up first.", default=False):
             print("not uninstalled")
             return 1
-        backups = back_up_saves(save_folders(game))
-        for b in backups:
-            print(f"saves backed up: {b}")
+        need_backup = True
     elif read_ini(game).get("bag_360_used") == "1":
         if not args.get("anyway") and not ask.yes_no(
                 "PC's bag is installed, and the 360's was used before. " + NO_MOD_WARNING_AFTER +
@@ -586,7 +587,16 @@ def do_uninstall(args):
                 default=False):
             print("not uninstalled (load and save each character with PC's bag first)")
             return 1
-        backups = back_up_saves(save_folders(game))
+        need_backup = True
+    if need_backup:
+        folders = save_folders(game)
+        if not folders:   # a Steam install under Proton: its saves are in Steam's prefix, left alone
+            if args.get("anyway"):
+                print("no save folder of this game was found: none backed up")
+            elif not ask.yes_no(NO_SAVES_FOUND + "\n\nUninstall without a backup?", default=False):
+                print("not uninstalled (back up your saves first)")
+                return 1
+        backups = back_up_saves(folders)
         for b in backups:
             print(f"saves backed up: {b}")
     if not build_proxy.remove(game):

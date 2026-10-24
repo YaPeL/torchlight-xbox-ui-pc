@@ -99,6 +99,11 @@ questions, the defaults: PC's bag; at uninstall, see below), `--console` (questi
   game), the original game deletes the items that do not fit PC's bag. Before uninstalling, install
   PC's bag, then load and save each character. The uninstaller offers this when the 360's bag is
   installed.
+- **Backups:** the installers back up the save folders they find (Windows' `%APPDATA%`, a Wine
+  prefix's). A Steam install under Proton (Linux, the Steam Deck) keeps its saves in Steam's own
+  prefix, which they leave alone: back those up yourself
+  (`steamapps/compatdata/41500/pfx/drive_c/users/steamuser/AppData/Roaming/runic games/torchlight/save`).
+  When none is found, they say so and ask before going on without a backup.
 
 ## Playing
 
