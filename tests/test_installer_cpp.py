@@ -509,6 +509,184 @@ class InstallCppTest(unittest.TestCase):
         for rel in py:
             self.assertEqual(cpp[rel], py[rel], rel)
 
+    def test_the_wizards_questions(self):
+        """What the wizard asks before it runs the installer (dev games, game-in, package-check,
+        saves): the games found with their mod and bag through an install with the 360's bag, the
+        first uninstall's switch to PC's bag and the uninstall; the 360 copy checked."""
+        dev = lambda *a: subprocess.run([BINARY, "dev", *a], capture_output=True, text=True, env=self.env)
+        game, saves = self.games["cpp"]
+        rows = lambda: {l.split("\t")[1]: l.split("\t")[2:] for l in dev("games").stdout.splitlines()}
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "0", "", "0", "0"])
+        self.assertEqual(dev("game-in", os.path.join(game, "Torchlight.exe")).stdout.split("\t")[1], os.path.realpath(game))
+        self.assertEqual(dev("game-in", self.root).stdout.split("\t")[1], "")       # not a Torchlight
+        self.assertEqual(dev("saves", game).stdout.splitlines(), [os.path.realpath(saves)])
+        self.assertEqual(self.install("cpp", "--bag", "360").returncode, 0)
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "1", "360", "1", "0"])
+        self.assertEqual(self.uninstall("cpp", "--yes").returncode, 0)               # step 1: PC's bag
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "1", "pc", "1", "0"])
+        self.assertEqual(self.uninstall("cpp", "--yes", "--anyway").returncode, 0)
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "0", "", "0", "0"])
+        r = dev("package-check", self.x360)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "ok"))
+        r = dev("package-check", os.path.join(self.x360, "pak.zip"))                  # a file of the folder
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "ok"))
+        junk = os.path.join(self.root, "other", "file.bin")
+        os.makedirs(os.path.dirname(junk))
+        with open(junk, "wb") as f:
+            f.write(b"not a package")
+        r = dev("package-check", junk)                                                # not a package
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("No pak.zip in", r.stdout)
+        # PC's pak.zip first, the 360's in a subfolder: the first found is the one the install takes.
+        mixed = os.path.join(self.root, "mixed")
+        __import__("shutil").copytree(self.x360, os.path.join(mixed, "sub"))
+        __import__("shutil").copyfile(os.path.join(game, "Pak.zip"), os.path.join(mixed, "pak.zip"))
+        r = dev("package-check", mixed)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("is not the Xbox 360 game's", r.stdout)
+        self.assertNotEqual(self.install("cpp", "--bag", "pc", "--x360-dir", mixed).returncode, 0)
+        r = dev("package-check", os.path.join(self.root, "nothing"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("does not exist", r.stdout)
+
+    def test_progress_file(self):
+        """--progress-file (the elevated run's, read by the first): its last line once installed
+        and once uninstalled."""
+        f = os.path.join(self.root, "progress.txt")
+        self.assertEqual(self.install("cpp", "--bag", "pc", "--progress-file", f).returncode, 0)
+        with open(f) as p:
+            self.assertEqual(p.read(), "1.0000\tInstalled\n")
+        self.assertEqual(self.uninstall("cpp", "--yes", "--progress-file", f).returncode, 0)
+        with open(f) as p:
+            self.assertEqual(p.read(), "1.0000\tUninstalled\n")
+
+    def wizard(self, steps, *extra, shots=None, native=False):
+        """The wizard (dev wizard) on SDL's offscreen video and software renderer (native: the
+        system's window and renderer), played by a script with a simulated pad; the home has only
+        the cpp game."""
+        script = os.path.join(self.root, "script.txt")
+        with open(script, "w") as f:
+            f.write("\n".join(steps) + "\n")
+        home = os.path.join(self.root, "cpp")
+        video = [] if native else ["--video", "offscreen", "--software"]
+        cmd = [BINARY, "dev", "wizard", *video, "--own-picker", "--script", script,
+               "--browse-from", self.x360, "--dll", self.proxy, *extra]
+        if shots:
+            cmd += ["--shots", shots]
+        extra_env = {k: v for k, v in os.environ.items() if k.startswith("X360UI_TEST_") or k == "X360UI_NO_ELEVATE"}
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                              env=dict(self.env, **extra_env, HOME=home, USERPROFILE=home))
+
+    # The pad's way through each flow (the own browser lists "..", default.bin, pak.zip).
+    WIZARD_INSTALL_360 = ["screen games", "press a", "screen package", "press a", "screen browser", "press down",
+                          "press down", "press a", "screen package", "press start", "screen bag", "press down",
+                          "press a", "press start", "screen summary", "press start", "screen result 300"]
+    WIZARD_TO_PC_BAG = ["screen games", "press a", "screen action", "press down", "press down", "press a",
+                        "screen uninstall", "press a", "screen summary", "press start", "screen result 120"]
+    WIZARD_UNINSTALL_AFTER_360 = ["screen games", "press a", "screen action", "press down", "press down", "press a",
+                                  "screen uninstall", "press a", "press down", "press a", "screen summary",
+                                  "press start", "screen result 120"]
+
+    def test_the_wizard_end_to_end(self):
+        """The whole wizard with a simulated pad: the 360's bag installed through the package
+        found in its own browser, the same bytes as install.py's; then the two steps of the
+        uninstall (PC's bag, then the uninstall once each character is loaded and saved), the
+        game's folder as it was before."""
+        game = self.games["cpp"][0]
+        before = _tree(game)
+        r = self.wizard(self.WIZARD_INSTALL_360 + ["quit"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.install("py", "--bag", "360").returncode, 0)
+        self.same_install()
+        backups = [d for d in os.listdir(os.path.dirname(self.games["cpp"][1])) if "-backup-" in d]
+        self.assertEqual(len(backups), 1)
+        r = self.wizard(self.WIZARD_TO_PC_BAG + ["quit"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(game, "x360_ui.ini")) as f:
+            self.assertIn("bag=pc", f.read())
+        r = self.wizard(self.WIZARD_UNINSTALL_AFTER_360 + ["quit"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(_tree(game), before)
+
+    def test_the_wizard_asks_before_the_360_bag_without_a_backup(self):
+        """A game with the mod on PC's bag and no save folder found: "Change to the 360's bag" goes
+        through the bag's screen (its warning), and without the no-backup box ticked Start does
+        not leave it; nothing is changed."""
+        import shutil
+        self.assertEqual(self.install("cpp", "--bag", "pc").returncode, 0)
+        shutil.rmtree(self.games["cpp"][1])
+        steps = ["screen games", "press a", "screen action", "press down", "press a", "screen package", "press a",
+                 "screen browser", "press down", "press down", "press a", "screen package", "press start",
+                 "screen bag", "press start", "wait 10", "screen bag 1", "quit"]
+        r = self.wizard(steps)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(self.games["cpp"][0], "x360_ui.ini")) as f:
+            self.assertIn("bag=pc", f.read())
+
+    # Every screen, each shot once its screen is reached (the progress only if it still shows).
+    WIZARD_SHOTS = ["screen games", "shot 01-games", "press a", "screen package", "shot 02-package", "press a",
+                    "screen browser", "shot 03-browser", "press down", "press down", "press a", "screen package",
+                    "shot 04-package-chosen", "press start", "screen bag", "shot 05-bag-pc", "press down", "press a",
+                    "wait 3", "shot 06-bag-360", "press start", "screen summary", "shot 07-summary", "press start",
+                    "shot-if working 08-working", "screen result 300", "shot 09-result", "press start", "screen games",
+                    "shot 10-games-installed", "press a", "screen action", "shot 11-action", "press down",
+                    "press down", "press a", "screen uninstall", "shot 12-uninstall-360-bag", "press b",
+                    "screen action", "press b", "screen games", "quit"]
+
+    @unittest.skipUnless(os.name == "nt", "Windows' second run for the administrator's permission")
+    def test_the_wizard_through_the_elevated_run(self):
+        """The game's folder taken as needing an administrator (X360UI_TEST_NEEDS_PERMISSION): the
+        wizard's install goes through the second run (as UAC's, without its prompt:
+        X360UI_TEST_ELEVATE_AS_USER); with that run refused (X360UI_NO_ELEVATE) nothing is
+        changed, which shows the install was the second run's; the same bytes as install.py's,
+        and the saves backed up by it."""
+        game, saves = self.games["cpp"]
+        before = _tree(game)
+
+        def run(**env):
+            saved = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
+            try:
+                return self.wizard(list(self.WIZARD_INSTALL_360) + ["quit"])
+            finally:
+                for k, v in saved.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
+        r = run(X360UI_TEST_NEEDS_PERMISSION="1", X360UI_NO_ELEVATE="1")   # the second run refused
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(_tree(game), before)
+        r = run(X360UI_TEST_NEEDS_PERMISSION="1", X360UI_TEST_ELEVATE_AS_USER="1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.install("py", "--bag", "360").returncode, 0)
+        self.same_install()
+        backups = [d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]
+        self.assertEqual(len(backups), 1)
+        with open(os.path.join(os.path.dirname(saves), backups[0], "0.svt"), "rb") as f:
+            self.assertEqual(f.read(), b"a synthetic save")
+
+    def test_the_wizards_screenshots(self):
+        """Every screen drawn, each reached with the simulated pad; with X360UI_SHOTS (a folder),
+        their PNGs at 960x600, at 1280x800 (the Steam Deck) and at scale 2, which CI keeps."""
+        out = os.environ.get("X360UI_SHOTS")
+        sizes = [("960x600", "1"), ("1280x800", "1"), ("960x600", "2")] if out else [("960x600", "1")]
+        for size, scale in sizes:
+            name = f"{size}-x{scale}"
+            folder = os.path.join(out, name) if out else os.path.join(self.root, "shots")
+            os.makedirs(folder, exist_ok=True)
+            # Windows' own window and renderer for its shots; offscreen where there is no desktop.
+            r = self.wizard(self.WIZARD_SHOTS, "--size", size, "--scale", scale, shots=folder,
+                            native=bool(out) and os.name == "nt")
+            if r.returncode == 2:
+                os.rename(folder, folder + "-offscreen")
+                folder += "-offscreen"
+                r = self.wizard(self.WIZARD_SHOTS, "--size", size, "--scale", scale, shots=folder)
+            self.assertEqual(r.returncode, 0, name + r.stdout + r.stderr)
+            self.assertIn("12-uninstall-360-bag.png", os.listdir(folder))
+            self.assertEqual(self.uninstall("cpp", "--yes", "--anyway").returncode, 0)
+
     def test_install_and_uninstall_as_python(self):
         before = {who: _tree(g) for who, (g, _) in self.games.items()}
         for bag in ("pc", "360"):
@@ -729,7 +907,8 @@ class InstallCppTest(unittest.TestCase):
         r = subprocess.run([BINARY, "notices"], capture_output=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-        for rel in ("LICENSE", "installer/third_party/NOTICES.md", "installer/third_party/LGPL-2.1.txt"):
+        for rel in ("LICENSE", "installer/third_party/NOTICES.md", "installer/third_party/LGPL-2.1.txt",
+                    "installer/third_party/OFL-1.1.txt", "installer/third_party/SDL-NOTICES.md"):
             with open(os.path.join(root, rel), "rb") as f:
                 self.assertIn(f.read().replace(b"\r\n", b"\n"), r.stdout.replace(b"\r\n", b"\n"), rel)
 
@@ -816,6 +995,38 @@ class InstallCppTest(unittest.TestCase):
         __import__("shutil").rmtree(marked)
         self.assertEqual(_tree(game), before)
         self.assertEqual(sorted(os.listdir(game)), sorted(before))
+
+    @unittest.skipUnless(os.name == "nt" and os.environ.get("CI"), "Windows' registry, on CI only (it sets the user's SteamPath)")
+    def test_steam_found_from_the_registry(self):
+        """A Steam installed elsewhere than Program Files: both installers find its game through
+        SteamPath (HKCU\\Software\\Valve\\Steam), the same `list`; the value is put back after."""
+        import shutil, winreg
+        from test_tools import fake_exe
+        steam = os.path.join(self.root, "Elsewhere", "Steam")
+        game = os.path.join(steam, "steamapps", "common", "Torchlight")
+        os.makedirs(game)
+        open(os.path.join(steam, "steamapps", "appmanifest_41500.acf"), "w").close()
+        fake_exe(os.path.join(game, "Torchlight.exe"), 0x4B5F7519)
+        _real_cegui_dll(os.path.join(game, "CEGUIBase.dll"))
+        shutil.copyfile(os.path.join(self.games["py"][0], "Pak.zip"), os.path.join(game, "Pak.zip"))
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
+        try:
+            old = winreg.QueryValueEx(key, "SteamPath")
+        except OSError:
+            old = None
+        winreg.SetValueEx(key, "SteamPath", 0, winreg.REG_SZ, steam.replace("\\", "/"))   # as Steam writes it
+        try:
+            lst = lambda cmd: subprocess.run(cmd + ["list"], capture_output=True, text=True, env=self.env).stdout
+            py_list = lst([sys.executable, os.path.join(TOOLS, "install.py")])
+            self.assertIn("steam: ", py_list)
+            self.assertIn(os.path.realpath(game).lower(), py_list.lower())
+            self.assertEqual(lst([BINARY]).lower(), py_list.lower())
+        finally:
+            if old is None:
+                winreg.DeleteValue(key, "SteamPath")
+            else:
+                winreg.SetValueEx(key, "SteamPath", 0, old[1], old[0])
+            winreg.CloseKey(key)
 
     def test_stores_found_and_steam_and_epic_installed_as_python(self):
         """A home with a Steam library (Steam's build) and a Legendary (Epic) install of GOG's

@@ -43,7 +43,8 @@ set(X360UI_VERSION "development" CACHE STRING "The release's tag, shown by x360u
 # The licence and the third-party notices, built in: `x360ui-install notices` shows them (miniz's
 # MIT notice must go with every copy of the executable, not only beside it in a release).
 set(NOTICE_SOURCES)
-foreach(pair "LICENSE:kLicenseText" "installer/third_party/NOTICES.md:kNoticesText" "installer/third_party/LGPL-2.1.txt:kLgplText")
+foreach(pair "LICENSE:kLicenseText" "installer/third_party/NOTICES.md:kNoticesText" "installer/third_party/LGPL-2.1.txt:kLgplText"
+             "installer/third_party/OFL-1.1.txt:kOflText" "installer/third_party/SDL-NOTICES.md:kSdlNoticesText")
   string(REPLACE ":" ";" parts "${pair}")
   list(GET parts 0 rel)
   list(GET parts 1 name)
@@ -79,7 +80,7 @@ add_library(x360ui_core STATIC src/stfs.cpp src/lzx.cpp src/xex.cpp src/pytext.c
             ${CMAKE_CURRENT_BINARY_DIR}/prompts_data.cpp ${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp ${NOTICE_SOURCES}
             ${CMAKE_CURRENT_BINARY_DIR}/proxy_GOG.cpp ${CMAKE_CURRENT_BINARY_DIR}/proxy_STEAM.cpp)
 if(WIN32)
-  target_link_libraries(x360ui_core PUBLIC comdlg32 shell32 advapi32)
+  target_link_libraries(x360ui_core PUBLIC shell32 advapi32)
 endif()
 target_compile_definitions(x360ui_core PRIVATE X360UI_VERSION="${X360UI_VERSION}")
 target_include_directories(x360ui_core PUBLIC src)
@@ -91,17 +92,23 @@ else()
   target_compile_options(x360ui_core PRIVATE -ffp-contract=off)
 endif()
 
+# The wizard: the window a double click opens (src/wizard).
+include(cmake/wizard_deps.cmake)
+set(WIZARD_SOURCES src/wizard/app.cpp src/wizard/screens.cpp ${X360UI_FONT_SOURCES})
 if(WIN32)
   # asInvoker: Windows never redirects a write it refuses (no VirtualStore); UAC is asked by the
   # installer itself, only when the game's folder needs it.
-  add_executable(x360ui-install src/main.cpp src/x360ui-install.rc)
+  add_executable(x360ui-install src/main.cpp src/x360ui-install.rc ${WIZARD_SOURCES})
 else()
-  add_executable(x360ui-install src/main.cpp)
+  add_executable(x360ui-install src/main.cpp ${WIZARD_SOURCES})
 endif()
-target_link_libraries(x360ui-install PRIVATE x360ui_core)
+target_include_directories(x360ui-install PRIVATE src src/wizard)
+target_link_libraries(x360ui-install PRIVATE x360ui_core x360ui_imgui miniz)
 if(MSVC)
-  # The manifest is the .rc's alone: the linker's own would be a second one.
-  target_link_options(x360ui-install PRIVATE /MANIFEST:NO)
+  # The manifest is the .rc's alone: the linker's own would be a second one. A window program
+  # (no console of its own on a double click: the questions are windows), with main as its entry;
+  # from a terminal it writes to that terminal's console (main.cpp).
+  target_link_options(x360ui-install PRIVATE /MANIFEST:NO /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
 endif()
 if(NOT MSVC AND NOT APPLE)
   # Linux: libstdc++ and libgcc inside the executable, so the AppImage needs only the system's libc.

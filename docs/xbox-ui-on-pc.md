@@ -3255,3 +3255,102 @@ must go with every copy of the executable), embedded by `cmake/embed_blob.cmake`
 them inside too. Requirements: Windows 10 1903 or later, 64-bit (the manifest's UTF-8 code page),
 and Linux with glibc 2.35 or later (built on Ubuntu 22.04).
 
+## 25. The installer: Steam from the registry, a window program (2026-10-24)
+
+The owner's first Windows run (Steam and Epic installed) found Epic's copy only: Steam was looked
+for in `Program Files (x86)\Steam` and `Program Files\Steam` and the libraries their
+`libraryfolders.vdf` lists, so a Steam installed elsewhere was missed. Both installers now read
+Steam's own place first: `SteamPath` in `HKCU\Software\Valve\Steam` and `InstallPath` in
+`HKLM\SOFTWARE\WOW6432Node\Valve\Steam` (Windows only), then the defaults.
+
+The game's line no longer names its build (`the game: <folder>`; `list` says only "not supported by
+this version" for a build it has no proxy for): the build is the installer's business, and Epic's
+copy, GOG's build, was shown as "gog".
+
+`x360ui-install.exe` is a window program (`/SUBSYSTEM:WINDOWS`, entry `mainCRTStartup`): a double
+click opens no console. Its output goes where it is redirected (a pipe, a file: the tests and
+`check_release.ps1`, which pipes it to `Out-Host` so PowerShell waits for it); run from a terminal
+without a redirection, it attaches to that terminal's console (`AttachConsole`) and writes there.
+The shell does not wait for a window program and keeps reading that console's input, so there
+`--console` refuses to ask questions (`set_shared_console`): it needs `--yes` and the options, and
+without `--console` the questions are windows. A partial redirection (`2>err.txt` alone) leaves the
+other handles as the console's, written without attaching (not checked on Windows yet).
+
+
+**What the wizard asks first (`install.h`).** The wizard (the owner's design, 2026-10-24) collects
+every answer in its window and then runs the same `installer_main` with all of them given
+(`--yes --console` and the options), so what it installs is what the command line installs, and
+the tests that compare the C++ installer with `install.py` cover it. Before that it asks, without
+questions: `games_found` (each install found, Steam's first, with whether its build is supported,
+whether it has the mod, its bag and whether the 360's bag was ever used), `game_in` (a folder or its
+`Torchlight.exe` the player chose), `package_problem` (the 360 copy's header and the files it must
+hold, without extracting or decrypting), `saves_to_back_up` and `needs_permission`. The tests reach
+them through `dev games`, `dev game-in`, `dev package-check` and `dev saves`. The install reports
+its progress by phases (reading the 360 copy, the backup, each of the six conversions, putting it
+in place) through `set_progress`; an elevated run writes it to `--progress-file` (one line,
+`fraction<TAB>text`, replaced whole each time), which the first run reads while it waits.
+
+## 26. The installer's window: the wizard (2026-10-24)
+
+The owner's design after the first Windows run ("one real window, a wizard"): a double click (no
+arguments) opens one window, the same on Windows and Linux, played with a pad, the mouse or the
+keyboard; with arguments the executable is the command line it was.
+
+**What it is made of.** SDL 3.4.14 and Dear ImGui 1.92.5 (the versions of the ReXGlue SDK the
+recomp uses), built static from release archives fetched and checked by hash
+(`installer/cmake/wizard_deps.cmake`; `X360UI_DEPS_DIR` for offline builds); ImGui draws through
+SDL_Renderer (Direct3D 11 on Windows; OpenGL, Vulkan or software on Linux), so no graphics library
+is loaded by hand. Noto Sans 2.015 (regular and bold, OFL) is built in, at 19 points times the
+display's scale (`SDL_GetDisplayContentScale`; ImGui's `ScaleAllSizes` and `FontScaleDpi`, as its
+SDL3 example), so it is sharp on high-density screens. The palette is the ReXGlue SDK's ImGui one
+(the recomp's look). On Linux SDL loads X11, Wayland, D-Bus and udev at run time: the executable
+still needs only libc and libm. A display of 1280x800 or less (the Steam Deck) gets the window
+full screen.
+
+**The screens** (`installer/src/wizard/screens.cpp`): the games found (`games_found`, Steam's
+first, each with its store, folder and whether it has the mod and which bag; "Look for another
+folder..."), the 360's package (checked at once by `package_problem`), the bag (the 360's warning
+in a box on the same screen, with the saves it backs up, or the choice to go on without a backup
+when none is found), the summary (what, where, the backup, whether Windows will ask for an
+administrator), the progress (`set_progress`) and the result (the backups, "Open the game": Steam's
+`steam://rungameid/41500`, else the executable on Windows). A game with the mod opens "What to do":
+reinstall, change the bag (to PC's: only the setting, as the command line's first uninstall step;
+to the 360's: the package and a new conversion) or uninstall, where the 360's bag's two steps are
+explained and offered (switch to PC's bag; or, once each character was loaded and saved, the
+uninstall, the same answers as `--anyway`). Each screen ends in Back and its next step; B or
+Escape goes back, Start is the next step, A or Enter chooses.
+
+**How it installs.** The wizard runs `installer_main` on a thread with every answer given
+(`install --game G --package P --bag B --yes --console`, `uninstall --game G --yes --console
+[--anyway]`), its output kept for the result's details. UAC is asked only then, by the command
+line's own `with_permission`, whose elevated run reports its progress through `--progress-file`.
+
+**The pickers.** SDL's (Windows' own; on Linux the desktop portal only, never zenity). Where there is
+none (no portal: the Steam Deck's Game Mode) the wizard's own browser opens: the folders and files
+of a folder, the folder above, Windows' drives, "Use this folder", all played with the pad.
+
+**The command line** asks on the console only (the windows of zenity, kdialog and `MessageBox`
+are gone: the wizard is where questions are answered in windows). From a terminal on Windows,
+whose input the shell shares with a window program, an install or uninstall needs `--yes`.
+
+**Tests** (`tests/test_installer_cpp.py`), with SDL's offscreen video and software renderer and a
+simulated pad (an SDL virtual gamepad, given to ImGui alone: a real pad on the machine would
+otherwise be the one ImGui reads): `test_the_wizard_end_to_end` installs the 360's bag through the
+package chosen in the own browser and compares the folder with `install.py`'s byte for byte, then
+switches to PC's bag and uninstalls through the two steps, the folder as before;
+`test_the_wizards_screenshots` reaches every screen and, with `X360UI_SHOTS`, keeps their PNGs at
+960x600, 1280x800 and scale 2 (CI uploads them: Linux offscreen, Windows in its own window and
+renderer). The scripts (`dev wizard --script`) are lines: `screen NAME [SECONDS]`, `press BUTTON`,
+`down`/`up BUTTON`, `key KEY`, `text TEXT`, `wait N`, `shot NAME`, `shot-if SCREEN NAME`,
+`debug`, `quit`. ImGui ignores a first A while its pad cursor is hidden, so each screen's default
+item is focused with the cursor shown.
+
+**The administrator's permission, from the wizard.** The wizard never asks for it when it opens: the
+summary says "Windows asks for an administrator's permission when you start" (`needs_permission`),
+and only Install, Switch bag or Uninstall makes the command line's `with_permission` run the
+installer again through UAC with every answer, while the window shows that run's progress (its
+`--progress-file`) and then its result (its `--result-file`). Windows' CI has no UAC to answer, so
+`test_the_wizard_through_the_elevated_run` takes that way with two test switches:
+`X360UI_TEST_NEEDS_PERMISSION` (the folder taken as needing it) and `X360UI_TEST_ELEVATE_AS_USER`
+(the second run started as the same user, without UAC's prompt). The prompt itself is the owner's
+Windows test.
