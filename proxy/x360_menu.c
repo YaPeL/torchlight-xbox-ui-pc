@@ -6955,6 +6955,7 @@ static void black_screen(const char *utf8, int close_game, void (*after)(void)) 
         copy(bs_utf8 + n, sizeof bs_utf8 - n, utf8, 0);
         bs_close = bs_close || close_game;
         if (!bs_after[1]) bs_after[1] = after;
+        bs_act = 0;     /* an A for the earlier text does not close the new one unseen */
         bs_state = 1;   /* laid out again */
     } else {
         copy(bs_utf8, sizeof bs_utf8, utf8, 0);
@@ -6977,6 +6978,7 @@ int x360_black_screen_take(unsigned buttons) {   /* pad.c: 1 while it shows (the
     last = buttons;
     /* A let go, or held over 2 s (a stuck button must not leave the pad dead). */
     if (bs_state == 3) { if (!(buttons & 0x1000) || GetTickCount() - bs_t3 > 2000) bs_state = 0; return bs_state == 3; }
+    if (bs_state == 1 && bs_back) return 1;   /* laid out again while it shows: still its own */
     if (bs_state != 2) return 0;
     if (edge) bs_act = 1;
     return 1;
@@ -7430,10 +7432,14 @@ static int write_stop_file(const char *text) {
     x360_log("x360 load: x360_stop.txt could not be written anywhere\r\n");
     return 0;
 }
-static void stop_seen(void) {
+static void stop_seen(void) {   /* seen: removed where it was, and from the other place too */
     typedef int (__stdcall *del_fn)(const unsigned short *name);
     del_fn del = (del_fn)kernel32_fn("DeleteFileW");
-    if (stop_file[0] && del) del(stop_file);
+    unsigned short path[600];
+    int i;
+    if (!del) return;
+    if (stop_file[0]) del(stop_file);
+    for (i = 0; i < 2; i++) if (stop_path(path, 600, i)) del(path);
 }
 static void stop_unsaved(const char *why, int count) {
     char text[700], name[96], *p = text;
