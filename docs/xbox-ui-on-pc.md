@@ -3548,22 +3548,31 @@ From the 360's trace the rule is: stick up walks along the camera's forward on t
 `(fx, fz)`, stick right along `(-fz, fx)`. `pad_walk_yaw=1` (a diagnosis) takes the direction
 that way instead of the probe, to replay.
 
-### 30b. The 360's start delay is a dead zone, not a turn in place (2026-10-24)
+### 30b. The 360's start delay is a threshold of the stick, not a turn in place (2026-10-24)
 
 The owner asked to check the 360's data before a third cause. In the recomp's trace the hero
 does not move while the stick's length is under about 0.48 (route 0: the owner's stick held at
 0.44 from 5.9 to 7.43 s, the hero still and +500 at 1.0), and starts at once, turning as it
-walks, past it; +500 then starts at 0.21 (0.49: 0.214, 0.59: 0.285, 1.0 near 0.94), as if the
-length were rescaled, `(l - ~0.42) / (1 - ~0.42)`, before `min(l^2 + 0.2, 1)`. Every start's
-first moving sample is at 0.48 or more. So the 742 and 1791 ms were the stick crossing that
-threshold, not a turn in place.
+walks, past it; every start's first moving sample is at 0.48 or more. So route 0's 1791 ms and
+route 3's 742 ms were the stick crossing that threshold, not a turn in place. +500 then starts at
+0.21 (0.49: 0.214, 0.59: 0.285, 0.7: 0.43, 1.0 near 0.94), as if the length were rescaled,
+`(l - ~0.42) / (1 - ~0.42)`, before `min(l^2 + 0.2, 1)`.
 
-The game's code has no such dead zone: `sub_821FE8A8` copies `XamInputGetState`'s
-`XINPUT_STATE` as is into `0x82557E80 + 16 * user`; `sub_82191018` reads its `+8` and `+10`
-times the pool's `+0x1E0` (1/32767); `sub_82199E08` walks when the length is over `+0x6C`
-(0.1) with `min(l^2 + +0x80 (0.2), +0x40 (1.0))` (the pool `0x820AA2C0`, read in the image). The
-threshold is therefore the recomp's input layer (the host's `XamInputGetState`, its gamepad
-mapping, or the replay's conversion), asked of the recomp agent. Until it is known, the 360's
-traces at partial tilt are read with that caveat (change a's spins among them). A route with
-three sharp reversals at full tilt and at 0.7 (`route-rev.txt`, from 86 s, outside the
-repository) is to be replayed on both builds once the 360's replay feeds the raw stick.
+Where it is: `sub_821FE8A8` copies `XamInputGetState`'s `XINPUT_STATE` as is into
+`0x83557E80 + 16 * user`; `sub_82191018` reads its `+8` and `+10` times the pool's `+0x1E0`
+(1/32767); `sub_82199E08` walks when the length is over `+0x6C` (0.1), with
+`min(l^2 + +0x80 (0.2), +0x40 (1.0))` into `hero+0x5DC` (the pool `0x820AA2C0`, read in the
+image). The recomp agent read the host's side: the replay's shorts reach the game unchanged (its
+script driver copies them; rexglue's only stick change, `left_stick_deadzone_percentage`, is 0 and
+returns at once; SDL is not on that path). And `sub_821D5410` multiplies `+0x5DC` into what it
+stores at `+0x1F4` only on some state paths (`@0x821D6F0C`, the `r11 == 7 / 9` checks and a
+`sub_821DC600` test): the shaping is the game's, between `@0x821D6E4C` and `@0x821D79C0`, not
+worked out yet. Not proved at run time (the recomp agent's read of the game's copy gave zeros,
+stopped after two tries; a hook on `sub_82191018`'s result is the owner's to approve).
+
+The sharp reversal (`route-rev.txt`, outside the repository: the owner's route and, from 86 s,
+up then down and right then left at full tilt, up then down at 0.7, 2 s each), on the 360: at
+0.7, walking at 2.6 units a second, the hero walks the new way from the next frame at the same
+speed while its facing turns (180 degrees in about 150 ms, settled by 300 ms): no turn in place
+there either. The two at full tilt ended against a wall before the reversal (no speed before
+it), so they do not count. PC's replay of the same route is next.
