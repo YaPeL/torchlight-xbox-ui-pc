@@ -38,6 +38,22 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp
   COMMAND ${CMAKE_COMMAND} -DFILE=${EXPORTS_TXT} -DNAME=kCeguiExports -DTEXT=1 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake
   DEPENDS ${EXPORTS_TXT} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake)
+# The release's tag (the release workflow passes it), for `notices`' source offer.
+set(X360UI_VERSION "development" CACHE STRING "The release's tag, shown by x360ui-install notices")
+# The licence and the third-party notices, built in: `x360ui-install notices` shows them (miniz's
+# MIT notice must go with every copy of the executable, not only beside it in a release).
+set(NOTICE_SOURCES)
+foreach(pair "LICENSE:kLicenseText" "installer/third_party/NOTICES.md:kNoticesText" "installer/third_party/LGPL-2.1.txt:kLgplText")
+  string(REPLACE ":" ";" parts "${pair}")
+  list(GET parts 0 rel)
+  list(GET parts 1 name)
+  set(src ${CMAKE_CURRENT_SOURCE_DIR}/../${rel})
+  add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${name}.cpp
+    COMMAND ${CMAKE_COMMAND} -DFILE=${src} -DNAME=${name} -DTEXT=1 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/${name}.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake
+    DEPENDS ${src} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake)
+  list(APPEND NOTICE_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/${name}.cpp)
+endforeach()
 foreach(which GOG STEAM)
   if(which STREQUAL "GOG")
     set(name kProxyGog)
@@ -60,11 +76,12 @@ endforeach()
 
 add_library(x360ui_core STATIC src/stfs.cpp src/lzx.cpp src/xex.cpp src/pytext.cpp src/prompts.cpp src/convert.cpp
             src/game.cpp src/install.cpp
-            ${CMAKE_CURRENT_BINARY_DIR}/prompts_data.cpp ${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp
+            ${CMAKE_CURRENT_BINARY_DIR}/prompts_data.cpp ${CMAKE_CURRENT_BINARY_DIR}/exports_data.cpp ${NOTICE_SOURCES}
             ${CMAKE_CURRENT_BINARY_DIR}/proxy_GOG.cpp ${CMAKE_CURRENT_BINARY_DIR}/proxy_STEAM.cpp)
 if(WIN32)
   target_link_libraries(x360ui_core PUBLIC comdlg32 shell32 advapi32)
 endif()
+target_compile_definitions(x360ui_core PRIVATE X360UI_VERSION="${X360UI_VERSION}")
 target_include_directories(x360ui_core PUBLIC src)
 target_link_libraries(x360ui_core PUBLIC tiny_aes miniz)
 # fit_icon computes in doubles as Python does: no fused multiply-add.
