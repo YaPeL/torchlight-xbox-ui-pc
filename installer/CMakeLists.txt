@@ -94,7 +94,13 @@ endif()
 
 # The wizard: the window a double click opens (src/wizard).
 include(cmake/wizard_deps.cmake)
-set(WIZARD_SOURCES src/wizard/app.cpp src/wizard/screens.cpp ${X360UI_FONT_SOURCES})
+# The window's icon (data/icon, its README: the source and the licence), built in.
+set(WINDOW_ICON ${CMAKE_CURRENT_SOURCE_DIR}/data/icon/x360ui-install-64.png)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/window_icon.cpp
+  COMMAND ${CMAKE_COMMAND} -DFILE=${WINDOW_ICON} -DNAME=kWindowIcon -DOUT=${CMAKE_CURRENT_BINARY_DIR}/window_icon.cpp
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake
+  DEPENDS ${WINDOW_ICON} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_blob.cmake)
+set(WIZARD_SOURCES src/wizard/app.cpp src/wizard/screens.cpp ${X360UI_FONT_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/window_icon.cpp)
 if(WIN32)
   # asInvoker: Windows never redirects a write it refuses (no VirtualStore); UAC is asked by the
   # installer itself, only when the game's folder needs it.
