@@ -98,6 +98,8 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
+- with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
+  itself, if it ever is, must not show it);
 - the stop's black screen closed with A held: the title does not take the A;
 - a stop's text on the black screen at 1280x720 and on the Steam Deck: wrapped, all of it seen;
 - with `test_save_hook_fails=1` and with `test_load_hook_fails=1`, on a copy of a save: the game

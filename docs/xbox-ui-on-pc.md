@@ -3360,7 +3360,9 @@ took its place: `tip_tick` looked for it every 250 ms and loaded the 360's layou
 saw it, so PC's showed until then. PC loads `tipmenu.layout` once, at the game's start; its root
 (`Frame`) is now made transparent there, in `x360_pc_layout_loaded` as the HUDs are, and kept so
 `tip_tick` finds the window at once. It is shown again only when its text is none of PC's tips (the
-settings' confirmations, used with the mouse), and made transparent again each time it closes.
+settings' confirmations, used with the mouse), and made transparent again each time it closes. Only
+`tip_tick` shows it again, so it is made transparent at load only when the pad's frame runs (which
+runs the tick: `x360_pad_running`), and shown again for good if the 360's tip layout cannot load.
 The inventory's tip (TIP_INVENTORY, asked for as the 360's inventory opens) showed only once the
 inventory closed. Not its order (the first try: AlwaysOnTop and moved to the front each frame did
 not change it): the 360's screens hide PC's whole sheets (`hide_pc_ui`: Ingame UI Sheet, Top UI

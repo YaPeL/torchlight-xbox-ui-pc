@@ -587,7 +587,6 @@ static int hidden_count;
 static int is_ours(void *w);
 static void *pc_tip_layout_root;   /* PC's tip window's root (x360_pc_layout_loaded, below) */
 
-typedef void *(__fastcall *parent_of_fn)(const void *self, void *edx);
 static void hide_pc_ui(int hide) {
     static is_visible_fn is_visible;
     static int logged;
@@ -5619,6 +5618,9 @@ void x360_pc_layout_loaded(const char *file, void *root) {
         }
         if (!same) continue;
         if (i == 2) {   /* the tip: not let through to the mouse (the settings' confirmations use it) */
+            /* Only when tip_tick will run (the pad's frame), which shows it again where needed. */
+            extern int x360_pad_running;
+            if (!x360_pad_running) continue;
             __try { prop(root, "Alpha", "0"); } __except (1) { return; }
             pc_tip_layout_root = root;
         } else {
@@ -6420,6 +6422,7 @@ static unsigned tip_closed_at;   /* the press that closed a tip does not reach t
  * no buttons then (the 360's CTipMenu keeps the buttons it gets, sub_823589A0 returns 1). */
 int x360_tip_open(void) { return tip_shown || GetTickCount() - tip_closed_at < 300; }
 
+typedef void *(__fastcall *parent_of_fn)(const void *self, void *edx);
 /* The GUI sheet's child that holds PC's tip window (PC's Top UI Sheet), 0 when it is not attached. */
 static void *pc_tip_sheet(void) {
     static parent_of_fn gp;
@@ -6465,8 +6468,7 @@ static void press_tip(const char *name) {
 
 /* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
 static void pc_tip_alpha(const char *a) {
-    if (pc_tip_layout_root) prop(pc_tip_layout_root, "Alpha", a);
-    prop(win_of(pc_tip_prefix, "Frame"), "Alpha", a);
+    prop(win_of(pc_tip_prefix, "Frame"), "Alpha", a);   /* the layout's root (by name: never a stale pointer) */
 }
 
 static void tip_tick(void) {
@@ -6507,7 +6509,7 @@ static void tip_tick(void) {
         RECT r;
         HWND hw = active_window();
         tip_root = load("media/ui/x360/tipmenu.layout", TIP_PREFIX);
-        if (!tip_root) { tip_failed = 1; return; }
+        if (!tip_root) { tip_failed = 1; pc_tip_alpha("1"); return; }   /* PC's, seen and usable then */
         if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
         scale_tree(tip_root, k, 0);
         pass_mouse(tip_root);
