@@ -2,6 +2,7 @@
 import json
 import glob
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -26,6 +27,7 @@ import aes128  # noqa: E402
 import layout_windows  # noqa: E402
 import port_addresses  # noqa: E402
 import send_input  # noqa: E402
+import save_guard  # noqa: E402
 import steam_guard  # noqa: E402
 from pe_info import PE  # noqa: E402
 
@@ -379,6 +381,69 @@ class SteamGuardTest(unittest.TestCase):
             self.assertTrue(any(line.startswith("changed:") and line.endswith("settings.txt") for line in lines))
             self.assertTrue(any(line.startswith("new:") and line.endswith("new.txt") for line in lines))
             self.assertTrue(any(line.startswith("gone:") and line.endswith("0.svt") for line in lines))
+
+
+class SaveGuardTest(unittest.TestCase):
+    REG = ("WINE REGISTRY Version 2\n\n"
+           "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\User Shell Folders] 1\n"
+           '"AppData"="%USERPROFILE%\\\\Wrong"\n\n'
+           "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Shell Folders] 1\n"
+           '"AppData"="C:\\\\users\\\\steamuser\\\\AppData\\\\Roaming"\n')
+
+    def prefix(self, root, name="compat", saves=True):
+        compat = os.path.join(root, name)
+        os.makedirs(os.path.join(compat, "pfx"))
+        write(os.path.join(compat, "pfx", "user.reg"), self.REG)
+        save = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Roaming",
+                            "Runic Games", "Torchlight", "save")
+        os.makedirs(save)
+        if saves:
+            write(os.path.join(save, "1.svt"), b"synthetic save")
+            write(os.path.join(save, "sharedstash.bin"), b"synthetic stash")
+        return compat, save
+
+    def test_where_reads_the_prefix(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, save = self.prefix(root)
+            self.assertEqual(save_guard.save_folder(compat)[0], save)
+            with self.assertRaises(save_guard.GuardError):
+                save_guard.save_folder(os.path.join(root, "steamapps", "compatdata", "41500"))
+
+    def test_backup_checked(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, save = self.prefix(root)
+            out = save_guard.backup(compat, os.path.join(root, "b"), root, "t", lambda: False)
+            self.assertEqual(save_guard.hashes(os.path.join(out, "save")), save_guard.hashes(save))
+            with open(os.path.join(out, "SHA256SUMS")) as f:
+                self.assertEqual(len(f.read().splitlines()), 2)
+            with self.assertRaises(save_guard.GuardError):   # never over an earlier backup
+                save_guard.backup(compat, os.path.join(root, "b"), root, "t", lambda: False)
+
+    def test_refusals(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, _save = self.prefix(root, saves=False)
+            self.prefix(root, "old")
+            backups = os.path.join(root, "b")
+            with self.assertRaises(save_guard.GuardError):   # the used folder empty, another full
+                save_guard.backup(compat, backups, root, "t", lambda: False)
+            self.assertIsNone(save_guard.backup(compat, backups, None, "t", lambda: False))
+            with self.assertRaises(save_guard.GuardError):   # the game running
+                save_guard.backup(os.path.join(root, "old"), backups, None, "u", lambda: True)
+            os.remove(os.path.join(compat, "pfx", "user.reg"))
+            with self.assertRaises(save_guard.GuardError):   # no way to tell the folder
+                save_guard.backup(compat, backups, None, "v", lambda: False)
+
+    def test_copy_mismatch_stops(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, _save = self.prefix(root)
+            real = shutil.copytree
+
+            def bad_copy(src, dst):
+                real(src, dst)
+                write(os.path.join(dst, "1.svt"), b"other")
+            with unittest.mock.patch.object(save_guard.shutil, "copytree", bad_copy):
+                with self.assertRaises(save_guard.GuardError):
+                    save_guard.backup(compat, os.path.join(root, "b"), None, "t", lambda: False)
 
 
 class NoGameFilesTest(unittest.TestCase):
