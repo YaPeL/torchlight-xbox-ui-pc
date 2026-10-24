@@ -1004,15 +1004,19 @@ static void order(void) {
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
-    if (!x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
+    int x360_tip_open(void);
+    if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
         x360_pause_pad(pressed, ly);
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
-    if (pressed & BUTTON_BACK) {
+    if ((pressed & BUTTON_BACK) && !x360_tip_open()) {   /* a tip keeps every button (the 360's) */
         x360_inventory_toggle();
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
-    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
+    if (x360_inventory_open()) {
+        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, lx, ly);   /* a tip over it has the pad */
+        return;
+    }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
     zoom_tick(client);
     if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
@@ -1142,6 +1146,9 @@ static void order(void) {
     }
 }
 
+/* The pad's frame (order, from the GetCursorPos hook) runs: the 360's screens' ticks with it. */
+int x360_pad_running;
+
 void x360_pad_start(const char *file, int by_message, int direct_mode, int face, int log) {
     face_each_frame = face;
     verbose = log;
@@ -1155,6 +1162,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
     real_get_cursor_pos = (get_cursor_pos_fn)patch_import("user32.dll", "GetCursorPos", (void *)pad_get_cursor_pos);
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
+    x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");

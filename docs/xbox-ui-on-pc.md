@@ -3354,3 +3354,25 @@ installer again through UAC with every answer, while the window shows that run's
 `X360UI_TEST_NEEDS_PERMISSION` (the folder taken as needing it) and `X360UI_TEST_ELEVATE_AS_USER`
 (the second run started as the same user, without UAC's prompt). The prompt itself is the owner's
 Windows test.
+
+**PC's tip never drawn (2026-10-24).** The owner saw PC's tip window for a moment before the 360's
+took its place: `tip_tick` looked for it every 250 ms and loaded the 360's layout the first time it
+saw it, so PC's showed until then. PC loads `tipmenu.layout` once, at the game's start; its root
+(`Frame`) is now made transparent there, in `x360_pc_layout_loaded` as the HUDs are, and kept so
+`tip_tick` finds the window at once. It is shown again only when its text is none of PC's tips (the
+settings' confirmations, used with the mouse), and made transparent again each time it closes. Only
+`tip_tick` shows it again, so it is made transparent at load only when the pad's frame runs (which
+runs the tick: `x360_pad_running`), and shown again for good if the 360's tip layout cannot load.
+The inventory's tip (TIP_INVENTORY, asked for as the 360's inventory opens) showed only once the
+inventory closed. Not its order (the first try: AlwaysOnTop and moved to the front each frame did
+not change it): the 360's screens hide PC's whole sheets (`hide_pc_ui`: Ingame UI Sheet, Top UI
+Sheet), and PC attaches its tip window to the Top UI Sheet only when it shows a tip, so the tip went
+into a hidden sheet and `tip_tick`, which asked for the window's visibility with its parents', saw
+none until the sheets came back. The second try (hiding the tip's sheet window by window) failed
+for the same reason: when the inventory opens the tip is not attached yet. What works (the owner's
+run, 2026-10-24): `pc_tip_up` asks only the tip's own window (attached, and shown itself), and
+`press_tip` shows its sheet for the click on PC's Ok only, in front of the inventory, then hides it
+again. The 360's tip stays AlwaysOnTop and in front each frame. On the 360
+the tip keeps every button it gets (sub_823589A0 returns 1), so while one shows (and 0.3 s after
+it closes) the inventory gets no buttons, nor do Back (the inventory) and Start (the pause):
+`x360_tip_open`, read by `proxy/pad.c`.
