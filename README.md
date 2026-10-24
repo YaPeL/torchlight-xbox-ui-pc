@@ -39,15 +39,19 @@ This is a **beta**, tested under Linux (Proton). See
 You need:
 
 - Torchlight for PC, from **GOG** or the **Epic Games Store**. Steam's build is experimental: the mod
-  was ported to it but not yet played on it, and the installer asks before installing there.
+  was ported to it but not yet played on it, and the installer installs there only when given its
+  folder with `--game` and a yes, or `--experimental`.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
+
+### From a release
+
 From a [release](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases), one file and nothing
 else to install:
 
 - **Windows:** `x360ui-install.exe`. Windows SmartScreen may warn that it is an unknown publisher
-  (the file is not signed): *More info*, then *Run anyway*. When the game is in Program Files it
-  asks for administrator permission (UAC), only then.
+  (the file is not signed): *More info*, then *Run anyway*. When the game's folder cannot be written
+  as you (for example in Program Files) it asks for administrator permission (UAC), only then.
 - **Linux** (the game under Proton or Wine, for example on the Steam Deck in Desktop Mode):
   `x360ui-install-x86_64.AppImage`; make it executable (`chmod +x`) and run it.
 - Check the file against `SHA256SUMS` from the same release (`sha256sum -c --ignore-missing
@@ -57,11 +61,14 @@ Run it: its questions are shown in windows. To uninstall, run it with `uninstall
 (`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
 prints the games it finds. The options below are the same.
 
-From this repository instead: Python 3 and `python3 tools/install.py` (nothing else: the package is
+### From this repository
+
+Python 3 and `python3 tools/install.py` (nothing else: the package is
 read and its executable decrypted in plain Python; pycryptodome, if installed, makes it faster).
 
-Either one finds the PC game (GOG, Steam and Epic installs, also inside
-Wine and Proton prefixes), asks for your 360 package, checks that it is Torchlight's, converts the
+Either one finds the PC game (GOG, Steam libraries, Epic through Legendary or its launcher, Heroic's
+GOG installs, and a GOG install in a Wine prefix up to three folders deep in your home; anywhere
+else, give its folder with `--game DIR`), asks for your 360 package, checks that it is Torchlight's, converts the
 360's interface into the game's folder (one copy per pad style: Xbox, PlayStation 3/4/5 and
 Nintendo), writes `x360_ui.ini` and installs the proxy. The game's real `CEGUIBase.dll` is kept as
 `CEGUIBase_orig.dll`. It takes about a minute.
