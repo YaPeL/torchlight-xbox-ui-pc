@@ -182,7 +182,9 @@ here. Games' texts are named by role, never quoted.
   both" (the dialog, the modal, fishing): left as uncovered, not fixed.
 - **Caught by:** the owner's run.
 - **Covered now:** while a tip is shown (and 0.3 s after it closes) the modal's, the dialog's and
-  fishing's pads read nothing, as the inventory's: the screen drawn in front has the pad. QA
+  fishing's pads read nothing, as the inventory's: the screen drawn in front has the pad. The tip
+  acts on B and Y only, so A does nothing while it is up. The tip's tick runs before theirs, so on
+  the frame it shows they already leave it the pad. QA
   checklist: a tip over the test-options notice (or over a dialog): A and B act on the tip only.
 
 ## QA checklist
