@@ -7,6 +7,10 @@
 [![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-supported-313131?logo=epicgames&logoColor=white)](#installing)
 [![Steam](https://img.shields.io/badge/Steam-testing-1b2838?logo=steam&logoColor=white)](#known-limitations)
 
+> **Alpha:** tested with GOG's build under Proton on Linux; Steam, the Epic Games Store, Windows
+> and the Steam Deck are being tested. Report problems in
+> [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
+
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
 version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
 console. It loads as a proxy `CEGUIBase.dll` next to the game and converts the 360's interface
