@@ -955,6 +955,14 @@ int do_uninstall(const Args& args) {
     if (std::getenv("X360UI_TEST_FAIL_AFTER_PROXY")) throw Exit("a failure asked for by a test");
     ch.commit();
     for (const fs::path& p : leftovers) fs::remove_all(p, ec);
+    // The proxy's own folder, %LOCALAPPDATA%\x360ui (x360_stop.txt): beside each save folder's
+    // AppData (under Wine, the prefix's), and Windows' own (install.mod_data_folders).
+    std::vector<fs::path> data;
+    for (const fs::path& f : save_folders(game)) data.push_back(f.parent_path().parent_path().parent_path().parent_path() / "Local" / "x360ui");
+#ifdef _WIN32
+    if (const char* l = std::getenv("LOCALAPPDATA")) data.push_back(fs::path(P(l)) / "x360ui");
+#endif
+    for (const fs::path& d : data) if (is_dir(d)) fs::remove_all(d, ec);
   } catch (...) {
     ch.rollback();
     throw;

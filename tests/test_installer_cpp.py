@@ -611,6 +611,20 @@ class InstallCppTest(unittest.TestCase):
             self.assertTrue(ini.endswith(b"font_diff=1\r\ndialog_markup=1\r\n"), who)
         self.same_install()
 
+    def test_uninstall_removes_the_mods_data_folder(self):
+        """The proxy's %LOCALAPPDATA%\\x360ui (x360_stop.txt): removed by both uninstallers."""
+        for who in ("py", "cpp"):
+            game, saves = self.games[who]
+            local = os.path.join(saves.split(os.sep + "Roaming" + os.sep)[0], "Local", "x360ui")
+            self.assertEqual(self.install(who, "--bag", "pc").returncode, 0)
+            os.makedirs(local)
+            with open(os.path.join(local, "x360_stop.txt"), "w") as f:
+                f.write("a stop's text")
+            r = self.uninstall(who, "--yes")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertFalse(os.path.exists(local), who)
+            self.assertTrue(os.path.isdir(os.path.dirname(local)), who)               # AppData/Local itself kept
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""
