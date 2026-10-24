@@ -2210,6 +2210,23 @@ static int identify(unsigned char *item) {
  * if the bag is full, it goes back. */
 static void sock_begin(unsigned char *gem);
 static void hide_info(void);
+/* ---- an item between bags is never left out of every one (the GPU agent's review, item 5) ----
+ * Each move takes the item out with move_out, which remembers it and where it was, and ends with
+ * move_done once it is somewhere (a bag, the ground, a socket, or destroyed as PC does). A put
+ * that fails is answered with give_back (its slot, else its bag); one that cannot be undone
+ * stops the game before any save (move_lost). The menus' pad input runs in __try
+ * (x360_inventory_pad): an exception with a move under way, or a move left unfinished, stops the
+ * game at once without touching the item (where it went is not known: it may be placed already,
+ * or merged into a stack and freed), so no save is written and loading again has it. */
+static struct { void *item, *inv; int slot; } in_move[2];   /* a two-handed swap moves two */
+static void move_out(void *inv, void *item, int slot);
+static void move_done(void) { in_move[0].item = in_move[1].item = 0; }
+static int give_back(void *inv, int slot, void *item);
+static void move_lost(void *item);
+static void to_ground(void *item);
+static void log_item_name(void *item);
+static void move_cut_short(void);
+extern int x360_save_held;
 void x360_inventory_toggle(void);
 /* Whether the item is the town portal scroll by its unit's name, as the 360's bag Use
  * (sub_8236BD80 at 0x8236BF68: the item's definition, +0x178, against the unit index's entry of
@@ -2289,13 +2306,12 @@ static void act(void) {
     if (!item[GOG_IDENTIFIED]) { identify(item); return; }
     if (isa(item, 120)) { sock_begin(item); return; }   /* a gem: the item select (sub_8236B240) */
     if (list_slot[selected[filter]] < EQUIPPED_SLOTS) {
-        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
-        if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1)) {
-            ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item);
+        move_out(inv, item, list_slot[selected[filter]]);
+        if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1)) x360_log("x360 inv: A: unequipped\r\n");
+        else if (give_back(inv, list_slot[selected[filter]], item) || ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item))
             x360_log("x360 inv: A: bag full, kept equipped\r\n");
-        } else {
-            x360_log("x360 inv: A: unequipped\r\n");
-        }
+        else move_lost(item);
+        move_done();
         return;
     }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
@@ -2327,18 +2343,29 @@ static void act(void) {
     {
         void *first = 0, *second = 0;
         ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
-        if (isa(item, 10) && second) ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, second);
-        if (first) {
-            ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, first);
-            if (((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item)) {
-                ((int_fn)GOG_RENDER_BEHIND)(owner, 0, 1);
-                ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(owner + 0x58));
-            }
-            if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, first, 1)) x360_log("x360 inv: A: the old item did not fit\r\n");
+        int equipped;
+        if (!first && !(isa(item, 10) && second)) { x360_log("x360 inv: A: cannot equip\r\n"); return; }
+        /* The old items out, the new one in; when it does not go in, the old ones back on. Then the
+         * old items into the bag, or to the ground when it is full (as PC's swap drops them). */
+        if (isa(item, 10) && second) move_out(inv, second, -1);
+        if (first) move_out(inv, first, -1);
+        equipped = ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, item);
+        if (!equipped) {
+            /* Back on: nothing left for the bag below (one that does not go back goes there). */
+            if (first && ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, first)) first = 0;
+            if (isa(item, 10) && second && ((inv_item_fn)GOG_EQUIP_FIRST_FREE)(inv, 0, second)) second = 0;
+            x360_log("x360 inv: A: not equipped, the old items back on\r\n");
+        } else {
+            ((int_fn)GOG_RENDER_BEHIND)(owner, 0, 1);
+            ((ptr_fn)GOG_DROP_SOUND)(item, 0, *(void **)(owner + 0x58));
         }
-        if (isa(item, 10) && second && !((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, second, 1))
-            x360_log("x360 inv: A: the old second item did not fit\r\n");
-        x360_log("x360 inv: A: swapped\r\n");
+        if (first && !((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, first, 1)) { to_ground(first); x360_log("x360 inv: A: the old item to the ground\r\n"); }
+        if (isa(item, 10) && second && !((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, second, 1)) {
+            to_ground(second);
+            x360_log("x360 inv: A: the old second item to the ground\r\n");
+        }
+        move_done();
+        if (equipped) x360_log("x360 inv: A: swapped\r\n");
     }
 }
 
@@ -2362,9 +2389,11 @@ static void drop(void) {
     item = (unsigned char *)list[selected[filter]];
     /* An item of type 103 is not dropped (sub_82369E80: the 360's refusal, sub_82369E28). */
     if (isa(item, 103)) { shop_sound(24); hero_voice(49); return; }
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+    if (!level) return;
+    move_out(inv, item, list_slot[selected[filter]]);
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
+    move_done();
     ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
     x360_log("x360 inv: Y: dropped\r\n");
 }
@@ -2379,10 +2408,11 @@ static void swap_to_pet(void) {
     pet_inv = pet ? *(void **)((unsigned char *)pet + GOG_INVENTORY) : 0;
     if (!pet_inv) { x360_log("x360 inv: X: no pet\r\n"); return; }
     item = (unsigned char *)list[selected[filter]];
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
-    if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(pet_inv, 0, item, 1)) { x360_log("x360 inv: X: to the pet\r\n"); return; }
-    ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1);
-    x360_log("x360 inv: X: the pet's bag is full\r\n");
+    move_out(inv, item, list_slot[selected[filter]]);
+    if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(pet_inv, 0, item, 1)) { move_done(); x360_log("x360 inv: X: to the pet\r\n"); return; }
+    if (give_back(inv, list_slot[selected[filter]], item)) x360_log("x360 inv: X: the pet's bag is full\r\n");
+    else move_lost(item);
+    move_done();
 }
 
 /* ---- the merchant (CMerchantMenuXenon) ----
@@ -2442,12 +2472,13 @@ static void buy(void) {
                                                             *(void **)(item + GOG_ITEM_TEMPLATE), 0, 0, 0);
     else {
         got = item;
-        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(stock, 0, item);
+        move_out(stock, item, list_slot[selected[filter]]);
     }
     if (!got) return;
     if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, got, 1)) {
         if (got != item) ((destroy_fn)(*(void ***)got)[0])(got, 0, 1);
-        else ((pickup_fn)GOG_PICKUP_EQUIPMENT)(stock, 0, item, 1);
+        else if (!give_back(stock, list_slot[selected[filter]], item)) move_lost(item);
+        move_done();
         hero_voice(47);
         x360_log("x360 shop: X: the bag is full\r\n");
         {
@@ -2469,6 +2500,7 @@ static void buy(void) {
         }
         return;
     }
+    move_done();
     if (isa(shop, 127)) {
         got[GOG_IDENTIFIED] = 1;
         ((void_fn)GOG_DESTROY_ITEM_TEXT)(got, 0);
@@ -2490,11 +2522,17 @@ static void sell(void) {
     if (!stock || !inv || !list_count) return;
     item = (unsigned char *)list[selected[filter]];
     if (isa(item, 103)) { refuse(); x360_log("x360 shop: X: cannot sell\r\n"); return; }
-    shop_sound(23);
-    ((int_fn)GOG_GIVE_GOLD)(hero, 0, ((int_get_fn)GOG_PAID_PRICE)(item, 0));
-    ((ptr_fn)GOG_COUNT_SOLD)(hero, 0, item);
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
-    if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(stock, 0, item, 1)) ((destroy_fn)(*(void ***)item)[0])(item, 0, 1);
+    {
+        /* The item into the merchant's bag (or destroyed when full, as the 360) before the gold: an
+         * interrupted sale gives the item back, never the gold with it. */
+        int paid = ((int_get_fn)GOG_PAID_PRICE)(item, 0);
+        shop_sound(23);
+        ((ptr_fn)GOG_COUNT_SOLD)(hero, 0, item);
+        move_out(inv, item, list_slot[selected[filter]]);
+        if (!((pickup_fn)GOG_PICKUP_EQUIPMENT)(stock, 0, item, 1)) ((destroy_fn)(*(void ***)item)[0])(item, 0, 1);
+        move_done();
+        ((int_fn)GOG_GIVE_GOLD)(hero, 0, paid);
+    }
     x360_log("x360 shop: X: sold\r\n");
 }
 
@@ -2512,23 +2550,23 @@ static void stash_swap(void) {
     void *inv = inventory();
     if (!box || !inv || !list_count) return;
     item = (unsigned char *)list[selected[filter]];
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+    move_out(inv, item, list_slot[selected[filter]]);
     if (panels[active_panel].is_shop) {
-        float pos[3];
         if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(hero), 0, item, 1) ||
             (pet && ((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(pet), 0, item, 1))) {
+            move_done();
             shop_sound(18);
             x360_log("x360 stash: X: taken\r\n");
             return;
         }
-        ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
-        ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
-        ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
+        to_ground(item);
+        move_done();
         x360_log("x360 stash: X: taken, to the ground\r\n");
         return;
     }
-    if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(box, 0, item, 1)) { shop_sound(18); x360_log("x360 stash: X: stored\r\n"); return; }
-    ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1);
+    if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(box, 0, item, 1)) { move_done(); shop_sound(18); x360_log("x360 stash: X: stored\r\n"); return; }
+    if (!give_back(inv, list_slot[selected[filter]], item)) move_lost(item);
+    move_done();
     shop_sound(24);
     x360_log("x360 stash: X: the stash is full\r\n");
 }
@@ -2558,6 +2596,56 @@ static void stash_swap(void) {
 #define GOG_TRANSMUTE 0x00569550             /* CCombineMenu: transmute the items in its places */
 typedef void *(__fastcall *item_at_fn)(void *inv, void *edx, int slot);
 typedef void *(__fastcall *put_at_fn)(void *inv, void *edx, void *item, int slot, int flag);
+
+static void move_out(void *inv, void *item, int slot) {
+    int k = in_move[0].item ? 1 : 0;
+    if (in_move[1].item) { move_cut_short(); k = 1; }   /* never: two at most */
+    in_move[k].item = item; in_move[k].inv = inv; in_move[k].slot = slot;
+    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inv, 0, item);
+}
+/* The item back where it was: its slot when it is free, else anywhere in that bag. */
+static int give_back(void *inv, int slot, void *item) {
+    if (!inv || !item) return 0;
+    if (slot >= 0 && !((item_at_fn)GOG_ITEM_AT_SLOT)(inv, 0, slot)) {
+        ((put_at_fn)GOG_PUT_AT_SLOT)(inv, 0, item, slot, 1);
+        if (((item_at_fn)GOG_ITEM_AT_SLOT)(inv, 0, slot) == item) return 1;
+    }
+    /* pickup's answer is the item or the stack it joined (a full merge frees the item: 0x4e9743). */
+    return ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, 0, item, 1) != 0;
+}
+static void to_ground(void *item) {
+    float pos[3];
+    if (!level || !hero) {   /* no level: back where it came from, if it can be */
+        int k;
+        for (k = 1; k >= 0; k--)
+            if (in_move[k].item == item && give_back(in_move[k].inv, in_move[k].slot, item)) return;
+        move_lost(item);
+        return;
+    }
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
+    ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
+}
+static void stop_unsaved(const char *why, int count);
+/* Nowhere to put it: kept (never destroyed) and the game stopped before any save; loading the
+ * character again has it where it was. */
+static void move_lost(void *item) {
+    x360_log("x360 inv: an item could not be put back after a move: ");
+    if (item) log_item_name(item);
+    x360_log("\r\n");
+    stop_unsaved("An item could not be put back in a bag after a move. Nothing is saved, nothing is lost: press A "
+                 "to close the game, then load this character again.", -1);
+}
+/* A move cut short (an exception, or a path that left it unfinished): the game stops before any
+ * save, the item not touched. */
+static void move_cut_short(void) {
+    if (!in_move[0].item && !in_move[1].item) return;
+    in_move[0].item = in_move[1].item = 0;
+    x360_log("x360 inv: a move was cut short: the game stops, unsaved\r\n");
+    stop_unsaved("A move between bags was interrupted. Nothing is saved, nothing is lost: press A to close the game, "
+                 "then load this character again.", -1);
+}
+
 static void transmute_swap(void) {
     void *bag = owner_bag(hero);
     unsigned char *item;
@@ -2566,30 +2654,31 @@ static void transmute_swap(void) {
     item = (unsigned char *)list[selected[filter]];
     if (panels[active_panel].is_shop) {           /* back from the transmuter */
         unsigned char *pet = the_pet();
-        float pos[3];
-        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, item);
+        move_out(bag, item, list_slot[selected[filter]]);
         if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1) ||
             (pet && ((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(pet), 0, item, 1))) {
+            move_done();
             shop_sound(18);
             x360_log("x360 transmuter: X: taken\r\n");
             return;
         }
-        ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
-        ((add_item_fn)GOG_LEVEL_ADD_ITEM)(level, 0, item, pos, 1);
-        ((void_fn)(*(void ***)item)[GOG_ITEM_DROPPED_SLOT])(item, 0);
+        to_ground(item);
+        move_done();
         x360_log("x360 transmuter: X: taken, to the ground\r\n");
         return;
     }
     for (j = 0; j < 4; j++) if (!((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j])) break;
     if (j == 4) { shop_sound(24); x360_log("x360 transmuter: X: its places are full\r\n"); return; }
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(inventory(), 0, item);
+    move_out(inventory(), item, list_slot[selected[filter]]);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, tm_slot[j], 1);
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) != item) {
+        /* Its place taken (or refused): the item back where it was, whatever is now there. */
         x360_log("x360 transmuter: X: not placed, back\r\n");
-        if (!((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]))
-            ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inventory(), 0, item, 1);
+        if (!give_back(inventory(), list_slot[selected[filter]], item)) move_lost(item);
+        move_done();
         return;
     }
+    move_done();
     shop_sound(18);
     x360_log("x360 transmuter: X: placed\r\n");
 }
@@ -2605,13 +2694,15 @@ static void enchant(void) {
     slot = list_slot[selected[filter]];
     if (at_enchant == 0x15 ? !can_enchant(item) : !has_gems(item)) { refuse(); x360_log("x360 enchanter: A: not for this item\r\n"); return; }
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 enchanter: A: slot 14 is taken\r\n"); return; }
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(from, 0, item);
+    move_out(from, item, slot);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
-        ((put_at_fn)GOG_PUT_AT_SLOT)(from, 0, item, slot, 1);
+        if (!give_back(from, slot, item)) move_lost(item);
+        move_done();
         x360_log("x360 enchanter: A: not placed\r\n");
         return;
     }
+    move_done();
     ench_result[0] = 0;
     modal_hook_install();
     ench_acting = 1;
@@ -2625,9 +2716,9 @@ static void enchant(void) {
     ench_pending = GetTickCount();
     got = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT);
     if (got) {
-        ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, got);
-        ((put_at_fn)GOG_PUT_AT_SLOT)(from, 0, got, slot, 1);
-        if (((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot) != got) ((pickup_fn)GOG_PICKUP_EQUIPMENT)(from, 0, got, 1);
+        move_out(bag, got, ENCHANT_SLOT);
+        if (!give_back(from, slot, got) && !give_back(bag, ENCHANT_SLOT, got)) move_lost(got);
+        move_done();
     }
     /* PC's act itself takes the item out of slot 14 and puts it back in the bag (0x4e9ca0 and
      * 0x4e9a30, at 0x57b619; dropped at the hero by 0x4f5960 only with the bag full). */
@@ -4547,9 +4638,10 @@ static void sock_finish(unsigned char *target) {
         refresh_all();
         return;
     }
-    ((inv_item_fn)GOG_REMOVE_EQUIPMENT)(bag, 0, gem);
+    move_out(bag, gem, -1);
     ((ptr_fn)GOG_DROP_SOUND)(gem, 0, *(void **)(hero + 0x58));
     ((add_socketable_fn)GOG_ADD_SOCKETABLE)(target, 0, gem);
+    move_done();
     ((void_fn)GOG_SOCKETS_CHANGED)(target, 0);
     shop_sound(0x17);
     ((void_fn)GOG_INV_RECOMPUTE_1)(inv, 0);
@@ -4987,7 +5079,26 @@ void x360_shop_tick(void) {
 /* The pad while the inventory is open: pressed, the buttons just pressed; ly, the stick (of 1000).
  * Up and down (the stick or the d-pad) move the selection, repeating while held; LB and RB the
  * filter; A acts on the row; B or Back closes. */
+static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
+static int stop_asked;   /* a stop was decided (stop_unsaved): the menus take no input after it */
+static unsigned short stop_wbody[700];   /* the stop's text (also declared below) */
 void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
+    static int logged;
+    if (stop_asked) return;
+    __try { inventory_pad(pressed, buttons, lx, ly); }
+    __except (1) { if (!logged++) x360_log("x360 inv: exception in the menus' input (logged once)\r\n"); }
+    __try { move_cut_short(); }
+    __except (1) {
+        /* The last-resort box needs a text: a fixed one if the stop's was not made. */
+        static const char fallback[] = "A move between bags was interrupted. Nothing is saved, nothing is lost: the game closes.";
+        unsigned i;
+        x360_save_held = 1;
+        if (!stop_wbody[0]) { for (i = 0; fallback[i] && i + 1 < 700; i++) stop_wbody[i] = (unsigned char)fallback[i]; stop_wbody[i] = 0; }
+        stop_asked = 1;
+        x360_log("x360 inv: exception stopping a cut move: saves held\r\n");
+    }
+}
+static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     static unsigned next_repeat;
     static int held_dir;
     unsigned now = GetTickCount();
@@ -7266,7 +7377,7 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
  * blank under Proton (QA runs 34, 35): not used. */
 static int stop_state;                 /* 0 none, 1 PC's modal asked for, 2 it showed, 3 waiting for another modal to close, 4 the black screen */
-static int stop_asked;                 /* a stop was decided */
+static int stop_asked;                 /* a stop was decided (also declared above, for the menus' input) */
 static unsigned stop_t0;               /* when (GetTickCount): the modal is waited for STOP_MODAL_MS */
 #define STOP_MODAL_MS 15000          /* from the stop's modal asked for */
 #define STOP_WAIT_MS 120000          /* from the stop, while another modal is open (state 3) */
@@ -7452,6 +7563,7 @@ static void stop_seen(void) {   /* seen: removed where it was, and from the othe
 static void stop_unsaved(const char *why, int count) {
     char text[700], name[96], *p = text;
     x360_save_held = 1;
+    if (stop_asked) { x360_log("x360 load: a second stop ignored (one is under way)\r\n"); return; }
     stop_asked = 1;
     stop_t0 = GetTickCount();
     name[0] = 0;

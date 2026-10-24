@@ -2,30 +2,39 @@ name: CI
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   no-game-files:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: No game files tracked
         run: python3 tools/check_no_game_files.py
   tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Tools' tests (synthetic data)
         run: python3 -m unittest discover -s tests -v
   proxy:
     # The proxy built from proxy/cegui_exports.txt alone, without the game's DLL, with the LLVM the
     # project builds with (the link is reproducible: the same bytes as a local build).
     runs-on: ubuntu-24.04
+    # Ubuntu 26.04's LLVM 21 (the owner's machine's): the proxies' bytes the same as a local build.
+    container: ubuntu:26.04
     steps:
-      - uses: actions/checkout@v4
-      - name: LLVM 21
+      - name: LLVM 21, Ubuntu 26.04's own packages at a fixed version
         run: |
-          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-          sudo bash "$RUNNER_TEMP/llvm.sh" 21
-          echo /usr/lib/llvm-21/bin >> "$GITHUB_PATH"
+          # The whole toolchain (every package built from llvm-toolchain-21) held at this version,
+          # whatever -updates publishes later.
+          printf 'Package: src:llvm-toolchain-21\nPin: version 1:21.1.8-6ubuntu1\nPin-Priority: 1001\n' \
+            > /etc/apt/preferences.d/llvm-21
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 \
+            clang-21=1:21.1.8-6ubuntu1 lld-21=1:21.1.8-6ubuntu1 llvm-21=1:21.1.8-6ubuntu1
+          clang-cl-21 --version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build both targets
         run: |
           python3 tools/build_proxy.py build "$RUNNER_TEMP/gog"
@@ -40,8 +49,8 @@ jobs:
         os: [ubuntu-24.04, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - name: Build

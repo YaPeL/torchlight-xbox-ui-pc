@@ -3134,9 +3134,13 @@ release is made of, makes only the artifacts.
 - **The type2-runtime source** is GitHub's archive of that commit, pinned by its SHA-256: GitHub
   does not promise those bytes stay the same, and if they change the release job stops (nothing
   wrong published); a mirror beside the runtime's would avoid it.
-- **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
-  printed in the log, to compare with a local build), the actions by major version and the
-  container images by tag.
+- **Pinned (the GPU agent's review, item 9):** every action by its commit's SHA (the major version
+  in a comment); LLVM 21 is Ubuntu 26.04's own clang-21, lld-21 and llvm-21 at 1:21.1.8-6ubuntu1
+  (the release pocket, the owner's machine's version; every package of llvm-toolchain-21 held at
+  that version by an apt preference), in an `ubuntu:26.04` container, in both
+  workflows: no script downloaded and run, and the proxies' SHA-256 printed in the log are a local
+  build's. Both workflows declare `contents: read`; only the draft job writes, on a pushed tag. The
+  container images stay pinned by tag.
 
 **Licences (the GPU agent's review, items 7 and 8; 2026-10-23).** The LZX decoder
 (`tools/xex/lzx_decompress.py` and its C++ port `installer/src/lzx.cpp`) mirrors libmspack's
@@ -3160,6 +3164,19 @@ with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then ba
 before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
 same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
 without the flag after a switch is out there.
+
+**No item left out of every bag (the GPU agent's review, item 5; 2026-10-23).** Every move the
+pad's menus make (unequip, swap, drop, the pet's bag, buy, sell, the stash, the transmuter, the
+enchanter, a gem into a socket) takes the item out with `move_out`, which remembers it and its
+place, and ends with `move_done` once it is somewhere. A put PC refuses is answered by
+`give_back` (its slot when free, else its bag); the old items of a swap that no longer fit go to
+the ground, as PC's swap drops them; one that can be put nowhere is kept (never destroyed) and
+stops the game before any save (`move_lost`, the stop of section 21). The menus' pad input runs
+in `__try` (`x360_inventory_pad`): an exception with a move under way, or a move left
+unfinished, stops the game at once without touching the item (`move_cut_short`): where it went
+is not known (it may be placed already, or merged into a stack and freed, 0x4e9743), so giving it
+back could duplicate it; no save is written, and loading again has it where it was. A sale now puts the item in the merchant's bag before paying, so an
+interrupted sale gives back the item, never the gold with it.
 
 **Saves held while items are aside, and the stop's fallbacks (the GPU agent's review, items 1 to
 3, and the owner's decisions after the runs; 2026-10-23).** Every save is refused from the first
