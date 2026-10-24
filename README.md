@@ -103,7 +103,8 @@ questions, the defaults: PC's bag; at uninstall, see below), `--console` (questi
   prefix's). A Steam install under Proton (Linux, the Steam Deck) keeps its saves in Steam's own
   prefix, which they leave alone: back those up yourself
   (`steamapps/compatdata/41500/pfx/drive_c/users/steamuser/AppData/Roaming/runic games/torchlight/save`).
-  When none is found, they say so and ask before going on without a backup.
+  When a backup is needed (the 360's bag is or was used) and none is found, they say so and ask
+  before going on without one.
 
 ## Playing
 

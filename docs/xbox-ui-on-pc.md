@@ -3240,7 +3240,7 @@ must), the proxy only reads it.
 installers find and offer it as the others, and with more than one supported install Steam's
 comes first (the one `--yes` takes and the first offered; the others in the order found). The
 experimental mechanism stays, with no build in it; `--experimental` is still accepted and does
-nothing. The earlier entries that call Steam's build experimental are of before this. A Steam
+nothing. Earlier entries calling Steam's build experimental predate this. A Steam
 install under Proton keeps its saves in Steam's prefix, which the installers leave alone: an
 uninstall that would back them up now says none was found and asks (no by default) before going
 on without one; `--anyway` goes on and says so. Steam's build has not been played with the mod yet: the README calls it "testing", not
