@@ -3255,3 +3255,20 @@ must go with every copy of the executable), embedded by `cmake/embed_blob.cmake`
 them inside too. Requirements: Windows 10 1903 or later, 64-bit (the manifest's UTF-8 code page),
 and Linux with glibc 2.35 or later (built on Ubuntu 22.04).
 
+## 25. The installer: Steam from the registry, a window program (2026-10-24)
+
+The owner's first Windows run (Steam and Epic installed) found Epic's copy only: Steam was looked
+for in `Program Files (x86)\Steam` and `Program Files\Steam` and the libraries their
+`libraryfolders.vdf` lists, so a Steam installed elsewhere was missed. Both installers now read
+Steam's own place first: `SteamPath` in `HKCU\Software\Valve\Steam` and `InstallPath` in
+`HKLM\SOFTWARE\WOW6432Node\Valve\Steam` (Windows only), then the defaults.
+
+The game's line no longer names its build (`the game: <folder>`; `list` says only "not supported by
+this version" for a build it has no proxy for): the build is the installer's business, and Epic's
+copy, GOG's build, was shown as "gog".
+
+`x360ui-install.exe` is a window program (`/SUBSYSTEM:WINDOWS`, entry `mainCRTStartup`): a double
+click opens no console. Its output goes where it is redirected (a pipe, a file: the tests and
+`check_release.ps1`, which pipes it to `Out-Host` so PowerShell waits for it); run from a terminal
+without a redirection, it attaches to that terminal's console (`AttachConsole`) and writes there.
+

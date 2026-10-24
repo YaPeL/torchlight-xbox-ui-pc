@@ -118,6 +118,16 @@ def steam_libraries(home):
     roots = [os.path.join(home, p) for p in (".steam/steam", ".steam/debian-installation", ".local/share/Steam",
                                              ".var/app/com.valvesoftware.Steam/data/Steam")]
     if os.name == "nt":
+        # Where Steam says it is (a Steam installed elsewhere than Program Files), then the defaults.
+        import winreg
+        for hive, sub in ((winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam"),
+                          (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam")):
+            for value in ("SteamPath", "InstallPath"):
+                try:
+                    with winreg.OpenKey(hive, sub) as key:
+                        roots.append(winreg.QueryValueEx(key, value)[0])
+                except OSError:
+                    pass
         roots += [os.path.expandvars(r"%ProgramFiles(x86)%\Steam"), os.path.expandvars(r"%ProgramFiles%\Steam")]
     libs = []
     for root in roots:
@@ -522,7 +532,7 @@ def do_install(args):
     game, build = pick_game(args.get("game"), ask)
     if build not in PROXY_FILES:
         raise SystemExit(f"{game}: a build this version does not support yet.")
-    print(f"the game: {game} ({build} build)")
+    print(f"the game: {game}")
     check_real_dll(game)
     if build in EXPERIMENTAL and not (args.get("experimental") or Ask(args.get("console")).yes_no(
             f"This game's build ({build}) is experimental: the mod was ported to it offline "
@@ -630,7 +640,7 @@ def do_uninstall(args):
 def do_list(args):
     games = find_games()
     for store, path in games:
-        print(f"{store}: {path} ({build_of(path)} build)")
+        print(f"{store}: {path}" + (" (not supported by this version)" if build_of(path) == "unknown" else ""))
     if not games:
         print("No PC Torchlight found.")
     return 0 if games else 1

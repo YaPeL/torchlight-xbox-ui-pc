@@ -62,7 +62,8 @@ else to install:
 
 Run it: its questions are shown in windows. To uninstall, run it with `uninstall`
 (`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
-prints the games it finds. The options are the same for both (below). `notices` shows the licence
+prints the games it finds. The options are the same for both (below). On Windows it is a window
+program: from PowerShell, add `| Out-Host` to a command to wait for it and see its output there. `notices` shows the licence
 and the third-party notices it carries; their sources are in the release's
 `sources-and-notices.zip`.
 

@@ -817,6 +817,38 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(_tree(game), before)
         self.assertEqual(sorted(os.listdir(game)), sorted(before))
 
+    @unittest.skipUnless(os.name == "nt", "Windows' registry")
+    def test_steam_found_from_the_registry(self):
+        """A Steam installed elsewhere than Program Files: both installers find its game through
+        SteamPath (HKCU\\Software\\Valve\\Steam), the same `list`; the value is put back after."""
+        import shutil, winreg
+        from test_tools import fake_exe
+        steam = os.path.join(self.root, "Elsewhere", "Steam")
+        game = os.path.join(steam, "steamapps", "common", "Torchlight")
+        os.makedirs(game)
+        open(os.path.join(steam, "steamapps", "appmanifest_41500.acf"), "w").close()
+        fake_exe(os.path.join(game, "Torchlight.exe"), 0x4B5F7519)
+        _real_cegui_dll(os.path.join(game, "CEGUIBase.dll"))
+        shutil.copyfile(os.path.join(self.games["py"][0], "Pak.zip"), os.path.join(game, "Pak.zip"))
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
+        try:
+            old = winreg.QueryValueEx(key, "SteamPath")
+        except OSError:
+            old = None
+        winreg.SetValueEx(key, "SteamPath", 0, winreg.REG_SZ, steam.replace("\\", "/"))   # as Steam writes it
+        try:
+            lst = lambda cmd: subprocess.run(cmd + ["list"], capture_output=True, text=True, env=self.env).stdout
+            py_list = lst([sys.executable, os.path.join(TOOLS, "install.py")])
+            self.assertIn("steam: ", py_list)
+            self.assertIn(os.path.realpath(game).lower(), py_list.lower())
+            self.assertEqual(lst([BINARY]).lower(), py_list.lower())
+        finally:
+            if old is None:
+                winreg.DeleteValue(key, "SteamPath")
+            else:
+                winreg.SetValueEx(key, "SteamPath", 0, old[1], old[0])
+            winreg.CloseKey(key)
+
     def test_stores_found_and_steam_and_epic_installed_as_python(self):
         """A home with a Steam library (Steam's build) and a Legendary (Epic) install of GOG's
         build beside the Wine prefix's GOG one: `list` the same; Steam's installs with no question in

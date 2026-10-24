@@ -799,7 +799,7 @@ int do_install(const Args& args) {
   Ask ask(args.console, args.yes);
   auto [game, build] = pick_game(args.game, ask, args.yes);
   if (build == "unknown") throw Exit(S(game) + ": a build this version does not support yet.");
-  std::cout << "the game: " << S(game) << " (" << build << " build)\n";
+  std::cout << "the game: " << S(game) << "\n";
   check_real_dll(S(game));
   bool experimental_ok = args.experimental;
   if (is_experimental(build) && !experimental_ok) {
@@ -1059,7 +1059,7 @@ int do_notices() {
 
 int do_list() {
   const auto games = find_games(home_dir());
-  for (const auto& [store, path] : games) std::cout << store << ": " << path << " (" << build_of(path) << " build)\n";
+  for (const auto& [store, path] : games) std::cout << store << ": " << path << (build_of(path) == "unknown" ? " (not supported by this version)" : "") << "\n";
   if (games.empty()) std::cout << "No PC Torchlight found.\n";
   return games.empty() ? 1 : 0;
 }
