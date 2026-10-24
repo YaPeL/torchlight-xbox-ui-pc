@@ -18,13 +18,20 @@ permissions:
 jobs:
   proxies:
     runs-on: ubuntu-24.04
+    # Ubuntu 26.04's LLVM 21 (the owner's machine's): the proxies' bytes the same as a local build.
+    container: ubuntu:26.04
     steps:
-      - uses: actions/checkout@v4
-      - name: LLVM 21
+      - name: LLVM 21, Ubuntu 26.04's own packages at a fixed version
         run: |
-          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-          sudo bash "$RUNNER_TEMP/llvm.sh" 21
-          echo /usr/lib/llvm-21/bin >> "$GITHUB_PATH"
+          # The whole toolchain (every package built from llvm-toolchain-21) held at this version,
+          # whatever -updates publishes later.
+          printf 'Package: src:llvm-toolchain-21\nPin: version 1:21.1.8-6ubuntu1\nPin-Priority: 1001\n' \
+            > /etc/apt/preferences.d/llvm-21
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 \
+            clang-21=1:21.1.8-6ubuntu1 lld-21=1:21.1.8-6ubuntu1 llvm-21=1:21.1.8-6ubuntu1
+          clang-cl-21 --version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build both targets
         run: |
           python3 tools/build_proxy.py build "$RUNNER_TEMP/gog"
@@ -33,7 +40,7 @@ jobs:
           cp "$RUNNER_TEMP/gog/CEGUIBase.dll" proxies/CEGUIBase-gog.dll
           cp "$RUNNER_TEMP/steam/CEGUIBase.dll" proxies/CEGUIBase-steam.dll
           sha256sum proxies/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: proxies
           path: proxies/
@@ -42,9 +49,9 @@ jobs:
     # Synthetic games and a synthetic 360 copy (tests/release_fixture.py): nothing of the game.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: python3 tests/release_fixture.py fixture
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fixture
           path: fixture/
@@ -59,8 +66,8 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates file
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: proxies
           path: proxies
@@ -75,7 +82,7 @@ jobs:
           packaging/linux/get_tools.sh "$RUNNER_TEMP/appimage-tools"
           mkdir dist
           packaging/linux/make_appimage.sh "$RUNNER_TEMP/appimage-tools" build/x360ui-install dist/x360ui-install-x86_64.AppImage
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux
           path: dist/
@@ -84,8 +91,8 @@ jobs:
     needs: proxies
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: proxies
           path: proxies
@@ -97,7 +104,7 @@ jobs:
           ctest --test-dir build -C Release --output-on-failure
           mkdir dist
           cp build/Release/x360ui-install.exe dist/x360ui-install.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows
           path: dist/
@@ -111,16 +118,16 @@ jobs:
     runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: fixture
           path: fixture
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: proxies
           path: proxies
@@ -138,16 +145,16 @@ jobs:
     needs: [windows, fixture, proxies]
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: fixture
           path: fixture
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: proxies
           path: proxies
@@ -166,7 +173,7 @@ jobs:
     needs: linux
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux
           path: dist
@@ -183,8 +190,8 @@ jobs:
     needs: [check-linux, check-windows, check-appimage-fuse]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
       - name: Files, notices, the runtime's LGPL source, and checksums
@@ -198,7 +205,7 @@ jobs:
           cp packaging/linux/APPIMAGE_NOTICES.md release/APPIMAGE_NOTICES.md
           packaging/linux/get_sources.sh release
           (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release
           path: release/
@@ -211,7 +218,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release
           path: release

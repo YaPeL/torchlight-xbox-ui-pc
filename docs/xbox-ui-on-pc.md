@@ -3134,9 +3134,13 @@ release is made of, makes only the artifacts.
 - **The type2-runtime source** is GitHub's archive of that commit, pinned by its SHA-256: GitHub
   does not promise those bytes stay the same, and if they change the release job stops (nothing
   wrong published); a mirror beside the runtime's would avoid it.
-- **Not pinned:** LLVM 21 comes from apt.llvm.org's script as CI's does (the proxies' SHA-256 are
-  printed in the log, to compare with a local build), the actions by major version and the
-  container images by tag.
+- **Pinned (the GPU agent's review, item 9):** every action by its commit's SHA (the major version
+  in a comment); LLVM 21 is Ubuntu 26.04's own clang-21, lld-21 and llvm-21 at 1:21.1.8-6ubuntu1
+  (the release pocket, the owner's machine's version; every package of llvm-toolchain-21 held at
+  that version by an apt preference), in an `ubuntu:26.04` container, in both
+  workflows: no script downloaded and run, and the proxies' SHA-256 printed in the log are a local
+  build's. Both workflows declare `contents: read`; only the draft job writes, on a pushed tag. The
+  container images stay pinned by tag.
 
 **Licences (the GPU agent's review, items 7 and 8; 2026-10-23).** The LZX decoder
 (`tools/xex/lzx_decompress.py` and its C++ port `installer/src/lzx.cpp`) mirrors libmspack's
