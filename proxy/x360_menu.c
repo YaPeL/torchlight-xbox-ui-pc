@@ -7122,10 +7122,10 @@ static void boards_tick(void) {
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
-    static int modal_hidden;
+    static int modal_hidden, inv_hidden;
     static unsigned char *shop_logged[sizeof shops / sizeof shops[0]];
     unsigned i;
-    int want_modal = modal_shown;   /* the minimap's */
+    int want_modal = modal_shown, want_shop = inventory_open && shop;   /* want_modal: the minimap's */
     if (!ui) return;
     modal_minimap(want_modal);
     {
@@ -7141,13 +7141,20 @@ static void boards_tick(void) {
     }
     /* The shops' boards kept hidden always, as the modal's: the 360's shop frame shows every one
      * of PC's shop menus, and shown again as it closed they stayed seen after it (the owner's run
-     * of 2026-10-24, a merchant). Each menu's logged once. */
+     * of 2026-10-24, a merchant). Each menu's logged once. Not CInventoryMenu's (the first): the
+     * 360's inventory shows its doll through that menu's scene (show_doll_of), which the board's
+     * node might hold; hidden while a shop is open only, as before. */
     for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
         unsigned char *m = *(unsigned char **)(ui + shops[i].at);
         if (!m || *(unsigned *)m != shops[i].vtable) continue;
+        if (i == 0) {
+            if (want_shop || inv_hidden) board_visible(m, shops[i].board, !want_shop);
+            continue;
+        }
         board_visible(m, shops[i].board, 0);
         if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
     }
+    inv_hidden = want_shop;
 }
 
 /* PC's own bars (its CInteractiveMenu, CGameUI's +0x318, interactivemenu.layout: Root, TopBar,

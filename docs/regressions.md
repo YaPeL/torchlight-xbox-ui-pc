@@ -197,15 +197,18 @@ here. Games' texts are named by role, never quoted.
 - **Should have been caught by:** QA runs 8-10 looked at the boards while the shop was open, not
   after it closed.
 - **Caught by:** the owner's run.
-- **Covered now:** the shops' boards are kept hidden always, as the modal's (`x360 shop: a shop's
-  board hidden for good`, once per menu): the 360's screens show every one of PC's shop menus.
+- **Covered now:** the merchant's, enchanter's, transmuter's and stash's boards are kept hidden
+  always, as the modal's (`x360 shop: a shop's board hidden for good`, once per menu): the 360's
+  screens show every one of them. PC's inventory's board stays hidden only while a shop is open,
+  as before: the 360's inventory draws its doll through that menu's scene, which the board's node
+  might hold (the review).
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
-- after a merchant, a stash and the enchanter are closed: none of PC's 3D boards is seen;
+- after a merchant, a stash and the enchanter are closed: none of PC's 3D boards is seen, and the 360's inventory still shows the hero's doll;
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
