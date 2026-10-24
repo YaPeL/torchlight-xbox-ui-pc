@@ -3496,6 +3496,85 @@ a partial tilt): merged only with the owner's OK after a test by hand.
 
 The replay reproduces the recording (the 0.94 straight: 32.20 units against the recording's
 32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).
+## 30. A destination each frame (the movement plan's change b, 2026-10-24)
+
+(Parked here at first; measured again on top of the 360's dead zone in 30a, which supersedes the
+measurement below.)
+
+The 360's plain stick walk (`sub_82199E08`) sends a destination each frame, at 5 times the stick's
+length along the stick turned by the camera; the pad sent one every 0.1 s, 2 units ahead
+(the 360's walk after a held action, `sub_8221B8E8`). The owner's route replayed: PC's paths are
+polygons of 0.1 s chords where the 360's are curves (the spins). Now `setDestination` goes once
+per game frame (the proxy's frame listener counts them, `x360_frames`) at `5 * len` along the
+stick's world direction (the camera's yaw since section 31, refreshed on a turn of more than 5
+degrees or every 0.1 s, by its own timer); the facing each frame and the release (`stopPathing`) are unchanged.
+Left out: the 360's `sub_8219C070(hero, 0)` and its `+652` handle's release each frame after the
+destination (the pad drops the target on the stick's first frame). The 360 runs it at about 60
+frames a second, PC at its uncapped rate (100 to 200): twice to four times the path requests;
+measured in the replay (the frame rate in the trace). `pad_walk_dest=0` keeps the old one, to
+compare.
+
+**Measured (2026-10-24, the owner's route replayed; units per second over each route).** Change
+(a) alone brought the partial-tilt spins to the 360's (2.0 turns a second at half tilt: 2.33,
+the 360's 2.35; 1.5 at 0.85: 3.32 against 3.39). With (b) on top they moved away again (3.21 and
+3.61; 0.66 turns a second at half tilt: 3.63, the 360's 2.41, (a) alone 3.17); the straights did
+not change. Two causes were tried and left out:
+- the destination each frame itself was the change being measured;
+- the screen probe's direction against the 360's camera yaw: the angle between the stick and the
+  walk varies the same way on both builds (about 20 degrees across the stick's directions), with
+  a constant offset of about 6 degrees between them, so the probe does not bend it (wrong, as
+  the 8-direction replay at full tilt showed: section 31).
+Stopped there (two causes in a row): (b) is parked, (a) stands alone. Not tried yet: the frame
+rate (the 360's replay ran at about 177 frames a second, PC's at 105 to 120: a destination each
+frame is then a different rate), and the 360's per-frame `sub_8219C070`, left out. Both were
+tried later and changed nothing (a replay each); then the 360's stick dead zone was found
+(section 32), which changes the factor's input, and (b) was measured again on top of it (30a).
+
+
+### 30a. Change b again, on top of the 360's dead zone (2026-10-24, the owner's new route)
+
+With changes a, the yaw and c integrated, the owner's new route (section 32) left one difference:
+the fastest spins (the stick turning 650 to 720 degrees a second at full tilt), where PC walked 3.4
+to 4.8 units a second against the 360's 5.2 to 5.5. Change b (a destination each frame) replayed
+on the same route, against the 360 and develop's replay:
+
+| | 360 | develop | develop + b |
+|---|---|---|---|
+| fast spins, 27.75 / 28.0 / 28.25 s (units a second) | 5.51 / 5.35 / 5.22 | 3.87 / 3.43 / 3.90 | 4.99 / 5.32 / 5.21 |
+| fast spins, 51.0 / 51.25 s | 5.42 / 5.31 | 4.78 / 4.32 | 5.11 / 5.33 |
+| path, 27 to 29 s and 51 to 53 s | 9.20, 9.90 | 8.05, 9.44 | 9.14, 9.95 |
+| start | 860 ms | 860 ms | 861 ms |
+| whole path | 193.6 | 191.1 | 193.2 |
+| gap to the 360, every 0.1 s: largest, mean | | 1.34, 0.35 | 0.96, 0.30 |
+| speed at a steady tilt of 0.75 / 0.80 / 0.85 | 3.16 / 3.71 / 4.54 | 3.27 / 3.67 / 4.43 | 3.17 / 3.68 / 4.53 |
+
+At 0.6, 0.7, 0.9 and full tilt the three agree within 0.03. So b brings the fast spins to the
+360's and makes nothing else worse; its earlier result (section 30) came before the dead zone,
+when the factor read the raw stick. The 0.1 s timer stays as a backstop (a frame listener that
+stopped would else hold the hero), and the call's cost goes to the log every 5 s while the stick
+walks with `pad_log=1` or a trace on (`pad: setDestination us avg ... max ... n ...`): a path
+request each frame, against
+walls too, to be read in a run before it is integrated.
+
+**Its cost (2026-10-24, the owner's request).** The owner's new route with the fixed b: the gap to
+the 360 0.73 largest and 0.21 mean, the fast spins 5.06 to 5.44, the start 868 ms. Against walls
+(the first 8-direction file, 2 s pushes from the boxed-in town start), with b and with
+`pad_walk_dest=0`, at 60 fps with vsync (`VSYNCH :1`, `MAX_FPS :60` in the measuring copy's
+`local_settings.txt`) and uncapped (`VSYNCH :0`, `MAX_FPS :1000`); each frame's time and the
+`setDestination` time in it from `x360_frames-<date>.csv` (pad_trace), 6 to 30 s:
+
+| | 60, b | 60, no b | uncapped, b | uncapped, no b |
+|---|---|---|---|---|
+| frames a second | 60 | 60 | 172 | 182 |
+| frame ms p50 / p95 / p99 | 16.64 / 17.29 / 17.55 | 16.66 / 17.42 / 17.84 | 5.19 / 8.58 / 9.20 | 4.60 / 9.55 / 10.48 |
+| largest frame | 84 ms | 100 ms | 64 ms | 52 ms |
+| frames over 18 ms | 7 | 10 | 1 | 1 |
+| of them with `setDestination` over 1 ms | 0 | 0 | 0 | 0 |
+| `setDestination`: calls, mean, largest | 954, 30 us, 71 us | 160, 23 us, 48 us | 2775, 41 us, 386 us | 160, 28 us, 363 us |
+
+The long frames (52 to 100 ms) are on both sides, with `setDestination` at 30 us at most in
+them: the game's. At 60 fps b makes no frame miss its 16.6 ms; uncapped it costs 0.6 ms of the
+median frame. (On the route at 200 fps three 5 s windows had a call of 3.3 to 3.7 ms; none here.)
 
 ## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
 

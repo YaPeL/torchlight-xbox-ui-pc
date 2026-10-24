@@ -424,6 +424,28 @@ static void trace_num(long v) {
 }
 static long mu(float v) { return (long)(v * 1000.0f + (v < 0 ? -0.5f : 0.5f)); }
 
+/* With pad_trace=1 and a replay, each frame's time and the walk's setDestination time in it
+ * (x360_frames-<date>.csv beside the trace: t_us,frame_us,dest_us,dest_calls), called from the
+ * frame listener (proxy/x360_menu.c): change b's cost against the frame's (doc section 30a). */
+static long long frame_dest_ticks;
+static unsigned frame_dest_calls;
+static HANDLE frames_file = (HANDLE)(long)-1;
+static char frames_buf[16384];
+static unsigned frames_len;
+static void frames_put(const char *s) {
+    DWORD w;
+    while (*s) {
+        if (frames_len == sizeof frames_buf) { WriteFile(frames_file, frames_buf, frames_len, &w, 0); frames_len = 0; }
+        frames_buf[frames_len++] = *s++;
+    }
+}
+static void frames_num(unsigned long u) {
+    char d[16];
+    int n = 0;
+    do { d[n++] = (char)('0' + u % 10); u /= 10; } while (u);
+    while (n) { char c[2] = {d[--n], 0}; frames_put(c); }
+}
+
 /* One line when something moved; called from order() in play, with the hero's position. */
 static void trace_line(const long *cur, unsigned long t_us) {
     int i;
@@ -504,6 +526,52 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     for (i = 0; i < 7; i++) last[i] = cur[i];
     trace_line(cur, (unsigned long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf));   /* no 64-bit division without a CRT */
     if (now - trace_flushed_at >= 500) { trace_flushed_at = now; trace_flush(); }
+}
+
+void x360_pad_frame(void) {
+    static int opened, done;
+    static long long qpf, q0, last;
+    long long q;
+    HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
+    if (!x360_pad_trace || !replay_n || !replay_t0 || done) return;
+    QueryPerformanceCounter(&q);
+    if (!opened) {
+        char name[48];
+        const char *st = session_stamp();
+        unsigned n = 0, k;
+        static const char a[] = "x360_frames", b[] = ".csv";
+        opened = 1;
+        for (k = 0; a[k]; k++) name[n++] = a[k];
+        for (k = 0; st[k]; k++) name[n++] = st[k];
+        for (k = 0; b[k]; k++) name[n++] = b[k];
+        name[n] = 0;
+        frames_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+        if (frames_file == (HANDLE)(long)-1) { done = 1; return; }
+        QueryPerformanceFrequency(&qpf);
+        q0 = q - (long long)((double)(qms() - replay_t0) * (double)qpf / 1000.0);   /* t=0 at replay_t0 */
+        last = q;
+        frames_put("# x360ui frames v1\r\nt_us,frame_us,dest_us,dest_calls\r\n");
+        frame_dest_ticks = 0; frame_dest_calls = 0;
+        return;
+    }
+    frames_num((unsigned long)((double)(q - q0) * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num((unsigned long)((double)(q - last) * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num((unsigned long)((double)frame_dest_ticks * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num(frame_dest_calls);
+    frames_put("\r\n");
+    last = q;
+    frame_dest_ticks = 0; frame_dest_calls = 0;
+    if (qms() - replay_t0 > replay[replay_n - 1].t + 2000) {
+        DWORD w;
+        if (frames_len) WriteFile(frames_file, frames_buf, frames_len, &w, 0);
+        CloseHandle(frames_file);
+        frames_file = (HANDLE)(long)-1;
+        done = 1;
+        x360_log("pad: frame times written\r\n");
+    }
 }
 
 /* The 360's sub_821FE778 on a stick of -1000..1000 (it works in XInput's shorts; the same up to
@@ -1346,6 +1414,11 @@ static void walk_patch_install(void) {
     x360_log(")\r\n");
 }
 
+extern unsigned x360_frames;            /* proxy/x360_menu.c's frame listener */
+int x360_walk_dest_on = 1;              /* x360_ui.ini pad_walk_dest=0: the old destination (to compare) */
+static unsigned dest_frame;
+static unsigned last_probe;             /* GetTickCount of the last probe of the stick's world direction */
+
 static int direction_changed(void) {
     /* More than about 5 degrees between the stick now and at the last probe. */
     long dot = (long)lx * probed_lx + (long)ly * probed_ly;
@@ -1559,10 +1632,13 @@ static void order(void) {
         if (!(buttons & 0x4000)) {
             int changed = direction_changed();
             if (changed && !change_t0) change_t0 = now;
-            if ((changed && face_each_frame) || now - last_order >= 100) {
+            if ((changed && face_each_frame) || now - last_probe >= 100) {
+                /* Its own timer: the destination goes each frame now, and the direction must still
+                 * be probed again every 0.1 s (a probe on a wall's top or an object, the review). */
                 float old_x = world_x, old_z = world_z;
                 int had = have_world;
                 int ok = probe(client, hero, pos);
+                last_probe = now;
                 if (ok && changed &&
                     (!had || old_x * world_x + old_z * world_z < 0.866f)) {
                     turn_t0 = change_t0 ? change_t0 : now; /* a turn of more than 30 degrees: time it from the stick */
@@ -1573,12 +1649,56 @@ static void order(void) {
             }
             if (have_world && face_each_frame)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
-            if (have_world && now - last_order >= 100 && !skill_locks_movement(hero)) {
+            /* The 360's walk (sub_82199E08, change b): a destination each frame, 5 times the
+             * stick's length (after the 360's dead zone) along the stick turned by the camera's
+             * yaw (probe()); pad_walk_dest=0 (or no frame count yet) keeps
+             * the old one, 2 units every 0.1 s (sub_8221B8E8's, the 360's walk after a held action).
+             * Left out: the 360's per-frame sub_8219C070(hero, 0) and its +652 handle's release
+             * after the destination (the target's drop is the pad's on the stick's first frame). */
+            if (have_world && !skill_locks_movement(hero) &&
+                ((x360_walk_dest_on && x360_frames && x360_frames != dest_frame) || now - last_order >= 100)) {
+                /* The frame count gates it; the old 0.1 s timer stays as a backstop (a frame
+                 * listener that stopped would else hold the hero: the review). */
+                float ahead = 2.0f;
+                if (x360_walk_dest_on && x360_frames) {
+                    ahead = 5.0f * root(((float)lx * lx + (float)ly * ly) / 1000000.0f);
+                    dest_frame = x360_frames;
+                }
                 last_order = now;
                 aim_lx = lx;
                 aim_ly = ly;
-                ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * world_x,
-                                                          pos[2] + 2.0f * world_z);
+                {
+                    /* Its cost, in the log every 5 s while the stick walks, with pad_log or a
+                     * trace on: a path request each frame on the game's thread (the review). */
+                    static long long sum, worst, qpf;
+                    static unsigned count, since;
+                    long long t0, t1;
+                    QueryPerformanceCounter(&t0);
+                    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + ahead * world_x,
+                                                              pos[2] + ahead * world_z);
+                    QueryPerformanceCounter(&t1);
+                    sum += t1 - t0;
+                    if (t1 - t0 > worst) worst = t1 - t0;
+                    count++;
+                    frame_dest_ticks += t1 - t0;
+                    frame_dest_calls++;
+                    if ((verbose || x360_pad_trace) && now - since >= 5000) {
+                        if (!qpf) QueryPerformanceFrequency(&qpf);
+                        if (since && count && qpf) {
+                            /* In floating point: 64-bit division needs the CRT's __alldiv. */
+                            x360_log("pad: setDestination us avg ");
+                            x360_log_num((long)((double)sum * 1e6 / (double)qpf / (double)count));
+                            x360_log(" max ");
+                            x360_log_num((long)((double)worst * 1e6 / (double)qpf));
+                            x360_log(" n ");
+                            x360_log_num((long)count);
+                            x360_log("\r\n");
+                        }
+                        since = now;
+                        sum = worst = 0;
+                        count = 0;
+                    }
+                }
                 dest_calls++;
                 note(3, "pad: setDestination called\r\n");
             }
