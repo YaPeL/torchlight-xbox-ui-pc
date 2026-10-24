@@ -4,7 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-xbox-ui-pc?include_prereleases&sort=semver)](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![GOG](https://img.shields.io/badge/GOG-supported-86328A?logo=gogdotcom&logoColor=white)](#installing)
-[![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-supported-313131?logo=epicgames&logoColor=white)](#installing)
+[![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-testing-313131?logo=epicgames&logoColor=white)](#installing)
 [![Steam](https://img.shields.io/badge/Steam-testing-1b2838?logo=steam&logoColor=white)](#known-limitations)
 
 > **Alpha:** tested with GOG's build under Proton on Linux; Steam, the Epic Games Store, Windows
@@ -42,8 +42,9 @@ This is a **beta**, tested under Linux (Proton). See
 
 You need:
 
-- Torchlight for PC, from **Steam**, **GOG** or the **Epic Games Store**. Steam's build is in its
-  first test with the mod (the mod is ported to it); GOG's and Epic's have been played.
+- Torchlight for PC, from **Steam**, **GOG** or the **Epic Games Store**. GOG's build has been
+  played with the mod. Epic's `Torchlight.exe` is GOG's, byte for byte, and Steam's build is an
+  older one the mod is ported to: both are in their first test with the mod.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
 
