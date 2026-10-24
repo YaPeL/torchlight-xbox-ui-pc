@@ -1349,6 +1349,7 @@ static void walk_patch_install(void) {
 extern unsigned x360_frames;            /* proxy/x360_menu.c's frame listener */
 int x360_walk_dest_on = 1;              /* x360_ui.ini pad_walk_dest=0: the old destination (to compare) */
 static unsigned dest_frame;
+static unsigned last_probe;             /* GetTickCount of the last probe of the stick's world direction */
 
 static int direction_changed(void) {
     /* More than about 5 degrees between the stick now and at the last probe. */
@@ -1563,10 +1564,13 @@ static void order(void) {
         if (!(buttons & 0x4000)) {
             int changed = direction_changed();
             if (changed && !change_t0) change_t0 = now;
-            if ((changed && face_each_frame) || now - last_order >= 100) {
+            if ((changed && face_each_frame) || now - last_probe >= 100) {
+                /* Its own timer: the destination goes each frame now, and the direction must still
+                 * be probed again every 0.1 s (a probe on a wall's top or an object, the review). */
                 float old_x = world_x, old_z = world_z;
                 int had = have_world;
                 int ok = probe(client, hero, pos);
+                last_probe = now;
                 if (ok && changed &&
                     (!had || old_x * world_x + old_z * world_z < 0.866f)) {
                     turn_t0 = change_t0 ? change_t0 : now; /* a turn of more than 30 degrees: time it from the stick */
@@ -1578,8 +1582,11 @@ static void order(void) {
             if (have_world && face_each_frame)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
             /* The 360's walk (sub_82199E08, change b): a destination each frame, 5 times the
-             * stick's length along it; pad_walk_dest=0 (or no frame count) keeps the old one, 2
-             * units every 0.1 s (sub_8221B8E8's, the 360's walk after a held action). */
+             * stick's length along it (the 360 turns the stick by the camera's yaw; the pad takes
+             * the screen probe's world direction); pad_walk_dest=0 (or no frame count yet) keeps
+             * the old one, 2 units every 0.1 s (sub_8221B8E8's, the 360's walk after a held action).
+             * Left out: the 360's per-frame sub_8219C070(hero, 0) and its +652 handle's release
+             * after the destination (the target's drop is the pad's on the stick's first frame). */
             if (have_world && !skill_locks_movement(hero) &&
                 (x360_walk_dest_on && x360_frames ? x360_frames != dest_frame : now - last_order >= 100)) {
                 float ahead = 2.0f;
