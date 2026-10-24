@@ -3715,10 +3715,13 @@ hotbar: `setMappedFunctionSkill` at `0x40c8f0` keeps the hero's skill GUIDs at `
 
 **The pad.** On B, Y, LT or RT the pad still presses PC's hotbar key (3 to 6: PC's own skill use,
 its costs and cooldowns), and for 0.4 s puts the virtual cursor on the 360's point projected to
-the screen (the controller camera's view and projection matrices and its viewport, Ogre's
-exports): the skill of that key, its two fields, the trigger's pressure through the 360's dead
+the window (the controller camera's view and projection matrices, Ogre's exports, onto the client
+area), aimed again at each read of the cursor as the 360 aims each frame while the button is down
+(so a trigger's pressure is the one when PC reads the cursor, not the press's): the skill of that key, its two fields, the trigger's pressure through the 360's dead
 zone, the stick's direction turned by the camera's yaw or the hero's facing. A key with an item,
 no skill or no camera keeps the old point (14% of the window's height ahead). Each aim is logged
 (`pad: aim x1000 range ... min ... trigger ... distance ... point ... hero ... t_ms ...`).
 `pad_skill_aim=0` keeps the old point, to compare. The trigger's threshold to fire stays PC's 64
-of 255 until the 360's is measured. Not measured yet.
+of 255 until the 360's is measured. A far point can fall past the window's edge; it is given
+as it is (to check in a run that PC's picking takes it). The facing is the rotation's column 2,
+the hero's forward as the walk's trace reads it. Not measured yet.
