@@ -191,15 +191,20 @@ here. Games' texts are named by role, never quoted.
 
 - **What happened:** in the owner's GOG run of 2026-10-24 (evening, the branch audit-dead-hero) a
   new game's welcome tip showed, and the mod's test-options notice (PC's modal) opened while the
-  tip was still up. The tip kept the pad (the fix above), but its buttons are pressed with a click
-  at their centre, and PC's modal, opened last, took those clicks (PC's GUI imports CEGUI's modal
-  state calls): B and Y pressed the tip's Ok and nothing closed; the game could not be played.
+  tip was still up. The tip kept the pad (the entry above), and B and Y pressed the tip's Ok (a
+  click at its centre, logged), but nothing closed; the game could not be played.
+- **Why (a hypothesis, to be confirmed by the next run's log):** PC's modal, opened last, holds
+  CEGUI's modal target (`System::setModalTarget`, which PC's CEGUI exports), and the injected
+  click goes to it. If so, the entry above (a tip over the notice) has the same hole: it was never
+  played after its fix.
 - **Should have been caught by:** the entry above, which covered a tip over the notice but not
-  the notice over a tip.
+  the notice over a tip, nor where the tip's clicks go.
 - **Caught by:** the owner's run.
-- **Covered now:** the notice waits while a tip is shown (and 0.3 s after it closes), then opens.
-  QA checklist: a new game with a test option on: the welcome tip closes with B, then the notice
-  shows and closes with A.
+- **Covered now:** the notice and the stop's modal wait while a tip is up (seen by the tip's tick
+  or PC's window shown; the stop's own time limit still holds); and a press on the tip lets go of
+  another window's modal target for the click, then gives it back, logged as `x360 tip: another
+  window was modal`. QA checklist: a new game with a test option on: the welcome tip closes with
+  B, then the notice shows and closes with A.
 
 ## QA checklist
 
