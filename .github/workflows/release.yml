@@ -73,7 +73,7 @@ jobs:
           path: proxies
       - name: Build
         run: |
-          cmake -S installer -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S installer -B build -DCMAKE_BUILD_TYPE=Release -DX360UI_VERSION="$GITHUB_REF_NAME" \
             -DX360UI_PROXY_GOG="$PWD/proxies/CEGUIBase-gog.dll" -DX360UI_PROXY_STEAM="$PWD/proxies/CEGUIBase-steam.dll"
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
@@ -99,7 +99,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          cmake -S installer -B build -DX360UI_PROXY_GOG="$PWD/proxies/CEGUIBase-gog.dll" -DX360UI_PROXY_STEAM="$PWD/proxies/CEGUIBase-steam.dll"
+          cmake -S installer -B build -DX360UI_VERSION="$GITHUB_REF_NAME" -DX360UI_PROXY_GOG="$PWD/proxies/CEGUIBase-gog.dll" -DX360UI_PROXY_STEAM="$PWD/proxies/CEGUIBase-steam.dll"
           cmake --build build --config Release --parallel
           ctest --test-dir build -C Release --output-on-failure
           mkdir dist
@@ -194,17 +194,23 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
-      - name: Files, notices, the runtime's LGPL source, and checksums
+      - name: The installers, sources-and-notices.zip and checksums
         run: |
-          mkdir release
-          cp artifacts/linux/x360ui-install-x86_64.AppImage artifacts/windows/x360ui-install.exe \
-             artifacts/proxies/CEGUIBase-gog.dll artifacts/proxies/CEGUIBase-steam.dll release/
-          cp LICENSE release/LICENSE.txt
-          cp installer/third_party/NOTICES.md release/THIRD_PARTY_NOTICES.md
-          cp installer/third_party/LGPL-2.1.txt release/LGPL-2.1.txt
-          cp packaging/linux/APPIMAGE_NOTICES.md release/APPIMAGE_NOTICES.md
-          packaging/linux/get_sources.sh release
+          # For the user: the two installers (each carries its licence and notices: `notices`, and
+          # inside the AppImage), SHA256SUMS, and one zip with the rest: the proxies on their own,
+          # the licences and notices, the AppImage runtime's LGPL source and libfuse's patch.
+          mkdir release extra
+          cp artifacts/linux/x360ui-install-x86_64.AppImage artifacts/windows/x360ui-install.exe release/
+          cp artifacts/proxies/CEGUIBase-gog.dll artifacts/proxies/CEGUIBase-steam.dll extra/
+          cp LICENSE extra/LICENSE.txt
+          cp installer/third_party/NOTICES.md extra/THIRD_PARTY_NOTICES.md
+          cp installer/third_party/LGPL-2.1.txt extra/LGPL-2.1.txt
+          cp packaging/linux/APPIMAGE_NOTICES.md extra/APPIMAGE_NOTICES.md
+          packaging/linux/get_sources.sh extra
+          (cd extra && sha256sum * > SHA256SUMS)
+          (cd extra && zip -q -X -r ../release/sources-and-notices.zip .)
           (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          ls release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release
@@ -228,4 +234,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --draft \
             --title "$GITHUB_REF_NAME" \
-            --notes "Draft made by the release workflow: read it, and check the builds it claims, before publishing. The proxies are also inside the installers; SHA256SUMS lists every file."
+            --notes "Draft made by the release workflow: read it, and check the builds it claims, before publishing. "'`x360ui-install.exe notices`'" (or the AppImage's) shows the licence and the third-party notices; the proxies on their own, the notices and the AppImage runtime's LGPL source are in sources-and-notices.zip; SHA256SUMS lists the release's files."

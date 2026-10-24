@@ -41,6 +41,9 @@ extern const unsigned char* const kProxyGog;
 extern const size_t kProxyGogSize;
 extern const unsigned char* const kProxySteam;
 extern const size_t kProxySteamSize;
+extern const char kLicenseText[];   // LICENSE, NOTICES.md and LGPL-2.1.txt, built in (CMakeLists.txt)
+extern const char kNoticesText[];
+extern const char kLgplText[];
 
 namespace {
 
@@ -53,7 +56,8 @@ const char* const kUsage =
     "x360ui-install [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]\n"
     "               [--dll FILE]\n"
     "x360ui-install uninstall [--game DIR] [--yes] [--console] [--anyway]\n"
-    "x360ui-install list\n";
+    "x360ui-install list\n"
+    "x360ui-install notices\n";
 const char* const kStyles[] = {"playstation3", "playstation4", "playstation5", "nintendo", "nintendo-swapped"};
 const uint32_t kX360Title = 0x58410A7E, kX360ContentType = 0x000D0000;
 const char* const kX360Layout = "media/ui/mastermenu_xenon.layout";
@@ -725,7 +729,8 @@ struct Args {
 Args parse(const std::vector<std::string>& argv) {
   Args a;
   size_t i = 0;
-  if (!argv.empty() && (argv[0] == "install" || argv[0] == "uninstall" || argv[0] == "list")) a.command = argv[i++];
+  if (!argv.empty() && (argv[0] == "install" || argv[0] == "uninstall" || argv[0] == "list" || argv[0] == "notices"))
+    a.command = argv[i++];
   for (; i < argv.size(); i++) {
     const std::string& s = argv[i];
     if (s == "--yes") a.yes = true;
@@ -1032,6 +1037,26 @@ int do_uninstall(const Args& args) {
   return 0;
 }
 
+// The licence and the third-party notices this executable carries (miniz's MIT notice among them).
+int do_notices() {
+#ifdef _WIN32
+  // The texts are UTF-8 (the manifest's code page is not the console's); the console's own is
+  // given back after, as it outlives this process.
+  const UINT code_page = GetConsoleOutputCP();
+  SetConsoleOutputCP(65001);
+#endif
+  std::cout << "x360ui-install " << X360UI_VERSION << " is free software under the GNU General Public License 3.0\n"
+               "(below); its source is https://github.com/YaPeL/torchlight-xbox-ui-pc at the tag " << X360UI_VERSION << ".\n\n"
+               "==== Third-party code in this executable ====\n\n"
+            << kNoticesText << "\n==== GNU Lesser General Public License 2.1 (libmspack's LZX decoder) ====\n\n"
+            << kLgplText << "\n==== GNU General Public License 3.0 ====\n\n" << kLicenseText;
+#ifdef _WIN32
+  std::cout.flush();
+  if (code_page) SetConsoleOutputCP(code_page);
+#endif
+  return 0;
+}
+
 int do_list() {
   const auto games = find_games(home_dir());
   for (const auto& [store, path] : games) std::cout << store << ": " << path << " (" << build_of(path) << " build)\n";
@@ -1055,7 +1080,7 @@ void report_error(const std::string& text, const std::vector<std::string>& argv)
   }
   const bool console = std::find(argv.begin(), argv.end(), "--console") != argv.end();
   const bool yes = std::find(argv.begin(), argv.end(), "--yes") != argv.end();
-  const bool list = !argv.empty() && argv[0] == "list";
+  const bool list = !argv.empty() && (argv[0] == "list" || argv[0] == "notices");
   Ask(console || list, yes).error(text);
 }
 }  // namespace
@@ -1065,6 +1090,7 @@ int installer_main(const std::vector<std::string>& argv) {
     const Args a = parse(argv);
     g_result_file = a.result_file;
     if (a.command == "list") return do_list();
+    if (a.command == "notices") return do_notices();
     if (a.command == "uninstall") return do_uninstall(a);
     return do_install(a);
   } catch (const Exit& e) {

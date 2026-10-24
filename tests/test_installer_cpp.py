@@ -723,6 +723,16 @@ class InstallCppTest(unittest.TestCase):
             self.assertIn("none backed up", r.stdout, who)
             self.assertNotIn("x360_ui.ini", os.listdir(game), who)
 
+    def test_notices_carried(self):
+        """`notices`: the licence and the third-party notices built into the executable (miniz's MIT
+        notice must go with every copy of it), the same texts as the repository's files."""
+        r = subprocess.run([BINARY, "notices"], capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        for rel in ("LICENSE", "installer/third_party/NOTICES.md", "installer/third_party/LGPL-2.1.txt"):
+            with open(os.path.join(root, rel), "rb") as f:
+                self.assertIn(f.read().replace(b"\r\n", b"\n"), r.stdout.replace(b"\r\n", b"\n"), rel)
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""
