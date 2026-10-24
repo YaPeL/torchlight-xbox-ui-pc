@@ -187,6 +187,20 @@ here. Games' texts are named by role, never quoted.
   the frame it shows they already leave it the pad. QA
   checklist: a tip over the test-options notice (or over a dialog): A and B act on the tip only.
 
+## The test-options notice opened over a tip, neither closed (fixed on the branch notice-after-tip)
+
+- **What happened:** in the owner's GOG run of 2026-10-24 (evening, the branch audit-dead-hero) a
+  new game's welcome tip showed, and the mod's test-options notice (PC's modal) opened while the
+  tip was still up. The tip kept the pad (the fix above), but its buttons are pressed with a click
+  at their centre, and PC's modal, opened last, took those clicks (PC's GUI imports CEGUI's modal
+  state calls): B and Y pressed the tip's Ok and nothing closed; the game could not be played.
+- **Should have been caught by:** the entry above, which covered a tip over the notice but not
+  the notice over a tip.
+- **Caught by:** the owner's run.
+- **Covered now:** the notice waits while a tip is shown (and 0.3 s after it closes), then opens.
+  QA checklist: a new game with a test option on: the welcome tip closes with B, then the notice
+  shows and closes with A.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
@@ -195,6 +209,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
 - a tip over the test-options notice or a dialog: A and B act on the tip only;
+- a new game with a test option on: the welcome tip closes with B, then the notice shows and closes with A;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
 - a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC

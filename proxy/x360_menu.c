@@ -7668,6 +7668,10 @@ static void queue_notice(const char *text) {   /* appended to any notice not sho
 static void notice_tick(void) {
     static unsigned short wide[1400];
     if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
+    /* Not while a tip is shown: PC's modal opened over it takes the clicks the tip's buttons get
+     * (the owner's run of 2026-10-24: the new game's welcome tip, then the notice, and neither
+     * closed); shown once the tip is closed. */
+    if (x360_tip_open()) return;
     utf8_to_wide(notice_utf8, wide, sizeof wide / sizeof wide[0]);
     if (open_pc_modal("The mod", wide)) { notice_pending = 0; notice_utf8[0] = 0; x360_log("x360: the notice shows\r\n"); }
 }
