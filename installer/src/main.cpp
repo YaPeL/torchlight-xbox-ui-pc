@@ -134,6 +134,8 @@ static void use_parent_console() {
     return h == nullptr || h == INVALID_HANDLE_VALUE;
   };
   const bool out = unset(STD_OUTPUT_HANDLE), err = unset(STD_ERROR_HANDLE), in = unset(STD_INPUT_HANDLE);
+  // A console given as the input (PowerShell's with `| Out-Host`) is the shell's too.
+  if (!in && GetFileType(GetStdHandle(STD_INPUT_HANDLE)) == FILE_TYPE_CHAR) set_shared_console(true);
   if (!(out || err || in) || !AttachConsole(ATTACH_PARENT_PROCESS)) return;
   if (in) set_shared_console(true);
   FILE* f = nullptr;
