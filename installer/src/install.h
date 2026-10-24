@@ -39,5 +39,8 @@ bool needs_permission(const std::string& game);
 // run's progress comes through a file and is given here too.
 using Progress = std::function<void(double fraction, const std::string& text)>;
 void set_progress(Progress progress);
+// The command line's warnings, for the wizard's screens: "bags" (the two bags), "no-mod" (the game
+// without the mod), "no-mod-after" (after the 360's bag was used), "no-saves" (none found to back up).
+std::string warning_text(const std::string& which);
 
 }  // namespace x360ui

@@ -60,10 +60,12 @@ else to install:
 - Check the file against `SHA256SUMS` from the same release (`sha256sum -c --ignore-missing
   SHA256SUMS` on Linux; `Get-FileHash x360ui-install.exe` in PowerShell on Windows).
 
-Run it: its questions are shown in windows. To uninstall, run it with `uninstall`
-(`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
-prints the games it finds. The options are the same for both (below). On Windows it is a window
-program: from PowerShell, add `| Out-Host` to a command to wait for it and see its output there. `notices` shows the licence
+Run it: one window takes you through it (the games found, your 360 package, the bag, a summary,
+then the progress and the result), with a pad, the mouse or the keyboard. When the game already has
+the mod, the same window reinstalls it, changes the bag or uninstalls it. From a terminal it takes
+the options below instead (`uninstall`, `list`, `notices`), with `--yes` for an install or an
+uninstall (its questions are the window's). On Windows it is a window program: from PowerShell,
+add `| Out-Host` to a command to wait for it and see its output there. `notices` shows the licence
 and the third-party notices it carries; their sources are in the release's
 `sources-and-notices.zip`.
 
@@ -88,8 +90,9 @@ It also asks which bag you want:
   backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
 Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
-questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows; `x360ui-install.exe` on Windows only with
-`--yes`, as a window program shares the terminal's input with the shell).
+questions, the defaults: PC's bag; at uninstall, see below), `--console` (`install.py`: questions on the console, not in windows; the release's installer
+always asks on the console, and `x360ui-install.exe` only with `--yes`, as a window program shares
+the terminal's input with the shell).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
   install wrote. Saves are not touched. With the 360's bag installed it warns first and offers PC's

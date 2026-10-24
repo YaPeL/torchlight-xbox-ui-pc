@@ -3289,3 +3289,58 @@ them through `dev games`, `dev game-in`, `dev package-check` and `dev saves`. Th
 its progress by phases (reading the 360 copy, the backup, each of the six conversions, putting it
 in place) through `set_progress`; an elevated run writes it to `--progress-file` (one line,
 `fraction<TAB>text`, replaced whole each time), which the first run reads while it waits.
+
+## 26. The installer's window: the wizard (2026-10-24)
+
+The owner's design after the first Windows run ("one real window, a wizard"): a double click (no
+arguments) opens one window, the same on Windows and Linux, played with a pad, the mouse or the
+keyboard; with arguments the executable is the command line it was.
+
+**What it is made of.** SDL 3.4.14 and Dear ImGui 1.92.5 (the versions of the ReXGlue SDK the
+recomp uses), built static from release archives fetched and checked by hash
+(`installer/cmake/wizard_deps.cmake`; `X360UI_DEPS_DIR` for offline builds); ImGui draws through
+SDL_Renderer (Direct3D 11 on Windows; OpenGL, Vulkan or software on Linux), so no graphics library
+is loaded by hand. Noto Sans 2.015 (regular and bold, OFL) is built in, at 19 points times the
+display's scale (`SDL_GetDisplayContentScale`; ImGui's `ScaleAllSizes` and `FontScaleDpi`, as its
+SDL3 example), so it is sharp on high-density screens. The palette is the ReXGlue SDK's ImGui one
+(the recomp's look). On Linux SDL loads X11, Wayland, D-Bus and udev at run time: the executable
+still needs only libc and libm. A display of 1280x800 or less (the Steam Deck) gets the window
+full screen.
+
+**The screens** (`installer/src/wizard/screens.cpp`): the games found (`games_found`, Steam's
+first, each with its store, folder and whether it has the mod and which bag; "Look for another
+folder..."), the 360's package (checked at once by `package_problem`), the bag (the 360's warning
+in a box on the same screen, with the saves it backs up, or the choice to go on without a backup
+when none is found), the summary (what, where, the backup, whether Windows will ask for an
+administrator), the progress (`set_progress`) and the result (the backups, "Open the game": Steam's
+`steam://rungameid/41500`, else the executable on Windows). A game with the mod opens "What to do":
+reinstall, change the bag (to PC's: only the setting, as the command line's first uninstall step;
+to the 360's: the package and a new conversion) or uninstall, where the 360's bag's two steps are
+explained and offered (switch to PC's bag; or, once each character was loaded and saved, the
+uninstall, the same answers as `--anyway`). Each screen ends in Back and its next step; B or
+Escape goes back, Start is the next step, A or Enter chooses.
+
+**How it installs.** The wizard runs `installer_main` on a thread with every answer given
+(`install --game G --package P --bag B --yes --console`, `uninstall --game G --yes --console
+[--anyway]`), its output kept for the result's details. UAC is asked only then, by the command
+line's own `with_permission`, whose elevated run reports its progress through `--progress-file`.
+
+**The pickers.** SDL's (Windows' own; on Linux the desktop portal only, never zenity). Where there is
+none (no portal: the Steam Deck's Game Mode) the wizard's own browser opens: the folders and files
+of a folder, the folder above, Windows' drives, "Use this folder", all played with the pad.
+
+**The command line** asks on the console only (the windows of zenity, kdialog and `MessageBox`
+are gone: the wizard is where questions are answered in windows). From a terminal on Windows,
+whose input the shell shares with a window program, an install or uninstall needs `--yes`.
+
+**Tests** (`tests/test_installer_cpp.py`), with SDL's offscreen video and software renderer and a
+simulated pad (an SDL virtual gamepad, given to ImGui alone: a real pad on the machine would
+otherwise be the one ImGui reads): `test_the_wizard_end_to_end` installs the 360's bag through the
+package chosen in the own browser and compares the folder with `install.py`'s byte for byte, then
+switches to PC's bag and uninstalls through the two steps, the folder as before;
+`test_the_wizards_screenshots` reaches every screen and, with `X360UI_SHOTS`, keeps their PNGs at
+960x600, 1280x800 and scale 2 (CI uploads them: Linux offscreen, Windows in its own window and
+renderer). The scripts (`dev wizard --script`) are lines: `screen NAME [SECONDS]`, `press BUTTON`,
+`down`/`up BUTTON`, `key KEY`, `text TEXT`, `wait N`, `shot NAME`, `shot-if SCREEN NAME`,
+`debug`, `quit`. ImGui ignores a first A while its pad cursor is hidden, so each screen's default
+item is focused with the cursor shown.

@@ -24,6 +24,7 @@
 #include "install.h"
 #include "lzx.h"
 #include "xex.h"
+#include "wizard/wizard.h"
 
 using namespace x360ui;
 
@@ -121,7 +122,9 @@ int usage() {
                "x360ui-install dev aes-cbc KEY IV IN OUT\n"
                "x360ui-install dev lzx WINDOW_BITS SIZE IN OUT\n"
                "x360ui-install dev convert PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]\n"
-               "x360ui-install dev games | game-in FOLDER | package-check SOURCE | saves GAME\n");
+               "x360ui-install dev games | game-in FOLDER | package-check SOURCE | saves GAME\n"
+               "x360ui-install dev wizard [--video DRIVER] [--software] [--own-picker] [--fullscreen] [--size WxH] [--scale S]\n"
+               "                          [--script FILE] [--shots DIR] [--browse-from DIR] [--dll PROXY]\n");
   return 2;
 }
 }  // namespace
@@ -180,12 +183,47 @@ int main(int argc, char** argv) {
         for (const std::string& f : saves_to_back_up(rest[0])) std::printf("%s\n", f.c_str());
         return 0;
       }
+      // The wizard with a test's options: its video driver, size, scale, script and screenshots.
+      if (cmd == "wizard") {
+        wizard::Options o;
+        for (size_t i = 0; i < rest.size(); i++) {
+          const std::string& k = rest[i];
+          const bool has = i + 1 < rest.size();
+          if (k == "--software") o.software = true;
+          else if (k == "--own-picker") o.own_picker = true;
+          else if (k == "--fullscreen") o.fullscreen = true;
+          else if (has && k == "--video") o.video = rest[++i];
+          else if (has && k == "--script") o.script = rest[++i];
+          else if (has && k == "--shots") o.shots = rest[++i];
+          else if (has && k == "--browse-from") o.browse_from = rest[++i];
+          else if (has && k == "--dll") o.dll = rest[++i];
+          else if (has && k == "--scale") o.scale = float(std::atof(rest[++i].c_str()));
+          else if (has && k == "--size" && std::sscanf(rest[i + 1].c_str(), "%dx%d", &o.width, &o.height) == 2) i++;
+          else return usage();
+        }
+        return wizard::run(o);
+      }
       if (cmd == "strings-table") {
         for (const auto& [k, a] : strings_table()) std::printf("%s=0x%08X\n", k.c_str(), a);
         return 0;
       }
     }
     if (!args.empty() && args[0] == "dev") return usage();
+    // No arguments: the window (the command line's questions where there is none, as on a
+    // Linux console without a display).
+    if (args.empty()) {
+      const int status = wizard::run(wizard::Options{});
+      if (status != 2) return status;
+#ifdef _WIN32
+      // A double click has no console for the questions: say so where it is seen.
+      if (GetConsoleWindow() == nullptr) {
+        MessageBoxW(nullptr, L"The installer's window could not be opened. Run x360ui-install.exe from a terminal with --yes and "
+                             L"its options (x360ui-install.exe --help lists them).",
+                    L"Torchlight: the Xbox 360 interface", MB_OK | MB_ICONERROR);
+        return 1;
+      }
+#endif
+    }
     return installer_main(args);
   } catch (const std::exception& e) {
     std::fprintf(stderr, "%s\n", e.what());
