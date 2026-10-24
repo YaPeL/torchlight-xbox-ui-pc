@@ -165,6 +165,7 @@ static unsigned char *aim_hero;
 static float aim_world[3];
 static unsigned char *pad_client;            /* the client order() last read (the skills' aim, its camera) */
 static int world_to_client(unsigned char *client, const float *w, long width, long height, long *x, long *y);
+static int skill_aim_point(unsigned char *hero, unsigned key_index, int trigger, float *out, int log);
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
