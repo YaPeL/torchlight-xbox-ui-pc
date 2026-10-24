@@ -3612,3 +3612,12 @@ in none of the code paths read so far (the script driver, rexglue's `GetState`, 
 `AdjustDeadzoneLevels` at 0, `XamInputGetState`, the game's `sub_821FEA58` and `sub_821FE8A8`);
 whether a real console does the same is not known. This corrects 30b: the threshold is not the
 game's code either. Its measured curve comes from `route-pc.txt` with the probe.
+
+The curve, measured by the recomp agent's probe over `route-pc.txt` and `dirs8.txt` (11137 frames,
+branch `diag/stick-read` 590794d of the recomp): a given length up to 0.4210 reads as 0, from
+0.4226 as more; above it a radial rescale, `read = (l - d) / (1 - d)` with `d` about 0.4218
+(about 13821 in shorts), the direction kept (0.503 reads 0.140, 0.703 0.486, 0.900 0.827, 1.0
+1.0, each within 0.001 of the formula; the largest errors are a frame's lag at sudden steps).
+The game's own 0.1 then applies to the rescaled length, so the hero walks from
+`0.4218 + 0.1 * 0.5782 = 0.48`, as seen in 30b. Measured, not located: it happens before
+`sub_82191018` returns, in none of the code read so far.
