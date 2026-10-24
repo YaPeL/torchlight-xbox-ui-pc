@@ -737,7 +737,7 @@ static void *patch_import(const char *dll, const char *name, void *replacement) 
  * point (the game's own findWorldLocation, with the virtual cursor only for that call) gives the
  * camera-relative direction; the hero is sent 2 world units that way, as the 360 does. */
 static void note(int what, const char *s) {
-    static int said[4];
+    static int said[5];
     if (!said[what]) { said[what] = 1; x360_log(s); }
 }
 
@@ -1361,7 +1361,7 @@ static int probe(unsigned char *client, unsigned char *hero, const float *pos) {
             have_world = 1;
             return 1;
         }
-        note(2, "pad: no camera for the walk's yaw: the screen probe\r\n");
+        note(4, "pad: no camera for the walk's yaw: the screen probe\r\n");
     } else {
         static int said;
         if (!said) { said = 1; x360_log("pad: the walk's direction from the screen probe (pad_walk_yaw=0)\r\n"); }
