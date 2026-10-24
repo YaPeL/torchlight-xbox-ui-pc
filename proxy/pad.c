@@ -161,6 +161,7 @@ static unsigned aim_until;                  /* the virtual cursor aims ahead of 
 static int aim_world_ok;                     /* a skill's point (skill_aim_point), for the cursor until aim_until */
 static unsigned aim_key_index;               /* its hotbar key (0..9) and trigger (1 LT, 2 RT), to aim again */
 static int aim_trigger;
+static unsigned aim_bit;                     /* its button, aimed again only while it is down (the 360's states 1 and 2) */
 static unsigned char *aim_hero;
 static float aim_world[3];
 static unsigned char *pad_client;            /* the client order() last read (the skills' aim, its camera) */
@@ -798,7 +799,10 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
             /* A skill's point, the 360's (skill_aim_point), aimed again at each read of the cursor
              * as the 360 does each frame while the button is down (its trigger's pressure now). */
             long ax, ay;
-            if (aim_hero) skill_aim_point(aim_hero, aim_key_index, aim_trigger, aim_world, 0);
+            unsigned char *now_hero = pad_client ? *(unsigned char **)(pad_client + 0x2c) : 0;
+            unsigned char *now_level = pad_client ? *(unsigned char **)(pad_client + 0x38) : 0;
+            if (aim_hero && aim_hero == now_hero && now_level && (buttons & aim_bit))
+                skill_aim_point(aim_hero, aim_key_index, aim_trigger, aim_world, 0);   /* else the last point */
             if (world_to_client(pad_client, aim_world, rc.right - rc.left, rc.bottom - rc.top, &ax, &ay)) {
                 q.x = ax;
                 q.y = ay;
@@ -1465,6 +1469,7 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             aim_key_index = keys[i].key - '1';
             aim_trigger = keys[i].bit == BUTTON_LT ? 1 : keys[i].bit == BUTTON_RT ? 2 : 0;
             aim_hero = hero;
+            aim_bit = keys[i].bit;
             aim_world_ok = keys[i].key >= '3' && skill_aim_point(hero, aim_key_index, aim_trigger, aim_world, 1);
             post_key(keys[i].key);
         }
@@ -1669,6 +1674,7 @@ static void order(void) {
     level = client ? *(unsigned char **)(client + 0x38) : 0;
     if (!hero || !level) {
         walk_hero = 0; x360_walk_factor = 1.0f;   /* no hero (the main menu): no stale factor for the next */
+        aim_world_ok = 0; aim_hero = 0;           /* no skill's point on a hero gone (the review) */
         x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return;
     }
     if (hero != walk_hero) { walk_hero = hero; x360_walk_factor = 1.0f; }   /* another hero: its own factor */
