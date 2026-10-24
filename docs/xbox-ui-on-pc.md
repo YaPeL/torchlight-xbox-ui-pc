@@ -3511,3 +3511,16 @@ frames a second, PC at its uncapped rate (100 to 200): twice to four times the p
 measured in the replay (the frame rate in the trace). `pad_walk_dest=0` keeps the old one, to
 compare.
 
+**Measured (2026-10-24, the owner's route replayed; units per second over each route).** Change
+(a) alone brought the partial-tilt spins to the 360's (2.0 turns a second at half tilt: 2.33,
+the 360's 2.35; 1.5 at 0.85: 3.32 against 3.39). With (b) on top they moved away again (3.21 and
+3.61; 0.66 turns a second at half tilt: 3.63, the 360's 2.41, (a) alone 3.17); the straights did
+not change. Two causes were tried and left out:
+- the destination each frame itself was the change being measured;
+- the screen probe's direction against the 360's camera yaw: the angle between the stick and the
+  walk varies the same way on both builds (about 20 degrees across the stick's directions), with
+  a constant offset of about 6 degrees between them, so the probe does not bend it.
+Stopped there (two causes in a row): (b) is parked, (a) stands alone. Not tried yet: the frame
+rate (the 360's replay ran at about 177 frames a second, PC's at 105 to 120: a destination each
+frame is then a different rate), and the 360's per-frame `sub_8219C070`, left out.
+
