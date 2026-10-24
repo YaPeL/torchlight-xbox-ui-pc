@@ -3686,11 +3686,14 @@ degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 3
 ## 35. Start during a cinematic (2026-10-24)
 
 The owner saw the pause misbehave during a cinematic. **[read]** The 360's frame update
-(`sub_821EBA48`) handles Start (its `+612` set to 1) only when no menu at the client's `+968` is
-visible, the level is up (`+44`'s virtual `+32`) and `sub_821ED810` (the cinematic, section 26) is
-false; then, unless the client's `+6161` or a dialog (`+5312`) holds it, it closes any open menu
-(`sub_821E4B78`, then `sub_8233E998`) or, with none open, toggles the pause (`sub_8233D440`, the
-menu at CGameUI's `+932`, `COptionsMenu`). During a cinematic Start does nothing.
+(`sub_821EBA48`, `r31` the client, CGameUI at its `+60`) handles Start (the client's `+612` set
+to 1: Start by its behaviour, its writer not traced **[inferred]**) only when CGameUI's menu at
+`+968` is not visible, the level is up (the client's `+44`, its virtual `+32`) and `sub_821ED810`
+(the cinematic: "The hero not played during a cinematic", above) is false. Then, on CGameUI: with
+its `+6161` set, `sub_8233EEF8` clears it and closes the menus; else, unless a dialog at `+5312`
+holds it, any open menu is closed (`sub_821E4B78`, then `sub_8233E998`); else, unless the menu at
+`+956` is visible, the menus are closed (`sub_8233E998`) and the pause toggled (`sub_8233D440`,
+the menu at `+932`, `COptionsMenu`). During a cinematic Start does nothing.
 
 `proxy/pad.c` opened the 360's pause on Start before it asked about the cinematic. Now Start is
 dropped while PC's `0x541db0` (the same test) holds and the pause is not open; an open pause still
