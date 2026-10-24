@@ -675,10 +675,11 @@ struct Screens::State {
       if (ImGui::Button("Open the game")) open_game();
       ImGui::SameLine();
     }
-    if (ImGui::Button("Start again")) restart();
+    // Start: start again (A takes the focused button, Open the game where there is one).
+    if (ImGui::Button("Start again") || (!entered && ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false))) restart();
     ImGui::SameLine();
     if (ImGui::Button("Close")) closed = true;
-    hint_line();
+    hint_line(true);
   }
 
   void browser_screen() {

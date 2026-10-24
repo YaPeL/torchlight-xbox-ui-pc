@@ -612,7 +612,7 @@ class InstallCppTest(unittest.TestCase):
                     "screen browser", "shot 03-browser", "press down", "press down", "press a", "screen package",
                     "shot 04-package-chosen", "press start", "screen bag", "shot 05-bag-pc", "press down", "press a",
                     "wait 3", "shot 06-bag-360", "press start", "screen summary", "shot 07-summary", "press start",
-                    "shot-if working 08-working", "screen result 300", "shot 09-result", "press a", "screen games",
+                    "shot-if working 08-working", "screen result 300", "shot 09-result", "press start", "screen games",
                     "shot 10-games-installed", "press a", "screen action", "shot 11-action", "press down",
                     "press down", "press a", "screen uninstall", "shot 12-uninstall-360-bag", "press b",
                     "screen action", "press b", "screen games", "quit"]
