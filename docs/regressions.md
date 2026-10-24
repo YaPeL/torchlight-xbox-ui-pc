@@ -1,0 +1,87 @@
+# Regressions
+
+Every bug that reached a hand pass (a QA run of the owner's) or a release, and every one caught only
+after the change was taken as done (by a pull request's review or a run before the merge, where
+the tests had passed): what happened, which layer should have caught it, and what catches it now (a
+test, a log line, a test option or an item of the QA checklist at the end of this file). A new entry is added when a
+bug is found that late; the lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only
+here. Games' texts are named by role, never quoted.
+
+## PC's HUDs flashing at each load (fixed in 617beb7)
+
+- **What happened:** PC's bottom and pet HUDs showed for a frame at every load before the 360's
+  HUD covered them, and PC's modal's 3D board was seen falling and rising around the 360's modal.
+- **Should have been caught by:** a check of the first frames after a load, not only the settled
+  screen.
+- **Caught by:** the owner's QA runs 46 to 48.
+- **Covered now:** the HUDs made transparent as their layouts load and the board kept hidden
+  always (doc section 23). QA checklist: a level change and a load watched frame by frame, PC's
+  HUDs never seen.
+
+## The game saving on Alt+F4 after a stop without the save hook (fixed in a45a7c6)
+
+- **What happened:** with the save hook off, a stop asked the player to close the game, and
+  Torchlight saves on closing, Alt+F4 too: QA run g1-3's save was written four seconds before the
+  game ended, with the items PC had dropped.
+- **Should have been caught by:** reading what PC does on closing before choosing how a stop ends.
+- **Caught by:** the owner's QA run g1-3, from the save's time against the log.
+- **Covered now:** without the save hook the load hook runs in stop-only mode (`load_cut_only`): the
+  item is kept and the process ends at once, before any save; the notice no longer advises Alt+F4.
+  The test options `test_save_hook_fails=1` and `test_load_hook_fails=1` run each case on a copy of
+  a save, which is compared byte for byte after.
+
+## The held A going through the black screen to the title's Continue (fixed in 7d62104)
+
+- **What happened:** the A that closed the proxy's black screen was still held when the title came
+  back, and the title's Continue took it.
+- **Should have been caught by:** a rule for every screen the proxy shows itself: it keeps the pad
+  until its closing button is let go, as the 360's modals do.
+- **Caught by:** the owner's QA run g1-3b.
+- **Covered now:** the black screen keeps the pad until A is released (and gives it back after A is
+  held 2 s, bab761b). No automated test: QA checklist, the black screen closed with A held.
+
+## The black screen's text not wrapped (fixed in 64c566e, after two tries)
+
+- **What happened:** the stop's text ran off the screen on one line. The first fix set
+  `HorzFormatting`, the second this scheme's `HorzTextFormatting` (7d62104, QA run g1-3b's next
+  run); neither wrapped. The text is now laid out by `rich_text`, as the dialog's paragraphs.
+- **Should have been caught by:** reading which properties the converted scheme's StaticText has
+  before setting any (the window took both without an error and ignored them).
+- **Caught by:** the owner's QA runs g1-3b and g1-4.
+- **Covered now:** `rich_text` (WordWrapLeftAligned, each height measured). QA checklist: a stop's
+  text at 1280x720 and on the Steam Deck.
+
+## The mod's files written beside the game (fixed in 237ac2c and 6db1a42)
+
+- **What happened:** `x360_stop.txt`, the log and the settings were written in the game's folder.
+  Under Program Files, Windows refuses the write or redirects it into VirtualStore, where the
+  uninstaller did not look.
+- **Should have been caught by:** the review's rule that the mod writes only in its data folder.
+- **Caught by:** the owner, reading the stop's design.
+- **Covered now:** the files the mod writes at run time in `%LOCALAPPDATA%\x360ui` (`x360_data_path`,
+  `x360_data_open`; beside the game or the DLL only as the documented fallbacks, doc section 24);
+  `test_uninstall_removes_the_mods_data_folder` and `test_uninstall_removes_steams_prefix_data_folder`
+  (Steam's Proton prefix); the uninstallers remove an older version's VirtualStore copy.
+  `REVIEW.md` lists such a file written beside the game as a failure.
+
+## `notices` printing CR CR LF on Windows (fixed in c890a46, before the merge)
+
+- **What happened:** the texts `notices` prints were embedded from a Windows checkout with CRLF
+  line ends, and the text-mode console stream turned each LF into CRLF again.
+  `test_notices_carried` failed on Windows CI from the pull request's first commit (#16), and the
+  pull request went to its second review with that check red.
+- **Should have been caught by:** reading the pull request's checks before asking for a review.
+- **Caught by:** Windows CI; seen when the checks were read before the merge.
+- **Covered now:** `embed_blob.cmake` drops CRs from every embedded text; `test_notices_carried`
+  on Windows CI, now a required check of `develop` and `main` (`AGENTS.md`: CI green before a
+  review is asked).
+
+## QA checklist
+
+What a QA run checks by hand, from the entries above, besides the change it is for:
+
+- a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
+- the stop's black screen closed with A held: the title does not take the A;
+- a stop's text on the black screen at 1280x720 and on the Steam Deck: wrapped, all of it seen;
+- with `test_save_hook_fails=1` and with `test_load_hook_fails=1`, on a copy of a save: the game
+  ends before any save, the save byte for byte the same after.
