@@ -1,5 +1,6 @@
 # Writes OUT, a C++ file with the bytes of FILE as NAME (and NAME_SIZE), or an empty one when FILE
-# is empty: the proxies a release builds in, proxy/cegui_exports.txt as text (TEXT=1: a C string).
+# is empty: the proxies a release builds in; proxy/cegui_exports.txt, LICENSE and the notices as
+# text (TEXT=1: a C string, without CRs).
 if(FILE AND EXISTS "${FILE}")
   file(READ "${FILE}" hex HEX)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," hex "${hex}")
