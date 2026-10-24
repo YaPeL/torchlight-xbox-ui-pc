@@ -504,7 +504,9 @@ static void poll(void) {
     /* The 360 reads the pad every frame; GetCursorPos comes several times a frame. */
     if (now - last_poll < POLL_MS && last_poll) return;
     last_poll = now;
-    if (replay_n) {
+    if (replay_n && replay_t0) {
+        /* From the first frame in play the replay is the pad; before it (the title, the main
+         * menu's Continue) the hand's pad works (the owner could not press A on Continue). */
         replay_sample(qms());   /* at rest before t=0; the hand's pad is not read */
         buttons = raw_buttons;
         lx = raw_lx * 1000 / 32767;
