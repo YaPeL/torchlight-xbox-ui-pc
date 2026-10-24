@@ -3568,4 +3568,23 @@ raw stick (their 0.5 is not the 360's code), and the recording and the trace kee
 It is computed with the stick normalised (the proxy's square root converges near 1, not on shorts
 squared: the review), the shorts' truncation kept. The triggers are left as they were (PC's 64 of 255;
 `sub_821FE480` not read). `pad_dead_zone=0` in `x360_ui.ini` keeps the old behaviour, to compare.
-Not yet measured on PC nor played by hand.
+
+**Measured (2026-10-24, the owner's route replayed with changes a, the camera's yaw and this; the
+360's trace with the recomp agent's probe).** The starts are the 360's: route 0 starts walking
+1780 ms after the stick leaves rest (the 360: 1790; before this change 57), route 3 729 (739;
+144), route 4 121 (116; 54); route 0's path is 27.50 units (27.48). By the stick's length, the
+speed and the scale (GOG's `+0x200`, the 360's `+500`) over 0.1 s with the stick steady:
+
+| Stick | 360 speed, scale | PC speed, scale |
+|---|---|---|
+| 0.50 | 1.49, 0.23 | 1.37, 0.22 |
+| 0.65 | 2.21, 0.35 | 2.13, 0.35 |
+| 0.70 | 2.94, 0.46 | 2.91, 0.47 |
+| 0.80 | 4.24, 0.68 | 4.20, 0.68 |
+| 0.90 | 5.65, 0.85 | 5.50, 0.85 |
+| 1.00 | 6.24, 1.00 | 6.24, 1.00 |
+
+In route 1 the PC hero was held 1.7 s at full tilt by something in its way (the 360 passed
+there; PC's earlier replay too: a moving obstacle, the pet or a townsman), so the later routes
+start from other places; their spins (routes 3, 4, 6) then differ by 6 to 18 % in median speed
+while the speed by length above agrees. Not played by hand yet.
