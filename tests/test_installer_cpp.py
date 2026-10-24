@@ -778,8 +778,9 @@ class InstallCppTest(unittest.TestCase):
 
     def test_stores_found_and_steam_and_epic_installed_as_python(self):
         """A home with a Steam library (Steam's build) and a Legendary (Epic) install of GOG's
-        build beside the Wine prefix's GOG one: `list` the same; Steam's needs --experimental in
-        both; Epic's installs as GOG's."""
+        build beside the Wine prefix's GOG one: `list` the same; Steam's installs with no question in
+        both, and is the one `--yes` takes with no --game (the owner: Steam's first); Epic's installs
+        as GOG's."""
         import json, shutil
         from test_tools import fake_exe
         steam_root = os.path.join(self.root, ".steam", "steam", "steamapps")
@@ -799,6 +800,18 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(lst([BINARY]), py_list)
         self.assertIn("steam: ", py_list)
         self.assertIn("epic: ", py_list)
+        took = {}
+        for who in ("py", "cpp"):                                     # no --game: Steam's first
+            cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) + [
+                "install", "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, "--bag", "pc"]
+            r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            took[who] = [l for l in r.stdout.splitlines() if l.startswith(("using ", "the game: "))]
+            self.assertIn("x360_ui.ini", os.listdir(steam_game), who)
+            r = subprocess.run(([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) +
+                               ["uninstall", "--game", steam_game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+        self.assertEqual(took["cpp"], took["py"])
         for game in (steam_game, epic_game):
             twins = {}
             for who in ("py", "cpp"):
@@ -808,10 +821,6 @@ class InstallCppTest(unittest.TestCase):
             for who, copy in twins.items():
                 cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) + [
                     "install", "--game", copy, "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, "--bag", "pc"]
-                if game == steam_game:
-                    refused = subprocess.run(cmd, capture_output=True, text=True, env=self.env, input="")
-                    self.assertNotEqual(refused.returncode, 0, who)          # experimental: no yes given
-                    cmd.append("--experimental")
                 r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
                 self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             a, b = _tree(twins["py"]), _tree(twins["cpp"])

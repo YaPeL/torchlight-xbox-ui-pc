@@ -2,7 +2,6 @@
 """Installs the Xbox 360 interface into the user's PC Torchlight, from the user's own 360 package.
 
     install.py [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]
-               [--experimental]
     install.py uninstall [--game DIR] [--yes] [--console] [--anyway]
     install.py list
 
@@ -63,7 +62,7 @@ X360_LAYOUT = "media/ui/mastermenu_xenon.layout"     # a file only the 360's pak
 X360_TITLE = 0x58410A7E                               # Torchlight's Xbox LIVE Arcade title ID
 X360_CONTENT_TYPE = 0x000D0000                        # an Arcade title's package
 PROXY_FILES = {"gog": "CEGUIBase.dll", "steam": "CEGUIBase-steam.dll"}   # a release's proxy per build, next to this script
-EXPERIMENTAL = {"steam"}   # ported offline, not yet played with the mod: installed only into a --game given
+EXPERIMENTAL = set()   # builds installed only into a --game given, after a yes (none now: Steam's is first, 2026-10-23)
 NO_MOD_WARNING = (
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
@@ -499,6 +498,7 @@ def pick_game(given, ask=None, installed_only=False):
             print(f"{store}: {path}: a build this version does not support yet, left alone.")
     if not supported:
         raise SystemExit("No supported PC Torchlight found; give its folder with --game.")
+    supported.sort(key=lambda g: g[0] != "steam")   # the owner: Steam's first, the others in the order found
     if installed_only and any(has_mod(p) for _, p in supported):   # uninstall: only those with the mod
         supported = [(s, p) for s, p in supported if has_mod(p)]
     if len(supported) > 1:

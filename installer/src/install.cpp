@@ -51,7 +51,7 @@ const char* const kKeepMark = "x360ui-keep.txt";
 
 const char* const kUsage =
     "x360ui-install [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]\n"
-    "               [--experimental] [--dll FILE]\n"
+    "               [--dll FILE]\n"
     "x360ui-install uninstall [--game DIR] [--yes] [--console] [--anyway]\n"
     "x360ui-install list\n";
 const char* const kStyles[] = {"playstation3", "playstation4", "playstation5", "nintendo", "nintendo-swapped"};
@@ -764,6 +764,8 @@ std::pair<fs::path, std::string> pick_game(const std::string& given, Ask& ask, b
   for (const auto& [store, path] : games)
     if (build_of(path) != "unknown" && !is_experimental(build_of(path))) supported.push_back({store, path});
   if (supported.empty()) throw Exit("No supported PC Torchlight found; give its folder with --game.");
+  // The owner: Steam's first, the others in the order found (install.py's sort, stable).
+  std::stable_partition(supported.begin(), supported.end(), [](const auto& g) { return g.first == "steam"; });
   if (installed_only && std::any_of(supported.begin(), supported.end(), [](const auto& g) { return has_mod(g.second); })) {
     std::vector<std::pair<std::string, std::string>> with_mod;   // uninstall: only those with the mod
     for (const auto& g : supported) if (has_mod(g.second)) with_mod.push_back(g);

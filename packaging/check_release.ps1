@@ -57,5 +57,5 @@ Copy-Item -LiteralPath (Join-Path $Fixture "prefix\drive_c\GOG Games\Torchlight"
 Copy-Item -LiteralPath (Join-Path $saves "0.svt") -Destination $winSaves
 One "gog-windows" $winGame $GogProxy "360" @()
 CheckBackups "gog-windows" $winSaves
-One "steam" (Join-Path $Fixture "steam\Torchlight") $SteamProxy "pc" @("--experimental")
+One "steam" (Join-Path $Fixture "steam\Torchlight") $SteamProxy "pc" @()
 Write-Output "check_release: OK"

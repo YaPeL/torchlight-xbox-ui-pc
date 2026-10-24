@@ -3235,3 +3235,10 @@ Steam's own prefix (`compatdata/41500`), which the save backup otherwise leaves 
 developer dumps (`x360_dump_*.json`, only with a `x360_dump.req`) still go beside the game.
 `x360_ui.ini` stays beside the game: the installer writes it (elevated when it
 must), the proxy only reads it.
+
+**Steam's build first (the owner, 2026-10-23).** Steam's build is no longer experimental: both
+installers find and offer it as the others, and with more than one supported install Steam's
+comes first (the one `--yes` takes and the first offered; the others in the order found). The
+experimental mechanism stays, with no build in it; `--experimental` is still accepted and does
+nothing. Steam's build has not been played with the mod yet: the README calls it "testing", not
+supported, until the owner's run (the repository's rule).
