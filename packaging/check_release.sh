@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks a release's Linux installer where there is no Python or compiler (the release workflow's
 # clean ubuntu:22.04 and archlinux containers), on tests/release_fixture.py's synthetic games:
-# GOG's with the 360's bag (its save backed up) and Steam's (experimental) with PC's; each install
+# GOG's with the 360's bag (its save backed up) and Steam's with PC's; each install
 # puts the release's proxy in place, and each uninstall leaves the folder as it was (hashes).
 # Usage: check_release.sh INSTALLER FIXTURE_DIR GOG_PROXY STEAM_PROXY
 set -eu
@@ -41,5 +41,5 @@ one gog "$fx/prefix/drive_c/GOG Games/Torchlight" "$gog_proxy" 360
 backups=$(ls -d "$saves"-backup-* 2>/dev/null | wc -l)
 [ "$backups" -ge 1 ] || fail "gog: no save backup"
 for b in "$saves"-backup-*; do [ "$(cat "$b/0.svt")" = "a synthetic save" ] || fail "gog: a backup differs from the save"; done
-one steam "$fx/steam/Torchlight" "$steam_proxy" pc --experimental
+one steam "$fx/steam/Torchlight" "$steam_proxy" pc
 echo "check_release: OK"

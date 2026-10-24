@@ -277,7 +277,7 @@ std::string build_of(const std::string& game) {
   }
 }
 
-bool is_experimental(const std::string& build) { return build == "steam"; }
+bool is_experimental(const std::string& build) { (void)build; return false; }   // none now (install.EXPERIMENTAL)
 
 static std::vector<std::string> steam_libraries(const std::string& home) {
   std::vector<std::string> roots;

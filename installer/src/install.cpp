@@ -51,7 +51,7 @@ const char* const kKeepMark = "x360ui-keep.txt";
 
 const char* const kUsage =
     "x360ui-install [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]\n"
-    "               [--experimental] [--dll FILE]\n"
+    "               [--dll FILE]\n"
     "x360ui-install uninstall [--game DIR] [--yes] [--console] [--anyway]\n"
     "x360ui-install list\n";
 const char* const kStyles[] = {"playstation3", "playstation4", "playstation5", "nintendo", "nintendo-swapped"};
@@ -61,6 +61,9 @@ const std::string kNoModWarning =
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
     "PC's bag, then load and save each character.";
+const std::string kNoSavesFound =
+    "No save folder of this game was found to back up (a Steam install's saves are in Steam's "
+    "prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves yourself first.";
 const std::string kNoModWarningAfter =
     "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
     "them, and without the mod the original game deletes those that do not fit PC's bag.";
@@ -764,6 +767,8 @@ std::pair<fs::path, std::string> pick_game(const std::string& given, Ask& ask, b
   for (const auto& [store, path] : games)
     if (build_of(path) != "unknown" && !is_experimental(build_of(path))) supported.push_back({store, path});
   if (supported.empty()) throw Exit("No supported PC Torchlight found; give its folder with --game.");
+  // The owner: Steam's first, the others in the order found (install.py's sort, stable).
+  std::stable_partition(supported.begin(), supported.end(), [](const auto& g) { return g.first == "steam"; });
   if (installed_only && std::any_of(supported.begin(), supported.end(), [](const auto& g) { return has_mod(g.second); })) {
     std::vector<std::pair<std::string, std::string>> with_mod;   // uninstall: only those with the mod
     for (const auto& g : supported) if (has_mod(g.second)) with_mod.push_back(g);
@@ -945,6 +950,14 @@ int do_uninstall(const Args& args) {
   if (backup) {
     if (args.saves_known) for (const auto& f : args.saves) folders.push_back(P(f));
     else folders = save_folders(game);
+    if (folders.empty() && !args.saves_known) {   // a Steam install under Proton: its saves are in Steam's prefix, left alone
+      if (args.anyway) {
+        std::cout << "no save folder of this game was found: none backed up\n";
+      } else if (!ask.yes_no(kNoSavesFound + "\n\nUninstall without a backup?", false)) {
+        std::cout << "not uninstalled (back up your saves first)\n";
+        return 1;
+      }
+    }
   }
   if (!args.elevated) {
     std::vector<std::string> again = {"uninstall", "--game", S(game), "--yes", "--console", "--elevated"};

@@ -5,7 +5,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![GOG](https://img.shields.io/badge/GOG-supported-86328A?logo=gogdotcom&logoColor=white)](#installing)
 [![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-supported-313131?logo=epicgames&logoColor=white)](#installing)
-[![Steam](https://img.shields.io/badge/Steam-experimental-1b2838?logo=steam&logoColor=white)](#known-limitations)
+[![Steam](https://img.shields.io/badge/Steam-testing-1b2838?logo=steam&logoColor=white)](#known-limitations)
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
 version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
@@ -38,9 +38,8 @@ This is a **beta**, tested under Linux (Proton). See
 
 You need:
 
-- Torchlight for PC, from **GOG** or the **Epic Games Store**. Steam's build is experimental: the mod
-  was ported to it but not yet played on it, and the installer installs there only into the folder
-  given with `--game`, after a yes (or with `--experimental`, which skips the question).
+- Torchlight for PC, from **Steam**, **GOG** or the **Epic Games Store**. Steam's build is in its
+  first test with the mod (the mod is ported to it); GOG's and Epic's have been played.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
 
@@ -81,8 +80,7 @@ It also asks which bag you want:
 - **The 360's**: one section of 50 slots for every kind of item, as on the console. The installer
   backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
-Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--experimental`
-(with `--game`, install on Steam's experimental build without asking), `--yes` (no
+Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
 questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
@@ -101,6 +99,12 @@ questions, the defaults: PC's bag; at uninstall, see below), `--console` (questi
   game), the original game deletes the items that do not fit PC's bag. Before uninstalling, install
   PC's bag, then load and save each character. The uninstaller offers this when the 360's bag is
   installed.
+- **Backups:** the installers back up the save folders they find (Windows' `%APPDATA%`, a Wine
+  prefix's). A Steam install under Proton (Linux, the Steam Deck) keeps its saves in Steam's own
+  prefix, which they leave alone: back those up yourself
+  (`steamapps/compatdata/41500/pfx/drive_c/users/steamuser/AppData/Roaming/runic games/torchlight/save`).
+  When a backup is needed (the 360's bag is or was used) and none is found, they say so and ask
+  before going on without one.
 
 ## Playing
 
@@ -139,9 +143,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 
 ## Known limitations
 
-- **GOG and the Epic Games Store; Steam's build is experimental.** Steam sells an older build
-  (17685): every address the mod uses is already found in it, and the proxy is built for it, but it
-  has not been played with the mod yet.
+- **Steam's build is in its first test.** Steam sells an older build (17685) than GOG and Epic:
+  every address the mod uses is found in it and the proxy is built for it; it has not been played
+  with the mod yet. With more than one install, the installer takes Steam's first.
 - **The bag.** With PC's bag (the default) the main section holds 21 items; the 360's bag is an
   install option, with its notes on saves (above). A check of the saves in the installer, before
   changing the bag, is still to come.
