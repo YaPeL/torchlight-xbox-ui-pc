@@ -62,7 +62,7 @@ HOOKS = {
 # The kernel32 functions the proxy imports, with their stdcall argument bytes.
 KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "CreateFileA": 28,
             "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
-            "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16,
+            "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16, "VirtualAlloc": 16,
             "QueryPerformanceCounter": 4, "QueryPerformanceFrequency": 4, "DeleteFileA": 4,
             "GetFileSize": 8, "GetProcessHeap": 0, "HeapAlloc": 12, "HeapFree": 12, "GetLocalTime": 4,
             "GetFileAttributesA": 4, "CreateThread": 24, "GetCurrentProcess": 0, "TerminateProcess": 8}
