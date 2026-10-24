@@ -26,6 +26,7 @@
  *   pad_face=0                                  the old movement, setDestination only (to compare)
  *   pad_walk_factor=0                           no stick factor on the hero's speed (to compare; pad.c)
  *   pad_walk_yaw=0                              the walk's direction from the screen probe, not the camera's yaw (to compare)
+ *   pad_dead_zone=0                             the sticks without the 360's dead zone, the old 0.24 threshold (to compare)
  *   pad_log=1                                   the pad's detailed diagnosis in the log (costly)
  *   pad_replay=Z:\path\route.txt               a recorded stick instead of XInput (a test; pad.c)
  *   pad_trace=1                                 the hero's path to x360_trace-<date>.csv (a test; pad.c)
@@ -365,6 +366,7 @@ static void read_config(void) {
         if (starts(line, "pad_log=1")) pad_log = 1;
         if (starts(line, "pad_walk_factor=0")) { extern int x360_walk_factor_on; x360_walk_factor_on = 0; }
         if (starts(line, "pad_walk_yaw=0")) { extern int x360_walk_yaw; x360_walk_yaw = 0; }
+        if (starts(line, "pad_dead_zone=0")) { extern int x360_stick_dead_zone; x360_stick_dead_zone = 0; }
         if (starts(line, "pad_trace=1")) { extern int x360_pad_trace; x360_pad_trace = 1; }
         if (starts(line, "pad_record=1")) {   /* the pad recorded, and the hero traced with it */
             extern int x360_pad_record, x360_pad_trace;
