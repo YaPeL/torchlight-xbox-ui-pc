@@ -395,6 +395,12 @@ def mod_data_folders(game):
         found.append(os.path.join(appdata, "Local", "x360ui"))
     if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
         found.append(os.path.join(os.environ["LOCALAPPDATA"], "x360ui"))
+    # Steam under Proton: the game in steamapps/common, its prefix in steamapps/compatdata/41500
+    # (save_folders leaves Steam's prefix alone; only the mod's own folder is removed there).
+    common = os.path.dirname(os.path.abspath(game))
+    if os.path.basename(common) == "common" and os.path.basename(os.path.dirname(common)) == "steamapps":
+        found.append(os.path.join(os.path.dirname(common), "compatdata", "41500", "pfx", "drive_c", "users",
+                                  "steamuser", "AppData", "Local", "x360ui"))
     return [f for f in dict.fromkeys(found) if os.path.isdir(f)]
 
 
@@ -597,6 +603,16 @@ def do_uninstall(args):
             pass
     for folder in mod_data_folders(game):
         shutil.rmtree(folder, ignore_errors=True)
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        # Files an older version wrote beside the game in Program Files, which Windows redirected
+        # into the user's VirtualStore.
+        store = os.path.join(os.environ["LOCALAPPDATA"], "VirtualStore",
+                             os.path.splitdrive(os.path.abspath(game))[1].lstrip("\\/"))
+        for name in ("x360_ui.log", "x360_settings.ini", "x360_stop.txt"):
+            try:
+                os.remove(os.path.join(store, name))
+            except OSError:
+                pass
     ask.info(f"Uninstalled from {game}." + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
     return 0
 

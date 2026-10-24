@@ -665,6 +665,33 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(outs["cpp"], outs["py"])
         self.assertEqual(len([l for l in outs["py"] if l.startswith("gog: ")]), 2)
 
+    def test_uninstall_removes_steams_prefix_data_folder(self):
+        """Steam under Proton (a fake library): the mod's own folder in compatdata/41500's
+        AppData/Local is removed by both uninstallers, and nothing else of the prefix is touched."""
+        import shutil
+        from test_tools import fake_exe
+        for who in ("py", "cpp"):
+            apps = os.path.join(self.root, "lib-" + who, "steamapps")
+            game = os.path.join(apps, "common", "Torchlight")
+            os.makedirs(game)
+            fake_exe(os.path.join(game, "Torchlight.exe"), 0x4B5F7519)
+            _real_cegui_dll(os.path.join(game, "CEGUIBase.dll"))
+            shutil.copyfile(os.path.join(self.games["py"][0], "Pak.zip"), os.path.join(game, "Pak.zip"))
+            local = os.path.join(apps, "compatdata", "41500", "pfx", "drive_c", "users", "steamuser", "AppData", "Local")
+            os.makedirs(os.path.join(local, "x360ui"))
+            with open(os.path.join(local, "x360ui", "x360_ui.log"), "w") as f:
+                f.write("a log")
+            with open(os.path.join(local, "other.txt"), "w") as f:
+                f.write("not the mod's")
+            cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY])
+            r = subprocess.run(cmd + ["install", "--game", game, "--x360-dir", self.x360, "--yes", "--console",
+                                      "--dll", self.proxy, "--bag", "pc", "--experimental"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            r = subprocess.run(cmd + ["uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(local, "x360ui")), who)
+            self.assertTrue(os.path.isfile(os.path.join(local, "other.txt")), who)
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""

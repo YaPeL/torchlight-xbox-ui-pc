@@ -36,7 +36,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 | Proton's logs of our runs | `~/torchlight-gog/steam-gogtl.log` |
 | The converter's output (stage 0) | `~/torchlight-gog/x360ui` (`media/ui/x360/`) |
 | The proxy's build | `~/torchlight-gog/build/proxy` (`CEGUIBase.dll`, the generated `.def` files) |
-| The proxy, installed | the game folder: `CEGUIBase.dll` (proxy), `CEGUIBase_orig.dll` (real), `x360_ui.ini`, `x360_ui.log` |
+| The proxy, installed | the game folder: `CEGUIBase.dll` (proxy), `CEGUIBase_orig.dll` (real), `x360_ui.ini`; its log `x360_ui.log` in the prefix's `AppData/Local/x360ui` |
 | Steam snapshot (hashes) | `~/torchlight-gog/hashes/steam-guard.json` (2404 entries, 2026-10-15) |
 | Steam's Torchlight install (read only, for comparisons) | `~/.steam/debian-installation/steamapps/common/Torchlight` |
 | The Xbox game data (read only) | `~/360tools/extracted/extracted` (`pak.zip`) |
@@ -56,7 +56,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 
    Steam need not be open: GOG's executable does not import `steam_api`, so "Failed to connect to
    Steam" in the log is harmless.
-   With the proxy installed (section 7), `x360_ui.log` in the game folder lists every scheme and
+   With the proxy installed (section 7), `x360_ui.log` (in the prefix's `AppData/Local/x360ui`) lists every scheme and
    layout the game asks for (and, with `trace=1`, section 8). `tools/grab_window.py Torchlight
    OUT.png` saves a screenshot; `tools/send_input.py` clicks and types (section 8).
 3. The game opens at 1920x1080 (the desktop's size; `local_settings.txt` has `WINDOW_WIDTH`,
@@ -2996,7 +2996,7 @@ The owner's request, after the recomp's `swap_confirm_cancel` (the mods agent's 
 B swapped, X and Y kept; the prompts follow, from a "nintendo-swapped" set of icons; off by default,
 the bottom button confirming as on the 360; its checkbox greyed for Xbox and PlayStation prompts).
 Here:
-- **The setting:** `x360_settings.ini` beside the DLL, `swap_confirm_cancel=1`, the mod's own file
+- **The setting:** `x360_settings.ini` in `%LOCALAPPDATA%\x360ui` (beside the DLL before 2026-10-23), `swap_confirm_cancel=1`, the mod's own file
   (not PC's settings), written when the checkbox changes; removed by uninstall.
 - **The checkbox:** made in PC's settings screen when it shows, of PC's own checkbox type, in the
   parent of its last checkbox and one row below it; its text says it needs a restart. Enabled only
@@ -3222,3 +3222,16 @@ texts as they are (`--no-markup`: a path with `&` or `<`). Test:
 `--game` (no second question). The junction risk (the elevated run writes backups into folders the
 first run names, which a junction could redirect) stays documented as low: UAC is not a security
 boundary, and the folders are the user's own.
+
+**The mod's own files out of the game's folder (2026-10-23).** `x360_ui.log` and
+`x360_settings.ini`, like `x360_stop.txt`, are in `%LOCALAPPDATA%\x360ui` (under Wine or
+Proton, the prefix's `users/<user>/AppData/Local/x360ui`), through `x360_data_path` in
+`cegui_proxy.c`; beside the DLL only when LOCALAPPDATA is missing or its folder cannot be made. The game's folder may be Program Files,
+which the game (a 32-bit executable without a manifest) cannot write: Windows redirects its
+writes into the user's VirtualStore, where no uninstaller looked. Both uninstallers remove the
+`x360ui` folder, and on Windows the three files an older version left in the VirtualStore copy of
+the game's folder; with Steam under Proton (the game in `steamapps/common`), the `x360ui` folder in
+Steam's own prefix (`compatdata/41500`), which the save backup otherwise leaves alone. `ui_dump.c`'s
+developer dumps (`x360_dump_*.json`, only with a `x360_dump.req`) still go beside the game.
+`x360_ui.ini` stays beside the game: the installer writes it (elevated when it
+must), the proxy only reads it.
