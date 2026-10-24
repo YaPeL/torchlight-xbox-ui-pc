@@ -65,7 +65,12 @@ jobs:
       - name: Build tools
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates file
+          # SDL's headers for X11, Wayland, D-Bus (the desktop portal's pickers) and udev (pads): SDL
+          # loads those libraries at run time, so the AppImage needs only the system's libc.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates file \
+            pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
+            libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl-dev libgl-dev libdbus-1-dev \
+            libudev-dev libdecor-0-dev
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -205,6 +210,7 @@ jobs:
           cp LICENSE extra/LICENSE.txt
           cp installer/third_party/NOTICES.md extra/THIRD_PARTY_NOTICES.md
           cp installer/third_party/LGPL-2.1.txt extra/LGPL-2.1.txt
+          cp installer/third_party/OFL-1.1.txt extra/OFL-1.1.txt
           cp packaging/linux/APPIMAGE_NOTICES.md extra/APPIMAGE_NOTICES.md
           packaging/linux/get_sources.sh extra
           (cd extra && sha256sum * > SHA256SUMS)

@@ -560,6 +560,83 @@ class InstallCppTest(unittest.TestCase):
         with open(f) as p:
             self.assertEqual(p.read(), "1.0000\tUninstalled\n")
 
+    def wizard(self, steps, *extra, shots=None, native=False):
+        """The wizard (dev wizard) on SDL's offscreen video and software renderer (native: the
+        system's window and renderer), played by a script with a simulated pad; the home has only
+        the cpp game."""
+        script = os.path.join(self.root, "script.txt")
+        with open(script, "w") as f:
+            f.write("\n".join(steps) + "\n")
+        home = os.path.join(self.root, "cpp")
+        video = [] if native else ["--video", "offscreen", "--software"]
+        cmd = [BINARY, "dev", "wizard", *video, "--own-picker", "--script", script,
+               "--browse-from", self.x360, "--dll", self.proxy, *extra]
+        if shots:
+            cmd += ["--shots", shots]
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                              env=dict(self.env, HOME=home, USERPROFILE=home))
+
+    # The pad's way through each flow (the own browser lists "..", default.bin, pak.zip).
+    WIZARD_INSTALL_360 = ["screen games", "press a", "screen package", "press a", "screen browser", "press down",
+                          "press down", "press a", "screen package", "press start", "screen bag", "press down",
+                          "press a", "press start", "screen summary", "press start", "screen result 300"]
+    WIZARD_TO_PC_BAG = ["screen games", "press a", "screen action", "press down", "press down", "press a",
+                        "screen uninstall", "press a", "screen summary", "press start", "screen result 120"]
+    WIZARD_UNINSTALL_AFTER_360 = ["screen games", "press a", "screen action", "press down", "press down", "press a",
+                                  "screen uninstall", "press a", "press down", "press a", "screen summary",
+                                  "press start", "screen result 120"]
+
+    def test_the_wizard_end_to_end(self):
+        """The whole wizard with a simulated pad: the 360's bag installed through the package
+        found in its own browser, the same bytes as install.py's; then the two steps of the
+        uninstall (PC's bag, then the uninstall once each character is loaded and saved), the
+        game's folder as it was before."""
+        game = self.games["cpp"][0]
+        before = _tree(game)
+        r = self.wizard(self.WIZARD_INSTALL_360 + ["quit"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.install("py", "--bag", "360").returncode, 0)
+        self.same_install()
+        backups = [d for d in os.listdir(os.path.dirname(self.games["cpp"][1])) if "-backup-" in d]
+        self.assertEqual(len(backups), 1)
+        r = self.wizard(self.WIZARD_TO_PC_BAG + ["quit"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(game, "x360_ui.ini")) as f:
+            self.assertIn("bag=pc", f.read())
+        r = self.wizard(self.WIZARD_UNINSTALL_AFTER_360 + ["quit"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(_tree(game), before)
+
+    # Every screen, each shot once its screen is reached (the progress only if it still shows).
+    WIZARD_SHOTS = ["screen games", "shot 01-games", "press a", "screen package", "shot 02-package", "press a",
+                    "screen browser", "shot 03-browser", "press down", "press down", "press a", "screen package",
+                    "shot 04-package-chosen", "press start", "screen bag", "shot 05-bag-pc", "press down", "press a",
+                    "wait 3", "shot 06-bag-360", "press start", "screen summary", "shot 07-summary", "press start",
+                    "shot-if working 08-working", "screen result 300", "shot 09-result", "press a", "screen games",
+                    "shot 10-games-installed", "press a", "screen action", "shot 11-action", "press down",
+                    "press down", "press a", "screen uninstall", "shot 12-uninstall-360-bag", "press b",
+                    "screen action", "press b", "screen games", "quit"]
+
+    def test_the_wizards_screenshots(self):
+        """Every screen drawn, each reached with the simulated pad; with X360UI_SHOTS (a folder),
+        their PNGs at 960x600, at 1280x800 (the Steam Deck) and at scale 2, which CI keeps."""
+        out = os.environ.get("X360UI_SHOTS")
+        sizes = [("960x600", "1"), ("1280x800", "1"), ("960x600", "2")] if out else [("960x600", "1")]
+        for size, scale in sizes:
+            name = f"{size}-x{scale}"
+            folder = os.path.join(out, name) if out else os.path.join(self.root, "shots")
+            os.makedirs(folder, exist_ok=True)
+            # Windows' own window and renderer for its shots; offscreen where there is no desktop.
+            r = self.wizard(self.WIZARD_SHOTS, "--size", size, "--scale", scale, shots=folder,
+                            native=bool(out) and os.name == "nt")
+            if r.returncode == 2:
+                os.rename(folder, folder + "-offscreen")
+                folder += "-offscreen"
+                r = self.wizard(self.WIZARD_SHOTS, "--size", size, "--scale", scale, shots=folder)
+            self.assertEqual(r.returncode, 0, name + r.stdout + r.stderr)
+            self.assertIn("12-uninstall-360-bag.png", os.listdir(folder))
+            self.assertEqual(self.uninstall("cpp", "--yes", "--anyway").returncode, 0)
+
     def test_install_and_uninstall_as_python(self):
         before = {who: _tree(g) for who, (g, _) in self.games.items()}
         for bag in ("pc", "360"):
@@ -780,7 +857,8 @@ class InstallCppTest(unittest.TestCase):
         r = subprocess.run([BINARY, "notices"], capture_output=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-        for rel in ("LICENSE", "installer/third_party/NOTICES.md", "installer/third_party/LGPL-2.1.txt"):
+        for rel in ("LICENSE", "installer/third_party/NOTICES.md", "installer/third_party/LGPL-2.1.txt",
+                    "installer/third_party/OFL-1.1.txt"):
             with open(os.path.join(root, rel), "rb") as f:
                 self.assertIn(f.read().replace(b"\r\n", b"\n"), r.stdout.replace(b"\r\n", b"\n"), rel)
 

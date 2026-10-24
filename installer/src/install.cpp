@@ -24,7 +24,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #else
@@ -45,6 +44,7 @@ extern const size_t kProxySteamSize;
 extern const char kLicenseText[];   // LICENSE, NOTICES.md and LGPL-2.1.txt, built in (CMakeLists.txt)
 extern const char kNoticesText[];
 extern const char kLgplText[];
+extern const char kOflText[];
 
 namespace {
 
@@ -72,12 +72,12 @@ const std::string kNoSavesFound =
 const std::string kNoModWarningAfter =
     "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
     "them, and without the mod the original game deletes those that do not fit PC's bag.";
-const std::string kBagWarning =
+const std::string kBags =
     "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21 (any "
     "item, spells, fish).\n\n"
     "When a character changes bag, the mod moves the items that do not fit to free slots or to the "
-    "pet's bag; if some still do not fit, the game says so and closes without saving.\n\n" +
-    kNoModWarning + "\n\nThe saves found are backed up first.\n\nUse the 360's bag?";
+    "pet's bag; if some still do not fit, the game says so and closes without saving.";
+const std::string kBagWarning = kBags + "\n\n" + kNoModWarning + "\n\nThe saves found are backed up first.\n\nUse the 360's bag?";
 const char* const kTitle = "Torchlight: the Xbox 360 interface";
 
 struct Exit : Error {   // Python's SystemExit with a message: printed, status 1
@@ -109,13 +109,12 @@ std::string home_dir() {
   return ".";
 }
 
-// ---- questions: in windows when there is a display, else on the console (Python's Ask) ----
+// ---- questions, on the console (the wizard asks in its window; Python's Ask) ----
 class Ask {
  public:
-  Ask(bool console, bool yes) : yes_(yes), gui_(!console && !yes && gui_available()) {}
+  Ask(bool console, bool yes) : yes_(yes) { (void)console; }
   std::string file(const std::string& title) {
     if (yes_) return "";
-    if (gui_) return gui_file(title);
     std::cout << title << ": " << std::flush;
     std::string line;
     if (!std::getline(std::cin, line)) return "";
@@ -125,7 +124,6 @@ class Ask {
   }
   bool yes_no(const std::string& text, bool def) {
     if (yes_) return def;
-    if (gui_) return gui_yes_no(text, def);
     std::cout << text << (def ? " [Y/n] " : " [y/N] ") << std::flush;
     std::string a;
     if (!std::getline(std::cin, a)) return def;
@@ -133,103 +131,17 @@ class Ask {
     if (a.empty()) return def;
     return a[0] == 'y' || a[0] == 'Y';
   }
-  void info(const std::string& text) {
-    std::cout << text << "\n";
-    if (gui_) gui_info(text);
-  }
-  void error(const std::string& text) {
-    std::cerr << text << "\n";
-    if (gui_) gui_error(text);
-  }
+  void info(const std::string& text) { std::cout << text << "\n"; }
+  void error(const std::string& text) { std::cerr << text << "\n"; }
 
  private:
-  bool yes_, gui_;
+  bool yes_;
   static void trim(std::string& s) {
     while (!s.empty() && std::isspace((unsigned char)s.back())) s.pop_back();
     size_t i = 0;
     while (i < s.size() && std::isspace((unsigned char)s[i])) i++;
     s = s.substr(i);
   }
-#ifdef _WIN32
-  static std::wstring w(const std::string& s) { return fs_path(s).wstring(); }
-  static bool gui_available() { return true; }
-  static bool gui_yes_no(const std::string& t, bool def) {
-    return MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_YESNO | MB_ICONQUESTION | (def ? 0 : MB_DEFBUTTON2)) == IDYES;
-  }
-  static void gui_info(const std::string& t) { MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_OK | MB_ICONINFORMATION); }
-  static void gui_error(const std::string& t) { MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_OK | MB_ICONERROR); }
-  static std::string gui_file(const std::string& title) {
-    wchar_t buf[4096] = L"";
-    std::wstring wt = w(title);
-    OPENFILENAMEW o{};
-    o.lStructSize = sizeof o;
-    o.lpstrFile = buf;
-    o.nMaxFile = 4096;
-    o.lpstrTitle = wt.c_str();
-    o.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-    return GetOpenFileNameW(&o) ? S(fs::path(buf)) : "";
-  }
-#else
-  // zenity (GNOME and most desktops) or kdialog (KDE), when there is a display.
-  static std::string tool() {
-    if (!std::getenv("DISPLAY") && !std::getenv("WAYLAND_DISPLAY")) return "";
-    for (const char* t : {"zenity", "kdialog"})
-      for (const char* dir : {"/usr/bin/", "/bin/", "/usr/local/bin/"})
-        if (access((std::string(dir) + t).c_str(), X_OK) == 0) return std::string(dir) + t;
-    return "";
-  }
-  static bool gui_available() { return !tool().empty(); }
-  static int run(const std::vector<std::string>& argv, std::string* out) {
-    int pipefd[2];
-    if (pipe(pipefd) != 0) return -1;
-    pid_t pid = fork();
-    if (pid == 0) {
-      dup2(pipefd[1], 1);
-      close(pipefd[0]);
-      std::vector<char*> a;
-      for (const auto& s : argv) a.push_back(const_cast<char*>(s.c_str()));
-      a.push_back(nullptr);
-      execv(a[0], a.data());
-      _exit(127);
-    }
-    close(pipefd[1]);
-    char buf[4096];
-    ssize_t n;
-    while ((n = read(pipefd[0], buf, sizeof buf)) > 0)
-      if (out) out->append(buf, size_t(n));
-    close(pipefd[0]);
-    int status = 0;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-  }
-  static bool is_zenity() { return tool().find("zenity") != std::string::npos; }
-  static bool gui_yes_no(const std::string& t, bool def) {
-    std::vector<std::string> z = {tool(), "--question", "--no-markup", "--title", kTitle, "--text", t, "--width", "500"};
-    if (!def) z.push_back("--default-cancel");   // the default the console shows, in the window too
-    return run(is_zenity() ? z
-                           : std::vector<std::string>{tool(), "--title", kTitle, "--yesno", t},
-               nullptr) == 0;
-  }
-  static void gui_info(const std::string& t) {
-    run(is_zenity() ? std::vector<std::string>{tool(), "--info", "--no-markup", "--title", kTitle, "--text", t, "--width", "500"}
-                    : std::vector<std::string>{tool(), "--title", kTitle, "--msgbox", t},
-        nullptr);
-  }
-  static void gui_error(const std::string& t) {
-    run(is_zenity() ? std::vector<std::string>{tool(), "--error", "--no-markup", "--title", kTitle, "--text", t, "--width", "500"}
-                    : std::vector<std::string>{tool(), "--title", kTitle, "--error", t},
-        nullptr);
-  }
-  static std::string gui_file(const std::string& title) {
-    std::string out;
-    if (run(is_zenity() ? std::vector<std::string>{tool(), "--file-selection", "--title", title}
-                        : std::vector<std::string>{tool(), "--title", title, "--getopenfilename", home_dir()},
-            &out) != 0)
-      return "";
-    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
-    return out;
-  }
-#endif
 };
 
 // ---- the 360 copy ----
@@ -1111,7 +1023,8 @@ int do_notices() {
                "(below); its source is https://github.com/YaPeL/torchlight-xbox-ui-pc at the tag " << X360UI_VERSION << ".\n\n"
                "==== Third-party code in this executable ====\n\n"
             << kNoticesText << "\n==== GNU Lesser General Public License 2.1 (libmspack's LZX decoder) ====\n\n"
-            << kLgplText << "\n==== GNU General Public License 3.0 ====\n\n" << kLicenseText;
+            << kLgplText << "\n==== SIL Open Font License 1.1 (Noto Sans, the wizard's font) ====\n\n" << kOflText
+            << "\n==== GNU General Public License 3.0 ====\n\n" << kLicenseText;
 #ifdef _WIN32
   std::cout.flush();
   if (code_page) SetConsoleOutputCP(code_page);
@@ -1156,9 +1069,9 @@ void set_shared_console(bool shared) { g_shared_console = shared; }
 int installer_main(const std::vector<std::string>& argv) {
   try {
     const Args a = parse(argv);
-    if (g_shared_console && a.console && !a.yes && (a.command == "install" || a.command == "uninstall"))
-      throw Exit("--console asks its questions in the terminal, whose input the shell reads too: give --yes with the "
-                 "options (--game, --package or --x360-dir, --bag), or run it without --console to be asked in windows.");
+    if (g_shared_console && !a.yes && (a.command == "install" || a.command == "uninstall"))
+      throw Exit("Its questions would be asked in the terminal, whose input the shell reads too: give --yes with the "
+                 "options (--game, --package or --x360-dir, --bag), or run it without arguments for its window.");
     g_result_file = a.result_file;
     g_progress_file = a.progress_file;
     if (a.command == "list") return do_list();
@@ -1180,6 +1093,14 @@ int installer_main(const std::vector<std::string>& argv) {
 // ---- what the wizard asks (install.h) ----
 
 void set_progress(Progress p) { g_progress = std::move(p); }
+
+std::string warning_text(const std::string& which) {
+  if (which == "bags") return kBags;
+  if (which == "no-mod") return kNoModWarning;
+  if (which == "no-mod-after") return kNoModWarningAfter;
+  if (which == "no-saves") return kNoSavesFound;
+  return "";
+}
 
 namespace {
 GameFound describe(const std::string& store, const fs::path& game) {
