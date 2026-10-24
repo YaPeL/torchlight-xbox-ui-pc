@@ -82,6 +82,9 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
                                             float min, float half angle, float range, bool best,
                                             CCharacter* exclude, CSkill*) */
 #define GOG_STOP_PATHING 0x00486150     /* CCharacter::stopPathing() */
+/* The hero's "the game's UI holds play" (a cinematic: the 360's sub_821ED810, its frame update
+ * sub_821EBA48 skips the game's input while it is true; PC's setDestination asks it too). */
+#define GOG_UI_HOLDS_PLAY 0x00541db0
 #define GOG_PERFORMING_ATTACK 0x004863b0 /* CCharacter::performingAttackLoose() */
 #define GOG_PERFORMING_SKILL 0x00486550  /* CCharacter::performingSkill() */
 #define GOG_IN_ATTACK_RANGE 0x00492160   /* CCharacter::inAttackRange(EATTACK_RANGE_TYPE) */
@@ -1018,6 +1021,9 @@ static void order(void) {
         return;
     }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
+    /* A cinematic: the hero is not played (the 360's frame update, sub_821EBA48, skips its input
+     * while sub_821ED810 is true; PC's 0x541db0 is the same test, on the hero). */
+    if (((bool_fn)GOG_UI_HOLDS_PLAY)(hero, 0)) return;
     zoom_tick(client);
     if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
         void x360_automap_cycle(void);
