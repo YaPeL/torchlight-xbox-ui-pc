@@ -82,6 +82,11 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
                                             float min, float half angle, float range, bool best,
                                             CCharacter* exclude, CSkill*) */
 #define GOG_STOP_PATHING 0x00486150     /* CCharacter::stopPathing() */
+/* CGameUI's "the UI holds play" (a cinematic: the 360's sub_821ED810, its frame update
+ * sub_821EBA48 skips the game's input while it is true). A thiscall on CGameUI, which the client
+ * keeps at +0x3c (PC's client update calls it so, 0x415096; Steam's the same, 0x414e76); not on the
+ * hero (a first try passed the hero: a crash at 0x541dba). */
+#define GOG_UI_HOLDS_PLAY 0x00541db0
 #define GOG_PERFORMING_ATTACK 0x004863b0 /* CCharacter::performingAttackLoose() */
 #define GOG_PERFORMING_SKILL 0x00486550  /* CCharacter::performingSkill() */
 #define GOG_IN_ATTACK_RANGE 0x00492160   /* CCharacter::inAttackRange(EATTACK_RANGE_TYPE) */
@@ -1004,16 +1009,26 @@ static void order(void) {
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
     /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
-    if (!x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
+    int x360_tip_open(void);
+    if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
         x360_pause_pad(pressed, ly);
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
-    if (pressed & BUTTON_BACK) {
+    if ((pressed & BUTTON_BACK) && !x360_tip_open()) {   /* a tip keeps every button (the 360's) */
         x360_inventory_toggle();
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
-    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
+    if (x360_inventory_open()) {
+        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, lx, ly);   /* a tip over it has the pad */
+        return;
+    }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
+    /* A cinematic: the hero is not played (the 360's frame update, sub_821EBA48, skips its input
+     * while sub_821ED810 is true; PC's 0x541db0 is the same test, on CGameUI). */
+    {
+        void *game_ui = *(void **)(client + 0x3c);
+        if (game_ui && ((bool_fn)GOG_UI_HOLDS_PLAY)(game_ui, 0)) return;
+    }
     zoom_tick(client);
     if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
         void x360_automap_cycle(void);
@@ -1142,6 +1157,9 @@ static void order(void) {
     }
 }
 
+/* The pad's frame (order, from the GetCursorPos hook) runs: the 360's screens' ticks with it. */
+int x360_pad_running;
+
 void x360_pad_start(const char *file, int by_message, int direct_mode, int face, int log) {
     face_each_frame = face;
     verbose = log;
@@ -1155,6 +1173,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
     real_get_cursor_pos = (get_cursor_pos_fn)patch_import("user32.dll", "GetCursorPos", (void *)pad_get_cursor_pos);
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
+    x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");

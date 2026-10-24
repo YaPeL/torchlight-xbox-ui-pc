@@ -585,6 +585,7 @@ typedef unsigned char (__fastcall *is_visible_fn)(const void *self, void *edx, i
 static void *hidden_pc[MAX_HIDDEN];
 static int hidden_count;
 static int is_ours(void *w);
+static void *pc_tip_layout_root;   /* PC's tip window's root (x360_pc_layout_loaded, below) */
 
 static void hide_pc_ui(int hide) {
     static is_visible_fn is_visible;
@@ -5600,8 +5601,11 @@ static void add_frame_listener(void);
 /* PC's bottom HUD and pet HUD made transparent as PC loads their layouts, at the game's start: the
  * HUD tick did it only once play was entered, so they showed for its first frames (the owner saw
  * them flash at each load). PC changes their visibility, never their alpha. */
+/* PC's tip window's root (tipmenu.layout, loaded once at the game's start): made transparent as it
+ * loads, so PC's tip is never drawn before the 360's takes its place (the owner saw it for a
+ * moment); tip_tick shows it again only when it is not a tip (the settings' confirmations). */
 void x360_pc_layout_loaded(const char *file, void *root) {
-    static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", 0};
+    static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", "TIPMENU.LAYOUT", 0};
     unsigned n = length(file), i;
     if (!resolve()) return;
     for (i = 0; hidden[i]; i++) {
@@ -5613,7 +5617,15 @@ void x360_pc_layout_loaded(const char *file, void *root) {
             same = c == hidden[i][j];
         }
         if (!same) continue;
-        __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+        if (i == 2) {   /* the tip: not let through to the mouse (the settings' confirmations use it) */
+            /* Only when tip_tick will run (the pad's frame), which shows it again where needed. */
+            extern int x360_pad_running;
+            if (!x360_pad_running) continue;
+            __try { prop(root, "Alpha", "0"); } __except (1) { return; }
+            pc_tip_layout_root = root;
+        } else {
+            __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+        }
         x360_log("x360 hud: PC's "); x360_log(hidden[i]); x360_log(" transparent as it loads\r\n");
     }
 }
@@ -6404,6 +6416,60 @@ static void add_frame_listener(void) {
 static void *tip_root;
 static char pc_tip_prefix[48];
 static int tip_failed, tip_shown;
+static unsigned tip_closed_at;   /* the press that closed a tip does not reach the inventory under it */
+
+/* A tip of the 360's has the pad (or closed less than 0.3 s ago): the inventory it shows over gets
+ * no buttons then (the 360's CTipMenu keeps the buttons it gets, sub_823589A0 returns 1). */
+int x360_tip_open(void) { return tip_shown || GetTickCount() - tip_closed_at < 300; }
+
+typedef void *(__fastcall *parent_of_fn)(const void *self, void *edx);
+/* The GUI sheet's child that holds PC's tip window (PC's Top UI Sheet), 0 when it is not attached. */
+static void *pc_tip_sheet(void) {
+    static parent_of_fn gp;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *top = win_of(pc_tip_prefix, "Frame"), *up;
+    int depth = 0;
+    if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    if (!sheet || !gp) return 0;
+    while (top && depth++ < 32) {
+        up = gp(top, 0);
+        if (up == sheet) return top;
+        top = up;
+    }
+    return 0;
+}
+
+/* PC's tip shown: attached, and its own window shown. Its sheet's visibility is not asked: the
+ * 360's screens hide PC's sheets while they are open, and PC shows the inventory's tip as the
+ * 360's inventory opens (TIP_INVENTORY), into the hidden sheet (QA run of 2026-10-24). */
+static int pc_tip_up(void) {
+    typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    static vis_fn vis;
+    void *frame = win_of(pc_tip_prefix, "Frame");
+    if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    return frame && vis && pc_tip_sheet() && vis(frame, 0, 1);
+}
+
+/* A click on PC's tip's button. Its sheet, if a 360 screen hid it, is shown and brought in front
+ * for the click only (synchronous: CEGUI's injected mouse), then hidden again and the inventory
+ * brought in front again. */
+static void press_tip(const char *name) {
+    typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    static vis_fn vis;
+    void *top = pc_tip_sheet();
+    int was_hidden;
+    if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    was_hidden = top && vis && !vis(top, 0, 1);
+    if (was_hidden) set_visible(top, 0, 1);
+    if (top && inventory_open) move_to_front(top, 0);
+    press_pc(pc_tip_prefix, name);
+    if (was_hidden) set_visible(top, 0, 0);
+    if (inventory_open && master_root) move_to_front(master_root, 0);
+}
+
+/* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
+static void pc_tip_alpha(const char *a) {
+    prop(win_of(pc_tip_prefix, "Frame"), "Alpha", a);   /* the layout's root (by name: never a stale pointer) */
+}
 
 static void tip_tick(void) {
     static unsigned last_search, prev;
@@ -6411,26 +6477,44 @@ static void tip_tick(void) {
     unsigned now = GetTickCount(), buttons, pressed;
     char v[2048];
     if (tip_failed) return;
+    /* Its window found at once when its layout was seen loading (its root, "<prefix>Frame"). */
+    if (!pc_tip && pc_tip_layout_root) {
+        typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+        static name_fn gn;
+        const char *name;
+        unsigned len;
+        if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        name = gn ? c_str(gn(pc_tip_layout_root, 0), 0) : 0;
+        len = name ? length(name) : 0;
+        if (len > 5 && len - 5 < sizeof pc_tip_prefix && name[len - 5] == 'F' && name[len - 4] == 'r' &&
+            name[len - 3] == 'a' && name[len - 2] == 'm' && name[len - 1] == 'e') {
+            unsigned i;
+            for (i = 0; i < len - 5; i++) pc_tip_prefix[i] = name[i];
+            pc_tip_prefix[len - 5] = 0;
+            pc_tip = win_of(pc_tip_prefix, "ShowTips");
+        }
+    }
     if (!pc_tip && now - last_search > 250) { last_search = now; pc_tip = find_pc_by_suffix("ShowTips", 0, pc_tip_prefix, sizeof pc_tip_prefix); }
     if (!pc_tip) return;
-    if (!pc_attached(pc_tip_prefix, "Frame")) {
+    if (!pc_tip_up()) {
         if (tip_shown) {
             tip_shown = 0;
-            overlay_closed_at = GetTickCount();
+            overlay_closed_at = tip_closed_at = GetTickCount();
             set_visible(tip_root, 0, 0);
-            prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
         }
+        pc_tip_alpha("0");   /* ready unseen for the next one */
         return;
     }
     if (!tip_root) {
         RECT r;
         HWND hw = active_window();
         tip_root = load("media/ui/x360/tipmenu.layout", TIP_PREFIX);
-        if (!tip_root) { tip_failed = 1; return; }
+        if (!tip_root) { tip_failed = 1; pc_tip_alpha("1"); return; }   /* PC's, seen and usable then */
         if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
         scale_tree(tip_root, k, 0);
         pass_mouse(tip_root);
         set_visible(tip_root, 0, 0);
+        prop(tip_root, "AlwaysOnTop", "True");   /* over the 360's inventory, which asks for its tip */
     }
     /* Out of play (the title, the main menu's settings: their confirmations use the tip's
      * layout) PC's window is left as it is, used with the mouse (QA runs 3, 4: the 360's tip over
@@ -6443,7 +6527,7 @@ static void tip_tick(void) {
         read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", t, sizeof t);
         if (!x360_text_key_of("pctip.", t)) {
             if (tip_shown) { tip_shown = 0; set_visible(tip_root, 0, 0); overlay_closed_at = GetTickCount(); }
-            prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
+            pc_tip_alpha("1");
             return;
         }
     }
@@ -6454,10 +6538,11 @@ static void tip_tick(void) {
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
         tip_shown = 1;
         set_visible(tip_root, 0, 1);
-        prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "0");
+        pc_tip_alpha("0");
         move_to_front(tip_root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
     }
+    move_to_front(tip_root, 0);   /* each frame: the inventory, shown in the same frame, comes after */
     read_prop(win_of(pc_tip_prefix, "Title"), "Text", v, sizeof v);
     text(win_of(TIP_PREFIX, "Title"), v);
     read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", v, sizeof v);
@@ -6483,9 +6568,9 @@ static void tip_tick(void) {
     prev = buttons;
     if (pressed & 0x8000) {                                              /* Y: tips off */
         read_prop(win_of(pc_tip_prefix, "ShowTips"), "Selected", v, sizeof v);
-        if (v[0] == 'T' || v[0] == 't') press_pc(pc_tip_prefix, "ShowTips");
-        press_pc(pc_tip_prefix, "Ok");
-    } else if (pressed & 0x2000) press_pc(pc_tip_prefix, "Ok");          /* B */
+        if (v[0] == 'T' || v[0] == 't') press_tip("ShowTips");
+        press_tip("Ok");
+    } else if (pressed & 0x2000) press_tip("Ok");                        /* B */
 }
 
 /* ---- PC's modal (the 360's CModalMenu, modalmenu.layout) ----
