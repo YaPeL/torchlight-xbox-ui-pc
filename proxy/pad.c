@@ -13,7 +13,8 @@
  * (sticks from -1 to 1 as numbers times 1000, buttons as XInput's decimal mask), re-read every
  * 50 ms, so a test can drive it without a hand on the pad. With pad_replay=PATH, a recorded stick
  * (the format below, replay_load) replaces XInput; with pad_trace=1 the hero's path is written to
- * x360_trace.csv (trace_tick): the two halves of the movement's measurement (doc section 9, "The movement measured").
+ * x360_trace-<date>.csv (trace_tick); with pad_record=1 the pad is written as a replay file
+ * (record_tick): the movement's measurement (doc section 9, "The movement measured").
  */
 
 typedef unsigned long DWORD;
@@ -39,6 +40,11 @@ IMPORT HANDLE __stdcall CreateFileA(const char *name, DWORD access, DWORD share,
 DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
 IMPORT BOOL __stdcall CloseHandle(HANDLE file);
 IMPORT BOOL __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD *written, void *overlapped);
+IMPORT DWORD __stdcall GetFileSize(HANDLE file, DWORD *high);
+IMPORT HANDLE __stdcall GetProcessHeap(void);
+IMPORT void *__stdcall HeapAlloc(HANDLE heap, DWORD flags, unsigned long bytes);
+typedef struct { WORD year, month, day_of_week, day, hour, minute, second, ms; } SYSTEMTIME_;
+IMPORT void __stdcall GetLocalTime(SYSTEMTIME_ *t);
 IMPORT HWND __stdcall GetActiveWindow(void);
 IMPORT BOOL __stdcall GetClientRect(HWND w, RECT *r);
 IMPORT BOOL __stdcall ClientToScreen(HWND w, POINT *p);
@@ -194,7 +200,7 @@ static int parse_int(const char **s) {
  *   # start_ms 3000            how long after the first frame in play t=0 comes (default 3000)
  *   t_ms lx ly lt rt buttons   XInput's raw values (sticks -32767..32767, y up; triggers 0..255;
  *                              buttons its mask), each held until the next line's t_ms
- * The last line holds to the end (the routes end with one at rest). The trace, x360_trace.csv in the mod's folder, integers
+ * The last line holds to the end (the routes end with one at rest). The trace, x360_trace-<date>.csv in the mod's folder, integers
  * only (no CRT here):
  *   # x360ui pad trace v1 pc
  *   t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly
@@ -203,11 +209,14 @@ static int parse_int(const char **s) {
  * fx, fz its rotation's column 2 (m[0][2], m[2][2]), all times 1000; scale and speed GOG's +0x200
  * and +0x204 (the 360's +500 and +504) times 1000; lx, ly the raw stick. From t=0 to 2 s after
  * the replay's last line, with a last line then (or, without a replay, from the first frame in
- * play for at most 10 minutes). A replay running while the pad's input is held by a menu, a tip
+ * play for at most an hour). The files' names carry the session's date and time
+ * (x360_trace-YYYYMMDD-HHMMSS.csv). A replay running while the pad's input is held by a menu, a tip
  * or a cinematic is named in the log ("replay disturbed"): that run does not count. */
-#define REPLAY_MAX 8192
-static struct { unsigned t; short lx, ly; unsigned char lt, rt; unsigned short buttons; } replay[REPLAY_MAX];
+struct replay_sample { unsigned t; short lx, ly; unsigned char lt, rt; unsigned short buttons; };
+static struct replay_sample *replay;   /* the file's samples, on the process heap (a recording can be long) */
 static unsigned replay_n, replay_start_ms = 3000;
+static unsigned first_play_at;      /* qms() of the first frame in play: t=0 of a recording */
+int x360_pad_record;                /* x360_ui.ini pad_record=1 (a test): the pad to x360_record-<date>.txt */
 static unsigned replay_t0;          /* qms() at t=0; 0 until the first frame in play */
 static unsigned world_at;           /* qms() of order()'s last frame that reached the world's input */
 static int replay_armed;
@@ -226,16 +235,21 @@ static unsigned qms(void) {
 }
 
 static void replay_load(const char *path) {
-    static char text[262144];
-    const char *p = text;
+    char *text;
+    const char *p;
+    DWORD size, lines = 1, i;
     HANDLE f = CreateFileA(path, 0x80000000UL, 1, 0, 3, 0, 0);
     if (f == (HANDLE)(long)-1) { x360_log("pad: replay file not found\r\n"); return; }
-    {
-        int full;
-        x360_read_text(f, text, sizeof text, &full);
-        if (full) x360_log("pad: replay file over 256 KB: cut there\r\n");
-    }
+    size = GetFileSize(f, 0);
+    if (size == 0xffffffffUL || size > 64UL * 1024 * 1024) { CloseHandle(f); x360_log("pad: replay file too big (64 MB at most)\r\n"); return; }
+    text = (char *)HeapAlloc(GetProcessHeap(), 0, size + 1);
+    if (!text) { CloseHandle(f); x360_log("pad: no memory for the replay\r\n"); return; }
+    x360_read_text(f, text, size + 1, 0);
     CloseHandle(f);
+    for (i = 0; text[i]; i++) if (text[i] == '\n') lines++;
+    replay = (struct replay_sample *)HeapAlloc(GetProcessHeap(), 0, lines * sizeof *replay);
+    if (!replay) { x360_log("pad: no memory for the replay\r\n"); return; }
+    p = text;
     while (*p) {
         const char *line = p;
         while (*p && *p != '\n') p++;
@@ -251,12 +265,8 @@ static void replay_load(const char *path) {
             }
         } else {
             const char *q = line;
-            while (*q == ' ' || *q == '\t' || *q == '\r') q++;
-            if (*q >= '0' && *q <= '9' && replay_n == REPLAY_MAX) {
-                x360_log("pad: replay over 8192 samples: cut there\r\n");
-                break;
-            }
-            if (*q >= '0' && *q <= '9') {
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q >= '0' && *q <= '9' && replay_n < lines) {
                 int v;
                 replay[replay_n].t = (unsigned)parse_int(&q);
                 v = parse_int(&q); replay[replay_n].lx = (short)(v < -32767 ? -32767 : v > 32767 ? 32767 : v);
@@ -275,6 +285,86 @@ static void replay_load(const char *path) {
     x360_log(" samples, t=0 after ");
     x360_log_num((long)replay_start_ms);
     x360_log(" ms in play\r\n");
+}
+
+/* The session's date and time, for its files' names: "-YYYYMMDD-HHMMSS" (one stamp per session). */
+static const char *session_stamp(void) {
+    static char st[20];
+    if (!st[0]) {
+        SYSTEMTIME_ t;
+        unsigned v[6], i, n = 0;
+        GetLocalTime(&t);
+        v[0] = t.year; v[1] = t.month; v[2] = t.day; v[3] = t.hour; v[4] = t.minute; v[5] = t.second;
+        st[n++] = '-';
+        for (i = 0; i < 6; i++) {
+            unsigned w = i ? 2 : 4, d;
+            if (i == 3) st[n++] = '-';
+            for (d = w; d; d--) { unsigned q = v[i], k; for (k = 1; k < d; k++) q /= 10; st[n++] = (char)('0' + q % 10); }
+        }
+        st[n] = 0;
+    }
+    return st;
+}
+
+/* ---- pad_record: the pad as the player moved it, a replay file of its own ----
+ * x360_record-<date>.txt in the mod's folder (%LOCALAPPDATA%\x360ui), in the replay's format with
+ * "# start_ms 0": t=0 is the first frame in play, as a replay's is, so pad_replay plays it back by
+ * time on this build or on the recompiled 360's whatever their frame rates. A line when the
+ * stick, a trigger or a button changed (the buttons as the game's input reads them, after the
+ * Nintendo swap); pad_trace on with it. */
+static HANDLE record_file = (HANDLE)(long)-1;
+static char record_buf[8192];
+static unsigned record_len, record_flushed_at;
+static void record_flush(void) {
+    DWORD w;
+    if (record_len && record_file != (HANDLE)(long)-1) WriteFile(record_file, record_buf, record_len, &w, 0);
+    record_len = 0;
+}
+static void record_put(const char *s) {
+    while (*s) {
+        if (record_len == sizeof record_buf) record_flush();
+        record_buf[record_len++] = *s++;
+    }
+}
+static void record_num(long v) {
+    char d[16];
+    int n = 0;
+    unsigned long u = v < 0 ? (unsigned long)-v : (unsigned long)v;
+    if (v < 0) record_put("-");
+    do { d[n++] = (char)('0' + u % 10); u /= 10; } while (u);
+    while (n) { char c[2] = {d[--n], 0}; record_put(c); }
+}
+static void record_tick(unsigned now) {
+    static int open_tried;
+    static long last[5] = {-1, -1, -1, -1, -1};
+    long cur[5];
+    int i, same = 1;
+    HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
+    if (!x360_pad_record || !first_play_at || replay_n) return;
+    if (!open_tried) {
+        char name[48];
+        const char *st = session_stamp();
+        unsigned n = 0, k;
+        static const char a[] = "x360_record", b[] = ".txt";
+        open_tried = 1;
+        for (k = 0; a[k]; k++) name[n++] = a[k];
+        for (k = 0; st[k]; k++) name[n++] = st[k];
+        for (k = 0; b[k]; k++) name[n++] = b[k];
+        name[n] = 0;
+        record_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+        if (record_file == (HANDLE)(long)-1) { x360_log("pad: the recording not written\r\n"); return; }
+        x360_log("pad: recording the pad to "); x360_log(name); x360_log("\r\n");
+        record_put("# x360ui pad replay v1\r\n# start_ms 0\r\n# pad_record: t=0 the first frame in play\r\n");
+    }
+    if (record_file == (HANDLE)(long)-1) return;
+    cur[0] = raw_lx; cur[1] = raw_ly; cur[2] = raw_lt; cur[3] = raw_rt; cur[4] = (long)(buttons & 0xffff);
+    for (i = 0; i < 5; i++) if (cur[i] != last[i]) same = 0;
+    if (same) return;
+    for (i = 0; i < 5; i++) last[i] = cur[i];
+    record_num((long)(now - first_play_at));
+    for (i = 0; i < 5; i++) { record_put(" "); record_num(cur[i]); }
+    record_put("\r\n");
+    if (now - record_flushed_at >= 500) { record_flushed_at = now; record_flush(); }
 }
 
 /* The replay's sample at now: 1 while it runs (the pad then reads it), 0 before t=0 and after. */
@@ -321,9 +411,15 @@ static void trace_num(long v) {
 static long mu(float v) { return (long)(v * 1000.0f + (v < 0 ? -0.5f : 0.5f)); }
 
 /* One line when something moved; called from order() in play, with the hero's position. */
-static void trace_line(const long *cur, long t_us) {
+static void trace_line(const long *cur, unsigned long t_us) {
     int i;
-    trace_num(t_us); trace_put(",");
+    {
+        char d[16];   /* unsigned: an hour's microseconds pass a long's */
+        int n = 0;
+        do { d[n++] = (char)('0' + t_us % 10); t_us /= 10; } while (t_us);
+        while (n) { char c[2] = {d[--n], 0}; trace_put(c); }
+    }
+    trace_put(",");
     trace_num((long)trace_lines++);
     for (i = 0; i < 6; i++) { trace_put(","); trace_num(cur[i]); }
     trace_put(","); trace_num(raw_lx); trace_put(","); trace_num(raw_ly); trace_put("\r\n");
@@ -342,7 +438,7 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     if (!x360_pad_trace || done) return;
     if (!replay_t0) return;
     if ((int)(now - replay_t0) < 0) return;
-    end = replay_n ? replay[replay_n - 1].t + 2000 : 600000;
+    end = replay_n ? replay[replay_n - 1].t + 2000 : 3600000;   /* without a replay: an hour */
     /* The previous frame that reached the world fell inside the replay and the pad has been held
      * since: by a menu, a tip, a cinematic, a load (also when play comes back only after the end). */
     if (replay_n && !disturbed && world_at && (int)(world_at - replay_t0) >= 0 &&
@@ -359,8 +455,19 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     }
     if (!open_tried) {
         open_tried = 1;
-        trace_file = x360_data_open("x360_trace.csv", 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
-        if (trace_file == (HANDLE)(long)-1) { x360_log("pad: x360_trace.csv not written\r\n"); done = 1; return; }
+        {
+            char name[48];
+            const char *st = session_stamp();
+            unsigned n = 0, k;
+            static const char a[] = "x360_trace", b[] = ".csv";
+            for (k = 0; a[k]; k++) name[n++] = a[k];
+            for (k = 0; st[k]; k++) name[n++] = st[k];
+            for (k = 0; b[k]; k++) name[n++] = b[k];
+            name[n] = 0;
+            trace_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+            if (trace_file == (HANDLE)(long)-1) { x360_log("pad: the trace not written\r\n"); done = 1; return; }
+            x360_log("pad: tracing the hero to "); x360_log(name); x360_log("\r\n");
+        }
         QueryPerformanceFrequency(&trace_qpf);
         QueryPerformanceCounter(&trace_q0);
         trace_q0 -= (long long)((double)(now - replay_t0) * (double)trace_qpf / 1000.0);   /* t=0 at replay_t0 */
@@ -369,7 +476,7 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     QueryPerformanceCounter(&q);
     if (now - replay_t0 > end) {
         done = 1;
-        trace_line(cur, (long)end * 1000);   /* the last line: where the hero is at the end */
+        trace_line(cur, (unsigned long)end * 1000);   /* the last line: where the hero is at the end */
         trace_flush();
         CloseHandle(trace_file);
         trace_file = (HANDLE)(long)-1;
@@ -381,7 +488,7 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     for (i = 0; i < 7; i++) if (cur[i] != last[i]) same = 0;
     if (same && trace_lines) return;
     for (i = 0; i < 7; i++) last[i] = cur[i];
-    trace_line(cur, (long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf));   /* no 64-bit division without a CRT */
+    trace_line(cur, (unsigned long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf));   /* no 64-bit division without a CRT */
     if (now - trace_flushed_at >= 500) { trace_flushed_at = now; trace_flush(); }
 }
 
@@ -441,6 +548,7 @@ static void poll(void) {
             extern int x360_swap_active;
             if (x360_swap_active && ((buttons & 0x1000) != 0) != ((buttons & 0x2000) != 0)) buttons ^= 0x3000;
         }
+        record_tick(qms());   /* pad_record: the pad as the player moves it */
     }
     {
         /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */
@@ -1214,8 +1322,9 @@ static void order(void) {
         int x360_in_play(void);
         int x360_pc_menu_up(void);
         if (!x360_in_play()) return;
+        if (!first_play_at) first_play_at = qms();   /* t=0 of a recording */
         if (!replay_t0 && (replay_n || x360_pad_trace)) {
-            replay_t0 = qms() + (replay_n ? replay_start_ms : 0);
+            replay_t0 = first_play_at + (replay_n ? replay_start_ms : 0);
             if (!replay_t0) replay_t0 = 1;
         }
         trace_tick(hero, qms());

@@ -155,6 +155,22 @@ here. Games' texts are named by role, never quoted.
   `ReadFile` in `proxy/` or a line read in `installer/src` goes around the two functions. The
   C++ `core_test` tests `text_lines` with the same cases. A new reader of text uses them.
 
+## A level's load that never ended under automation (open)
+
+- **What happened:** in the baseline's automated runs on the GOG copy (2026-10-24; a copy of a
+  hero saved in the mines through `save_root=`, the run entered with a scripted click on Continue,
+  `console=ASCEND` given in play, `pad_replay` and `pad_trace` on), the town's load after the
+  console's ASCEND never ended: the hero's position and the level stayed the same for more than
+  25 s and the screen showed the loading picture. In the next try (the console given 6 s after
+  the first frame in play instead of 2) the load of the mines after Continue did not end either;
+  the log stopped at the loaded layouts, nothing in play. The same setup without the console,
+  from a save made in town, ran six times without a stall.
+- **Not known yet:** whether the console during or just after a load, the scripted input (the
+  click's helper runs in the game's prefix) or the window's focus causes it. The automation of
+  in-game navigation was dropped for the measurement (the owner's call): the owner plays the route.
+- **If it is seen without automation** (a load that does not end in a normal session), it is a
+  bug of the mod: report it with the log.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
