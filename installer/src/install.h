@@ -19,7 +19,7 @@ void set_shared_console(bool shared);
 struct GameFound {
   std::string store;          // "steam", "epic", "gog"; empty for a folder the player chose
   std::string path;           // empty when the folder chosen is not a Torchlight
-  bool supported = false;     // a build this version has a proxy for
+  bool supported = false;     // a build this version knows (its proxy: built in, or --dll)
   bool has_mod = false;
   std::string bag;            // the bag installed ("pc" or "360"), when has_mod
   bool bag_360_used = false;  // the 360's bag was installed at some point

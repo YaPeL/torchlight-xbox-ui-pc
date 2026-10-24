@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <thread>
 
 #include "bytes.h"
 #include "convert.h"
@@ -251,6 +252,24 @@ std::string lower_ascii(std::string s) {
   return s;
 }
 
+// The first pak.zip, default.xex and default.bin of a folder extracted from the 360 package, as
+// os.walk finds them: each folder's files, then its subfolders, top down (install.read_360_copy).
+std::map<std::string, fs::path> files_of_360_folder(const fs::path& folder) {
+  std::map<std::string, fs::path> found;
+  std::function<void(const fs::path&)> walk = [&](const fs::path& d) {
+    std::vector<fs::path> subs;
+    std::error_code ec;
+    for (fs::directory_iterator it(d, ec), end; !ec && it != end; it.increment(ec)) {
+      if (it->is_directory(ec)) { subs.push_back(it->path()); continue; }
+      const std::string low = lower_ascii(S(it->path().filename()));
+      if ((low == "pak.zip" || low == "default.xex" || low == "default.bin") && !found.count(low)) found[low] = it->path();
+    }
+    for (const auto& s : subs) walk(s);
+  };
+  walk(folder);
+  return found;
+}
+
 // (pak.zip, decrypted image) of the 360 copy into work (install.read_360_copy).
 std::pair<fs::path, fs::path> read_360_copy(std::string source, const fs::path& work) {
   const fs::path pak = work / "pak.zip", xex = work / "default.xex";
@@ -285,19 +304,7 @@ std::pair<fs::path, fs::path> read_360_copy(std::string source, const fs::path& 
       if (!out) throw Exit("cannot write " + S(dest));
     }
   } else if (is_dir(P(source))) {
-    std::map<std::string, fs::path> found;
-    // os.walk: each folder's files, then its subfolders, top down.
-    std::function<void(const fs::path&)> walk = [&](const fs::path& d) {
-      std::vector<fs::path> subs;
-      std::error_code ec;
-      for (fs::directory_iterator it(d, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->is_directory(ec)) { subs.push_back(it->path()); continue; }
-        const std::string low = lower_ascii(S(it->path().filename()));
-        if ((low == "pak.zip" || low == "default.xex" || low == "default.bin") && !found.count(low)) found[low] = it->path();
-      }
-      for (const auto& s : subs) walk(s);
-    };
-    walk(P(source));
+    std::map<std::string, fs::path> found = files_of_360_folder(P(source));
     if (!found.count("pak.zip")) throw Exit("No pak.zip in " + source + ".");
     fs::copy_file(found["pak.zip"], pak, fs::copy_options::overwrite_existing);
     if (found.count("default.bin")) image = found["default.bin"];
@@ -683,19 +690,27 @@ void progress(double fraction, const std::string& text) {
     }
     std::error_code ec;
     fs::rename(tmp, P(g_progress_file), ec);   // whole lines only for the reader
+    if (ec) {                                  // the reader had it open: once more
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      fs::rename(tmp, P(g_progress_file), ec);
+    }
   }
 }
 
 // The elevated run's progress line, given to this run's progress.
 [[maybe_unused]] void forward_progress(const fs::path& file) {
-  if (!is_file(file)) return;
-  const Bytes b = read_file(file);
-  const std::string line(b.begin(), b.end());
+  // Never throws: the elevated run goes on whatever happens to its progress line here.
+  std::ifstream f(file, std::ios::binary);
+  std::string line;
+  if (!f || !std::getline(f, line)) return;
   const size_t tab = line.find('\t');
   if (tab == std::string::npos) return;
   std::string text = line.substr(tab + 1);
   while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
-  if (g_progress) g_progress(std::atof(line.substr(0, tab).c_str()), text);
+  try {
+    if (g_progress) g_progress(std::atof(line.substr(0, tab).c_str()), text);
+  } catch (...) {
+  }
 }
 
 void finish(Ask& ask, const std::string& text) {
@@ -723,6 +738,7 @@ int with_permission(Ask& ask, const fs::path& game, std::vector<std::string> ans
   answered.insert(answered.end(), {"--progress-file", S(progress_file)});
   const int code = run_elevated(answered, [&] { forward_progress(progress_file); });
   fs::remove(progress_file, ec);
+  fs::remove(S(progress_file) + ".new", ec);
   if (code < 0) throw Exit("No administrator's permission was given; nothing was changed.");
   std::string text;
   if (is_file(result)) {
@@ -1219,20 +1235,16 @@ std::string package_problem(const std::string& given) {
     return "";
   }
   if (!is_dir(P(source))) return source + " does not exist.";
-  bool pak = false, exe = false;
-  std::error_code ec;
-  for (fs::recursive_directory_iterator it(P(source), ec), end; !ec && it != end; it.increment(ec)) {
-    const std::string low = lower_ascii(S(it->path().filename()));
-    if (low == "pak.zip") {
-      try {
-        pak = pak || zip_has_name(S(it->path()), kX360Layout);
-      } catch (const std::exception&) {
-      }
-    }
-    if (low == "default.xex" || low == "default.bin") exe = true;
+  // What read_360_copy takes: the first pak.zip found, which must be the 360's.
+  auto found = files_of_360_folder(P(source));
+  if (!found.count("pak.zip")) return "No pak.zip in " + source + ".";
+  if (!found.count("default.bin") && !found.count("default.xex")) return "No default.xex in " + source + ".";
+  bool x360 = false;
+  try {
+    x360 = zip_has_name(S(found["pak.zip"]), kX360Layout);
+  } catch (const std::exception&) {
   }
-  if (!pak) return "No pak.zip of the Xbox 360 game in " + source + ".";
-  if (!exe) return "No default.xex in " + source + ".";
+  if (!x360) return "The pak.zip found is not the Xbox 360 game's.";
   return "";
 }
 

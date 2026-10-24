@@ -536,7 +536,15 @@ class InstallCppTest(unittest.TestCase):
             f.write(b"not a package")
         r = dev("package-check", junk)                                                # not a package
         self.assertEqual(r.returncode, 1)
-        self.assertIn("No pak.zip of the Xbox 360 game", r.stdout)
+        self.assertIn("No pak.zip in", r.stdout)
+        # PC's pak.zip first, the 360's in a subfolder: the first found is the one the install takes.
+        mixed = os.path.join(self.root, "mixed")
+        __import__("shutil").copytree(self.x360, os.path.join(mixed, "sub"))
+        __import__("shutil").copyfile(os.path.join(game, "Pak.zip"), os.path.join(mixed, "pak.zip"))
+        r = dev("package-check", mixed)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("is not the Xbox 360 game's", r.stdout)
+        self.assertNotEqual(self.install("cpp", "--bag", "pc", "--x360-dir", mixed).returncode, 0)
         r = dev("package-check", os.path.join(self.root, "nothing"))
         self.assertEqual(r.returncode, 1)
         self.assertIn("does not exist", r.stdout)
