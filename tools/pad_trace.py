@@ -2,7 +2,8 @@
 """The pad's movement measured (docs/xbox-ui-on-pc.md section 9 ("The movement measured")): recorded stick routes, and the
 hero's traces compared.
 
-pad_trace.py routes OUT_DIR                 write the standard routes (pad replay v1 files)
+pad_trace.py routes OUT_DIR [--angle A]
+                                            write the standard routes (pad replay v1 files)
 pad_trace.py summary TRACE...               per trace: path length, net displacement, the
                                             farthest point from the start, the speed, as text
 pad_trace.py compare REF TRACE [--svg OUT]  TRACE against REF (the recompiled 360's): the largest
@@ -64,29 +65,35 @@ def spin(turns_per_s, tilt, ms=3000, step=10, angle_deg=90.0):
     return s + [(ms, 0.0, 0.0)]
 
 
-def reversal(tilt=1.0, ms=1000, step=10):
-    s = [(t, 0.0, tilt) for t in range(0, ms, step)]
-    s += [(ms + t, 0.0, -tilt) for t in range(0, ms, step)]
+def reversal(tilt=1.0, ms=1000, step=10, angle_deg=90.0):
+    a = math.radians(angle_deg)
+    x, y = tilt * math.cos(a), tilt * math.sin(a)
+    s = [(t, x, y) for t in range(0, ms, step)]
+    s += [(ms + t, -x, -y) for t in range(0, ms, step)]
     return s + [(2 * ms, 0.0, 0.0)]
 
 
+# The direction the routes start in, the stick's angle (0 right, 90 up): the town's start point,
+# where a save made in town loads, has open ground to the left (12 units in 2 s at full tilt) and
+# a wall within 5 units up, right and down (the baseline's probes, 2026-10-24).
+ANGLE = 180.0
 ROUTES = {
-    "straight-full": lambda: straight(1.0),
-    "straight-half": lambda: straight(0.5),
-    "straight-edge": lambda: straight(0.12),
-    "spin1-full": lambda: spin(1.0, 1.0),
-    "spin2-full": lambda: spin(2.0, 1.0),
-    "spin1-half": lambda: spin(1.0, 0.5),
-    "spin2-half": lambda: spin(2.0, 0.5),
-    "reversal": lambda: reversal(),
+    "straight-full": lambda a: straight(1.0, a),
+    "straight-half": lambda a: straight(0.5, a),
+    "straight-edge": lambda a: straight(0.12, a),
+    "spin1-full": lambda a: spin(1.0, 1.0, angle_deg=a),
+    "spin2-full": lambda a: spin(2.0, 1.0, angle_deg=a),
+    "spin1-half": lambda a: spin(1.0, 0.5, angle_deg=a),
+    "spin2-half": lambda a: spin(2.0, 0.5, angle_deg=a),
+    "reversal": lambda a: reversal(angle_deg=a),
 }
 
 
-def write_routes(out_dir):
+def write_routes(out_dir, angle=ANGLE):
     os.makedirs(out_dir, exist_ok=True)
     for name, make in ROUTES.items():
         with open(os.path.join(out_dir, name + ".txt"), "w", newline="\n") as f:
-            f.write(route_lines(make()))
+            f.write(route_lines(make(angle)))
     return sorted(ROUTES)
 
 
@@ -214,6 +221,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("routes")
     r.add_argument("out_dir")
+    r.add_argument("--angle", type=float, default=ANGLE, help="the stick's starting angle (0 right, 90 up)")
     s = sub.add_parser("summary")
     s.add_argument("traces", nargs="+")
     s.add_argument("--svg")
@@ -223,7 +231,7 @@ def main(argv=None):
     c.add_argument("--svg")
     a = ap.parse_args(argv)
     if a.cmd == "routes":
-        for name in write_routes(a.out_dir):
+        for name in write_routes(a.out_dir, a.angle):
             print(os.path.join(a.out_dir, name + ".txt"))
         return 0
     if a.cmd == "summary":

@@ -411,7 +411,7 @@ def synthetic_trace(path, speed=5.0, curve=0.0, frames=120, dt_us=16667, start_f
 class PadTraceTest(unittest.TestCase):
     def test_routes(self):
         with tempfile.TemporaryDirectory() as root:
-            names = pad_trace.write_routes(root)
+            names = pad_trace.write_routes(root, 90.0)
             self.assertIn("spin2-half", names)
             with open(os.path.join(root, "straight-half.txt")) as f:
                 lines = f.read().splitlines()
@@ -419,6 +419,11 @@ class PadTraceTest(unittest.TestCase):
             t, lx, ly, lt, rt, b = (int(v) for v in lines[2].split())
             self.assertEqual((t, lx, lt, rt, b), (0, 0, 0, 0, 0))
             self.assertEqual(ly, 16384)                 # half tilt, straight up
+            pad_trace.write_routes(root)                # the default: to the left
+            with open(os.path.join(root, "reversal.txt")) as f:
+                rows = [line.split() for line in f.read().splitlines() if not line.startswith("#")]
+            self.assertEqual(rows[0][1], "-32767")
+            self.assertEqual(rows[150][1], "32767")     # back the other way after 1 s
             self.assertEqual(lines[-1].split()[1:3], ["0", "0"])   # at rest at the end
 
     def test_summary_and_compare(self):

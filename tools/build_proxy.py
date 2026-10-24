@@ -64,6 +64,7 @@ KERNEL32 = {"LoadLibraryA": 4, "GetProcAddress": 8, "GetModuleFileNameA": 12, "C
             "WriteFile": 20, "GetTickCount": 0, "DisableThreadLibraryCalls": 4, "GetModuleHandleA": 4,
             "ReadFile": 20, "CloseHandle": 4, "VirtualProtect": 16,
             "QueryPerformanceCounter": 4, "QueryPerformanceFrequency": 4, "DeleteFileA": 4,
+            "GetFileSize": 8, "GetProcessHeap": 0, "HeapAlloc": 12, "HeapFree": 12, "GetLocalTime": 4,
             "GetFileAttributesA": 4, "CreateThread": 24, "GetCurrentProcess": 0, "TerminateProcess": 8}
 # send_input.exe's imports (proxy/send_input.c, a test helper that runs in the game's prefix).
 KERNEL32_EXE = {"GetCommandLineA": 0, "Sleep": 4, "ExitProcess": 4, "GetStdHandle": 4}
