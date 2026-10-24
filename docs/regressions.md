@@ -33,6 +33,16 @@ here. Games' texts are named by role, never quoted.
   window's visibility and closed with its sheet shown for the click only; the pad its own over the
   inventory. QA checklist: a new character's first inventory, the tip in front, B closing only it.
 
+## The hero played during a cinematic (fixed on the branch cinematic-pad)
+
+- **What happened:** the pad moved the hero during a cinematic, which the 360's frame update does
+  not allow (it skips the game's input while `sub_821ED810` holds).
+- **Should have been caught by:** reading the 360's frame update whole before writing the pad's
+  (its early skips, not only the stick's and the buttons' handling).
+- **Caught by:** the owner's run on the GOG copy (2026-10-24).
+- **Covered now:** `proxy/pad.c` asks PC's same test (`0x541db0` on CGameUI) before the world's
+  input. QA checklist: a cinematic with the stick held and the buttons pressed: nothing acts.
+
 ## The game saving on Alt+F4 after a stop without the save hook (fixed in a45a7c6)
 
 - **What happened:** with the save hook off, a stop asked the player to close the game, and
@@ -98,6 +108,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
+- a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
   itself, if it ever is, must not show it);
 - the stop's black screen closed with A held: the title does not take the A;

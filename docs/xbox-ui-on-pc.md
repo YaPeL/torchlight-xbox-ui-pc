@@ -3376,3 +3376,22 @@ again. The 360's tip stays AlwaysOnTop and in front each frame. On the 360
 the tip keeps every button it gets (sub_823589A0 returns 1), so while one shows (and 0.3 s after
 it closes) the inventory gets no buttons, nor do Back (the inventory) and Start (the pause):
 `x360_tip_open`, read by `proxy/pad.c`.
+
+**The hero not played during a cinematic (2026-10-24).** The owner could move the hero with the pad
+during a cinematic, which the 360 does not allow. The 360's frame update (`sub_821EBA48`) calls
+`sub_821ED810` and, while it is true, skips the block that turns the pad into play; its
+setDestination (`sub_8228F8C8`) asks it too. PC has the same test, `0x541db0` (the same chain of
+fields: CGameUI's `+0x1074`, its `+0x18`/`+0x14`, `+0x2c`, a byte at `+0x1018` where the 360 reads
+`+4140`, ...), a thiscall on CGameUI, which the client keeps at `+0x3c` (PC's client update calls it
+so at `0x415096`; Steam's at `0x414e76`, the function at `0x53d830`, verified by
+`port_addresses.py`). PC's setDestination asks it too (`0x494d2e`), but the proxy also turns,
+attacks and holds the hero by other calls, so `proxy/pad.c` now returns before the world's input
+while it is true, after the menus, tips and dialogs (which keep their pad). A first try passed the
+hero as `this`: the game crashed entering play (`0x541dba`). The owner's run confirmed it.
+What the 360 does while it holds (`sub_821EBA48` after its second call, `r3` the client's `+60`):
+it clears the client's input state (`+3964`, `+3936`..`+3941`, `+84`..`+87`), and if the hero is
+in a skill (`sub_821DC600`) or the like sets its mode to 2 (its virtual `+368`), then returns from
+the frame. PC's client input (`0x415125`) has the same branch: it clears its input state
+(`0x4e7350` on `+0xf4c`, `+0x54`..`+0x56`), and if the hero performs a skill (`0x486550` or
+`0x486390`) calls its virtual `+0x174` with 2, then returns. PC runs it every frame by itself, so
+the pad has only to give no orders while it holds.

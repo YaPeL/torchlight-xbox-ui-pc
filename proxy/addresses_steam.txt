@@ -133,6 +133,7 @@
 0x00541800 0x0053d260 verified   comment window, body, callers x2
 0x00541886 0x0053d2e6 verified   comment window, local
 0x00541c60 0x0053d6e0 verified   code    window, body, callers x6
+0x00541db0 0x0053d830 verified   code    window, body, callers x6
 0x00541e80 0x0053d900 verified   code    callers x3
 0x0054281f 0x0053e259 verified   comment window, local
 0x0054289a 0x0053e2d8 single     comment local
