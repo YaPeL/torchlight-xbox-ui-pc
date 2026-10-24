@@ -3388,3 +3388,10 @@ so at `0x415096`; Steam's at `0x414e76`, the function at `0x53d830`, verified by
 attacks and holds the hero by other calls, so `proxy/pad.c` now returns before the world's input
 while it is true, after the menus, tips and dialogs (which keep their pad). A first try passed the
 hero as `this`: the game crashed entering play (`0x541dba`). The owner's run confirmed it.
+What the 360 does while it holds (`sub_821EBA48` after its second call, `r3` the client's `+60`):
+it clears the client's input state (`+3964`, `+3936`..`+3941`, `+84`..`+87`), and if the hero is
+in a skill (`sub_821DC600`) or the like sets its mode to 2 (its virtual `+368`), then returns from
+the frame. PC's client input (`0x415125`) has the same branch: it clears its input state
+(`0x4e7350` on `+0xf4c`, `+0x54`..`+0x56`), and if the hero performs a skill (`0x486550` or
+`0x486390`) calls its virtual `+0x174` with 2, then returns. PC runs it every frame by itself, so
+the pad has only to give no orders while it holds.
