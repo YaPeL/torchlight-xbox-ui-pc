@@ -3535,3 +3535,35 @@ units a second:
 Up and down leave the exact diagonal on both builds there (the ground's). On a reversal the
 facing turns 150 degrees in 196 ms on the 360, 197 to 202 with the yaw, 224 to 249 with the
 probe. Not yet played by hand.
+
+## 32. The sticks' dead zone, the 360's (the movement plan's change c, 2026-10-24)
+
+The recompiled 360's walk starts only past a stick length of about 0.48, and below full tilt its
+speed is lower than `l^2 + 0.2` gives on the raw stick. The recomp agent's probe found why (the
+owner approved it; branch `diag/stick-read` a623c49 of the recomp): at `XamInputGetState`'s return
+the stick equals the one given in every frame (17300 frames), and at `sub_82191018`'s return it
+is rescaled. Between the two is the game's per-tick input update, `sub_821FE1D0`: when the poll
+flag `0x83065EAA` is set (by `sub_821EF318` at `0x821EF79C`) it polls (`sub_821FE8A8` copies
+each pad's `XINPUT_STATE` into `0x83557E80 + 16 * user` and clears the flag); then, for the active
+pad, it rewrites the sticks in that table in place, `sub_821FE778(&lx, &ly, 0x1EA9 = 7849)` and
+`sub_821FE778(&rx, &ry, 0x21F1 = 8689)`, and the triggers with `sub_821FE480`. `sub_821FE778` is a
+radial dead zone in shorts: the length less the dead zone, at least 0 (the pool's `+0x44`), times
+`32767 / (32767 - dz)` (`+0xD4`), along the stick's direction (divided by the length when it is
+over `+0x280`, 1e-8), clamped to 32767 (`+0x2A8`, `+0xD4`), truncated (`fctiwz`). The update has
+three callers, `sub_821EBA48` (the client's frame update), `sub_8221ABA0` and `sub_82338218`; only
+the first after the flag polls, and a later one in the same tick runs the dead zone again on the
+table already done. So the stick goes through it twice: zero up to `2d - d^2` = 0.4217 (`d` =
+7849 / 32767), and `f(f(l))` above, `f(l) = (l - d) / (1 - d)`. The probe measured 0.4218, and
+0.503 -> 0.140, 0.703 -> 0.486, 0.900 -> 0.827 (11137 frames, within 0.001 of the formula). The
+walk's own 0.1 (`sub_82199E08`) applies after it: the hero walks from 0.48. The recomp agent's
+caveat: the two passes come from the same game code's call order, measured on every partial-tilt
+frame, but the calls per tick were not counted.
+
+Here `poll()` passes the left stick through `sub_821FE778`'s rule twice with 7849 and the right
+stick twice with 8689, whatever the source (XInput, a replay, the pad file), and the pad's
+threshold becomes the walk's 0.1 on the result (it was XInput's 0.24 on the raw stick). The
+walk, its speed factor (`l^2 + 0.2`, section 29), the skills' aim and the zoom read the result;
+the proxy's own menu navigation keeps the raw stick (its 0.5 is not the 360's code), and the
+recording and the trace keep the raw stick. The triggers are left as they were (PC's 64 of 255;
+`sub_821FE480` not read). `pad_dead_zone=0` in `x360_ui.ini` keeps the old behaviour, to compare.
+Not yet measured on PC nor played by hand.

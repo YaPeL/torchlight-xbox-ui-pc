@@ -73,6 +73,8 @@ int x360_pad_trace;            /* x360_ui.ini pad_trace=1 (a test) */
 /* The pad, as last read. */
 static int lx, ly;             /* -1000..1000, y up */
 static int ry;                 /* the right stick's y, the same scale: the camera's zoom */
+static int rx;                 /* the right stick's x, for its dead zone only */
+static int menu_lx, menu_ly;   /* the left stick before the 360's dead zone: the proxy's menu navigation */
 static unsigned buttons;       /* XInput mask: A 0x1000, B 0x2000, X 0x4000, Y 0x8000 */
 static unsigned a_pressed_at;  /* GetTickCount of A's last press, for a short synthetic click */
 static unsigned last_poll;
@@ -182,7 +184,10 @@ static void edge(HWND w, int down, long x, long y) {
 }
 
 #define GOG_UNIT_ROTATION 0xac  /* the hero's rotation, a 4x4 (hero_matrix) */
-#define DEAD_ZONE 240          /* of 1000: XInput's 7849 of 32767 */
+/* Of 1000: the 360's walk threshold, 0.1 (sub_82199E08), on the stick after its dead zone
+ * (dead_zone_360); with pad_dead_zone=0, the old one, XInput's 7849 of 32767 on the raw stick. */
+int x360_stick_dead_zone = 1;
+#define DEAD_ZONE (x360_stick_dead_zone ? 100 : 240)
 #define RADIUS_PERMILLE 140    /* of the window's height: the point ahead of the hero */
 #define CLICK_MS 120
 #define POLL_MS 4              /* below one frame at the game's 200 fps cap */
@@ -501,6 +506,28 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     if (now - trace_flushed_at >= 500) { trace_flushed_at = now; trace_flush(); }
 }
 
+/* The 360's sub_821FE778 on a stick of -1000..1000 (it works in XInput's shorts; the same up to
+ * rounding): its length less the dead zone dz (of 32767), at least 0, times 32767 / (32767 - dz),
+ * along the stick's direction; clamped to full tilt and truncated, as its fctiwz.
+ * x360_ui.ini pad_dead_zone=0 leaves it out (to compare). */
+static float root(float v);
+static void dead_zone_360(int *x, int *y, int dz) {
+    float fx = (float)*x * 32.767f, fy = (float)*y * 32.767f;
+    float mag = root(fx * fx + fy * fy), m = mag - (float)dz, k = 32767.0f / (32767.0f - (float)dz);
+    if (m < 0.0f) m = 0.0f;
+    if (mag > 1e-8f) { fx /= mag; fy /= mag; }
+    fx = fx * k * m;
+    fy = fy * k * m;
+    if (fx > 32767.0f) fx = 32767.0f;
+    if (fx < -32767.0f) fx = -32767.0f;
+    if (fy > 32767.0f) fy = 32767.0f;
+    if (fy < -32767.0f) fy = -32767.0f;
+    fx = (float)(int)fx / 32.767f;   /* the 360's truncation is of the shorts; to -1000..1000 rounded */
+    fy = (float)(int)fy / 32.767f;
+    *x = (int)(fx < 0.0f ? fx - 0.5f : fx + 0.5f);
+    *y = (int)(fy < 0.0f ? fy - 0.5f : fy + 0.5f);
+}
+
 static void poll(void) {
     unsigned now = GetTickCount(), old = buttons;
     /* The 360 reads the pad every frame; GetCursorPos comes several times a frame. */
@@ -513,7 +540,7 @@ static void poll(void) {
         buttons = raw_buttons;
         lx = raw_lx * 1000 / 32767;
         ly = raw_ly * 1000 / 32767;
-        ry = 0;
+        rx = ry = 0;
         if (raw_lt > 64) buttons |= BUTTON_LT;
         if (raw_rt > 64) buttons |= BUTTON_RT;
     } else if (pad_file[0]) {
@@ -548,7 +575,7 @@ static void poll(void) {
                 last_result = result;
             }
             if (result != 0) {
-                lx = ly = ry = 0; buttons = 0; raw_lx = raw_ly = 0; raw_lt = raw_rt = 0;
+                lx = ly = rx = ry = 0; menu_lx = menu_ly = 0; buttons = 0; raw_lx = raw_ly = 0; raw_lt = raw_rt = 0;
                 record_tick(qms());   /* the pad gone: the recording at rest too */
                 return;
             }
@@ -556,6 +583,7 @@ static void poll(void) {
         raw_lx = st.lx; raw_ly = st.ly; raw_lt = st.lt; raw_rt = st.rt;
         lx = st.lx * 1000 / 32767;
         ly = st.ly * 1000 / 32767;
+        rx = st.rx * 1000 / 32767;
         ry = st.ry * 1000 / 32767;
         buttons = st.buttons | (st.lt > 64 ? BUTTON_LT : 0) | (st.rt > 64 ? BUTTON_RT : 0);
         {
@@ -564,6 +592,19 @@ static void poll(void) {
             if (x360_swap_active && ((buttons & 0x1000) != 0) != ((buttons & 0x2000) != 0)) buttons ^= 0x3000;
         }
         record_tick(qms());   /* pad_record: the pad as the player moves it */
+    }
+    menu_lx = lx;
+    menu_ly = ly;
+    if (x360_stick_dead_zone) {
+        /* The 360's sticks as its game reads them (doc section 32): its per-tick input update
+         * (sub_821FE1D0) rewrites each stick in place with a radial dead zone and rescale
+         * (sub_821FE778; 7849 for the left, 8689 for the right), and it runs twice a tick (the
+         * first call polls, the second finds the table already done): a stick reads as zero up to
+         * about 0.42 and reaches 1 at full tilt. */
+        dead_zone_360(&lx, &ly, 7849);
+        dead_zone_360(&lx, &ly, 7849);
+        dead_zone_360(&rx, &ry, 8689);
+        dead_zone_360(&rx, &ry, 8689);
     }
     {
         /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */
@@ -588,7 +629,7 @@ static void poll(void) {
     {
         /* The proxy's black screen (x360_menu.c) has the pad while it shows: nothing else gets it. */
         int x360_black_screen_take(unsigned buttons);
-        if (x360_black_screen_take(buttons)) { buttons = 0; lx = ly = ry = 0; }
+        if (x360_black_screen_take(buttons)) { buttons = 0; lx = ly = rx = ry = 0; menu_lx = menu_ly = 0; }
     }
     if ((buttons & 0x1000) && !(old & 0x1000)) a_pressed_at = now;
 }
@@ -596,8 +637,8 @@ static void poll(void) {
 /* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
  * dialogs stop the GetCursorPos polls that drive order()). */
 unsigned x360_pad_buttons(void) { poll(); return buttons; }
-int x360_pad_ly(void) { poll(); return ly; }
-int x360_pad_lx(void) { poll(); return lx; }
+int x360_pad_ly(void) { poll(); return menu_ly; }   /* the proxy's menus: the stick before the 360's dead zone */
+int x360_pad_lx(void) { poll(); return menu_lx; }
 /* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
 void *x360_pad_candidate(void);
 
@@ -1502,9 +1543,8 @@ static void order(void) {
 
     if (!hero[0x20a] && *(int *)(hero + 0x284) != 34) {
         /* The 360's sub_82199E08: hero+1500 from the stick while the stick walks the hero, else 1.
-         * Its dead zone is the 360's 0.1; until the pad's walk has the same (change c), the pad's
-         * own (DEAD_ZONE): a stick resting past 0.1 but short of it would else slow every other
-         * walk (to a target, a pickup) to about a fifth, a state the 360 never has (the review). */
+         * Its dead zone is the 360's 0.1 on the stick after the 360's own dead zone (DEAD_ZONE,
+         * dead_zone_360 in poll(): doc section 32). */
         float l2 = ((float)lx * lx + (float)ly * ly) / 1000000.0f;
         x360_walk_factor = stick_active() ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
     }
