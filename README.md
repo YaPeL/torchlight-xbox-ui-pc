@@ -22,8 +22,7 @@ files from your own copy of the Xbox LIVE Arcade game.
 > your Xbox 360. This project is not affiliated with or endorsed by the owners of Torchlight or by
 > Microsoft.
 
-This is a **beta**, tested under Linux (Proton). See
-[Known limitations](#known-limitations).
+See [Known limitations](#known-limitations).
 
 ## Contents
 
@@ -148,6 +147,8 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 
 ## Known limitations
 
+- **Epic's build is in its first test.** Its `Torchlight.exe` is GOG's, byte for byte; it has not
+  been played with the mod yet.
 - **Steam's build is in its first test.** Steam sells an older build (17685) than GOG and Epic:
   every address the mod uses is found in it and the proxy is built for it; it has not been played
   with the mod yet. With more than one install, the installer takes Steam's first.
