@@ -3464,7 +3464,7 @@ one address used is the cinematic's test, already ported to Steam's build
 hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
 the keyboard is PC's.
 
-### 27g. The stick's speed factor, done (change a, 2026-10-24)
+### 27g. The stick's speed factor, written (change a, 2026-10-24; its measurement next)
 
 The owner's recording replayed on the recompiled 360 build (its agent's trace, the same input)
 confirmed 27a: a straight at a 0.72 tilt walked at 4.36 units/s there, 6.22 on PC (the formula's
@@ -3475,6 +3475,9 @@ before: GOG's `[esp+0x1c]`, Steam's `[esp+0x18]`) by `min(len^2 + 0.2, 1)` past 
 for the hero only, unless its AI state is 7 or 9 or the 360's `sub_821DC600` holds (inlined in
 GOG's `setDestination`, `0x494b67`: the skill's `+0xb4`, `+0x3c`, the hero's `+0x20b`, `+0x2c0`)
 with the skill's byte `+0x40` set. The factor is computed each frame while the hero is not aiming
-(`+0x20a`) and its AI state is not 34, and kept otherwise, as the 360 keeps `+1500`.
+(`+0x20a`) and its AI state is not 34, and kept otherwise, as the 360 keeps `+1500`; from the
+stick only while the pad's walk takes it (its dead zone, until change c gives it the 360's 0.1),
+else 1. It changes what the player sees (slower at a partial tilt): merged only after the replay
+of the owner's route is measured against the recompiled 360's and the owner's OK.
 `pad_walk_factor=0` leaves it out, to compare.
 

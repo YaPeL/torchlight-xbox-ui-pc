@@ -1296,7 +1296,7 @@ static void walk_patch_install(void) {
     t[n++] = 0x61;                                                    /* popad */
     for (i = 0; i < 7; i++) t[n++] = at[i];                           /* the cmp replaced */
     t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;   /* jmp back */
-    if (!VirtualProtect(at, 7, 0x40, &old)) return;
+    if (!VirtualProtect(at, 7, 0x40, &old)) { x360_log("pad: the speed's join not writable: no stick factor\r\n"); return; }
     at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
     VirtualProtect(at, 7, old, &old);
     x360_log("pad: the stick's speed factor in the character's update (slot ");
@@ -1366,6 +1366,7 @@ static void order(void) {
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
     if (!hero || !level) { x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return; }
+    if (hero != walk_hero) { walk_hero = hero; x360_walk_factor = 1.0f; }   /* another hero: its own factor */
     diag_level = level;
     attack_level = level;
     {
@@ -1446,11 +1447,13 @@ static void order(void) {
         release_t0 = 0;
     }
 
-    walk_hero = hero;
     if (!hero[0x20a] && *(int *)(hero + 0x284) != 34) {
-        /* The 360's sub_82199E08: hero+1500 from the stick, past its 0.1 dead zone, else 1. */
+        /* The 360's sub_82199E08: hero+1500 from the stick while the stick walks the hero, else 1.
+         * Its dead zone is the 360's 0.1; until the pad's walk has the same (change c), the pad's
+         * own (DEAD_ZONE): a stick resting past 0.1 but short of it would else slow every other
+         * walk (to a target, a pickup) to about a fifth, a state the 360 never has (the review). */
         float l2 = ((float)lx * lx + (float)ly * ly) / 1000000.0f;
-        x360_walk_factor = l2 > 0.01f ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
+        x360_walk_factor = stick_active() ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
     }
     if (stick_active()) {
         if (!was_active) {
