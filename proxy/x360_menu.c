@@ -6935,6 +6935,105 @@ static void hotkeys_off(void) {
     x360_log("x360 menu: PC's screen hotkeys off: "); x360_log_num((long)n); x360_log(" of 6\r\n");
 }
 
+/* PC's menu keys swallowed in play (the owner, 2026-10-24): with the 360's interface the pad opens
+ * the screens (Start, Back, R3), and PC's keys opened or animated PC's own under them (the space
+ * bar's close-all showed PC's menus moving behind the 360's). Their key messages never reach the
+ * game's window procedure (CGame::WndProc *(OT)* feeds CGameUI's and CKeyManager's keyEvent from
+ * WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_SYSKEYDOWN, WM_SYSKEYUP) while in play and PC's settings are
+ * not open (the pad's way to them, where the keyboard keeps working), the console is not shown
+ * (typed into) and no cinematic holds (PC's keys skip it). A press's repeats and release go as
+ * the press went (no key left down in PC's state across the changes); out of play, or when the
+ * frame tick stops saying so, nothing is swallowed. The window is the game's (its title), taken
+ * once. The keys: KEYMAP_INVENTORY I,
+ * PET P, STATS C, SKILLS S, QUESTS Q, JOURNAL J, OPTIONS Esc, PAUSE Enter, CLOSEALL the space bar,
+ * AUTOMAP A (the 360's map is on R3); the six of hotkeys_off are kept off there too. The others
+ * (the hotbar's 1 to 0, F1 to F12, Shift, Alt, Tab, W, the skills' cycle, the zooms, the console)
+ * work as on PC. One address of the executable, the cinematic's test (ported to Steam's). */
+__declspec(dllimport) long __stdcall SetWindowLongW(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall SetWindowLongA(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall CallWindowProcW(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) long __stdcall CallWindowProcA(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) int __stdcall IsWindowUnicode(HWND w);
+__declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
+__declspec(dllimport) long __stdcall GetWindowLongA(HWND w, int index);
+__declspec(dllimport) int __stdcall GetWindowTextA(HWND w, char *text, int size);
+static long keys_old_proc;       /* the game window's own procedure: subclassed once, never again */
+static int keys_unicode;
+static int keys_open;            /* set each frame by keys_off: in play, no PC settings, console or cinematic */
+static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
+static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
+static int keys_console_key;     /* the console's key went down: look for its window at once */
+static int key_index(unsigned vk) {
+    static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
+    int i;
+    for (i = 0; i < (int)sizeof keys; i++) if (vk == keys[i]) return i;
+    return -1;
+}
+static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
+    int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
+    if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
+    if (msg == 0x100 && wparam == 0xc0) keys_console_key = 1;   /* KEYMAP_CONSOLEKEY_PRESS (`) */
+    if (k >= 0 && msg == 0x100) {        /* WM_KEYDOWN: a new press (lParam bit 30 clear) or a repeat */
+        if (!(lparam & 0x40000000) || !(keys_down & (1u << k))) {   /* a press, or a repeat after a focus loss */
+            if (open) keys_down |= 1u << k; else keys_down &= ~(1u << k);
+        }
+        if (keys_down & (1u << k)) return 0;   /* the press and its repeats, as the press went */
+    }
+    if (k >= 0 && msg == 0x101 && (keys_down & (1u << k))) { keys_down &= ~(1u << k); return 0; }   /* WM_KEYUP */
+    if (k >= 7 && msg == 0x102 && (keys_down & (1u << k))) return 0;   /* WM_CHAR of a swallowed Esc, Enter, space */
+    return keys_unicode ? CallWindowProcW(keys_old_proc, w, msg, wparam, lparam)
+                        : CallWindowProcA(keys_old_proc, w, msg, wparam, lparam);
+}
+static void keys_off(void) {
+    static int tried;
+    static void *console;
+    static char console_prefix[48];
+    int console_up = 0, cinematic = 0;
+    if (!tried && hud_in_play) {
+        /* The game's window, once: the active window in play, its title the game's (600 frames'
+         * tries, then given up, said in the log). */
+        static int tries;
+        HWND w = active_window();
+        char title[64];
+        if (++tries > 600) { tried = 1; x360_log("x360 menu: PC's menu keys: no window titled Torchlight, not swallowed\r\n"); }
+        else if (w && GetWindowTextA(w, title, sizeof title) > 0 && title[0] == 'T' && title[1] == 'o' && title[2] == 'r' &&
+                 title[3] == 'c' && title[4] == 'h') {
+            long old = 0;
+            tried = 1;
+            keys_unicode = IsWindowUnicode(w);
+            if ((keys_unicode ? GetWindowLongW(w, -4) : GetWindowLongA(w, -4)) != (long)keys_proc)   /* never onto itself */
+                old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
+            keys_old_proc = old;
+            x360_log(old ? "x360 menu: PC's menu keys swallowed in play, window " : "x360 menu: PC's menu keys: the window not subclassed, ");
+            x360_log_num((long)w);
+            x360_log(keys_unicode ? " (Unicode)\r\n" : " (ANSI)\r\n");
+        }
+    }
+    if (!keys_old_proc) return;
+    /* The console (Runic's developer console, a CEGUI window): typed into with the keyboard. */
+    {
+        static unsigned last_search;
+        unsigned now = GetTickCount();
+        if (console && !win_of(console_prefix, "WindowsLook/Console")) console = 0;
+        if (!console && (now - last_search >= 1000 || keys_console_key)) {   /* the whole tree: once a second, or at the console's key */
+            last_search = now;
+            keys_console_key = 0;
+            console = find_pc_by_suffix("WindowsLook/Console", 0, console_prefix, sizeof console_prefix);
+        }
+    }
+    if (console) {
+        typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+        static vis_fn vis;
+        if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        console_up = vis && vis(console, 0, 0);
+    }
+    /* A cinematic (CGameUI's test, 0x541db0; proxy/pad.c): PC's own keys skip it. */
+    if (ui) cinematic = ((unsigned char (__fastcall *)(void *, void *))0x00541db0)(ui, 0) != 0;
+    keys_open = hud_in_play && !x360_pc_settings_up && !console_up && !cinematic;
+    keys_open_at = GetTickCount();
+}
+
 /* PC's menus' 3D boards (QA runs 5, 6: the parchment with chains behind the 360's modal, the
  * boards at the shops' sides; neither a CEGUI window, they stayed with PC's interface hidden and
  * its modal frame moved away). A CMenu keeps its board at +0x38 (the modal, CGameUI's +0x304;
@@ -8357,6 +8456,7 @@ void x360_frame_tick(void) {
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { keys_off(); } __except (1) { x360_log("x360 menu: exception swallowing PC's menu keys\r\n"); }
     __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
     __try { stop_tick(); } __except (1) { x360_log("x360 load: exception in the stop\r\n"); }
     __try { notice_tick(); } __except (1) { x360_log("x360: exception showing a notice\r\n"); }

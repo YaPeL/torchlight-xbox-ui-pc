@@ -3417,3 +3417,32 @@ the frame. PC's client input (`0x415125`) has the same branch: it clears its inp
 (`0x4e7350` on `+0xf4c`, `+0x54`..`+0x56`), and if the hero performs a skill (`0x486550` or
 `0x486390`) calls its virtual `+0x174` with 2, then returns. PC runs it every frame by itself, so
 the pad has only to give no orders while it holds.
+
+## 28. PC's menu keys swallowed in play (2026-10-24)
+
+The owner's first Windows run: the space bar (PC's KEYMAP_CLOSEALL) made PC's menus move behind
+the 360's. With the 360's interface the pad opens the screens, so in play the mod keeps PC's menu
+keys from the game, by the owner's list: KEYMAP_INVENTORY (I), PET (P), STATS (C), SKILLS (S),
+QUESTS (Q), JOURNAL (J), OPTIONS (Esc), PAUSE (Enter), CLOSEALL (the space bar) and AUTOMAP (A:
+the map is on R3, section 9). The rest work as on PC: the hotbar's 1 to 0 (the pad sends them for
+the skills), F1 to F12, Shift, Alt, Tab, W, the skills' cycle (`.` `,`), the zooms (`=` `-`,
+`]` `[`) and the console's key. A dual mode (the keyboard's menus as PC's) may come later.
+
+How: the game's window is subclassed once (`keys_off`, `proxy/x360_menu.c`); its procedure drops
+WM_KEYDOWN and WM_KEYUP of those keys, and WM_CHAR of Esc, Enter and space (CEGUI's injected
+characters), while in play (`hud_in_play`), PC's settings are not open (reached from the 360's
+pause menu; the keyboard works there), the developer console is not shown (its CEGUI window
+`WindowsLook/Console`, typed into) and no cinematic holds (CGameUI's `0x541db0`: PC's keys skip
+it). A press's repeats and release go as the press went, so PC never keeps a key down across those
+changes; out of play, or when the frame tick has not refreshed the state for 2 s, nothing is
+swallowed. The console's window is looked for at once when its key (`` ` ``) goes down.
+The game's window (its title) is subclassed once, with its own kind (ANSI or Unicode). Test scripts that send these keys in play (`tools/send_input.py`) now send
+nothing the game sees. PC's window procedure (`CGame::WndProc` *(OT)*, in OpenTorchlight's
+build; not located in GOG's) is what gives the keys to `CGameUI::keyEvent` and
+`CKeyManager::keyEvent` *(OT)*, so neither sees them. That GOG's keys come by the window's
+messages is seen in every run: the pad's skills are `WM_KEYDOWN` messages it posts (`post_key`,
+`proxy/pad.c`), which PC's hotbar acts on. The
+one address used is the cinematic's test, already ported to Steam's build
+(`proxy/addresses_steam.txt`). The six screen
+hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
+the keyboard is PC's.
