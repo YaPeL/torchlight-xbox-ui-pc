@@ -111,7 +111,7 @@ const char *x360_pad_style(void) {
 }
 
 /* ---- Nintendo's layout: A and B swapped (the owner, after the recomp's swap_confirm_cancel) ----
- * The setting, x360_settings.ini's swap_confirm_cancel=1 (the mod's own file, in %LOCALAPPDATA%\\x360ui: x360_data_path; written
+ * The setting, x360_settings.ini's swap_confirm_cancel=1 (the mod's own file, in %LOCALAPPDATA%\x360ui: x360_data_path; written
  * by the tick in PC's settings screen), acts only while the active pad is Nintendo's and not
  * behind Steam Input (whose own Nintendo layout option swaps already: never twice). The prompts'
  * folder is chosen at start (x360ui-nintendo-swapped with it on); the swap itself follows the pad

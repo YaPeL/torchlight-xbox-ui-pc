@@ -395,6 +395,12 @@ def mod_data_folders(game):
         found.append(os.path.join(appdata, "Local", "x360ui"))
     if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
         found.append(os.path.join(os.environ["LOCALAPPDATA"], "x360ui"))
+    # Steam under Proton: the game in steamapps/common, its prefix in steamapps/compatdata/41500
+    # (save_folders leaves Steam's prefix alone; only the mod's own folder is removed there).
+    common = os.path.dirname(os.path.abspath(game))
+    if os.path.basename(common) == "common" and os.path.basename(os.path.dirname(common)) == "steamapps":
+        found.append(os.path.join(os.path.dirname(common), "compatdata", "41500", "pfx", "drive_c", "users",
+                                  "steamuser", "AppData", "Local", "x360ui"))
     return [f for f in dict.fromkeys(found) if os.path.isdir(f)]
 
 

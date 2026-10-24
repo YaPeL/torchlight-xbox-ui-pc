@@ -131,7 +131,8 @@ int x360_data_path(const char *name, wchar16 *out, unsigned size) {
     if (n && n < size - 48 && mkdir && attr) {
         wcat16(out, size, "\\x360ui");
         mkdir(out, 0);
-        if (attr(out) != (DWORD)-1 && (attr(out) & 0x10)) {   /* FILE_ATTRIBUTE_DIRECTORY */
+        DWORD at = attr(out);
+        if (at != (DWORD)-1 && (at & 0x10)) {   /* FILE_ATTRIBUTE_DIRECTORY */
             wcat16(out, size, "\\");
             wcat16(out, size, name);
             return 1;
