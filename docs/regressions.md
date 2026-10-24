@@ -202,6 +202,11 @@ here. Games' texts are named by role, never quoted.
   screens show every one of them. PC's inventory's board stays hidden only while a shop is open,
   as before: the 360's inventory draws its doll through that menu's scene, which the board's node
   might hold (the review).
+- **Then (the owner's next run):** no board, but the world narrowed with blue strips after the
+  merchant, as before QA run 10's fix: PC's side-panel tests were given back as the shop closed,
+  while PC's merchant was still closing, and its boards no longer covered the strips. PC's
+  side-panel tests now answer closed always (PC's side panels never show under the 360's
+  screens).
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist
