@@ -393,6 +393,7 @@ static int replay_sample(unsigned now) {
     return 1;
 }
 
+static unsigned char *trace_client;    /* the client, for the trace's camera line (set by order()) */
 static HANDLE trace_file = (HANDLE)(long)-1;
 static char trace_buf[8192];
 static unsigned trace_len, trace_flushed_at, trace_lines;
@@ -480,7 +481,31 @@ static void trace_tick(unsigned char *hero, unsigned now) {
         QueryPerformanceFrequency(&trace_qpf);
         QueryPerformanceCounter(&trace_q0);
         trace_q0 -= (long long)((double)(now - replay_t0) * (double)trace_qpf / 1000.0);   /* t=0 at replay_t0 */
-        trace_put("# x360ui pad trace v1 pc\r\nt_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly\r\n");
+        trace_put("# x360ui pad trace v1 pc\r\n");
+        {
+            /* The camera at t=0 (its controller, the client's +0x10, keeps it at +0x8, as the
+             * 360's client[16] does; Ogre's derived direction and position), and the hero: a
+             * comment line, for the walk's direction against the 360's (doc section 30). */
+            typedef float *(__fastcall *vec_fn)(void *self, void *edx, float *out);
+            HMODULE ogre = GetModuleHandleA("OgreMain.dll");
+            vec_fn dir = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedDirection@Camera@Ogre@@QBE?BVVector3@2@XZ") : 0;
+            vec_fn at = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedPosition@Camera@Ogre@@QBE?BVVector3@2@XZ") : 0;
+            unsigned char *ctl = trace_client ? *(unsigned char **)(trace_client + 0x10) : 0;
+            void *cam = ctl ? *(void **)(ctl + 8) : 0;
+            if (cam && dir && at) {
+                float d[3], p[3];
+                int i;
+                dir(cam, 0, d);
+                at(cam, 0, p);
+                trace_put("# camera_dir_mu");
+                for (i = 0; i < 3; i++) { trace_put(" "); trace_num(mu(d[i])); }
+                trace_put(" camera_pos_mu");
+                for (i = 0; i < 3; i++) { trace_put(" "); trace_num(mu(p[i])); }
+                trace_put(" hero_mu "); trace_num(mu(pos[0])); trace_put(" "); trace_num(mu(pos[2]));
+                trace_put("\r\n");
+            }
+        }
+        trace_put("t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly\r\n");
     }
     QueryPerformanceCounter(&q);
     if (now - replay_t0 > end) {
@@ -1306,6 +1331,13 @@ static void walk_patch_install(void) {
 
 extern unsigned x360_frames;            /* proxy/x360_menu.c's frame listener */
 int x360_walk_dest_on = 1;              /* x360_ui.ini pad_walk_dest=0: the old destination (to compare) */
+/* Two diagnoses of the walk's remaining difference (doc section 30), off by default:
+ * pad_walk_target=1: the target dropped each frame of the walk, as the 360's sub_82199E08 calls
+ *   sub_8219C070(hero, 0) (its setTarget with none: the +644 target, the +652 handle) each frame;
+ * pad_face_walk=0: no setTargetDirection in the plain walk, as the 360's frame update sets the
+ *   facing only with a button or its mode (hero[510]); the engine then turns the hero to its path. */
+int x360_walk_target_each;
+int x360_face_walk = 1;
 static unsigned dest_frame;
 static unsigned last_probe;             /* GetTickCount of the last probe of the stick's world direction */
 
@@ -1375,6 +1407,7 @@ static void order(void) {
         x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return;
     }
     if (hero != walk_hero) { walk_hero = hero; x360_walk_factor = 1.0f; }   /* another hero: its own factor */
+    trace_client = client;
     diag_level = level;
     attack_level = level;
     {
@@ -1488,7 +1521,7 @@ static void order(void) {
                 }
                 if (ok) change_t0 = 0;
             }
-            if (have_world && face_each_frame)
+            if (have_world && face_each_frame && x360_face_walk)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
             /* The 360's walk (sub_82199E08, change b): a destination each frame, 5 times the
              * stick's length along it (the 360 turns the stick by the camera's yaw; the pad takes
@@ -1508,6 +1541,7 @@ static void order(void) {
                 aim_ly = ly;
                 ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + ahead * world_x,
                                                           pos[2] + ahead * world_z);
+                if (x360_walk_target_each) ((set_target_fn)GOG_SET_TARGET)(hero, 0, 0);   /* the 360's sub_8219C070(hero, 0) */
                 dest_calls++;
                 note(3, "pad: setDestination called\r\n");
             }
