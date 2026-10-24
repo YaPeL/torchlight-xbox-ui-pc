@@ -3271,4 +3271,8 @@ copy, GOG's build, was shown as "gog".
 click opens no console. Its output goes where it is redirected (a pipe, a file: the tests and
 `check_release.ps1`, which pipes it to `Out-Host` so PowerShell waits for it); run from a terminal
 without a redirection, it attaches to that terminal's console (`AttachConsole`) and writes there.
+The shell does not wait for a window program and keeps reading that console's input, so there
+`--console` refuses to ask questions (`set_shared_console`): it needs `--yes` and the options, and
+without `--console` the questions are windows. A partial redirection (`2>err.txt` alone) leaves the
+other handles as the console's, written without attaching (not checked on Windows yet).
 

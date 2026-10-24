@@ -1085,9 +1085,18 @@ void report_error(const std::string& text, const std::vector<std::string>& argv)
 }
 }  // namespace
 
+namespace {
+bool g_shared_console = false;
+}  // namespace
+
+void set_shared_console(bool shared) { g_shared_console = shared; }
+
 int installer_main(const std::vector<std::string>& argv) {
   try {
     const Args a = parse(argv);
+    if (g_shared_console && a.console && !a.yes && (a.command == "install" || a.command == "uninstall"))
+      throw Exit("--console asks its questions in the terminal, whose input the shell reads too: give --yes with the "
+                 "options (--game, --package or --x360-dir, --bag), or run it without --console to be asked in windows.");
     g_result_file = a.result_file;
     if (a.command == "list") return do_list();
     if (a.command == "notices") return do_notices();

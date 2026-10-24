@@ -125,7 +125,9 @@ def steam_libraries(home):
             for value in ("SteamPath", "InstallPath"):
                 try:
                     with winreg.OpenKey(hive, sub) as key:
-                        roots.append(winreg.QueryValueEx(key, value)[0])
+                        data, kind = winreg.QueryValueEx(key, value)
+                    if kind == winreg.REG_SZ:   # the C++ installer's the same
+                        roots.append(data)
                 except OSError:
                     pass
         roots += [os.path.expandvars(r"%ProgramFiles(x86)%\Steam"), os.path.expandvars(r"%ProgramFiles%\Steam")]

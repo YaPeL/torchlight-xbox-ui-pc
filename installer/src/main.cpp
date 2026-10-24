@@ -135,6 +135,7 @@ static void use_parent_console() {
   };
   const bool out = unset(STD_OUTPUT_HANDLE), err = unset(STD_ERROR_HANDLE), in = unset(STD_INPUT_HANDLE);
   if (!(out || err || in) || !AttachConsole(ATTACH_PARENT_PROCESS)) return;
+  if (in) set_shared_console(true);
   FILE* f = nullptr;
   if (out) freopen_s(&f, "CONOUT$", "w", stdout);
   if (err) freopen_s(&f, "CONOUT$", "w", stderr);

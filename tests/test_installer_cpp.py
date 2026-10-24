@@ -817,7 +817,7 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(_tree(game), before)
         self.assertEqual(sorted(os.listdir(game)), sorted(before))
 
-    @unittest.skipUnless(os.name == "nt", "Windows' registry")
+    @unittest.skipUnless(os.name == "nt" and os.environ.get("CI"), "Windows' registry, on CI only (it sets the user's SteamPath)")
     def test_steam_found_from_the_registry(self):
         """A Steam installed elsewhere than Program Files: both installers find its game through
         SteamPath (HKCU\\Software\\Valve\\Steam), the same `list`; the value is put back after."""
