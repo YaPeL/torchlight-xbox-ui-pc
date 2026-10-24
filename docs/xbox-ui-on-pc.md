@@ -3591,3 +3591,15 @@ obstacle on PC's path there, the pet or a townsman. So the later routes start fr
 places (up to 4 units), and their stop-and-go stretches (routes 3, 4, 6, the stick stepping)
 differ by 6 to 35 % in total path while the speed by length above agrees and most 0.5 s samples
 match within 0.2 units a second. Not played by hand yet.
+
+**A new route (2026-10-24), recorded by the owner with changes a, the yaw and this, touching
+nothing (`route-new.txt`, 55 s, outside the repository).** Replayed on the 360 (the recomp agent;
+its probe: the raw stick at `XamInputGetState` in every frame, the game's read zero up to 0.4204
+and more from 0.4239) and on PC, and against the owner's own run: the paths are 193.6 units (the
+360), 191.1 (PC replayed) and 190.4 (PC by hand); the heroes stay within 0.95 units of each other
+the whole route (the end 0.65 apart); the start is 863 ms on all three; most 2 s windows agree
+within 1 %. The one difference left is the fastest spins: with the stick turning about 650 to
+720 degrees a second at full tilt, PC walks 3.4 to 4.3 units a second where the 360 walks 5.2 to
+5.5 (27.75 to 28.25 s, 51.0 to 51.25 s), 5 to 12 % less over those 2 s windows; at 430 to 600
+degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 360's every frame
+(change b, parked in section 30 before the dead zone was found).
