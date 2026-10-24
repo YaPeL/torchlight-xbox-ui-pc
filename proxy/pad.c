@@ -82,8 +82,10 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
                                             float min, float half angle, float range, bool best,
                                             CCharacter* exclude, CSkill*) */
 #define GOG_STOP_PATHING 0x00486150     /* CCharacter::stopPathing() */
-/* The hero's "the game's UI holds play" (a cinematic: the 360's sub_821ED810, its frame update
- * sub_821EBA48 skips the game's input while it is true; PC's setDestination asks it too). */
+/* CGameUI's "the UI holds play" (a cinematic: the 360's sub_821ED810, its frame update
+ * sub_821EBA48 skips the game's input while it is true). A thiscall on CGameUI, which the client
+ * keeps at +0x3c (PC's client update calls it so, 0x415096; Steam's the same, 0x414e76); not on the
+ * hero (a first try passed the hero: a crash at 0x541dba). */
 #define GOG_UI_HOLDS_PLAY 0x00541db0
 #define GOG_PERFORMING_ATTACK 0x004863b0 /* CCharacter::performingAttackLoose() */
 #define GOG_PERFORMING_SKILL 0x00486550  /* CCharacter::performingSkill() */
@@ -1022,8 +1024,11 @@ static void order(void) {
     }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
     /* A cinematic: the hero is not played (the 360's frame update, sub_821EBA48, skips its input
-     * while sub_821ED810 is true; PC's 0x541db0 is the same test, on the hero). */
-    if (((bool_fn)GOG_UI_HOLDS_PLAY)(hero, 0)) return;
+     * while sub_821ED810 is true; PC's 0x541db0 is the same test, on CGameUI). */
+    {
+        void *game_ui = *(void **)(client + 0x3c);
+        if (game_ui && ((bool_fn)GOG_UI_HOLDS_PLAY)(game_ui, 0)) return;
+    }
     zoom_tick(client);
     if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
         void x360_automap_cycle(void);
