@@ -509,6 +509,49 @@ class InstallCppTest(unittest.TestCase):
         for rel in py:
             self.assertEqual(cpp[rel], py[rel], rel)
 
+    def test_the_wizards_questions(self):
+        """What the wizard asks before it runs the installer (dev games, game-in, package-check,
+        saves): the games found with their mod and bag through an install with the 360's bag, the
+        first uninstall's switch to PC's bag and the uninstall; the 360 copy checked."""
+        dev = lambda *a: subprocess.run([BINARY, "dev", *a], capture_output=True, text=True, env=self.env)
+        game, saves = self.games["cpp"]
+        rows = lambda: {l.split("\t")[1]: l.split("\t")[2:] for l in dev("games").stdout.splitlines()}
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "0", "", "0", "0"])
+        self.assertEqual(dev("game-in", os.path.join(game, "Torchlight.exe")).stdout.split("\t")[1], os.path.realpath(game))
+        self.assertEqual(dev("game-in", self.root).stdout.split("\t")[1], "")       # not a Torchlight
+        self.assertEqual(dev("saves", game).stdout.splitlines(), [os.path.realpath(saves)])
+        self.assertEqual(self.install("cpp", "--bag", "360").returncode, 0)
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "1", "360", "1", "0"])
+        self.assertEqual(self.uninstall("cpp", "--yes").returncode, 0)               # step 1: PC's bag
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "1", "pc", "1", "0"])
+        self.assertEqual(self.uninstall("cpp", "--yes", "--anyway").returncode, 0)
+        self.assertEqual(rows()[os.path.realpath(game)], ["1", "0", "", "0", "0"])
+        r = dev("package-check", self.x360)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "ok"))
+        r = dev("package-check", os.path.join(self.x360, "pak.zip"))                  # a file of the folder
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, "ok"))
+        junk = os.path.join(self.root, "other", "file.bin")
+        os.makedirs(os.path.dirname(junk))
+        with open(junk, "wb") as f:
+            f.write(b"not a package")
+        r = dev("package-check", junk)                                                # not a package
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("No pak.zip of the Xbox 360 game", r.stdout)
+        r = dev("package-check", os.path.join(self.root, "nothing"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("does not exist", r.stdout)
+
+    def test_progress_file(self):
+        """--progress-file (the elevated run's, read by the first): its last line once installed
+        and once uninstalled."""
+        f = os.path.join(self.root, "progress.txt")
+        self.assertEqual(self.install("cpp", "--bag", "pc", "--progress-file", f).returncode, 0)
+        with open(f) as p:
+            self.assertEqual(p.read(), "1.0000\tInstalled\n")
+        self.assertEqual(self.uninstall("cpp", "--yes", "--progress-file", f).returncode, 0)
+        with open(f) as p:
+            self.assertEqual(p.read(), "1.0000\tUninstalled\n")
+
     def test_install_and_uninstall_as_python(self):
         before = {who: _tree(g) for who, (g, _) in self.games.items()}
         for bag in ("pc", "360"):
