@@ -3463,3 +3463,18 @@ one address used is the cinematic's test, already ported to Steam's build
 (`proxy/addresses_steam.txt`). The six screen
 hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
 the keyboard is PC's.
+
+### 27g. The stick's speed factor, done (change a, 2026-10-24)
+
+The owner's recording replayed on the recompiled 360 build (its agent's trace, the same input)
+confirmed 27a: a straight at a 0.72 tilt walked at 4.36 units/s there, 6.22 on PC (the formula's
+0.72 gives 4.47), and the half-tilt spins at 2.4 units/s there, 5.3 and 4.1 on PC. The factor is
+now in GOG's character update (`proxy/pad.c`, `walk_scale`): a jump at its join (`0x4a8062`;
+Steam's `0x4a5dd8`) to a trampoline that scales the speed's stack slot (read from the store just
+before: GOG's `[esp+0x1c]`, Steam's `[esp+0x18]`) by `min(len^2 + 0.2, 1)` past the stick's 0.1,
+for the hero only, unless its AI state is 7 or 9 or the 360's `sub_821DC600` holds (inlined in
+GOG's `setDestination`, `0x494b67`: the skill's `+0xb4`, `+0x3c`, the hero's `+0x20b`, `+0x2c0`)
+with the skill's byte `+0x40` set. The factor is computed each frame while the hero is not aiming
+(`+0x20a`) and its AI state is not 34, and kept otherwise, as the 360 keeps `+1500`.
+`pad_walk_factor=0` leaves it out, to compare.
+

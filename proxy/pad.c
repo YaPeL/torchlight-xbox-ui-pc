@@ -32,6 +32,7 @@ IMPORT HMODULE __stdcall GetModuleHandleA(const char *name);
 IMPORT HMODULE __stdcall LoadLibraryA(const char *name);
 IMPORT FARPROC __stdcall GetProcAddress(HMODULE module, const char *name);
 IMPORT BOOL __stdcall VirtualProtect(void *addr, DWORD size, DWORD prot, DWORD *old);
+IMPORT void *__stdcall VirtualAlloc(void *addr, unsigned long size, DWORD type, DWORD prot);
 IMPORT DWORD __stdcall GetTickCount(void);
 IMPORT BOOL __stdcall QueryPerformanceCounter(long long *v);
 IMPORT BOOL __stdcall QueryPerformanceFrequency(long long *v);
@@ -85,6 +86,7 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
  * Names from OpenTorchlight's symbols of the Linux build (research/original-symbols.txt);
  * the addresses found in GOG's Torchlight.exe by shape, callers and callees. */
 #define GOG_APP_GLOBAL 0x00c1ad64        /* the application object; +0x64 its CGameClient */
+#define GOG_SPEED_JOIN 0x004a8062        /* CCharacter's update (0x4a6930, the 360's sub_821D5410): after +0x660's factor */
 #define GOG_FIND_WORLD_LOCATION 0x00411d60 /* CGameClient::findWorldLocation(Vector3&, bool) */
 #define GOG_GET_POSITION 0x00510eb0      /* CPositionableObject::getPosition(bool) */
 #define GOG_SET_DESTINATION 0x00494b30   /* CCharacter::setDestination(CLevel&, float, float) */
@@ -1243,6 +1245,65 @@ static int skill_locks_movement(unsigned char *hero) {
     return *(float *)(hero + 0x2c0) > 0.0f && !hero[0x2bd];
 }
 
+/* ---- The stick's speed factor (doc section 27a, the plan's change a) ----
+ * The 360's plain stick walk (sub_82199E08, called each frame by the frame update while the hero is
+ * not aiming, hero[510], and its AI state is not 34) writes hero+1500 = min(len^2 + 0.2, 1) with the
+ * stick out of its 0.1 dead zone, 1 at rest; the character's update (sub_821D5410, 0x821D6ED0)
+ * multiplies its speed's scale by it unless the AI state (+632) is 7 or 9, or a skill locks the
+ * movement (sub_821DC600) and the skill's byte +64 is set. GOG's same update (0x4a6930) has no such
+ * block: a jump at its join (0x4a8062, the cmp of +0x5b4 after the +0x660 factor, x87 stack empty)
+ * goes to a trampoline that calls walk_scale with the unit and its scale's stack slot, then runs
+ * the cmp it replaced and jumps back. The slot is read from the store just before the join
+ * (fstp [esp+X]: GOG's 0x1c, Steam's 0x18). GOG's fields: the AI state +0x284, the aiming byte
+ * +0x20a (the 360's +0xc); sub_821DC600 inlined in GOG's setDestination (0x494b67): the skill
+ * +0x2d0, its +0xb4 and +0x3c, the hero's +0x20b and +0x2c0; the skill's byte +0x40 (the 360's +64,
+ * the same offset, read there too). pad_walk_factor=0 in x360_ui.ini leaves it out (to compare). */
+float x360_walk_factor = 1.0f;          /* the 360's hero+1500, for the hero only */
+static unsigned char *walk_hero;
+int x360_walk_factor_on = 1;            /* x360_ui.ini pad_walk_factor=0: left out */
+#define walk_factor_on x360_walk_factor_on
+static void __cdecl walk_scale(unsigned char *unit, float *scale) {
+    unsigned char *skill;
+    int state;
+    if (unit != walk_hero || x360_walk_factor >= 1.0f) return;
+    state = *(int *)(unit + 0x284);
+    if (state == 7 || state == 9) return;
+    skill = *(unsigned char **)(unit + 0x2d0);
+    if (skill && (*(int *)(skill + 0xb4) == -1 || skill[0x3c]) &&
+        (unit[0x20b] || *(float *)(unit + 0x2c0) > 0.0f) && skill[0x40]) return;   /* sub_821DC600 and +64 */
+    *scale *= x360_walk_factor;
+}
+static void walk_patch_install(void) {
+    static const unsigned char want[7] = {0x83, 0xbe, 0xb4, 0x05, 0x00, 0x00, 0x00};   /* cmp dword [esi+0x5b4], 0 */
+    unsigned char *at = (unsigned char *)GOG_SPEED_JOIN, *t, slot;
+    DWORD old;
+    int i, n = 0;
+    if (!walk_factor_on) { x360_log("pad: the stick's speed factor off (pad_walk_factor=0)\r\n"); return; }
+    for (i = 0; i < 7; i++)
+        if (at[i] != want[i]) { x360_log("pad: the speed's join not as read: no stick factor\r\n"); return; }
+    if (at[-4] != 0xd9 || at[-3] != 0x5c || at[-2] != 0x24 || at[-1] >= 0x60) {   /* fstp dword [esp+X] */
+        x360_log("pad: the speed's slot not found: no stick factor\r\n");
+        return;
+    }
+    slot = at[-1];
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000 /* MEM_COMMIT | MEM_RESERVE */, 0x40 /* PAGE_EXECUTE_READWRITE */);
+    if (!t) return;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = (unsigned char)(slot + 0x20);   /* lea eax, [esp+X+32] */
+    t[n++] = 0x50; t[n++] = 0x56;                                     /* push eax; push esi */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)walk_scale - (t + n + 5)); n += 5;   /* call */
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 7; i++) t[n++] = at[i];                           /* the cmp replaced */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;   /* jmp back */
+    if (!VirtualProtect(at, 7, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
+    VirtualProtect(at, 7, old, &old);
+    x360_log("pad: the stick's speed factor in the character's update (slot ");
+    x360_log_num((long)slot);
+    x360_log(")\r\n");
+}
+
 static int direction_changed(void) {
     /* More than about 5 degrees between the stick now and at the last probe. */
     long dot = (long)lx * probed_lx + (long)ly * probed_ly;
@@ -1385,6 +1446,12 @@ static void order(void) {
         release_t0 = 0;
     }
 
+    walk_hero = hero;
+    if (!hero[0x20a] && *(int *)(hero + 0x284) != 34) {
+        /* The 360's sub_82199E08: hero+1500 from the stick, past its 0.1 dead zone, else 1. */
+        float l2 = ((float)lx * lx + (float)ly * ly) / 1000000.0f;
+        x360_walk_factor = l2 > 0.01f ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
+    }
     if (stick_active()) {
         if (!was_active) {
             /* Moving the stick drops the target, as on the 360. */
@@ -1515,6 +1582,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
+    if (x360_pad_running) walk_patch_install();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
