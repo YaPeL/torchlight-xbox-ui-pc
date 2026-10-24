@@ -272,6 +272,10 @@ struct Screens::State {
     }
   }
   void open_browser(bool for_game) {
+    {
+      std::lock_guard<std::mutex> lock(pick_mutex);
+      pick_pending = false;   // a system picker that never answered: its late answer is ignored
+    }
     browse_for_game = for_game;
     std::error_code ec;
     fs::path start = !options.browse_from.empty() ? fs_path(options.browse_from) : fs::path();
@@ -523,7 +527,7 @@ struct Screens::State {
     switch (goal) {
       case Goal::Install: return "Install the mod";
       case Goal::Reinstall: return "Install the mod again";
-      case Goal::To360Bag: return "Install the mod again with the 360's bag";
+      case Goal::To360Bag: return bag == "360" ? "Install the mod again with the 360's bag" : "Install the mod again";
       case Goal::ToPcBag: case Goal::UninstallStep1: return "Switch to PC's bag (nothing is uninstalled)";
       case Goal::Uninstall: case Goal::UninstallAnyway: return "Uninstall the mod";
     }
@@ -779,9 +783,12 @@ bool Screens::frame() {
 
 std::string Screens::name() const { return screen_name(s_->screen); }
 bool Screens::busy() const {
-  // Installing, or the system's picker open (its answer comes to this window's state).
+#ifdef _WIN32
+  // Windows' picker answers from its own thread into this window's state: not closed under it.
   std::lock_guard<std::mutex> lock(s_->pick_mutex);
-  return s_->working || (s_->pick_pending && !s_->pick_answered);
+  if (s_->pick_pending && !s_->pick_answered) return true;
+#endif
+  return s_->working;   // Linux's portal answers on this thread, while the window's events are read
 }
 void Screens::finish() {
   if (s_->working) {
