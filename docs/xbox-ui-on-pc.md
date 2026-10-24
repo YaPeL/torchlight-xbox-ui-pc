@@ -3682,3 +3682,20 @@ within 1 %. The one difference left is the fastest spins: with the stick turning
 5.5 (27.75 to 28.25 s, 51.0 to 51.25 s), 5 to 12 % less over those 2 s windows; at 430 to 600
 degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 360's every frame
 (change b, parked in section 30 before the dead zone was found).
+
+## 34. PC's resurrection screen with the pad (2026-10-24)
+
+In the owner's run of 2026-10-24 the hero died and PC's resurrection screen (`diemenu.layout`:
+`Frame` holding `Title`, `Resurrect1`-`3` with their `Choice1`-`3` texts, and `ExitGame`) could
+not be left with the pad: no code gave its buttons to the pad. The 360 has its own screen (its
+`diemenu.layout`, converted with the others) that the port does not show yet; the owner chose the
+quicker way for now: PC's screen with the pad, as PC's pause menu (section 17's list of PC's
+buttons).
+
+- `pc_menu_tick` finds its prefix by `Resurrect1` (and `Resurrect2` under the same prefix), and
+  while it is attached and shown in play collects the buttons under its `Frame` only (PC's HUD
+  buttons are on the same sheet, transparent).
+- The d-pad or the stick moves between them (top to bottom), A clicks the focused one; B does
+  nothing there. The log names them as `PC's buttons for the pad 4 (resurrection)`.
+- Not ported: the 360's own resurrection screen (its look and its pad, which a port would read in
+  the 360's code first).
