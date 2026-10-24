@@ -3235,3 +3235,13 @@ Steam's own prefix (`compatdata/41500`), which the save backup otherwise leaves 
 developer dumps (`x360_dump_*.json`, only with a `x360_dump.req`) still go beside the game.
 `x360_ui.ini` stays beside the game: the installer writes it (elevated when it
 must), the proxy only reads it.
+
+**Steam's build first (the owner, 2026-10-23).** Steam's build is no longer experimental: both
+installers find and offer it as the others, and with more than one supported install Steam's
+comes first (the one `--yes` takes and the first offered; the others in the order found). The
+experimental mechanism stays, with no build in it; `--experimental` is still accepted and does
+nothing. Earlier entries calling Steam's build experimental predate this. A Steam
+install under Proton keeps its saves in Steam's prefix, which the installers leave alone: an
+uninstall that would back them up now says none was found and asks (no by default) before going
+on without one; `--anyway` goes on and says so. Steam's build has not been played with the mod yet: the README calls it "testing", not
+supported, until the owner's run (the repository's rule).

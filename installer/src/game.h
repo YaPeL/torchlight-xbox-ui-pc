@@ -17,7 +17,7 @@ constexpr uint32_t kSteamTimestamp = 0x4B5F7519;   // Steam's build 17685
 bool is_game(const std::string& path);
 uint32_t exe_timestamp(const std::string& game);   // Error when unreadable
 std::string build_of(const std::string& game);     // "gog", "steam" or "unknown"
-bool is_experimental(const std::string& build);    // ported offline, not yet played: "steam"
+bool is_experimental(const std::string& build);    // installed only into a --game given, after a yes: none now
 
 // [(store, path)] of the installs found: GOG (Heroic, Lutris, Wine prefixes, the usual folders,
 // GOG Galaxy's registry), Steam (its libraries), Epic (Legendary, Heroic, the launcher's

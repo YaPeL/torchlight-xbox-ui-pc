@@ -2,7 +2,6 @@
 """Installs the Xbox 360 interface into the user's PC Torchlight, from the user's own 360 package.
 
     install.py [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]
-               [--experimental]
     install.py uninstall [--game DIR] [--yes] [--console] [--anyway]
     install.py list
 
@@ -63,11 +62,14 @@ X360_LAYOUT = "media/ui/mastermenu_xenon.layout"     # a file only the 360's pak
 X360_TITLE = 0x58410A7E                               # Torchlight's Xbox LIVE Arcade title ID
 X360_CONTENT_TYPE = 0x000D0000                        # an Arcade title's package
 PROXY_FILES = {"gog": "CEGUIBase.dll", "steam": "CEGUIBase-steam.dll"}   # a release's proxy per build, next to this script
-EXPERIMENTAL = {"steam"}   # ported offline, not yet played with the mod: installed only into a --game given
+EXPERIMENTAL = set()   # builds installed only into a --game given, after a yes (none now: Steam's is first, 2026-10-23)
 NO_MOD_WARNING = (
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
     "PC's bag, then load and save each character.")
+NO_SAVES_FOUND = (
+    "No save folder of this game was found to back up (a Steam install's saves are in Steam's "
+    "prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves yourself first.")
 NO_MOD_WARNING_AFTER = (
     "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
     "them, and without the mod the original game deletes those that do not fit PC's bag.")
@@ -499,6 +501,7 @@ def pick_game(given, ask=None, installed_only=False):
             print(f"{store}: {path}: a build this version does not support yet, left alone.")
     if not supported:
         raise SystemExit("No supported PC Torchlight found; give its folder with --game.")
+    supported.sort(key=lambda g: g[0] != "steam")   # the owner: Steam's first, the others in the order found
     if installed_only and any(has_mod(p) for _, p in supported):   # uninstall: only those with the mod
         supported = [(s, p) for s, p in supported if has_mod(p)]
     if len(supported) > 1:
@@ -563,7 +566,7 @@ def do_install(args):
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
     game, _ = pick_game(args.get("game"), ask, installed_only=True)
-    backups = []
+    backups, need_backup = [], False
     if read_ini(game).get("bag", "pc") == "360":
         if not args.get("anyway") and ask.yes_no(
                 "The 360's bag is installed. " + NO_MOD_WARNING + "\n\nSwitch to PC's bag now (recommended)? "
@@ -576,9 +579,7 @@ def do_uninstall(args):
                 "Your saves are backed up first.", default=False):
             print("not uninstalled")
             return 1
-        backups = back_up_saves(save_folders(game))
-        for b in backups:
-            print(f"saves backed up: {b}")
+        need_backup = True
     elif read_ini(game).get("bag_360_used") == "1":
         if not args.get("anyway") and not ask.yes_no(
                 "PC's bag is installed, and the 360's was used before. " + NO_MOD_WARNING_AFTER +
@@ -586,7 +587,16 @@ def do_uninstall(args):
                 default=False):
             print("not uninstalled (load and save each character with PC's bag first)")
             return 1
-        backups = back_up_saves(save_folders(game))
+        need_backup = True
+    if need_backup:
+        folders = save_folders(game)
+        if not folders:   # a Steam install under Proton: its saves are in Steam's prefix, left alone
+            if args.get("anyway"):
+                print("no save folder of this game was found: none backed up")
+            elif not ask.yes_no(NO_SAVES_FOUND + "\n\nUninstall without a backup?", default=False):
+                print("not uninstalled (back up your saves first)")
+                return 1
+        backups = back_up_saves(folders)
         for b in backups:
             print(f"saves backed up: {b}")
     if not build_proxy.remove(game):

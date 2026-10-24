@@ -685,12 +685,43 @@ class InstallCppTest(unittest.TestCase):
                 f.write("not the mod's")
             cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY])
             r = subprocess.run(cmd + ["install", "--game", game, "--x360-dir", self.x360, "--yes", "--console",
-                                      "--dll", self.proxy, "--bag", "pc", "--experimental"], capture_output=True, text=True, env=self.env)
+                                      "--dll", self.proxy, "--bag", "pc"], capture_output=True, text=True, env=self.env)
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             r = subprocess.run(cmd + ["uninstall", "--game", game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
             self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             self.assertFalse(os.path.exists(os.path.join(local, "x360ui")), who)
             self.assertTrue(os.path.isfile(os.path.join(local, "other.txt")), who)
+
+    def test_uninstall_without_saves_found_asks(self):
+        """A Steam install under Proton (a fake library): its saves are in Steam's prefix, which the
+        installers leave alone. Uninstalling after the 360's bag says no save folder was found and
+        asks (no by default) before going on without a backup; --anyway goes on and says so."""
+        import shutil
+        from test_tools import fake_exe
+        for who in ("py", "cpp"):
+            apps = os.path.join(self.root, "nosave-" + who, "steamapps")
+            game = os.path.join(apps, "common", "Torchlight")
+            os.makedirs(game)
+            fake_exe(os.path.join(game, "Torchlight.exe"), 0x4B5F7519)
+            _real_cegui_dll(os.path.join(game, "CEGUIBase.dll"))
+            shutil.copyfile(os.path.join(self.games["py"][0], "Pak.zip"), os.path.join(game, "Pak.zip"))
+            cmd = [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+            r = subprocess.run(cmd + ["install", "--game", game, "--x360-dir", self.x360, "--yes", "--console",
+                                      "--dll", self.proxy, "--bag", "pc"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            ini = os.path.join(game, "x360_ui.ini")
+            with open(ini, "ab") as f:
+                f.write(b"bag_360_used=1\r\n")
+            installed = _tree(game)
+            u = cmd + ["uninstall", "--game", game, "--console"]
+            r = subprocess.run(u, capture_output=True, text=True, env=self.env, input="y\nn\n")
+            self.assertNotEqual(r.returncode, 0, who)
+            self.assertIn("No save folder of this game was found", r.stdout, who)
+            self.assertEqual(_tree(game), installed, who)
+            r = subprocess.run(u + ["--anyway"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertIn("none backed up", r.stdout, who)
+            self.assertNotIn("x360_ui.ini", os.listdir(game), who)
 
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
@@ -778,8 +809,9 @@ class InstallCppTest(unittest.TestCase):
 
     def test_stores_found_and_steam_and_epic_installed_as_python(self):
         """A home with a Steam library (Steam's build) and a Legendary (Epic) install of GOG's
-        build beside the Wine prefix's GOG one: `list` the same; Steam's needs --experimental in
-        both; Epic's installs as GOG's."""
+        build beside the Wine prefix's GOG one: `list` the same; Steam's installs with no question in
+        both, and is the one `--yes` takes with no --game (the owner: Steam's first); Epic's installs
+        as GOG's."""
         import json, shutil
         from test_tools import fake_exe
         steam_root = os.path.join(self.root, ".steam", "steam", "steamapps")
@@ -799,6 +831,19 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(lst([BINARY]), py_list)
         self.assertIn("steam: ", py_list)
         self.assertIn("epic: ", py_list)
+        took = {}
+        for who in ("py", "cpp"):                                     # no --game: Steam's first
+            cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) + [
+                "install", "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, "--bag", "pc"]
+            r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            took[who] = [l for l in r.stdout.splitlines() if l.startswith(("using ", "the game: ", "gog: ", "steam: ", "epic: "))
+                         or "supported PC Torchlights" in l]                # the whole list, in its order
+            self.assertIn("x360_ui.ini", os.listdir(steam_game), who)
+            r = subprocess.run(([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) +
+                               ["uninstall", "--game", steam_game, "--yes", "--console"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+        self.assertEqual(took["cpp"], took["py"])
         for game in (steam_game, epic_game):
             twins = {}
             for who in ("py", "cpp"):
@@ -808,10 +853,6 @@ class InstallCppTest(unittest.TestCase):
             for who, copy in twins.items():
                 cmd = ([sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]) + [
                     "install", "--game", copy, "--x360-dir", self.x360, "--yes", "--console", "--dll", self.proxy, "--bag", "pc"]
-                if game == steam_game:
-                    refused = subprocess.run(cmd, capture_output=True, text=True, env=self.env, input="")
-                    self.assertNotEqual(refused.returncode, 0, who)          # experimental: no yes given
-                    cmd.append("--experimental")
                 r = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
                 self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
             a, b = _tree(twins["py"]), _tree(twins["cpp"])
