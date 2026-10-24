@@ -4963,30 +4963,35 @@ static void left_column_for(int stash) {
     for (j = 0; j < 6; j++) { panels[2].selected[j] = kept[kind].selected[j]; panels[2].top[j] = kept[kind].top[j]; }
 }
 
-/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window CEGUI
- * has under the mouse (System::getWindowContainingMouse), its name and its parents'. */
-static void log_click_window(void) {
+/* The window CEGUI has under the mouse (System::getWindowContainingMouse), its name and its
+ * parents', logged after label. */
+static void log_under_mouse(const char *label) {
     typedef void *(__fastcall *under_fn)(const void *self, void *edx);
     typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
     typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
     static under_fn under; static name_fn gn; static parent_fn gp;
-    static int was_down;
-    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
     void *sys, *w;
     int depth = 0;
-    if (down == was_down) return;
-    was_down = down;
-    if (!down) return;
     if (!under) under = (under_fn)need("?getWindowContainingMouse@System@CEGUI@@QBEPAVWindow@2@XZ");
     if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
     sys = system_ptr();
     if (!under || !gn || !gp || !sys) return;
     w = under(sys, 0);
-    x360_log("x360 click: under the mouse");
+    x360_log(label);
     for (; w && depth < 6; w = gp(w, 0), depth++) { x360_log(depth ? " < " : " "); x360_log(c_str(gn(w, 0), 0)); }
     if (!depth) x360_log(" nothing");
     x360_log("\r\n");
+}
+
+/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window under
+ * the mouse. */
+static void log_click_window(void) {
+    static int was_down;
+    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+    if (down == was_down) return;
+    was_down = down;
+    if (down) log_under_mouse("x360 click: under the mouse");
 }
 
 void x360_shop_tick(void) {
@@ -6470,9 +6475,10 @@ static void press_tip(const char *name) {
     if (!get_target) get_target = (get_target_fn)need("?getModalTarget@System@CEGUI@@QBEPAVWindow@2@XZ");
     if (!set_target) set_target = (set_target_fn)need("?setModalTarget@System@CEGUI@@QAEXPAVWindow@2@@Z");
     if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
-    /* Another window modal (PC's modal opened before or after the tip, as the mod's notice: the
-     * owner's run of 2026-10-24) would take the click: let go for the click only, unless it is
-     * the tip's own. */
+    /* A window opened over the tip (PC's modal, as the mod's notice: the owner's run of
+     * 2026-10-24, where the tip's clicks closed nothing) must not take the click: the tip's sheet
+     * in front for it, and another window's CEGUI modal target, if any, let go for the click
+     * only. Which window got it is logged (the cause is not settled). */
     if (sys && get_target && set_target && gp) {
         target = get_target(sys, 0);
         for (up = target; up && depth++ < 32; up = gp(up, 0))
@@ -6481,11 +6487,12 @@ static void press_tip(const char *name) {
     }
     was_hidden = top && vis && !vis(top, 0, 1);
     if (was_hidden) set_visible(top, 0, 1);
-    if (top && inventory_open) move_to_front(top, 0);
+    if (top) move_to_front(top, 0);
     press_pc(pc_tip_prefix, name);
+    log_under_mouse("x360 tip: the click went to");
     if (was_hidden) set_visible(top, 0, 0);
     if (inventory_open && master_root) move_to_front(master_root, 0);
-    if (target) set_target(sys, 0, target);
+    if (target && !get_target(sys, 0)) set_target(sys, 0, target);
 }
 
 /* A tip up: the 360's shown, or PC's window shown and not yet seen by tip_tick (which runs after

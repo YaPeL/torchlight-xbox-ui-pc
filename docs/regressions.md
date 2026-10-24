@@ -193,17 +193,19 @@ here. Games' texts are named by role, never quoted.
   new game's welcome tip showed, and the mod's test-options notice (PC's modal) opened while the
   tip was still up. The tip kept the pad (the entry above), and B and Y pressed the tip's Ok (a
   click at its centre, logged), but nothing closed; the game could not be played.
-- **Why (a hypothesis, to be confirmed by the next run's log):** PC's modal, opened last, holds
-  CEGUI's modal target (`System::setModalTarget`, which PC's CEGUI exports), and the injected
-  click goes to it. If so, the entry above (a tip over the notice) has the same hole: it was never
-  played after its fix.
+- **Why (not settled; the next run's log tells):** either PC's modal, opened last, is in front of
+  the tip and catches the click at the tip's Ok (its frame is moved away, not its root), or it
+  holds CEGUI's modal target. The second is less likely: PC's executable imports none of CEGUI's
+  modal-state calls (only CEGUIBase.dll exports them). Either way the entry above (a tip over the
+  notice) may have the same hole: it was never played after its fix.
 - **Should have been caught by:** the entry above, which covered a tip over the notice but not
   the notice over a tip, nor where the tip's clicks go.
 - **Caught by:** the owner's run.
 - **Covered now:** the notice and the stop's modal wait while a tip is up (seen by the tip's tick
-  or PC's window shown; the stop's own time limit still holds); and a press on the tip lets go of
-  another window's modal target for the click, then gives it back, logged as `x360 tip: another
-  window was modal`. QA checklist: a new game with a test option on: the welcome tip closes with
+  or PC's window shown; the stop's own time limit still holds); a press on the tip brings the tip's
+  sheet in front for the click and lets go of another window's modal target, if any, for it
+  (`x360 tip: another window was modal`); the window that got the click is logged (`x360 tip: the
+  click went to`). QA checklist: a new game with a test option on: the welcome tip closes with
   B, then the notice shows and closes with A.
 
 ## QA checklist
