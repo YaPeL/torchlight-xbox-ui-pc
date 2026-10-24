@@ -486,11 +486,11 @@ class ProxyTextsTest(unittest.TestCase):
 int main(int argc, char **argv) {
     static char buf[4096];
     const char *k[16], *v[16];
-    FILE *f = fopen(argv[1], "rb");
-    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    FILE *f = argc > 2 ? fopen(argv[1], "rb") : 0;
+    size_t n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
     int i, c;
     buf[n] = 0;
-    c = x360_parse_texts(buf, k, v, 16);
+    c = x360_parse_texts(buf, k, v, argc > 2 ? argv[2][0] - '0' : 0);
     for (i = 0; i < c; i++) printf("[%s]=[%s]\n", k[i], v[i]);
     return 0;
 }
@@ -498,16 +498,19 @@ int main(int argc, char **argv) {
         with tempfile.TemporaryDirectory() as root:
             c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
             write(c_file, main)
-            subprocess.run([cc, "-o", exe, c_file], check=True, capture_output=True)
-            outs = []
-            for eol in (b"\n", b"\r\n"):
-                data = eol.join([b"pctip.TIP_A=Synthetic tip, a = sign", b"no equals sign", b"tip.TIP_A=x", b""])
-                path = os.path.join(root, "s.txt")
+            subprocess.run([cc, "-Wall", "-Werror", "-o", exe, c_file], check=True, capture_output=True)
+            path = os.path.join(root, "s.txt")
+
+            def parse(data, cap=9):
                 write(path, data)
-                outs.append(subprocess.run([exe, path], check=True, capture_output=True).stdout)
-            self.assertEqual(outs[0], outs[1])
-            self.assertEqual(outs[0].decode().splitlines(),
-                             ["[pctip.TIP_A]=[Synthetic tip, a = sign]", "[tip.TIP_A]=[x]"])
+                return subprocess.run([exe, path, str(cap)], check=True, capture_output=True).stdout.decode().splitlines()
+            want = ["[pctip.TIP_A]=[Synthetic tip, a = sign]", "[tip.TIP_A]=[x]"]
+            for eol in (b"\n", b"\r\n"):
+                lines = [b"pctip.TIP_A=Synthetic tip, a = sign", b"no equals sign", b"", b"tip.TIP_A=x"]
+                self.assertEqual(parse(eol.join(lines) + eol), want)       # the last line ended
+                self.assertEqual(parse(eol.join(lines)), want)             # the last line not ended
+            self.assertEqual(parse(b"a=1\r\n\r\nb=2\r"), ["[a]=[1]", "[b]=[2]"])
+            self.assertEqual(parse(b"a=1\r\nb=2\r\nc=3\r\n", cap=2), ["[a]=[1]", "[b]=[2]"])
 
 
 class SaveGuardTest(unittest.TestCase):

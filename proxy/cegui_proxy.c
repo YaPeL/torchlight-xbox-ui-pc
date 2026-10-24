@@ -236,7 +236,9 @@ static void load_texts(void) {
         for (i = 0; i < (DWORD)texts_count; i++)
             if (starts_with(text_key[i], "pctip.")) tips++;
         put("x360: x360_strings.txt: "); put_dec((unsigned long)texts_count);
-        put(" texts, "); put_dec((unsigned long)tips); put(" of PC's tips\r\n");
+        put(" texts, "); put_dec((unsigned long)tips); put(" of PC's tips");
+        if (got == sizeof texts - 1 || texts_count == 1200) put(" (the file cut: over the reader's room)");
+        put("\r\n");
     }
 }
 
