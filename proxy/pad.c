@@ -1287,7 +1287,7 @@ static void walk_patch_install(void) {
     }
     slot = at[-1];
     t = (unsigned char *)VirtualAlloc(0, 64, 0x3000 /* MEM_COMMIT | MEM_RESERVE */, 0x40 /* PAGE_EXECUTE_READWRITE */);
-    if (!t) return;
+    if (!t) { x360_log("pad: no memory for the speed's trampoline: no stick factor\r\n"); return; }
     t[n++] = 0x60;                                                    /* pushad */
     t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = (unsigned char)(slot + 0x20);   /* lea eax, [esp+X+32] */
     t[n++] = 0x50; t[n++] = 0x56;                                     /* push eax; push esi */
@@ -1365,7 +1365,10 @@ static void order(void) {
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
-    if (!hero || !level) { x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return; }
+    if (!hero || !level) {
+        walk_hero = 0; x360_walk_factor = 1.0f;   /* no hero (the main menu): no stale factor for the next */
+        x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return;
+    }
     if (hero != walk_hero) { walk_hero = hero; x360_walk_factor = 1.0f; }   /* another hero: its own factor */
     diag_level = level;
     attack_level = level;
