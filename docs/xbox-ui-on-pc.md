@@ -3584,7 +3584,10 @@ speed and the scale (GOG's `+0x200`, the 360's `+500`) over 0.1 s with the stick
 | 0.90 | 5.65, 0.85 | 5.50, 0.85 |
 | 1.00 | 6.24, 1.00 | 6.24, 1.00 |
 
-In route 1 the PC hero was held 1.7 s at full tilt by something in its way (the 360 passed
-there; PC's earlier replay too: a moving obstacle, the pet or a townsman), so the later routes
-start from other places; their spins (routes 3, 4, 6) then differ by 6 to 18 % in median speed
-while the speed by length above agrees. Not played by hand yet.
+In route 1 the PC hero was held at full tilt by something in its way, at about (-17.8, 28.2),
+in both replays with this change (1.7 s, then twice for about 0.5 s; the 360 passes there, and
+PC's replay before this change walked another line, its route 0 ending 4 units away): an
+obstacle on PC's path there, the pet or a townsman. So the later routes start from other
+places (up to 4 units), and their stop-and-go stretches (routes 3, 4, 6, the stick stepping)
+differ by 6 to 35 % in total path while the speed by length above agrees and most 0.5 s samples
+match within 0.2 units a second. Not played by hand yet.
