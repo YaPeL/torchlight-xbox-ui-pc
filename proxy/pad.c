@@ -59,6 +59,7 @@ static char pad_file[400];
 
 /* The pad, as last read. */
 static int lx, ly;             /* -1000..1000, y up */
+static int ry;                 /* the right stick's y, the same scale: the camera's zoom */
 static unsigned buttons;       /* XInput mask: A 0x1000, B 0x2000, X 0x4000, Y 0x8000 */
 static unsigned a_pressed_at;  /* GetTickCount of A's last press, for a short synthetic click */
 static unsigned last_poll;
@@ -138,6 +139,17 @@ static void *candidate, *item_candidate;    /* the 360's +0x1BC and +0x1C4 */
 static unsigned aim_until;                  /* the virtual cursor aims ahead of the hero until then */
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static unsigned prev_buttons;
+void x360_inventory_toggle(void);
+void x360_run_console(void);
+int x360_inventory_open(void);
+void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
+int x360_overlay_open(void);
+int x360_pause_open(void);
+void x360_pause_pad(unsigned pressed, int ly);
+void x360_hud_tick(void);
+void x360_shop_tick(void);
+void x360_hud_attacked(void *unit);
+#define BUTTON_BACK 0x0020u                 /* XInput's Back */
 #define BUTTON_LT 0x10000u                  /* the triggers, as bits of our own (XInput gives bytes) */
 #define BUTTON_RT 0x20000u
 
@@ -193,17 +205,24 @@ static void poll(void) {
             static long last_result = -1;
             long result = xinput_get_state ? (long)xinput_get_state(0, &st) : -2;
             if (result != last_result) {
+                if (result == 0) { void x360_swap_recheck(void); x360_swap_recheck(); }   /* a pad connected: which one */
                 /* 0: pad 0 connected; 1167 (ERROR_DEVICE_NOT_CONNECTED): none. */
                 x360_log("pad: XInputGetState(0) = ");
                 x360_log_num(result);
                 x360_log("\r\n");
                 last_result = result;
             }
-            if (result != 0) { lx = ly = 0; buttons = 0; return; }
+            if (result != 0) { lx = ly = ry = 0; buttons = 0; return; }
         }
         lx = st.lx * 1000 / 32767;
         ly = st.ly * 1000 / 32767;
+        ry = st.ry * 1000 / 32767;
         buttons = st.buttons | (st.lt > 64 ? BUTTON_LT : 0) | (st.rt > 64 ? BUTTON_RT : 0);
+        {
+            /* Nintendo's layout (proxy/setup.c): A and B swapped, X and Y kept. */
+            extern int x360_swap_active;
+            if (x360_swap_active && ((buttons & 0x1000) != 0) != ((buttons & 0x2000) != 0)) buttons ^= 0x3000;
+        }
     }
     {
         /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */
@@ -225,14 +244,52 @@ static void poll(void) {
             logged_active = active;
         }
     }
+    {
+        /* The proxy's black screen (x360_menu.c) has the pad while it shows: nothing else gets it. */
+        int x360_black_screen_take(unsigned buttons);
+        if (x360_black_screen_take(buttons)) { buttons = 0; lx = ly = ry = 0; }
+    }
     if ((buttons & 0x1000) && !(old & 0x1000)) a_pressed_at = now;
 }
+
+/* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
+ * dialogs stop the GetCursorPos polls that drive order()). */
+unsigned x360_pad_buttons(void) { poll(); return buttons; }
+int x360_pad_ly(void) { poll(); return ly; }
+int x360_pad_lx(void) { poll(); return lx; }
+/* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
+void *x360_pad_candidate(void);
 
 static int stick_active(void) { return lx * lx + ly * ly > DEAD_ZONE * DEAD_ZONE; }
 
 static int clicking(void) { return a_pressed_at && GetTickCount() - a_pressed_at < CLICK_MS; }
 
 static void order(void);
+
+/* The right stick zooms the camera, as the 360's (the user; the 360's rate asked of the mods agent).
+ * PC's zoom (its camera controller, the client's +0x10, GOG 0x5e65f0): the distance +0x1c, moved by
+ * the mouse wheel times -0.01 (a notch, 120, is 1.2) or 1 per frame with KEYMAP_ZOOMIN/OUT, kept
+ * from 14 (0xaba608) to +0x60 times 28.5 (0xaba60c), only while +0x64 is set and +0x6c is not.
+ * Up brings it in, as the wheel forward. The 360 (sub_821EBA48 at 0x821EBF54, the mods agent's
+ * static reading): distance += sThumbRY / 32767 * -0.35 each frame, kept from 14 to 28.5 times the
+ * level's multiplier, no time step: 21 per second at its 60 frames, the rate here by the clock (PC's
+ * frame rate is not capped). Its code has no dead zone; the pad's is kept so a resting stick does
+ * not drift the camera. */
+#define ZOOM_RATE 21.0f
+static void zoom_tick(unsigned char *client) {
+    static unsigned last;
+    unsigned now = GetTickCount();
+    float dt = last ? (float)(now - last) / 1000.0f : 0.0f, z, top;
+    unsigned char *cam = client ? *(unsigned char **)(client + 0x10) : 0;
+    last = now;
+    if (dt > 0.1f) dt = 0.1f;
+    if (!cam || !cam[0x64] || cam[0x6c] || (ry < DEAD_ZONE && ry > -DEAD_ZONE)) return;
+    z = *(float *)(cam + 0x1c) - (float)ry / 1000.0f * ZOOM_RATE * dt;
+    top = *(float *)(cam + 0x60) * *(float *)0x00aba60c;
+    if (z < *(float *)0x00aba608) z = *(float *)0x00aba608;
+    if (top > 0.0f && z > top) z = top;
+    *(float *)(cam + 0x1c) = z;
+}
 
 static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     BOOL r = real_get_cursor_pos(p);
@@ -527,6 +584,42 @@ static void *item_in_view(unsigned char *hero, unsigned char *level, const float
 }
 
 /* On a press of X or A: what is near the hero, units and items, with their class (a diagnosis). */
+/* Test runs (console=...;X360PICKUP): the nearest item on the ground, not a barrel or a trigger,
+ * within 8, picked up with PC's click order (as A does), one every 1.2 s, at most 40 times. */
+int x360_auto_pickup;
+static void auto_pickup(unsigned char *hero, unsigned char *level) {
+    static unsigned last;
+    unsigned now = GetTickCount();
+    void **node;
+    unsigned char *best = 0;
+    float m[16], best_d = 8.0f;
+    int n = 0;
+    if (x360_auto_pickup <= 0 || now - last < 1200) return;
+    last = now;
+    x360_auto_pickup--;
+    hero_matrix(hero, m);
+    for (node = *(void ***)*(void **)(level + GOG_LEVEL_ITEMS); node && n < 100000; node = (void **)node[1], n++) {
+        unsigned char *it = (unsigned char *)node[0];
+        float p[3], dx, dz, d;
+        if (!it || !it[0x19c] || it[0x19d] || !derives_from(it, ".?AVCItem@@") ||
+            derives_from(it, ".?AVCBreakable@@") || derives_from(it, ".?AVCTriggerUnit@@")) continue;
+        ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
+        dx = p[0] - m[3]; dz = p[2] - m[11];
+        d = root(dx * dx + dz * dz);
+        if (d < best_d) { best_d = d; best = it; }
+    }
+    if (!best) { x360_auto_pickup = 0; x360_log("pad: auto pickup: nothing left\r\n"); return; }
+    {
+        void **vt = *(void ***)hero;
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, best);
+        ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 7);
+        ((void_fn)GOG_STOP_PATHING)(hero, 0);
+        ((float_ptr_fn)vt[GOG_PICKUP_SLOT])(hero, 0, 0.0f, level);
+        x360_log("pad: auto pickup: "); x360_log(class_of(best)); x360_log("\r\n");
+    }
+}
+
 static void list_near(unsigned char *hero, unsigned char *level, const float *m) {
     int list;
     for (list = 0; list < 2; list++) {
@@ -607,6 +700,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     any_candidate = a;
     item_candidate = it;
 }
+void *x360_pad_candidate(void) { return item_candidate ? item_candidate : any_candidate; }
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
 static unsigned char *attack_level;
@@ -619,6 +713,7 @@ static void swing_toward(unsigned char *hero, float x, float z);
 static void attack_candidate(unsigned char *hero) {
     if (((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0)) return;
     ((set_target_fn)GOG_SET_TARGET)(hero, 0, candidate);
+    x360_hud_attacked(candidate);           /* the 360's attack keeps its target for the HUD */
     if (((bool_int_fn)GOG_IN_ATTACK_RANGE)(hero, 0, 0)) {
         if (*(int *)(hero + 0x284) == 3 || ((bool_fn)GOG_PERFORMING_SKILL)(hero, 0)) return;
         ((void_fn)GOG_STOP_PATHING)(hero, 0);
@@ -721,14 +816,17 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             /* PC's click on an item (clickLeft, GOG 0x4146f8): stopPathing, setTargetItem, mode 7,
              * stopPathing, the virtual +0x1b4 with (0, level): the hero walks to it and picks it up. */
             void **vt = *(void ***)hero;
+            /* Its class read first: an item in reach is picked up within the call, and may be gone
+             * after it (QA run 19: the log's read of it crashed the game). */
+            x360_log("pad: A: pick up ");
+            x360_log(class_of(item_candidate));
+            x360_log("\r\n");
             ((void_fn)GOG_STOP_PATHING)(hero, 0);
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, item_candidate);
             ((int_fn)vt[GOG_SET_MODE_SLOT])(hero, 0, 7);
             ((void_fn)GOG_STOP_PATHING)(hero, 0);
             ((float_ptr_fn)vt[GOG_PICKUP_SLOT])(hero, 0, 0.0f, attack_level);
-            x360_log("pad: A: pick up ");
-            x360_log(class_of(item_candidate));
-            x360_log("\r\n");
+            item_candidate = 0;   /* chosen again next frame, if still there */
         } else if (any_candidate) {
             /* The 360 talks from where the hero stands: setTarget and the mode virtual with 9; the
              * engine's approachAI (OT) then opens the NPC's dialog if it is in reach, by its kind
@@ -742,6 +840,23 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
                 x360_log("pad: A: talk to ");
                 x360_log(class_of(any_candidate));
                 x360_log("\r\n");
+                {
+                    /* A test aid: a UI dump 1.5 s later, to see which of PC's menus opened
+                     * (talk-1, talk-2, ...). */
+                    static int talks;
+                    char name[16] = "talk-";
+                    void x360_dump_after(const char *name, unsigned ms);
+                    talks++;
+                    name[5] = (char)('0' + talks % 10);
+                    name[6] = 0;
+                    x360_dump_after(name, 1500);
+                }
+                {
+                    void x360_dialog_expect(void);
+                    extern void *x360_talked_unit;
+                    x360_talked_unit = any_candidate;   /* its quest marker hidden under the dialog */
+                    x360_dialog_expect();
+                }
                 /* approachAI measures to the target item first if one is set: clear it. */
                 ((void_fn)GOG_STOP_PATHING)(hero, 0);
                 ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
@@ -851,7 +966,7 @@ static void order(void) {
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
-    if (!hero || !level) { note(1, "pad: no client, hero or level\r\n"); return; }
+    if (!hero || !level) { x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return; }
     diag_level = level;
     attack_level = level;
     {
@@ -865,6 +980,45 @@ static void order(void) {
     }
     pressed = buttons & ~prev_buttons;
     prev_buttons = buttons;
+    {
+        /* Buttons PC's menus used (proxy/x360_menu.c, pc_menus_nav_tick) are left out until let go:
+         * a B that closed PC's settings in play also cast the skill (QA run 20). */
+        extern unsigned x360_pad_eaten;
+        x360_pad_eaten &= buttons;
+        pressed &= ~x360_pad_eaten;
+    }
+    auto_pickup(hero, level);
+    x360_hud_tick();
+    /* PC's merchant menu, opened by talking to a merchant, shows as the 360's shop
+     * (proxy/x360_menu.c). */
+    x360_shop_tick();
+    {
+        /* Not in play (the main menu, whose hero walked under the pad: QA run 7). */
+        int x360_in_play(void);
+        int x360_pc_menu_up(void);
+        if (!x360_in_play()) return;
+        /* PC's settings over the game (opened from its pause menu, which closes): the pad is
+         * theirs (QA run 20: A and B there also acted in the world). */
+        if (x360_pc_menu_up()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
+    }
+    /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
+     * does not move or act in the world. */
+    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
+    if (!x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
+        x360_pause_pad(pressed, ly);
+        if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
+    }
+    if (pressed & BUTTON_BACK) {
+        x360_inventory_toggle();
+        if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
+    }
+    if (x360_inventory_open()) { x360_inventory_pad(pressed, buttons, lx, ly); return; }
+    if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
+    zoom_tick(client);
+    if (pressed & 0x0080) {                   /* R3: the map's three states, as the 360's RS */
+        void x360_automap_cycle(void);
+        x360_automap_cycle();
+    }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {

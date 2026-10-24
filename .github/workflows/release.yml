@@ -1,0 +1,231 @@
+name: Release
+# The installer's release: GOG's and Steam's proxies built from proxy/cegui_exports.txt, the
+# Windows executable and the Linux AppImage with both built in, each checked from the artifacts
+# where there is no Python or compiler (clean containers) on synthetic games, then SHA256SUMS. A
+# pushed tag v* makes a draft release, which the owner reads and publishes; a manual run or a pull
+# request makes only the artifacts.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  # A pull request that changes what the release is made of runs it all but the draft.
+  pull_request:
+    paths: ["installer/**", "packaging/**", "proxy/**", "data/prompts/**", "tools/**",
+            "tests/release_fixture.py", "tests/test_installer_cpp.py", "tests/test_tools.py", "LICENSE",
+            ".github/workflows/release.yml"]
+permissions:
+  contents: read
+jobs:
+  proxies:
+    runs-on: ubuntu-24.04
+    # Ubuntu 26.04's LLVM 21 (the owner's machine's): the proxies' bytes the same as a local build.
+    container: ubuntu:26.04
+    steps:
+      - name: LLVM 21, Ubuntu 26.04's own packages at a fixed version
+        run: |
+          # The whole toolchain (every package built from llvm-toolchain-21) held at this version,
+          # whatever -updates publishes later.
+          printf 'Package: src:llvm-toolchain-21\nPin: version 1:21.1.8-6ubuntu1\nPin-Priority: 1001\n' \
+            > /etc/apt/preferences.d/llvm-21
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 \
+            clang-21=1:21.1.8-6ubuntu1 lld-21=1:21.1.8-6ubuntu1 llvm-21=1:21.1.8-6ubuntu1
+          clang-cl-21 --version
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Build both targets
+        run: |
+          python3 tools/build_proxy.py build "$RUNNER_TEMP/gog"
+          python3 tools/build_proxy.py build "$RUNNER_TEMP/steam" --target steam
+          mkdir proxies
+          cp "$RUNNER_TEMP/gog/CEGUIBase.dll" proxies/CEGUIBase-gog.dll
+          cp "$RUNNER_TEMP/steam/CEGUIBase.dll" proxies/CEGUIBase-steam.dll
+          sha256sum proxies/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: proxies
+          path: proxies/
+
+  fixture:
+    # Synthetic games and a synthetic 360 copy (tests/release_fixture.py): nothing of the game.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: python3 tests/release_fixture.py fixture
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fixture
+          path: fixture/
+
+  linux:
+    needs: proxies
+    runs-on: ubuntu-24.04
+    # Built on Ubuntu 22.04: the AppImage runs where glibc is 2.35 or newer.
+    container: ubuntu:22.04
+    steps:
+      - name: Build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates file
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: proxies
+          path: proxies
+      - name: Build
+        run: |
+          cmake -S installer -B build -DCMAKE_BUILD_TYPE=Release \
+            -DX360UI_PROXY_GOG="$PWD/proxies/CEGUIBase-gog.dll" -DX360UI_PROXY_STEAM="$PWD/proxies/CEGUIBase-steam.dll"
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+      - name: AppImage
+        run: |
+          packaging/linux/get_tools.sh "$RUNNER_TEMP/appimage-tools"
+          mkdir dist
+          packaging/linux/make_appimage.sh "$RUNNER_TEMP/appimage-tools" build/x360ui-install dist/x360ui-install-x86_64.AppImage
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux
+          path: dist/
+
+  windows:
+    needs: proxies
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: proxies
+          path: proxies
+      - name: Build
+        shell: bash
+        run: |
+          cmake -S installer -B build -DX360UI_PROXY_GOG="$PWD/proxies/CEGUIBase-gog.dll" -DX360UI_PROXY_STEAM="$PWD/proxies/CEGUIBase-steam.dll"
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+          mkdir dist
+          cp build/Release/x360ui-install.exe dist/x360ui-install.exe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows
+          path: dist/
+
+  check-linux:
+    needs: [linux, fixture, proxies]
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:22.04", "archlinux:latest"]
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: linux
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fixture
+          path: fixture
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: proxies
+          path: proxies
+      - name: No Python or compiler here
+        run: |
+          for tool in python3 python clang gcc g++ cc c++; do
+            if command -v "$tool"; then echo "$tool is in this container" >&2; exit 1; fi
+          done
+      - name: Install and uninstall from the AppImage
+        run: |
+          chmod +x dist/x360ui-install-x86_64.AppImage
+          sh packaging/check_release.sh dist/x360ui-install-x86_64.AppImage fixture proxies/CEGUIBase-gog.dll proxies/CEGUIBase-steam.dll
+
+  check-windows:
+    needs: [windows, fixture, proxies]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fixture
+          path: fixture
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: proxies
+          path: proxies
+      - name: Install and uninstall from the executable, in Windows Server Core (no Python, no compiler)
+        shell: pwsh
+        run: |
+          docker run --rm -v "${{ github.workspace }}:C:\w" mcr.microsoft.com/windows/servercore:ltsc2022 `
+            powershell -NoProfile -ExecutionPolicy Bypass -File C:\w\packaging\check_release.ps1 `
+            -Installer C:\w\dist\x360ui-install.exe -Fixture C:\w\fixture `
+            -GogProxy C:\w\proxies\CEGUIBase-gog.dll -SteamProxy C:\w\proxies\CEGUIBase-steam.dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  check-appimage-fuse:
+    # The AppImage as users start it (the runtime mounts it with FUSE), on a host: containers
+    # cannot mount without privileges, so the checks above extract and run it.
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: linux
+          path: dist
+      - name: Mounted, not extracted
+        run: |
+          command -v fusermount3 || command -v fusermount || { sudo apt-get update && sudo apt-get install -y fuse3; }
+          chmod +x dist/x360ui-install-x86_64.AppImage
+          mkdir "$RUNNER_TEMP/home"
+          out=$(HOME="$RUNNER_TEMP/home" dist/x360ui-install-x86_64.AppImage list 2>&1) && { echo "$out"; exit 1; }
+          echo "$out"
+          echo "$out" | grep -q "No PC Torchlight found."
+
+  release:
+    needs: [check-linux, check-windows, check-appimage-fuse]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+      - name: Files, notices, the runtime's LGPL source, and checksums
+        run: |
+          mkdir release
+          cp artifacts/linux/x360ui-install-x86_64.AppImage artifacts/windows/x360ui-install.exe \
+             artifacts/proxies/CEGUIBase-gog.dll artifacts/proxies/CEGUIBase-steam.dll release/
+          cp LICENSE release/LICENSE.txt
+          cp installer/third_party/NOTICES.md release/THIRD_PARTY_NOTICES.md
+          cp installer/third_party/LGPL-2.1.txt release/LGPL-2.1.txt
+          cp packaging/linux/APPIMAGE_NOTICES.md release/APPIMAGE_NOTICES.md
+          packaging/linux/get_sources.sh release
+          (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          path: release/
+
+  draft:
+    # Only a pushed v* tag: the one job that may write, and only a draft, which the owner publishes.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --draft \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Draft made by the release workflow: read it, and check the builds it claims, before publishing. The proxies are also inside the installers; SHA256SUMS lists every file."

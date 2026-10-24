@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Torchlight Xbox 360 interface installer
+Comment=Installs the Xbox 360 interface into the PC game, from your own copies
+Exec=x360ui-install
+Icon=x360ui-install
+Terminal=false
+Categories=Game;

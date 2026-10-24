@@ -6,6 +6,7 @@
  *     move X Y      the cursor to (X, Y) in the window's client pixels
  *     click         left button down and up (rclick: the right one)
  *     key VK        a key down and up, by virtual-key code in decimal (13 Enter, 27 Escape, ...)
+ *     down VK, up VK  a key down, or up (Shift held for another key)
  *     wait MS       sleep MS milliseconds
  *     where         print the cursor's client position and whether the window is in the foreground
  * The window is the largest visible top-level one titled exactly TITLE; if Wine has it minimized
@@ -183,6 +184,10 @@ void __stdcall start(void) {
         } else if (same(args[i], "key") && i + 1 < nargs) {
             unsigned vk = (unsigned)num(args[++i]);
             key(vk, 0); Sleep(80); key(vk, KEYEVENTF_KEYUP);
+        } else if (same(args[i], "down") && i + 1 < nargs) {
+            key((unsigned)num(args[++i]), 0);
+        } else if (same(args[i], "up") && i + 1 < nargs) {
+            key((unsigned)num(args[++i]), KEYEVENTF_KEYUP);
         } else if (same(args[i], "where")) {
             POINT p;
             GetCursorPos(&p);
