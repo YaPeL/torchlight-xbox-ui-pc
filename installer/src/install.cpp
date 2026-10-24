@@ -566,7 +566,8 @@ int run_elevated(const std::vector<std::string>& args, const std::function<void(
   SHELLEXECUTEINFOW sei{};
   sei.cbSize = sizeof sei;
   sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-  sei.lpVerb = L"runas";
+  // X360UI_TEST_ELEVATE_AS_USER: the same second run, without UAC (the tests').
+  sei.lpVerb = std::getenv("X360UI_TEST_ELEVATE_AS_USER") ? L"open" : L"runas";
   sei.lpFile = self;
   sei.lpParameters = params.c_str();
   std::error_code ec;
@@ -638,9 +639,11 @@ void finish(Ask& ask, const std::string& text) {
 // elevated with these answers, and its result is shown here. Returns -1 to go on here, else the
 // status to end with.
 int with_permission(Ask& ask, const fs::path& game, std::vector<std::string> answered) {
-  if (can_write(game)) return -1;
+  // X360UI_TEST_NEEDS_PERMISSION: a test of the elevated run's way (Windows' CI has no UAC to answer).
+  if (can_write(game) && !std::getenv("X360UI_TEST_NEEDS_PERMISSION")) return -1;
 #ifdef _WIN32
-  if (is_elevated()) throw Exit("Cannot write into " + S(game) + ", even as an administrator; nothing was changed.");
+  if (is_elevated() && !std::getenv("X360UI_TEST_ELEVATE_AS_USER"))
+    throw Exit("Cannot write into " + S(game) + ", even as an administrator; nothing was changed.");
   std::cout << "the game's folder needs an administrator's permission: asking for it\n";
   std::error_code ec;
   const fs::path result = fs::temp_directory_path(ec) / ("x360ui-result-" + std::to_string(GetCurrentProcessId()) + ".txt");
@@ -1176,7 +1179,9 @@ std::vector<std::string> saves_to_back_up(const std::string& game) {
   return out;
 }
 
-bool needs_permission(const std::string& game) { return !can_write(P(game)); }
+bool needs_permission(const std::string& game) {
+  return !can_write(P(game)) || std::getenv("X360UI_TEST_NEEDS_PERMISSION") != nullptr;
+}
 
 namespace {
 bool is_x360_pak(const fs::path& path) {

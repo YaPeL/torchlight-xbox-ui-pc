@@ -3344,3 +3344,13 @@ renderer). The scripts (`dev wizard --script`) are lines: `screen NAME [SECONDS]
 `down`/`up BUTTON`, `key KEY`, `text TEXT`, `wait N`, `shot NAME`, `shot-if SCREEN NAME`,
 `debug`, `quit`. ImGui ignores a first A while its pad cursor is hidden, so each screen's default
 item is focused with the cursor shown.
+
+**The administrator's permission, from the wizard.** The wizard never asks for it when it opens: the
+summary says "Windows asks for an administrator's permission when you start" (`needs_permission`),
+and only Install, Switch bag or Uninstall makes the command line's `with_permission` run the
+installer again through UAC with every answer, while the window shows that run's progress (its
+`--progress-file`) and then its result (its `--result-file`). Windows' CI has no UAC to answer, so
+`test_the_wizard_through_the_elevated_run` takes that way with two test switches:
+`X360UI_TEST_NEEDS_PERMISSION` (the folder taken as needing it) and `X360UI_TEST_ELEVATE_AS_USER`
+(the second run started as the same user, without UAC's prompt). The prompt itself is the owner's
+Windows test.
