@@ -354,6 +354,8 @@ struct Screens::State {
     ImGui::Spacing();
     if (entered && chosen < 0) focus_here_once();   // no game to choose
     if (ImGui::Button("Look for another folder...")) pick(true, true);
+    ImGui::SameLine();
+    if (ImGui::Button("Browse with the pad...")) open_browser(true);
     if (!game_problem.empty()) error_text(game_problem);
     ImGui::EndChild();
     const bool ok = chosen >= 0 && chosen < int(games.size()) && games[size_t(chosen)].supported;
@@ -451,6 +453,8 @@ struct Screens::State {
     if (ImGui::Button("Choose the package...")) pick(false, false);
     ImGui::SameLine();
     if (ImGui::Button("Choose a folder extracted from it...")) pick(false, true);
+    // The wizard's own browser, played with the pad (where the system's picker does not show).
+    if (ImGui::Button("Browse with the pad...")) open_browser(false);
     ImGui::Spacing();
     if (!package.empty()) {
       muted(package);
@@ -459,7 +463,7 @@ struct Screens::State {
     }
     ImGui::EndChild();
     const bool ok = !package.empty() && package_problem_text.empty();
-    if (footer("Next", ok, true, ok)) go(goal == Goal::To360Bag ? Screen::Summary : Screen::Bag);
+    if (footer("Next", ok, true, ok)) go(Screen::Bag);   // the 360's bag's warning and backup there, always
   }
 
   void bag_screen() {
@@ -507,7 +511,7 @@ struct Screens::State {
     const bool install = goal == Goal::Install || goal == Goal::Reinstall || goal == Goal::To360Bag;
     if (install) {
       a = {"install", "--game", game.path, "--package", package, "--bag", bag, "--yes", "--console"};
-      if (bag == "360" && saves.empty()) a.push_back("--no-backup-ok");
+      if (bag == "360" && saves.empty() && no_backup_ok) a.push_back("--no-backup-ok");
       if (!options.dll.empty()) a.insert(a.end(), {"--dll", options.dll});
     } else {
       a = {"uninstall", "--game", game.path, "--yes", "--console"};
@@ -596,8 +600,19 @@ struct Screens::State {
     std::cout.rdbuf(cout_buf);
     std::cerr.rdbuf(cerr_buf);
     std::istringstream lines(out.str());
-    for (std::string l; std::getline(lines, l);)
-      if (l.rfind("saves backed up: ", 0) == 0) backups.push_back(l.substr(17));
+    // "saves backed up: F" here; an elevated run's result text lists them after its own line.
+    bool listed = false;
+    for (std::string l; std::getline(lines, l);) {
+      while (!l.empty() && l.back() == '\r') l.pop_back();
+      if (l.rfind("saves backed up: ", 0) == 0) {
+        backups.push_back(l.substr(17));
+      } else if (l == "Your saves were backed up:") {
+        listed = true;
+      } else if (listed) {
+        if (l.empty()) listed = false;
+        else if (std::find(backups.begin(), backups.end(), l) == backups.end()) backups.push_back(l);
+      }
+    }
     std::string e = err.str();
     while (!e.empty() && (e.back() == '\n' || e.back() == '\r')) e.pop_back();
     result_text = e;
@@ -763,7 +778,11 @@ bool Screens::frame() {
 }
 
 std::string Screens::name() const { return screen_name(s_->screen); }
-bool Screens::busy() const { return s_->working; }
+bool Screens::busy() const {
+  // Installing, or the system's picker open (its answer comes to this window's state).
+  std::lock_guard<std::mutex> lock(s_->pick_mutex);
+  return s_->working || (s_->pick_pending && !s_->pick_answered);
+}
 void Screens::finish() {
   if (s_->working) {
     while (!s_->worked) SDL_Delay(10);

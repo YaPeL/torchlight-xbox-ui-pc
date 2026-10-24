@@ -59,8 +59,10 @@
   Prompts", CC0 (`data/prompts/LICENSE.txt`).
 
 - **SDL 3.4.14** (the wizard's window, renderer, pads and file pickers; fetched by
-  `installer/cmake/wizard_deps.cmake`, built in), zlib licence. The HIDAPI it includes is used
-  under its GPL-3.0 option.
+  `installer/cmake/wizard_deps.cmake`, built in), zlib licence. The third-party code SDL itself
+  carries (HIDAPI, under its GPL-3.0 option; yuv2rgb; FreeBSD's math functions; stb_image; the
+  Wayland protocols; the Khronos headers) has its notices in `SDL-NOTICES.md` beside this file
+  (and in `x360ui-install notices`).
 
   > Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
   >

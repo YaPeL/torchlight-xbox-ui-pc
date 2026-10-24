@@ -45,6 +45,7 @@ extern const char kLicenseText[];   // LICENSE, NOTICES.md and LGPL-2.1.txt, bui
 extern const char kNoticesText[];
 extern const char kLgplText[];
 extern const char kOflText[];
+extern const char kSdlNoticesText[];
 
 namespace {
 
@@ -1022,7 +1023,7 @@ int do_notices() {
   std::cout << "x360ui-install " << X360UI_VERSION << " is free software under the GNU General Public License 3.0\n"
                "(below); its source is https://github.com/YaPeL/torchlight-xbox-ui-pc at the tag " << X360UI_VERSION << ".\n\n"
                "==== Third-party code in this executable ====\n\n"
-            << kNoticesText << "\n==== GNU Lesser General Public License 2.1 (libmspack's LZX decoder) ====\n\n"
+            << kNoticesText << "\n" << kSdlNoticesText << "\n==== GNU Lesser General Public License 2.1 (libmspack's LZX decoder) ====\n\n"
             << kLgplText << "\n==== SIL Open Font License 1.1 (Noto Sans, the wizard's font) ====\n\n" << kOflText
             << "\n==== GNU General Public License 3.0 ====\n\n" << kLicenseText;
 #ifdef _WIN32

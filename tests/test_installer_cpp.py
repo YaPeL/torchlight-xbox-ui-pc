@@ -607,6 +607,21 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(_tree(game), before)
 
+    def test_the_wizard_asks_before_the_360_bag_without_a_backup(self):
+        """A game with the mod on PC's bag and no save folder found: "Change to the 360's bag" goes
+        through the bag's screen (its warning), and without the no-backup box ticked Start does
+        not leave it; nothing is changed."""
+        import shutil
+        self.assertEqual(self.install("cpp", "--bag", "pc").returncode, 0)
+        shutil.rmtree(self.games["cpp"][1])
+        steps = ["screen games", "press a", "screen action", "press down", "press a", "screen package", "press a",
+                 "screen browser", "press down", "press down", "press a", "screen package", "press start",
+                 "screen bag", "press start", "wait 10", "screen bag 1", "quit"]
+        r = self.wizard(steps)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(self.games["cpp"][0], "x360_ui.ini")) as f:
+            self.assertIn("bag=pc", f.read())
+
     # Every screen, each shot once its screen is reached (the progress only if it still shows).
     WIZARD_SHOTS = ["screen games", "shot 01-games", "press a", "screen package", "shot 02-package", "press a",
                     "screen browser", "shot 03-browser", "press down", "press down", "press a", "screen package",
@@ -858,7 +873,7 @@ class InstallCppTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
         for rel in ("LICENSE", "installer/third_party/NOTICES.md", "installer/third_party/LGPL-2.1.txt",
-                    "installer/third_party/OFL-1.1.txt"):
+                    "installer/third_party/OFL-1.1.txt", "installer/third_party/SDL-NOTICES.md"):
             with open(os.path.join(root, rel), "rb") as f:
                 self.assertIn(f.read().replace(b"\r\n", b"\n"), r.stdout.replace(b"\r\n", b"\n"), rel)
 

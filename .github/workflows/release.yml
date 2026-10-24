@@ -82,6 +82,12 @@ jobs:
             -DX360UI_PROXY_GOG="$PWD/proxies/CEGUIBase-gog.dll" -DX360UI_PROXY_STEAM="$PWD/proxies/CEGUIBase-steam.dll"
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
+      - name: The executable needs only the C library (SDL loads X11, Wayland, D-Bus and udev itself)
+        run: |
+          readelf -d build/x360ui-install | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | tee needed.txt
+          if grep -vxE 'libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|ld-linux-x86-64\.so\.2' needed.txt; then
+            echo "a library beyond the C library is needed"; exit 1
+          fi
       - name: AppImage
         run: |
           packaging/linux/get_tools.sh "$RUNNER_TEMP/appimage-tools"
@@ -211,6 +217,7 @@ jobs:
           cp installer/third_party/NOTICES.md extra/THIRD_PARTY_NOTICES.md
           cp installer/third_party/LGPL-2.1.txt extra/LGPL-2.1.txt
           cp installer/third_party/OFL-1.1.txt extra/OFL-1.1.txt
+          cp installer/third_party/SDL-NOTICES.md extra/SDL-NOTICES.md
           cp packaging/linux/APPIMAGE_NOTICES.md extra/APPIMAGE_NOTICES.md
           packaging/linux/get_sources.sh extra
           (cd extra && sha256sum * > SHA256SUMS)

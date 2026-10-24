@@ -44,7 +44,7 @@ set(X360UI_VERSION "development" CACHE STRING "The release's tag, shown by x360u
 # MIT notice must go with every copy of the executable, not only beside it in a release).
 set(NOTICE_SOURCES)
 foreach(pair "LICENSE:kLicenseText" "installer/third_party/NOTICES.md:kNoticesText" "installer/third_party/LGPL-2.1.txt:kLgplText"
-             "installer/third_party/OFL-1.1.txt:kOflText")
+             "installer/third_party/OFL-1.1.txt:kOflText" "installer/third_party/SDL-NOTICES.md:kSdlNoticesText")
   string(REPLACE ":" ";" parts "${pair}")
   list(GET parts 0 rel)
   list(GET parts 1 name)
