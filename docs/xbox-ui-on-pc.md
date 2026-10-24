@@ -1162,9 +1162,9 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
     menu reads those fields itself, and so does the proxy; the next level's experience and fame
     from the experience table (`0x5281d0`, then `0x528130` by level, `0x528180` by fame level);
     the name a wstring at `+0x420`. A run read them right (level 1, XP 130/4000, fame 0/1600, HP
-    300, "<the character\'s name>"). The fame title: below.
+    300, "<the character's name>"). The fame title: below.
   - **They did not show at first (stopped after two hypotheses; solved below).** The windows are found, visible,
-    scaled, and hold the texts (read back: "300", "1", "<the character\'s name>"), yet nothing is drawn; the
+    scaled, and hold the texts (read back: "300", "1", "<the character's name>"), yet nothing is drawn; the
     layout's own "MP" label is not drawn either, while "HP", "Level" and "Stats" are. Neither
     taking `AlwaysOnTop` off nor setting `TextColour` white changed it. Open.
   - **Stopped after two hypotheses (2026-10-16).** PC moves its stats menu's windows away from the
@@ -1279,7 +1279,7 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   else `+0x540` if the item's "SET" (`0x4b28f0`) is not empty, `+0x524` unique (isa `0x36`),
   `+0x508` rare (isa `0x37`), `+0x4ec` otherwise. The rows call the same; the default keeps the
   360's grey. A run (`t27-weap.png`, `t27-jewel.png`): the dagger with a suffix in PC's
-  rare blue (`FFC0C0FF`), the unique sword in gold, "prefixed ring" and "prefixed ring" in green.
+  rare blue (`FFC0C0FF`), the unique sword in gold, two prefixed rings in green.
 - **A on an unidentified item** reads "Identify (N)", N the identify scrolls in the bag (the 360's
   screenshot: "A Identify(11)"). The bar's buttons follow each other's text, as there: Y after
   A's text, X after Y's (`Font::getTextExtent`), 10 pixels apart at 768 rows.
