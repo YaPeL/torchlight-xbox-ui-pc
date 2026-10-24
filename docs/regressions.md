@@ -28,8 +28,9 @@ here. Games' texts are named by role, never quoted.
 - **Caught by:** the owner's run on the GOG copy (2026-10-24), after the first Windows test.
 - **Covered now:** PC's `tipmenu.layout` transparent as it loads (`x360_pc_layout_loaded`). QA
   checklist: a new game, the welcome's tip watched frame by frame.
-- **Seen in the same run:** the inventory's tip behind the 360's inventory (moved to the front only
-  once); now AlwaysOnTop and moved to the front each frame, with the pad its own over the
+- **Seen in the same run:** the inventory's tip shown only once the 360's inventory closed: PC
+  attaches it to its Top UI Sheet, which the 360's screens hide whole. Now detected by its own
+  window's visibility and closed with its sheet shown for the click only; the pad its own over the
   inventory. QA checklist: a new character's first inventory, the tip in front, B closing only it.
 
 ## The game saving on Alt+F4 after a stop without the save hook (fixed in a45a7c6)
