@@ -3008,6 +3008,7 @@ int x360_inventory_open(void) { return inventory_open; }
 
 /* The pad's Back: the 360's inventory on or off. */
 void x360_run_console(void);
+void x360_pad_shutdown(void);   /* pad.c: the measurement's files written before a stop ends the process */
 
 static int petcmd_open;
 static void petcmd_show(int on);
@@ -5972,6 +5973,7 @@ static void qd_show(int on) {
 
 /* The pad's A on an NPC (proxy/pad.c): PC's dialog is looked for at every frame for a while,
  * not every 250 ms (run B: PC's showed for a moment the first time). */
+int x360_tip_open(void);   /* the tip has the pad over the 360's other screens (tip_tick) */
 static unsigned dialog_expected_at;
 void x360_dialog_expect(void) { dialog_expected_at = GetTickCount(); }
 
@@ -6095,6 +6097,7 @@ static void dialog_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~qd_prev_buttons;
     qd_prev_buttons = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     /* The frame's time, faster with X held. */
     if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
     qd_last = now;
@@ -6372,6 +6375,7 @@ static void fishing_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     if (pressed & 0x1000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 0xe); x360_log("x360 fishing: A (PC's command 0xe)\r\n"); }
     if (pressed & 0x2000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 6); x360_log("x360 fishing: B (PC's command 6)\r\n"); }
 }
@@ -6728,6 +6732,7 @@ static void modal_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     if (pressed & 0x1000) { modal_frame_away(0); press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok"); }   /* A */
     if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) { modal_frame_away(0); press_pc(pc_modal_prefix, "Decline"); }   /* B */
 }
@@ -6933,6 +6938,105 @@ static void hotkeys_off(void) {
         n++;
     }
     x360_log("x360 menu: PC's screen hotkeys off: "); x360_log_num((long)n); x360_log(" of 6\r\n");
+}
+
+/* PC's menu keys swallowed in play (the owner, 2026-10-24): with the 360's interface the pad opens
+ * the screens (Start, Back, R3), and PC's keys opened or animated PC's own under them (the space
+ * bar's close-all showed PC's menus moving behind the 360's). Their key messages never reach the
+ * game's window procedure (CGame::WndProc *(OT)* feeds CGameUI's and CKeyManager's keyEvent from
+ * WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_SYSKEYDOWN, WM_SYSKEYUP) while in play and PC's settings are
+ * not open (the pad's way to them, where the keyboard keeps working), the console is not shown
+ * (typed into) and no cinematic holds (PC's keys skip it). A press's repeats and release go as
+ * the press went (no key left down in PC's state across the changes); out of play, or when the
+ * frame tick stops saying so, nothing is swallowed. The window is the game's (its title), taken
+ * once. The keys: KEYMAP_INVENTORY I,
+ * PET P, STATS C, SKILLS S, QUESTS Q, JOURNAL J, OPTIONS Esc, PAUSE Enter, CLOSEALL the space bar,
+ * AUTOMAP A (the 360's map is on R3); the six of hotkeys_off are kept off there too. The others
+ * (the hotbar's 1 to 0, F1 to F12, Shift, Alt, Tab, W, the skills' cycle, the zooms, the console)
+ * work as on PC. One address of the executable, the cinematic's test (ported to Steam's). */
+__declspec(dllimport) long __stdcall SetWindowLongW(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall SetWindowLongA(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall CallWindowProcW(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) long __stdcall CallWindowProcA(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) int __stdcall IsWindowUnicode(HWND w);
+__declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
+__declspec(dllimport) long __stdcall GetWindowLongA(HWND w, int index);
+__declspec(dllimport) int __stdcall GetWindowTextA(HWND w, char *text, int size);
+static long keys_old_proc;       /* the game window's own procedure: subclassed once, never again */
+static int keys_unicode;
+static int keys_open;            /* set each frame by keys_off: in play, no PC settings, console or cinematic */
+static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
+static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
+static int keys_console_key;     /* the console's key went down: look for its window at once */
+static int key_index(unsigned vk) {
+    static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
+    int i;
+    for (i = 0; i < (int)sizeof keys; i++) if (vk == keys[i]) return i;
+    return -1;
+}
+static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
+    int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
+    if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
+    if (msg == 0x100 && wparam == 0xc0) keys_console_key = 1;   /* KEYMAP_CONSOLEKEY_PRESS (`) */
+    if (k >= 0 && msg == 0x100) {        /* WM_KEYDOWN: a new press (lParam bit 30 clear) or a repeat */
+        if (!(lparam & 0x40000000) || !(keys_down & (1u << k))) {   /* a press, or a repeat after a focus loss */
+            if (open) keys_down |= 1u << k; else keys_down &= ~(1u << k);
+        }
+        if (keys_down & (1u << k)) return 0;   /* the press and its repeats, as the press went */
+    }
+    if (k >= 0 && msg == 0x101 && (keys_down & (1u << k))) { keys_down &= ~(1u << k); return 0; }   /* WM_KEYUP */
+    if (k >= 7 && msg == 0x102 && (keys_down & (1u << k))) return 0;   /* WM_CHAR of a swallowed Esc, Enter, space */
+    return keys_unicode ? CallWindowProcW(keys_old_proc, w, msg, wparam, lparam)
+                        : CallWindowProcA(keys_old_proc, w, msg, wparam, lparam);
+}
+static void keys_off(void) {
+    static int tried;
+    static void *console;
+    static char console_prefix[48];
+    int console_up = 0, cinematic = 0;
+    if (!tried && hud_in_play) {
+        /* The game's window, once: the active window in play, its title the game's (600 frames'
+         * tries, then given up, said in the log). */
+        static int tries;
+        HWND w = active_window();
+        char title[64];
+        if (++tries > 600) { tried = 1; x360_log("x360 menu: PC's menu keys: no window titled Torchlight, not swallowed\r\n"); }
+        else if (w && GetWindowTextA(w, title, sizeof title) > 0 && title[0] == 'T' && title[1] == 'o' && title[2] == 'r' &&
+                 title[3] == 'c' && title[4] == 'h') {
+            long old = 0;
+            tried = 1;
+            keys_unicode = IsWindowUnicode(w);
+            if ((keys_unicode ? GetWindowLongW(w, -4) : GetWindowLongA(w, -4)) != (long)keys_proc)   /* never onto itself */
+                old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
+            keys_old_proc = old;
+            x360_log(old ? "x360 menu: PC's menu keys swallowed in play, window " : "x360 menu: PC's menu keys: the window not subclassed, ");
+            x360_log_num((long)w);
+            x360_log(keys_unicode ? " (Unicode)\r\n" : " (ANSI)\r\n");
+        }
+    }
+    if (!keys_old_proc) return;
+    /* The console (Runic's developer console, a CEGUI window): typed into with the keyboard. */
+    {
+        static unsigned last_search;
+        unsigned now = GetTickCount();
+        if (console && !win_of(console_prefix, "WindowsLook/Console")) console = 0;
+        if (!console && (now - last_search >= 1000 || keys_console_key)) {   /* the whole tree: once a second, or at the console's key */
+            last_search = now;
+            keys_console_key = 0;
+            console = find_pc_by_suffix("WindowsLook/Console", 0, console_prefix, sizeof console_prefix);
+        }
+    }
+    if (console) {
+        typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+        static vis_fn vis;
+        if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        console_up = vis && vis(console, 0, 0);
+    }
+    /* A cinematic (CGameUI's test, 0x541db0; proxy/pad.c): PC's own keys skip it. */
+    if (ui) cinematic = ((unsigned char (__fastcall *)(void *, void *))0x00541db0)(ui, 0) != 0;
+    keys_open = hud_in_play && !x360_pc_settings_up && !console_up && !cinematic;
+    keys_open_at = GetTickCount();
 }
 
 /* PC's menus' 3D boards (QA runs 5, 6: the parchment with chains behind the 360's modal, the
@@ -7175,7 +7279,7 @@ int x360_black_screen_take(unsigned buttons) {   /* pad.c: 1 while it shows (the
     if (edge) bs_act = 1;
     return 1;
 }
-__declspec(dllimport) int __stdcall ReadFile(void *file, void *data, unsigned long size, unsigned long *got, void *overlapped);
+unsigned long x360_read_text(void *f, char *buf, unsigned long size, int *full);   /* cegui_proxy.c: line ends made LF */
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
 __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
 static void black_screen_tick(void) {
@@ -7238,7 +7342,7 @@ static void black_screen_tick(void) {
             if (bs_close) {
                 x360_log("x360: the black screen closed: the game ends, unsaved\r\n");
                 black_screen_done();
-                TerminateProcess(GetCurrentProcess(), 1);
+                x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
             }
             set_visible(bs_back, 0, 0);
             bs_state = 3;   /* the pad kept until A is let go */
@@ -7407,7 +7511,7 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
                 last_resort_box(w);
             }
         }
-        TerminateProcess(GetCurrentProcess(), 1);
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
         return (int)item;   /* not reached */
     }
     to = empty_slot_of_section((unsigned char *)inv, item);
@@ -7684,12 +7788,12 @@ static void stop_tick(void) {
     if (stop_state == 4 && bs_state != 2 && (bs_failed || GetTickCount() - stop_t0 > 5000)) {
         x360_log("x360 load: the black screen did not show: Notepad or a Windows box, then the game ends, unsaved\r\n");
         last_resort_box(stop_wbody);
-        TerminateProcess(GetCurrentProcess(), 1);
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
     }
     if (stop_state == 2 && !pc_modal_menu_open()) {
         x360_log("x360 load: the stop's modal closed: the game ends, unsaved\r\n");
         stop_seen();
-        TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
     }
 }
 
@@ -7807,16 +7911,15 @@ void x360_stop_file_check(void) {
     unsigned short path[600];
     create_fn create = (create_fn)kernel32_fn("CreateFileW");
     void *f = (void *)-1;
-    unsigned long n, got = 0;
+    unsigned long n;
     int i;
     for (i = 0; i < 2 && f == (void *)-1; i++)
         if (stop_path(path, 600, i) && create) f = create(path, 0x80000000, 1, 0, 3, 0x80, 0);   /* GENERIC_READ, OPEN_EXISTING */
     if (f == (void *)-1) return;
     copy(textbuf, sizeof textbuf, "The last game was closed by the mod, and this was not shown then:\n\n", 0);
     n = length(textbuf);
-    ReadFile(f, textbuf + n, sizeof textbuf - n - 1, &got, 0);
+    x360_read_text(f, textbuf + n, sizeof textbuf - n, 0);
     CloseHandle(f);
-    textbuf[n + got] = 0;
     { unsigned k; for (k = 0; k < 600 && (stop_file[k] = path[k]) != 0; k++) {} }
     x360_log("x360 load: a stop's text from the last game: shown at the title\r\n");
     black_screen(textbuf, 0, stop_seen);
@@ -8334,8 +8437,12 @@ static void pc_menus_nav_tick(void) {
     }
 }
 
+unsigned x360_frames;   /* the game's frames, counted by the frame listener (proxy/pad.c: one destination a frame) */
 void x360_frame_tick(void) {
     static int logged, preloaded;
+    void x360_pad_frame(void);
+    x360_frames++;
+    x360_pad_frame();   /* pad_trace: the frame's time (proxy/pad.c) */
     __try { black_screen_tick(); }
     __except (1) {
         bs_state = 0; bs_failed = 1;
@@ -8358,6 +8465,7 @@ void x360_frame_tick(void) {
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { keys_off(); } __except (1) { x360_log("x360 menu: exception swallowing PC's menu keys\r\n"); }
     __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
     __try { stop_tick(); } __except (1) { x360_log("x360 load: exception in the stop\r\n"); }
     __try { notice_tick(); } __except (1) { x360_log("x360: exception showing a notice\r\n"); }
@@ -8368,11 +8476,12 @@ void x360_frame_tick(void) {
     __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
+    /* The tip first: on the frame it shows, the screens under it already leave it the pad. */
+    __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
     __try { enchant_result_tick(); } __except (1) { ench_pending = 0; x360_log("x360 enchanter: exception taking the result\r\n"); }
     __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
     __try { bars_tick(); } __except (1) { x360_log("x360 bars: exception\r\n"); }
-    __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }

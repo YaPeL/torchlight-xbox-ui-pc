@@ -1,2 +1,4 @@
 #include <winuser.h>
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "x360ui-install.manifest"
+// The icon: installer/data/icon (README there: its source and licence).
+1 ICON "../data/icon/x360ui-install.ico"

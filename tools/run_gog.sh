@@ -13,6 +13,8 @@ COMPAT="$HOME/torchlight-gog/compat"
 LOGS="$HOME/torchlight-gog"
 
 case "$COMPAT" in *compatdata/41500*) echo "refusing: that is Steam's Torchlight prefix"; exit 1;; esac
+# The saves the run will use, backed up and checked first; any doubt stops the run (save_guard.py).
+python3 "$(dirname "$0")/save_guard.py" backup "$COMPAT" "$LOGS/save-backups" --search "$LOGS"
 if pgrep -x steam > /dev/null; then echo "note: Steam is running (harmless for GOG's executable, which has no steam_api)"; fi
 mkdir -p "$COMPAT"
 cd "$GAME_DIR"

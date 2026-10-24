@@ -1,7 +1,9 @@
 """Tests of the tools, on synthetic data only (no game file)."""
 import json
+import math
 import glob
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -26,6 +28,8 @@ import aes128  # noqa: E402
 import layout_windows  # noqa: E402
 import port_addresses  # noqa: E402
 import send_input  # noqa: E402
+import pad_trace  # noqa: E402
+import save_guard  # noqa: E402
 import steam_guard  # noqa: E402
 from pe_info import PE  # noqa: E402
 
@@ -379,6 +383,294 @@ class SteamGuardTest(unittest.TestCase):
             self.assertTrue(any(line.startswith("changed:") and line.endswith("settings.txt") for line in lines))
             self.assertTrue(any(line.startswith("new:") and line.endswith("new.txt") for line in lines))
             self.assertTrue(any(line.startswith("gone:") and line.endswith("0.svt") for line in lines))
+
+
+def synthetic_trace(path, speed=5.0, curve=0.0, frames=120, dt_us=16667, start_frames=10, lag_us=0,
+                    slide_frames=0, only_changes=False):
+    """A hero walking at speed (units/s), turning by curve (radians/s), after start_frames at rest."""
+    lines = ["# x360ui pad trace v1 synthetic", "t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly"]
+    x = z = a = 0.0
+    last = None
+    for i in range(frames + slide_frames + 60):
+        t = i * dt_us + lag_us
+        moving = start_frames <= i < frames + slide_frames
+        if moving:
+            x += math.cos(a) * speed * dt_us / 1e6
+            z += math.sin(a) * speed * dt_us / 1e6
+            a += curve * dt_us / 1e6
+        held = start_frames <= i < frames
+        lx, ly = (int(32767 * math.cos(a)), int(32767 * math.sin(a))) if held else (0, 0)
+        row = (round(x * 1000), round(z * 1000), lx, ly)
+        if only_changes and row == last:
+            continue
+        last = row
+        lines.append(f"{t},{i},{row[0]},{row[1]},0,1000,1000,{round(speed * 1000)},{lx},{ly}")
+    write(path, "\n".join(lines) + "\n")
+
+
+class PadTraceTest(unittest.TestCase):
+    def test_routes(self):
+        with tempfile.TemporaryDirectory() as root:
+            names = pad_trace.write_routes(root, 90.0)
+            self.assertIn("spin2-half", names)
+            with open(os.path.join(root, "straight-half.txt")) as f:
+                lines = f.read().splitlines()
+            self.assertEqual(lines[0], "# x360ui pad replay v1")
+            t, lx, ly, lt, rt, b = (int(v) for v in lines[2].split())
+            self.assertEqual((t, lx, lt, rt, b), (0, 0, 0, 0, 0))
+            self.assertEqual(ly, 16384)                 # half tilt, straight up
+            pad_trace.write_routes(root)                # the default: to the left
+            with open(os.path.join(root, "reversal.txt")) as f:
+                rows = [line.split() for line in f.read().splitlines() if not line.startswith("#")]
+            self.assertEqual(rows[0][1], "-32767")
+            self.assertEqual(rows[150][1], "32767")     # back the other way after 1 s
+            self.assertEqual(lines[-1].split()[1:3], ["0", "0"])   # at rest at the end
+
+    def test_summary_and_compare(self):
+        with tempfile.TemporaryDirectory() as root:
+            ref, same, slow, bent = (os.path.join(root, n) for n in ("ref", "same", "slow", "bent"))
+            synthetic_trace(ref)
+            synthetic_trace(same, lag_us=40000)         # started later: aligned on the stick
+            synthetic_trace(slow, speed=2.25)
+            synthetic_trace(bent, curve=3.0)
+            info = pad_trace.summary(pad_trace.read_trace(ref))
+            self.assertAlmostEqual(info["mean_speed"], 5.0, places=2)
+            self.assertAlmostEqual(info["net"], info["length"], places=3)
+            self.assertTrue(pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(same))["pass"])
+            res = pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(slow))
+            self.assertFalse(res["pass"])
+            self.assertTrue(res["speed_spans_off"])
+            res = pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(bent))
+            self.assertFalse(res["pass"])
+            self.assertGreater(res["max_gap"], pad_trace.MAX_GAP)
+            out = os.path.join(root, "plot.svg")
+            self.assertEqual(pad_trace.main(["compare", ref, same, "--svg", out]), 0)
+            with open(out) as f:
+                self.assertIn("<polyline", f.read())
+
+    def test_the_stop_counts(self):
+        # The 360's hero slides 0.4 s after the release, written every frame; PC's stops at once,
+        # written only on change: its trace ends earlier, and the slide must still be compared.
+        with tempfile.TemporaryDirectory() as root:
+            ref, mine = os.path.join(root, "ref"), os.path.join(root, "mine")
+            synthetic_trace(ref, slide_frames=24)
+            synthetic_trace(mine, only_changes=True)
+            res = pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(mine))
+            self.assertFalse(res["pass"])
+            self.assertGreater(res["max_gap"], 1.5)
+
+    def test_a_frame_of_lag_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            ref, mine = os.path.join(root, "ref"), os.path.join(root, "mine")
+            synthetic_trace(ref)
+            synthetic_trace(mine, dt_us=33333, frames=61, start_frames=6)   # the same walk at 30 fps
+            self.assertTrue(pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(mine))["pass"])
+
+    def test_bad_line(self):
+        with tempfile.TemporaryDirectory() as root:
+            p = os.path.join(root, "t")
+            write(p, "# x360ui pad trace v1 pc\n1,2,3\n")
+            with self.assertRaises(ValueError):
+                pad_trace.read_trace(p)
+class ProxyTextsTest(unittest.TestCase):
+    """The proxy's x360_strings.txt parser (proxy/cegui_proxy.c, between its markers), compiled
+    on the host: LF and CRLF files give the same texts (the owner's Windows run of 2026-10-24: a
+    CR kept at every text's end, no tip of PC's matched)."""
+
+    def test_lf_and_crlf(self):
+        import shutil as sh
+        cc = sh.which("cc") or sh.which("gcc") or sh.which("clang")
+        if not cc:
+            self.skipTest("no C compiler")
+        src = Path(__file__).resolve().parent.parent / "proxy" / "cegui_proxy.c"
+        text = src.read_text()
+        body = text[text.index("/* texts-parse: begin */"):text.index("/* texts-parse: end */")]
+        main = body + r"""
+#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+    static char buf[4096];
+    const char *k[16], *v[16];
+    FILE *f = argc > 2 ? fopen(argv[1], "rb") : 0;
+    size_t n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+    int i, c;
+    buf[n] = 0;
+    c = x360_parse_texts(buf, k, v, argc > 2 ? argv[2][0] - '0' : 0);
+    for (i = 0; i < c; i++) printf("[%s]=[%s]\n", k[i], v[i]);
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as root:
+            c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
+            write(c_file, main)
+            subprocess.run([cc, "-Wall", "-Werror", "-o", exe, c_file], check=True, capture_output=True)
+            path = os.path.join(root, "s.txt")
+
+            def parse(data, cap=9):
+                write(path, data)
+                return subprocess.run([exe, path, str(cap)], check=True, capture_output=True).stdout.decode().splitlines()
+            want = ["[pctip.TIP_A]=[Synthetic tip, a = sign]", "[tip.TIP_A]=[x]"]
+            for eol in (b"\n", b"\r\n"):
+                lines = [b"pctip.TIP_A=Synthetic tip, a = sign", b"no equals sign", b"", b"tip.TIP_A=x"]
+                self.assertEqual(parse(eol.join(lines) + eol), want)       # the last line ended
+                self.assertEqual(parse(eol.join(lines)), want)             # the last line not ended
+            self.assertEqual(parse(b"a=1\r\n\r\nb=2\r"), ["[a]=[1]", "[b]=[2]"])
+            self.assertEqual(parse(b"a=1\r\nb=2\r\nc=3\r\n", cap=2), ["[a]=[1]", "[b]=[2]"])
+
+
+class TextLfTest(unittest.TestCase):
+    """The rule: every text the mod reads tolerates CRLF (docs/regressions.md). The proxy's one
+    reader's line-end step (x360_lf, between markers in cegui_proxy.c) compiled on the host: the
+    contents of each text file the proxy reads, written with LF, CRLF and a lone CR, come out the
+    same (the readers' own loops then see only LF); and no reader of the proxy or the installer
+    goes around x360_read_text or text_lines."""
+
+    SAMPLES = {   # synthetic contents of each file the proxy reads, one line per item
+        "x360_strings.txt": ["pctip.TIP_A=Synthetic tip, a = sign", "tip.TIP_A=x", "key=value"],
+        "x360_ui.ini": ["mode=scheme", "out=Z:\\home\\me\\x360ui", "pad=1", "pad_mode=direct", "bag=360"],
+        "x360_settings.ini": ["swap_confirm_cancel=1"],
+        "x360_stop.txt": ["A synthetic stop's text,", "", "on three lines."],
+        "pad_replay": ["# x360ui pad replay v1", "# start_ms 3000", "0 0 32767 0 0 0", "2000 0 0 0 0 0"],
+        "pad_file": ["250 -1000 4096"],
+        "x360_dump.req": ["inventory-1"],
+    }
+
+    def build(self, root):
+        import shutil as sh
+        cc = sh.which("cc") or sh.which("gcc") or sh.which("clang")
+        if not cc:
+            self.skipTest("no C compiler")
+        text = (Path(__file__).resolve().parent.parent / "proxy" / "cegui_proxy.c").read_text()
+        lf = text[text.index("/* text-lf: begin */"):text.index("/* text-lf: end */")]
+        parse = text[text.index("/* texts-parse: begin */"):text.index("/* texts-parse: end */")]
+        main = lf + parse + r"""
+#include <stdio.h>
+int main(int argc, char **argv) {
+    static char buf[8192];
+    const char *k[64], *v[64];
+    FILE *f = fopen(argv[1], "rb");
+    unsigned long n = (unsigned long)fread(buf, 1, sizeof buf - 1, f), m;
+    int i, c;
+    m = x360_lf(buf, n);
+    fwrite(buf, 1, m, stdout);
+    printf("\n--\n");
+    c = x360_parse_texts(buf, k, v, 64);
+    for (i = 0; i < c; i++) printf("[%s]=[%s]\n", k[i], v[i]);
+    return 0;
+}
+"""
+        c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
+        write(c_file, main)
+        subprocess.run([cc, "-Wall", "-Werror", "-o", exe, c_file], check=True, capture_output=True)
+        return exe
+
+    def test_every_file_the_same_with_any_line_end(self):
+        with tempfile.TemporaryDirectory() as root:
+            exe = self.build(root)
+            path = os.path.join(root, "f")
+            for name, lines in self.SAMPLES.items():
+                want = "\n".join(lines).encode()
+                parsed = set()
+                for eol in (b"\n", b"\r\n", b"\r"):
+                    for ended in (True, False):
+                        write(path, eol.join(line.encode() for line in lines) + (eol if ended else b""))
+                        out = subprocess.run([exe, path], check=True, capture_output=True).stdout
+                        text, parse = out.split(b"\n--\n", 1)
+                        self.assertEqual(text.rstrip(b"\n"), want, f"{name}, {eol!r}, ended {ended}")
+                        parsed.add(parse)
+                self.assertEqual(len(parsed), 1, f"{name}: the strings' parse differs by line end")
+
+    def test_no_reader_around_it(self):
+        import re
+        repo = Path(__file__).resolve().parent.parent
+        read_file = re.compile(r"\bReadFile\b")
+        for c in sorted((repo / "proxy").glob("*.[ch]")):
+            for n, line in enumerate(c.read_text().splitlines(), 1):
+                if read_file.search(line) and "IMPORT" not in line and "dllimport" not in line:
+                    self.assertIn("if (!ReadFile(f, buf, size - 1, &got, 0))", line,
+                                  f"{c.name}:{n}: a file read outside x360_read_text")
+        line_reads = [
+            re.compile(r"getline\((?!std::cin)[^,()]+,\s*[^,()]+\)"),          # a line (not a split by '/')
+            re.compile(r"getline\([^,()]+,\s*[^,()]+,\s*'\\[nr]'\)"),        # a line, its end named
+            re.compile(r"\bifstream\b[^;]*;[^\n]*>>|\bf\s*>>\s*\w"),        # words from a text stream
+        ]
+        for c in sorted(p for p in (repo / "installer" / "src").rglob("*") if p.suffix in (".cpp", ".h", ".inc")):
+            for n, line in enumerate(c.read_text().splitlines(), 1):
+                for r in line_reads:
+                    self.assertIsNone(r.search(line), f"{c.name}:{n}: a line read outside text_lines")
+
+
+class SaveGuardTest(unittest.TestCase):
+    REG = ("WINE REGISTRY Version 2\n\n"
+           "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\User Shell Folders] 1\n"
+           '"AppData"="%USERPROFILE%\\\\Wrong"\n\n'
+           "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Shell Folders] 1\n"
+           '"AppData"="C:\\\\users\\\\steamuser\\\\AppData\\\\Roaming"\n'
+           '"Local AppData"="C:\\\\users\\\\steamuser\\\\AppData\\\\Local"\n')
+
+    def prefix(self, root, name="compat", saves=True):
+        compat = os.path.join(root, name)
+        os.makedirs(os.path.join(compat, "pfx"))
+        write(os.path.join(compat, "pfx", "user.reg"), self.REG)
+        save = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Roaming",
+                            "Runic Games", "Torchlight", "save")
+        os.makedirs(save)
+        if saves:
+            write(os.path.join(save, "1.svt"), b"synthetic save")
+            write(os.path.join(save, "sharedstash.bin"), b"synthetic stash")
+        return compat, save
+
+    def test_where_reads_the_prefix(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, save = self.prefix(root)
+            self.assertEqual(save_guard.save_folder(compat)[0], save)
+            with self.assertRaises(save_guard.GuardError):
+                save_guard.save_folder(os.path.join(root, "steamapps", "compatdata", "41500"))
+
+    def test_backup_checked(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, save = self.prefix(root)
+            mod = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "x360ui")
+            os.makedirs(mod)
+            write(os.path.join(mod, "x360_settings.ini"), "synthetic=1")
+            out = save_guard.backup(compat, os.path.join(root, "b"), root, "t", lambda: False)
+            self.assertEqual(save_guard.hashes(os.path.join(out, "save")), save_guard.hashes(save))
+            self.assertEqual(save_guard.hashes(os.path.join(out, "x360ui")), save_guard.hashes(mod))
+            with open(os.path.join(out, "SHA256SUMS")) as f:
+                self.assertEqual(len(f.read().splitlines()), 3)
+            with self.assertRaises(save_guard.GuardError):   # never over an earlier backup
+                save_guard.backup(compat, os.path.join(root, "b"), root, "t", lambda: False)
+
+    def test_refusals(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, _save = self.prefix(root, saves=False)
+            self.prefix(root, "old")
+            backups = os.path.join(root, "b")
+            with self.assertRaises(save_guard.GuardError):   # the used folder empty, another full
+                save_guard.backup(compat, backups, root, "t", lambda: False)
+            self.assertIsNone(save_guard.backup(compat, backups, None, "t", lambda: False))
+            with self.assertRaises(save_guard.GuardError):   # the game running
+                save_guard.backup(os.path.join(root, "old"), backups, None, "u", lambda: True)
+            roaming = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Roaming")
+            os.makedirs(os.path.join(roaming, "RUNIC GAMES"))
+            with self.assertRaises(save_guard.GuardError):   # two folders differing only in case
+                save_guard.save_folder(compat)
+            os.rmdir(os.path.join(roaming, "RUNIC GAMES"))
+            os.remove(os.path.join(compat, "pfx", "user.reg"))
+            with self.assertRaises(save_guard.GuardError):   # no way to tell the folder
+                save_guard.backup(compat, backups, None, "v", lambda: False)
+
+    def test_copy_mismatch_stops(self):
+        with tempfile.TemporaryDirectory() as root:
+            compat, _save = self.prefix(root)
+            real = shutil.copytree
+
+            def bad_copy(src, dst):
+                real(src, dst)
+                write(os.path.join(dst, "1.svt"), b"other")
+            with unittest.mock.patch.object(save_guard.shutil, "copytree", bad_copy):
+                with self.assertRaises(save_guard.GuardError):
+                    save_guard.backup(compat, os.path.join(root, "b"), None, "t", lambda: False)
 
 
 class NoGameFilesTest(unittest.TestCase):

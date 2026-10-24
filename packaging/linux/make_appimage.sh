@@ -14,7 +14,8 @@ appdir="$work/AppDir"
 mkdir -p "$appdir/usr/bin" "$appdir/usr/share/doc/x360ui-install"
 cp "$2" "$appdir/usr/bin/x360ui-install"
 chmod +x "$appdir/usr/bin/x360ui-install"
-cp "$here/x360ui-install.desktop" "$here/x360ui-install.svg" "$appdir/"
+cp "$here/x360ui-install.desktop" "$appdir/"
+cp "$repo/installer/data/icon/x360ui-install.png" "$appdir/x360ui-install.png"   # the icon (its README: source, licence)
 cp "$repo/LICENSE" "$repo/installer/third_party/NOTICES.md" "$repo/installer/third_party/LGPL-2.1.txt" "$here/APPIMAGE_NOTICES.md" \
    "$appdir/usr/share/doc/x360ui-install/"
 cat > "$appdir/AppRun" <<'RUN'

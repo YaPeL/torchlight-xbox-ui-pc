@@ -20,6 +20,7 @@
 #include "game.h"
 #include "paths.h"
 #include "stfs.h"
+#include "text_lines.h"
 #include "xex.h"
 
 #ifdef _WIN32
@@ -331,19 +332,7 @@ std::vector<U32> ini_lines(const fs::path& game) {
     text += v;
     i += n;
   }
-  std::vector<U32> lines;
-  U32 line;
-  for (size_t i = 0; i < text.size(); i++) {
-    if (text[i] == U'\r' || text[i] == U'\n') {
-      if (text[i] == U'\r' && i + 1 < text.size() && text[i + 1] == U'\n') i++;
-      lines.push_back(line);
-      line.clear();
-    } else {
-      line += text[i];
-    }
-  }
-  if (!line.empty()) lines.push_back(line);
-  return lines;
+  return text_lines(text);
 }
 
 U32 py_strip(const U32& s) {   // str.strip()
@@ -615,12 +604,14 @@ void progress(double fraction, const std::string& text) {
 [[maybe_unused]] void forward_progress(const fs::path& file) {
   // Never throws: the elevated run goes on whatever happens to its progress line here.
   std::ifstream f(file, std::ios::binary);
-  std::string line;
-  if (!f || !std::getline(f, line)) return;
+  if (!f) return;
+  const std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  const std::vector<std::string> lines = text_lines(all);
+  if (lines.empty()) return;
+  const std::string& line = lines[0];
   const size_t tab = line.find('\t');
   if (tab == std::string::npos) return;
-  std::string text = line.substr(tab + 1);
-  while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+  const std::string text = line.substr(tab + 1);
   try {
     if (g_progress) g_progress(std::atof(line.substr(0, tab).c_str()), text);
   } catch (...) {

@@ -101,12 +101,100 @@ here. Games' texts are named by role, never quoted.
   on Windows CI, now a required check of `develop` and `main` (`AGENTS.md`: CI green before a
   review is asked).
 
+## The saves backed up from the wrong prefix (fixed on the branch save-guard)
+
+- **What happened:** before two runs on the GOG copy (2026-10-23), the agent backed up the saves of
+  `~/torchlight-gog/prefix`, the first prefix (Wine alone, now only the game folder), whose save
+  folder was empty. The game runs in `~/torchlight-gog/compat` and saves in its `pfx`; one of those
+  runs changed a test character's save. Its earlier copy was in the installer's own backup
+  (`save-backup-20261023-162202`) and was restored from it on 2026-10-24, the hashes checked.
+- **Should have been caught by:** a backup step that finds the folder the game will use (the
+  prefix the run is given, its `AppData` as Wine records it) and stops on an empty folder while
+  another has saves, not one typed by hand.
+- **Caught by:** the agent, reading the save's time against the runs.
+- **Covered now:** `tools/run_gog.sh` calls `tools/save_guard.py backup` before every run: the save
+  folder found from the run's prefix, copied to `save-backups/run-<time>`, the copy and the folder
+  hashed again, and the run stopped if a hash differs, if the game is running, or if the folder
+  found is empty while another folder under `~/torchlight-gog` has saves; the mod's own folder
+  (`%LOCALAPPDATA%\x360ui`) is copied and checked with the saves. Tests on synthetic
+  prefixes (`SaveGuardTest`).
+
+## PC's tips shown on Windows, never the 360's (fixed on the branch texts-crlf)
+
+- **What happened:** in the owner's first Windows run (the Epic copy, the GOG build) every tip was
+  PC's window: the first one, and the ones PC shows after an NPC's dialog. The installer writes
+  `x360_strings.txt` with CRLF on Windows (as `install.py` does there); the proxy's reader cut each
+  line at its LF and then looked for the CR at the cut itself, so every text kept a CR at its end.
+  No tip text of PC's matched its `pctip.` entry, so `tip_tick` took each tip for one of the
+  settings' confirmations and showed PC's window. The log had no `x360 tip:` line at all.
+- **Should have been caught by:** a test of the proxy's file readers with the files as the Windows
+  installer writes them; every run of the proxy so far had read the Linux installer's LF files.
+- **Caught by:** the owner's Windows run (2026-10-24) and its log.
+- **Covered now:** the CR taken before the cut; the parser between markers in `cegui_proxy.c`,
+  compiled on the host by `ProxyTextsTest` with LF and CRLF files; the log says how many texts and
+  PC's tips were read (`x360: x360_strings.txt: N texts, M of PC's tips`). QA checklist: on
+  Windows, the first tip is the 360's and the log has its `x360 tip:` line.
+
+## The mod's texts read with CRLF (the rule, after three bugs)
+
+- **What happened:** three times a text the mod wrote or read on Windows with CRLF broke something
+  that worked on Linux, in the owner's count: `notices` printed CR CR LF (above), the QA
+  checklist's line, and PC's tips never matched (above: every text kept a CR).
+- **Should have been caught by:** one rule for every reader, with a test, instead of each reader's
+  own line splitting.
+- **The rule:** every text file the mod reads tolerates CRLF, a lone CR and LF alike (Python's
+  universal newlines), and a last line without its end. The proxy reads every text file through
+  `x360_read_text` (its line ends made LF in place: `x360_ui.ini`, `x360_strings.txt`,
+  `x360_settings.ini`, `x360_stop.txt`, the dump request, `pad_file`, `pad_replay`); the installer
+  splits every text through `text_lines` (`installer/src/text_lines.h`: `x360_ui.ini`, the export
+  list, the elevated run's progress, the wizard's test scripts and run output); the Python tools
+  read in text mode, which does the same.
+- **Covered now:** `TextLfTest` compiles the proxy's line-end step (`x360_lf`) on the host and
+  gives it the contents of each of those files written with LF, CRLF and a lone CR, ended or not,
+  which must come out the same (the readers' loops then see only LF); it also fails if a
+  `ReadFile` in `proxy/` or a line read in `installer/src` goes around the two functions. The
+  C++ `core_test` tests `text_lines` with the same cases. A new reader of text uses them.
+
+## A level's load that never ended under automation (open)
+
+- **What happened:** in the baseline's automated runs on the GOG copy (2026-10-24; a copy of a
+  hero saved in the mines through `save_root=`, the run entered with a scripted click on Continue,
+  `console=ASCEND` given in play, `pad_replay` and `pad_trace` on), the town's load after the
+  console's ASCEND never ended: the hero's position and the level stayed the same for more than
+  25 s and the screen showed the loading picture. In the next try (the console given 6 s after
+  the first frame in play instead of 2) the load of the mines after Continue did not end either;
+  the log stopped at the loaded layouts, nothing in play. The same setup without the console,
+  from a save made in town, ran six times without a stall.
+- **Not known yet:** whether the console during or just after a load, the scripted input (the
+  click's helper runs in the game's prefix) or the window's focus causes it. The automation of
+  in-game navigation was dropped for the measurement (the owner's call): the owner plays the route.
+- **If it is seen without automation** (a load that does not end in a normal session), it is a
+  bug of the mod: report it with the log.
+
+## A tip over another of the 360's screens, the buttons to the one behind (fixed on the branch tip-has-pad)
+
+- **What happened:** in the owner's GOG session (2026-10-24) the mod's test-options notice (the
+  360's modal over PC's) showed, and a tip came over it, drawn in front; A went to the notice
+  behind. The modal, the NPC dialog and the fishing screen read the pad themselves, each frame,
+  whatever else was open; the tip's own gate (`x360_tip_open`) kept only the inventory and the
+  world from the buttons.
+- **Should have been caught by:** the night's note that "if a tip showed over them, B would reach
+  both" (the dialog, the modal, fishing): left as uncovered, not fixed.
+- **Caught by:** the owner's run.
+- **Covered now:** while a tip is shown (and 0.3 s after it closes) the modal's, the dialog's and
+  fishing's pads read nothing, as the inventory's: the screen drawn in front has the pad. The tip
+  acts on B and Y only, so A does nothing while it is up. The tip's tick runs before theirs, so on
+  the frame it shows they already leave it the pad. QA
+  checklist: a tip over the test-options notice (or over a dialog): A and B act on the tip only.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
+- on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
+- a tip over the test-options notice or a dialog: A and B act on the tip only;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
 - a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
