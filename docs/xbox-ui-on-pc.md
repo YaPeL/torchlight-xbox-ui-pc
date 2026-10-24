@@ -3407,13 +3407,111 @@ piece as it was written. The 360's frame update (`sub_821EBA48`) read in order, 
 | A cinematic | `sub_821ED810` on the client's `+60`: input cleared, a hero in a skill set idle, the frame left | no orders (PC's own `0x415125` does the rest) | same (section 26) |
 | Zoom | RS, `-0.35` a frame, from 14 to 28.5 times the level's factor | the same rule, by the clock | same |
 | Facing | toward the stick's point every frame; with no stick and the flag, the facing kept (`sub_8221C838`) | `setTargetDirection` every frame with the stick | same |
-| Walking | `setDestination` 2 units ahead every 0.1 s | the same; `stopPathing` on release | same (the release measured, section 9) |
 | A skill's lock | `sub_821DC600` (the skill at `+708`) | `skill_locks_movement` (GOG `+0xc`) | same |
 | X | `sub_8221BC80(-1)`: no walking, the attack where the hero stands | PC's attack in range, else in place toward the target | same (section 9) |
 | A dying or dead hero | no target, no moves, no buttons (`0x821EC0E8` skips to `0x821EC9F4`, which drops the candidates' marks at the client's `+444`, `+452`) when its AI state (`+632`, GOG `+0x284`) is 5 or 6 (*(OT)* `AISTATE_DYING`, `AISTATE_DEAD`) or it is not alive | **was:** the search and the highlight went on | fixed on the branch `audit-dead-hero` |
 | The target's choice | `sub_821EB598` every frame (alive, not 5 or 6) | every 15 ms | same rule |
-| B, Y, LT, RT | `sub_8221BC80(skill)`, aimed by `sub_8221C838` | PC's hotbar keys 3 to 6, the virtual cursor 2 units ahead | to compare: the aim and the target a skill takes |
-| LB, RB | not read yet | PC's hotbar keys 1 and 2 | to read |
-| Walking, read again | `sub_82199E08(client, 0)`, every frame while the hero is not aiming (`hero[510]` 0) and its AI state is not 34: past the stick's 0.1 dead zone, a destination **5.0** units ahead (the stick turned by the camera) **every frame**, and `hero+1500 = min(len² + 0.2, 1.0)` first (an analog speed?); at rest, `+1500` back to 1.0 and, within 2.0 of its goal, the hero faced 2.4 units along the stick (`sub_82199360`). `sub_8221B8E8` (2.0 units on a 0.1 s timer, section 9) runs only after an action held (`sub_8221BC80` returning 0) | 2.0 units every 0.1 s, a fixed speed, `stopPathing` on release | **different, not changed yet**: `+1500` is read by `sub_821D5410` and `sub_822E3A30`, not yet read; PC's `+0x5e8` (`+1500 + 0xc`) is written by its path code (`0x48cd51`), so likely another field. To read before any change (it may be the "remolino" of section 9) |
-| Start and Back in a cinematic | not traced | handled before the cinematic's test | to trace |
-| Paths and collisions | the engine (A*, `passableBetween`) | PC's engine | to confirm with OpenTorchlight |
+| B, Y, LT, RT | `sub_8221BC80(skill)`: the direction from the stick or the facing, the distance from the skill's range and, on a trigger, its pressure (27c) | PC's hotbar keys 3 to 6, the virtual cursor 14% of the window's height ahead | **different** (27c) |
+| LB, RB | not found yet (27d) | PC's hotbar keys 1 and 2 | open |
+| Walking | `sub_82199E08(client, 0)` every frame while the hero is not aiming (`hero[510]` 0) and its AI state is not 34: past the stick's 0.1 dead zone, a destination at **5 × the stick's length** along the stick turned by the camera, **every frame**, and `hero+1500 = min(len² + 0.2, 1.0)`, the speed's factor (27a); at rest, `+1500` back to 1.0. `sub_8221B8E8` (2.0 units on a 0.1 s timer, section 9) runs only after an action held (`sub_8221BC80` returning 0) | 2.0 units every 0.1 s, the full speed always, `stopPathing` on release; a 0.24 dead zone | **different, not changed yet**: the plan in 27b |
+| Start and Back in a cinematic | not in the frame update (27e) | handled before the cinematic's test | open |
+| Paths and collisions | `setDestination` (`sub_8228F8C8`): the same parts as PC's in the same order (27f), plus a skill-lock test of its own | PC's `setDestination` (`0x494b30`), the lock tested by the pad | same parts; a block-by-block reading open |
+
+### 27a. The stick's speed factor (`hero+1500`)
+
+- **Who writes it.** Only `sub_82199E08` (four stores: `min(len² + 0.2, 1.0)` with the stick out,
+  1.0 at rest and with its flag) and the character's constructor (`sub_82283398`, 1.0).
+- **Who reads it.** Only `sub_821D5410`, the character's update (`sub_822E3A30` reads `+1500` of
+  another class: three angles of an effect, not a character). At `0x821D6F08` the speed's scale
+  (the stat 21 and 140 terms, the `+1612` factor) is multiplied by it, unless the AI state (`+632`)
+  is 7 or 9, or a skill locks the movement (`sub_821DC600`) and the skill's byte `+64` is set. The
+  scale is stored at `+500` and, times the walking or running speed (`+624`, `+628`), at `+504`
+  (`0x821D79BC`).
+- **PC's pair.** GOG's `0x4a6930` is the same function: the same state test (`+0x288` is 6), the
+  same stat lookups (`0x484a90` with 21 and 140, by 7), the same `+0x660` factor, the same
+  follower block (`+0x5b4`, the 169 test), the same tail (`0x5366f0` with 11, `+0x21c` cleared)
+  and the same two stores (`+0x204`, `+0x200` at `0x4a8c34`). **The factor's block is not in
+  it**: from the `+0x660` block (`0x4a8062`) the code goes straight to the follower test. PC has
+  no field for it.
+- **What the scale does.** PC's walking step (`0x491afd`) multiplies the velocity by the walking or
+  running speed (`0x4879f0`, `0x487aa0`) and by `+0x200` (`Vector3 *= float`, Ogre's import). So
+  on the 360 a stick half out (len 0.5) walks the hero at 0.45 of its speed, and at the dead
+  zone's edge at about 0.21; on PC, and with the pad, always at 1.0.
+
+### 27b. The walk: the plan (not done; for the owner's OK)
+
+**What changes.**
+1. **The factor.** A patch at GOG's `0x4a8062` (the join after the `+0x660` block, x87 stack
+   empty there): a jump to a stub that, for the hero only, multiplies the scale at `[esp+0x1c]`
+   by the pad's factor unless the AI state (`+0x284`, the 360's `+632` + 0xc) is 7 or 9 or
+   the skill lock with its byte holds, as `0x821D6ED0`, then runs the replaced `cmp` and jumps
+   back. The factor is kept as the 360 keeps `+1500`: set only when the 360 would call
+   `sub_82199E08` (`min(len² + 0.2, 1)` out, 1.0 at rest), kept otherwise. Its Steam address by
+   `port_addresses.py`. Open: the skill's `+64` byte in GOG (the `+0xc` rule to check on the
+   skill class).
+2. **The destination.** `setDestination` every frame (each `order()`), at `5 × len` along the
+   stick turned by the camera, in place of 2.0 every 0.1 s. Release unchanged (measured, section 9).
+3. **The dead zone.** 0.1 of the raw stick (`sub_82191018` divides by 32767, with no zone of its
+   own), in place of 0.24; `pad_dead_zone=` kept as a test option to compare.
+
+**Does it explain the "remolino"?** In part at most, and not proven. The factor is about 1.0 on
+the stick's rim, where a fast spin usually runs, so it does not change a full spin; it does slow
+a spin made inside the rim (len 0.5: 0.45 of the speed), which shrinks the circle the hero walks
+(its radius is the speed over the turn rate of the stick). The other two changes act on the
+path: today a destination 2.0 ahead, sent every 0.1 s, keeps the hero on each 0.1 s chord at full
+speed, so a fast spin draws a polygon of chords, a spiral; the 360 aims a new destination every
+frame. Which of the three makes the 360's turn in place is what the measurement below decides.
+
+**The measurement, before and after.**
+- **A recorded stick.** A test option `pad_replay=FILE` (time in ms, lx, ly per line) replaces the
+  pad's input; the same files for every run: a straight push at full and at half tilt (2 s), a
+  spin at 1 and 2 turns a second at full and at half tilt (3 s), a reversal, the dead zone's
+  edge.
+- **The trace.** With `pad_trace=1` the pad logs every frame the hero's position (x, z), facing,
+  `+0x200`, `+0x204` and the stick. A tool (`tools/pad_trace.py`, tests on synthetic traces) gives
+  per run the path's length, the net displacement, the largest distance from the start, the
+  speed ratio against the full-tilt run, and a plot.
+- **The 360.** The same files through the recompiled build's input, if its agent can feed them (to
+  ask before any run); otherwise the owner's eye on a 360 against the plots.
+- **Pass.** Half tilt: the speed ratio 0.45 ± 0.05; full tilt: unchanged; a fast spin: the largest
+  distance from the start within the 360's (or, without it, under one hero width), against today's
+  spiral. Runs on the GOG copy with the saves guarded (`save_guard.py`), each change in its own PR.
+
+### 27c. Skills' aim (`sub_8221BC80`, `sub_8221C520`)
+
+The 360 aims a skill on its own: the point from `sub_8221C838` (the stick's direction; with the
+stick at rest, the hero's position plus its facing), then `sub_8221C520` moves it along that
+direction to a distance from the skill's data (its `+84` and `+88`, likely the range's two ends):
+for the skill on LT or RT (the slots `+2152` or `+2160` by the active set, the client's `+3976`)
+`+88 + (+84 − 0.1 − +88) × the trigger's pressure` (`sub_822DF6D8`, `sub_822DF738`: the byte
+over 255); for any other `(+84 + +88) / 2`. Then the hero faces the point (`sub_8228F7E0`) and the
+skill runs (`sub_82293548`). The pad presses PC's hotbar key with the virtual cursor 14% of the
+window's height ahead, so the distance is fixed and the triggers are not analog. To do: name the
+two fields in GOG's skill class and decide with the owner whether the aim follows the 360's (a
+point given to PC's skill call, not a key).
+
+### 27d. LB and RB (open)
+
+Not found yet. The frame update's two buttons at the record's `+80` and `+85` call
+`sub_8221ACD8(client, 0 or 1)`, which switches the active skill set (the client's `+5220`, a
+sound, `sub_822DF5F0`): not potions. The ten skill slots (`hero+2112` to `+2192`) take their
+buttons from a table filled at start (`0x83557554`, zero in the image). Next: the table's
+initializer, and PC's potion use (*(OT)* `CGameUI::useItem`) located in GOG.
+
+### 27e. Start and Back during a cinematic (open)
+
+The 360's frame update reads neither; its first test (the client's `+5230`) leaves the whole
+update. The pause menu and the map are opened elsewhere (the 360's UI input), not traced yet.
+
+### 27f. Paths and collisions
+
+The 360's `setDestination` (`sub_8228F8C8`), GOG's (`0x494b30`) and OpenTorchlight's
+*(OT)* `CCharacter::setDestination` call the same parts in the same order: the walking and running
+speeds, the cinematic test (`sub_821ED810`; GOG's `0x541db0`, *(OT)* `getUIIsInCinematic`), the A*
+pathfinder (*(OT)* `reachedGoal`, `advanceNextNode`, `getNodeX`/`getNodeY`), the path's points
+(*(OT)* `CPath::AddPoint`, `GetPoint`) and the smoothing by *(OT)* `passableBetween` and
+`positionPassable`. One difference at the entry: the 360's tests a skill's lock itself
+(`sub_821DC600`, `sub_8219A258`, `sub_821A5440`); GOG's does not, and the pad tests the lock
+before calling it (`skill_locks_movement`). A block-by-block reading of the smoothing is still to
+do; nothing found that would make the paths differ.
+
