@@ -158,6 +158,10 @@ typedef void *(__fastcall *find_item_fn)(void *level, void *edx, const float *ma
 static float face_x = 0.0f, face_z = 1.0f; /* the hero's facing: the stick's last direction, in the world */
 static void *candidate, *item_candidate;    /* the 360's +0x1BC and +0x1C4 */
 static unsigned aim_until;                  /* the virtual cursor aims ahead of the hero until then */
+static int aim_world_ok;                     /* a skill's point (skill_aim_point), for the cursor until aim_until */
+static float aim_world[3];
+static unsigned char *pad_client;            /* the client order() last read (the skills' aim, its camera) */
+static int world_to_client(unsigned char *client, const float *w, long *x, long *y);
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
@@ -786,6 +790,10 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
             q.x = cx + aim_lx * radius / len;
             q.y = cy - aim_ly * radius / len;
         }
+        if (direct && aim_world_ok && aim_until && GetTickCount() < aim_until) {
+            long ax, ay;   /* a skill's point, the 360's (skill_aim_point) */
+            if (world_to_client(pad_client, aim_world, &ax, &ay)) { q.x = ax; q.y = ay; }
+        }
         {
             /* The press and the release are injected (the game starts a move or an attack on the
              * button's down event); while held, the game polls GetAsyncKeyState and the cursor. */
@@ -1246,6 +1254,129 @@ static void post_key(unsigned vk) {
     PostMessageW(w, 0x0101 /* WM_KEYUP */, vk, (long)0xC0000001UL);
 }
 
+/* ---- Skills' aim, the 360's (doc section 33) ----
+ * The 360 aims a skill itself (sub_8221BC80 -> sub_8221C520): along the stick's direction, or with
+ * the stick at rest the hero's facing (sub_8221C838), at a distance from the skill's two range
+ * fields (its properties, skill+92, then +84 RANGE and +88 RANGEMIN; GOG the same: skill+0x5c, then
+ * +0x54 and +0x58, CSkill::getRange 0x5d5aa0 and getRangeMin 0x5d5ab0, 1.0 and 0 without
+ * properties): for the skill on LT or RT with its trigger pressed, near + (far - 0.1 - near) * the
+ * trigger's pressure (its byte after the 360's dead zone, sub_821FE480 twice, over 255); for any
+ * other, the middle (far + near) / 2. The pad still presses PC's hotbar key (PC's own skill use,
+ * its costs and cooldowns) with the virtual cursor on that point's place on the screen. The
+ * hotbar: the hero's skill GUIDs at +0x860 + 8 * key index (setMappedFunctionSkill, GOG 0x40c8f0),
+ * the skill by CSkillManager::getSkillByGuid (GOG 0x5dc320) on the hero's +0x184, as PC's key
+ * handler does (0x41546f). x360_ui.ini pad_skill_aim=0 keeps the old point, 14% of the window's
+ * height ahead. */
+#define GOG_HERO_SKILL_MANAGER 0x184
+#define GOG_HERO_HOTKEY_SKILLS 0x860
+#define GOG_SKILL_BY_GUID 0x005dc320
+#define GOG_SKILL_RANGE 0x005d5aa0
+#define GOG_SKILL_RANGE_MIN 0x005d5ab0
+typedef void *(__fastcall *skill_by_guid_fn)(void *manager, void *edx, unsigned lo, unsigned hi);
+typedef float (__fastcall *skill_float_fn)(void *skill, void *edx);
+int x360_skill_aim = 1;
+static int camera_ground(unsigned char *client, float *fx, float *fz);
+
+/* The 360's trigger dead zone (sub_821FE480): under 30 nothing, else (t - 30) * 255 / 225 (the
+ * pool's +0x104) truncated; its input update runs it twice a tick, as the sticks' (doc 32). */
+static unsigned trigger_360(unsigned t) {
+    int pass;
+    for (pass = 0; pass < 2; pass++) {
+        if (t < 30) return 0;
+        if (t > 255) t = 255;
+        t = (unsigned)((float)(t - 30) * 1.13333333f);
+    }
+    return t;
+}
+
+/* The skill's point for a hotbar key (index 0..9), or 0 to keep the old aim. */
+static int skill_aim_point(unsigned char *hero, unsigned key_index, int trigger, float *out) {
+    unsigned char *client = pad_client;
+    void *manager = *(void **)(hero + GOG_HERO_SKILL_MANAGER), *skill;
+    unsigned lo = *(unsigned *)(hero + GOG_HERO_HOTKEY_SKILLS + 8 * key_index);
+    unsigned hi = *(unsigned *)(hero + GOG_HERO_HOTKEY_SKILLS + 8 * key_index + 4);
+    float far_, near_, dist, pos[3], dx, dz, len;
+    if (!x360_skill_aim || !manager || (lo == 0xffffffffu && hi == 0xffffffffu)) return 0;
+    skill = ((skill_by_guid_fn)GOG_SKILL_BY_GUID)(manager, 0, lo, hi);
+    if (!skill) return 0;
+    far_ = ((skill_float_fn)GOG_SKILL_RANGE)(skill, 0);
+    near_ = ((skill_float_fn)GOG_SKILL_RANGE_MIN)(skill, 0);
+    {
+        unsigned t = trigger ? trigger_360(trigger == 1 ? raw_lt : raw_rt) : 0;
+        if (t) dist = near_ + (far_ - 0.1f - near_) * ((float)t / 255.0f);
+        else dist = (far_ + near_) * 0.5f;
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+        if (stick_active()) {
+            /* The stick's direction (the walk's: turned by the camera's yaw). */
+            float fx, fz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f;
+            if (!camera_ground(client, &fx, &fz)) return 0;
+            dx = sx * -fz + sy * fx;
+            dz = sx * fx + sy * fz;
+        } else {
+            float m[16];   /* the hero's facing: its rotation's column 2 */
+            hero_matrix(hero, m);
+            dx = m[2];
+            dz = m[10];
+        }
+        len = root(dx * dx + dz * dz);
+        if (len < 1e-3f) return 0;
+        out[0] = pos[0] + dx / len * dist;
+        out[1] = pos[1];
+        out[2] = pos[2] + dz / len * dist;
+        x360_log("pad: aim x1000 range ");
+        x360_log_num((long)(far_ * 1000)); x360_log(" min "); x360_log_num((long)(near_ * 1000));
+        x360_log(" trigger "); x360_log_num((long)t);
+        x360_log(" distance "); x360_log_num((long)(dist * 1000));
+        x360_log(" point "); x360_log_num((long)(out[0] * 1000)); x360_log(" "); x360_log_num((long)(out[2] * 1000));
+        x360_log(" hero "); x360_log_num((long)(pos[0] * 1000)); x360_log(" "); x360_log_num((long)(pos[2] * 1000));
+        if (replay_t0) { x360_log(" t_ms "); x360_log_num((long)(qms() - replay_t0)); }
+        x360_log("\r\n");
+    }
+    return 1;
+}
+
+/* A world point's place in the window's client area, by the controller camera's view and
+ * projection (Ogre's Matrix4 is row-major) and its viewport. */
+static int world_to_client(unsigned char *client, const float *w, long *x, long *y) {
+    typedef const float *(__fastcall *mat_fn)(void *self, void *edx);
+    typedef void *(__fastcall *ptr_fn)(void *self, void *edx);
+    typedef int (__fastcall *int_fn0)(void *self, void *edx);
+    static mat_fn view, proj;
+    static ptr_fn viewport;
+    static int_fn0 vw, vh, vl, vt;
+    static int looked;
+    unsigned char *ctl = client ? *(unsigned char **)(client + 0x10) : 0;
+    void *cam = ctl ? *(void **)(ctl + 8) : 0, *vp;
+    const float *V, *P;
+    float e[4], c[4];
+    int i;
+    if (!looked) {
+        HMODULE ogre = GetModuleHandleA("OgreMain.dll");
+        looked = 1;
+        if (ogre) {
+            view = (mat_fn)GetProcAddress(ogre, "?getViewMatrix@Camera@Ogre@@UBEABVMatrix4@2@XZ");
+            proj = (mat_fn)GetProcAddress(ogre, "?getProjectionMatrix@Frustum@Ogre@@UBEABVMatrix4@2@XZ");
+            viewport = (ptr_fn)GetProcAddress(ogre, "?getViewport@Camera@Ogre@@QBEPAVViewport@2@XZ");
+            vw = (int_fn0)GetProcAddress(ogre, "?getActualWidth@Viewport@Ogre@@QBEHXZ");
+            vh = (int_fn0)GetProcAddress(ogre, "?getActualHeight@Viewport@Ogre@@QBEHXZ");
+            vl = (int_fn0)GetProcAddress(ogre, "?getActualLeft@Viewport@Ogre@@QBEHXZ");
+            vt = (int_fn0)GetProcAddress(ogre, "?getActualTop@Viewport@Ogre@@QBEHXZ");
+        }
+        if (!view || !proj || !viewport || !vw || !vh || !vl || !vt) x360_log("pad: Ogre's camera matrices not found: the old aim\r\n");
+    }
+    if (!cam || !view || !proj || !viewport || !vw || !vh || !vl || !vt) return 0;
+    vp = viewport(cam, 0);
+    if (!vp) return 0;
+    V = view(cam, 0);
+    P = proj(cam, 0);
+    for (i = 0; i < 4; i++) e[i] = V[i * 4] * w[0] + V[i * 4 + 1] * w[1] + V[i * 4 + 2] * w[2] + V[i * 4 + 3];
+    for (i = 0; i < 4; i++) c[i] = P[i * 4] * e[0] + P[i * 4 + 1] * e[1] + P[i * 4 + 2] * e[2] + P[i * 4 + 3] * e[3];
+    if (c[3] <= 1e-4f) return 0;   /* behind the camera */
+    *x = vl(vp, 0) + (long)((c[0] / c[3] * 0.5f + 0.5f) * (float)vw(vp, 0));
+    *y = vt(vp, 0) + (long)((0.5f - c[1] / c[3] * 0.5f) * (float)vh(vp, 0));
+    return 1;
+}
+
 /* The buttons, on their press (the 360's scheme, section 9a): X attacks the candidate, A picks up
  * the item or talks to the candidate, LB/RB and B, Y, LT, RT press the hotbar's keys 1 to 6. */
 static void buttons_pressed(unsigned char *hero, unsigned pressed) {
@@ -1329,6 +1460,9 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             x360_log(keys[i].name);
             x360_log(": hotbar key\r\n");
             aim_until = GetTickCount() + 400;
+            aim_world_ok = keys[i].key >= '3' &&
+                           skill_aim_point(hero, keys[i].key - '1', keys[i].bit == BUTTON_LT ? 1 : keys[i].bit == BUTTON_RT ? 2 : 0,
+                                           aim_world);
             post_key(keys[i].key);
         }
 }
@@ -1535,6 +1669,7 @@ static void order(void) {
         x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return;
     }
     if (hero != walk_hero) { walk_hero = hero; x360_walk_factor = 1.0f; }   /* another hero: its own factor */
+    pad_client = client;
     diag_level = level;
     attack_level = level;
     {

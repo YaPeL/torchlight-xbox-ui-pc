@@ -250,12 +250,15 @@
 0x005d5930 0x005cf600 verified   code    window, callers x5
 0x005d5950 0x005cf620 verified   code    window, callers, callers-global
 0x005d59b0 0x005cf680 verified   code    window, callers
+0x005d5aa0 0x005cf770 verified   code    window, callers x6
+0x005d5ab0 0x005cf780 verified   code    window, callers x4
 0x005d5c00 0x005cf8d0 verified   code    window, body, callers x2
 0x005d68e0 0x005d0580 checked    code    by hand: callers (its one call site in each), the same instructions but the prologue, its neighbours 0x5d5c00 and 0x5d7d40 moved alike
 0x005d7d40 0x005d19f0 verified   code    body, callers x6
 0x005d88f0 0x005d25a0 verified   comment callers x4
 0x005d8c60 0x005d2910 verified   code    window, callers x3
 0x005d8d80 0x005d2a30 verified   comment body, strings
+0x005dc320 0x005d5e80 verified   code    window, body, callers x6
 0x005dd660 0x005d70e0 verified   code    callers x6
 0x005de550 0x005d8000 verified   code    body, callers
 0x005df280 0x005d8ce0 verified   code    window, body, callers x2

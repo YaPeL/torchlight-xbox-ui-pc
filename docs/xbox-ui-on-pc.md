@@ -3682,3 +3682,43 @@ within 1 %. The one difference left is the fastest spins: with the stick turning
 5.5 (27.75 to 28.25 s, 51.0 to 51.25 s), 5 to 12 % less over those 2 s windows; at 430 to 600
 degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 360's every frame
 (change b, parked in section 30 before the dead zone was found).
+
+## 33. Skills' aim, the 360's (the audit's 27c, 2026-10-24)
+
+**The 360 (read).** A skill button calls `sub_8221BC80(client, skill, held)` from the frame update
+(`sub_821EBA48`, the ten slots at `hero+2112 + 8 * i`, each button's state byte at the client's
+`+585` through the mapping at `[client+40]+108`: 1 pressed, 2 held). It takes a point from
+`sub_8221C838` (the stick's direction, or with the stick at rest the hero's facing) and
+`sub_8221C520` moves it to a distance along that direction from the hero:
+- the skill (`sub_821F58F8` on `hero[388]`) and its properties at `+92`: `+84` RANGE and `+88`
+  RANGEMIN, 1.0 and 0 (the pool's `+0x40`, `+0x44`) without properties;
+- if LT's pressure (`sub_822DF6D8`: the pad table's `+6` byte times `+0x5C`, 1/255) is over 0 and
+  the skill is the one on LT's slot of the active set (`hero+2152`, or `+2176` with the client's
+  `+3976` set), `near + (far - 0.1 - near) * pressure` (`+0x6C`, 0.1); the same for RT
+  (`sub_822DF738`, `+7`; `+2160` or `+2184`);
+- otherwise the middle, `(far + near) * 0.5` (`+0x68`);
+- the point is the hero's position plus that distance along the direction, at the hero's height.
+
+The triggers' bytes are the 360's input update's (`sub_821FE1D0`): `sub_821FE480` on each, under
+30 nothing, else `(t - 30) * 255 / 225` (`+0x104`, 1.1333) truncated, twice a tick as the sticks'
+dead zone (section 32): a trigger reads 0 up to about 56 of 255, 64 reads 9, 128 reads 91, 255
+reads 253. Where a trigger becomes the button that fires its skill (the `+585` byte) was not found
+in two tries (its writers are not stored at a fixed offset); to measure.
+
+**GOG (read).** The same fields: CSkill's properties at `skill+0x5c` (the 360's `+92`),
+`CSkill::getRange` at `0x5d5aa0` (`+0x54`, 1.0 without properties) and `getRangeMin` at `0x5d5ab0`
+(`+0x58`, 0), the loader reading `RANGE` and `RANGEMIN` into them (`0x5e05de`, `0x5e0631`). The
+hotbar: `setMappedFunctionSkill` at `0x40c8f0` keeps the hero's skill GUIDs at `+0x860 + 8 * i`
+(and an item's at `+0x8b0`); PC's key handler (`0x41546f`) takes the skill with
+`CSkillManager::getSkillByGuid` (`0x5dc320`) on the hero's `+0x184`. Steam: `0x5cf770`,
+`0x5cf780`, `0x5d5e80` (`port_addresses.py`, verified).
+
+**The pad.** On B, Y, LT or RT the pad still presses PC's hotbar key (3 to 6: PC's own skill use,
+its costs and cooldowns), and for 0.4 s puts the virtual cursor on the 360's point projected to
+the screen (the controller camera's view and projection matrices and its viewport, Ogre's
+exports): the skill of that key, its two fields, the trigger's pressure through the 360's dead
+zone, the stick's direction turned by the camera's yaw or the hero's facing. A key with an item,
+no skill or no camera keeps the old point (14% of the window's height ahead). Each aim is logged
+(`pad: aim x1000 range ... min ... trigger ... distance ... point ... hero ... t_ms ...`).
+`pad_skill_aim=0` keeps the old point, to compare. The trigger's threshold to fire stays PC's 64
+of 255 until the 360's is measured. Not measured yet.
