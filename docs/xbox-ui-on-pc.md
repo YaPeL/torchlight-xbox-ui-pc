@@ -3496,3 +3496,42 @@ a partial tilt): merged only with the owner's OK after a test by hand.
 
 The replay reproduces the recording (the 0.94 straight: 32.20 units against the recording's
 32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).
+
+## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
+
+The 360's plain walk (`sub_82199E08`) turns the stick by the camera's yaw: `f10 = atan2` of the
+camera's forward (`sub_821C9BF8`, the camera controller `client[16]`, its camera at `+8`, the
+orientation at `+0x410`, times `-UNIT_Z` at `0x8349D4EC`; `sub_821BEBE8` the atan2), then
+`f9 = f10 * 57.2958 - 90` (the pool `0x820AA2C0`'s `+0x27C` and `+0xB4`), the rotation's angle.
+On the ground that is: stick up walks along the camera's forward `(fx, fz)`, stick right along
+`(-fz, fx)`. The pad took the direction from a screen probe instead (a point beside the hero on
+the screen, cast to the ground by `findWorldLocation`), which perspective bends.
+
+PC's camera is the 360's: Ogre's `Camera::getDerivedDirection` and `getDerivedPosition` of the
+controller's camera (client `+0x10`, then `+8`) read (-0.485, -0.728, 0.485) and (-19.584, 18.896,
+4.756) at the town's start; the recomp agent read the 360's (-0.48507, -0.72761, 0.48507) and
+(-19.583, 18.896, 4.755). Now the pad turns the stick by the yaw of that direction, read each
+time the walk's direction is refreshed (a turn of more than 5 degrees, or every 0.1 s); the
+screen probe stays as the fallback when the camera cannot be read, and `pad_walk_yaw=0` in
+`x360_ui.ini` keeps it, to compare.
+
+**Measured (2026-10-24).** A synthetic replay (outside the repository): a lead-in to an open
+place in town, then full tilt at once in 8 directions, 0.6 s each (full tilt, so the stick's
+length plays no part), on the recompiled 360 and on GOG with each direction. The walk's angle in
+the world (atan2 of z, x) from 0.15 to 0.55 s after the press, every push at a steady 5.8 to 6.7
+units a second:
+
+| Stick | 360 | PC, screen probe | PC, camera yaw |
+|---|---|---|---|
+| up | 139.3 | 128.7 (-10.6) | 141.8 (+2.4) |
+| down | -33.1 | -41.3 (-8.2) | -30.0 (+3.2) |
+| right | -135.0 | -142.0 (-7.0) | -135.0 (0.0) |
+| left | 45.0 | 52.0 (+7.0) | 45.0 (0.0) |
+| up-right | -179.9 | 163.2 (-16.9) | -180.0 (0.0) |
+| down-left | 1.6 | -4.5 (-6.1) | 2.0 (+0.4) |
+| up-left | 84.7 | 103.2 (+18.5) | 85.2 (+0.5) |
+| down-right | -86.0 | -90.2 (-4.2) | -86.1 (0.0) |
+
+Up and down leave the exact diagonal on both builds there (the ground's). On a reversal the
+facing turns 150 degrees in 196 ms on the 360, 197 to 202 with the yaw, 224 to 249 with the
+probe. Not yet played by hand.
