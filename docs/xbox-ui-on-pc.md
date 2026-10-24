@@ -834,8 +834,9 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
 **The movement measured (2026-10-24).** Two test options of `x360_ui.ini`, named on the screen's
 test notice like the others: `pad_replay=PATH` plays a recorded stick (`tools/pad_trace.py
 routes`) in place of XInput, from 3 s after the first frame in play (the file's `# start_ms`); with
-the option set the hand's pad is not read at all in that session (the menus too get the replay's
-buttons, none before t=0, the last line's after the end), and the replay's clock is the performance counter (Windows'
+the option set the hand's pad works until the first frame in play (the title, the main menu's
+Continue) and is not read after it (the menus too get the replay's buttons then, the last line's
+after the end), and the replay's clock is the performance counter (Windows'
 `GetTickCount` moves by 15.6 ms). `pad_trace=1` writes the hero's path to `x360_trace-<date>.csv` in the
 mod's folder: the time, its position, its facing, GOG's `+0x200` and `+0x204` and the raw stick,
 a line whenever one of them changes, until 2 s after the replay's end, with a last line there. If
