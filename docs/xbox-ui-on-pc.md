@@ -3563,7 +3563,9 @@ Here `poll()` passes the left stick through `sub_821FE778`'s rule twice with 784
 stick twice with 8689, whatever the source (XInput, a replay, the pad file), and the pad's
 threshold becomes the walk's 0.1 on the result (it was XInput's 0.24 on the raw stick). The
 walk, its speed factor (`l^2 + 0.2`, section 29), the skills' aim and the zoom read the result;
-the proxy's own menu navigation keeps the raw stick (its 0.5 is not the 360's code), and the
-recording and the trace keep the raw stick. The triggers are left as they were (PC's 64 of 255;
+the proxy's own menus (the pause menu, the inventory, the navigation of PC's screens) keep the
+raw stick (their 0.5 is not the 360's code), and the recording and the trace keep the raw stick.
+It is computed with the stick normalised (the proxy's square root converges near 1, not on shorts
+squared: the review), the shorts' truncation kept. The triggers are left as they were (PC's 64 of 255;
 `sub_821FE480` not read). `pad_dead_zone=0` in `x360_ui.ini` keeps the old behaviour, to compare.
 Not yet measured on PC nor played by hand.

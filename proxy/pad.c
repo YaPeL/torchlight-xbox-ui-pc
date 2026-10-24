@@ -512,19 +512,20 @@ static void trace_tick(unsigned char *hero, unsigned now) {
  * x360_ui.ini pad_dead_zone=0 leaves it out (to compare). */
 static float root(float v);
 static void dead_zone_360(int *x, int *y, int dz) {
-    float fx = (float)*x * 32.767f, fy = (float)*y * 32.767f;
-    float mag = root(fx * fx + fy * fy), m = mag - (float)dz, k = 32767.0f / (32767.0f - (float)dz);
+    /* Normalised (full tilt 1): root() converges near 1, not on shorts squared (the review). */
+    float d = (float)dz / 32767.0f, fx = (float)*x / 1000.0f, fy = (float)*y / 1000.0f;
+    float mag = root(fx * fx + fy * fy), m = mag - d, k = 1.0f / (1.0f - d);
     if (m < 0.0f) m = 0.0f;
     if (mag > 1e-8f) { fx /= mag; fy /= mag; }
     fx = fx * k * m;
     fy = fy * k * m;
-    if (fx > 32767.0f) fx = 32767.0f;
-    if (fx < -32767.0f) fx = -32767.0f;
-    if (fy > 32767.0f) fy = 32767.0f;
-    if (fy < -32767.0f) fy = -32767.0f;
-    fx = (float)(int)fx / 32.767f;   /* the 360's truncation is of the shorts; to -1000..1000 rounded */
-    fy = (float)(int)fy / 32.767f;
-    *x = (int)(fx < 0.0f ? fx - 0.5f : fx + 0.5f);
+    if (fx > 1.0f) fx = 1.0f;
+    if (fx < -1.0f) fx = -1.0f;
+    if (fy > 1.0f) fy = 1.0f;
+    if (fy < -1.0f) fy = -1.0f;
+    fx = (float)(int)(fx * 32767.0f) * (1000.0f / 32767.0f);   /* the 360's truncation is of the shorts */
+    fy = (float)(int)(fy * 32767.0f) * (1000.0f / 32767.0f);
+    *x = (int)(fx < 0.0f ? fx - 0.5f : fx + 0.5f);   /* to -1000..1000, rounded */
     *y = (int)(fy < 0.0f ? fy - 0.5f : fy + 0.5f);
 }
 
@@ -1506,7 +1507,7 @@ static void order(void) {
     /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
     int x360_tip_open(void);
     if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
-        x360_pause_pad(pressed, ly);
+        x360_pause_pad(pressed, menu_ly);   /* the proxy's menus: the raw stick */
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
     if ((pressed & BUTTON_BACK) && !x360_tip_open()) {   /* a tip keeps every button (the 360's) */
@@ -1514,7 +1515,7 @@ static void order(void) {
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
     if (x360_inventory_open()) {
-        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, lx, ly);   /* a tip over it has the pad */
+        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, menu_lx, menu_ly);   /* a tip over it has the pad */
         return;
     }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
