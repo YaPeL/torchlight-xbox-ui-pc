@@ -182,6 +182,7 @@ int run(const Options& options) {
     SDL_Rect usable;
     if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) && usable.w <= 1280 && usable.h <= 800) fullscreen = true;
   }
+  SDL_SetHint(SDL_HINT_APP_ID, "x360ui-install");   // Wayland takes the icon by the desktop file's name
   SDL_Window* window = SDL_CreateWindow(kTitle, int(float(options.width) * scale), int(float(options.height) * scale),
                                         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY |
                                             (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));

@@ -8,5 +8,5 @@ It is not from the game. The owner gave it under the repository's licence, the G
 - `x360ui-install-64.png`: the wizard's window icon, built into the executable (`CMakeLists.txt`).
 - `x360ui-install.png`: the AppImage's icon, 256 pixels (`packaging/linux/make_appimage.sh`).
 
-All three were scaled from the owner's 1254-pixel original: cropped to the cat, centred on a
-transparent square, Lanczos.
+- `source-1254.png`: the owner's original, the form to edit; the three above are made from it
+  (cropped to the cat, centred on a transparent square, scaled with Lanczos).

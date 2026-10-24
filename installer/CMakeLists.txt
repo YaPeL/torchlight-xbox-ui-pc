@@ -105,6 +105,8 @@ if(WIN32)
   # asInvoker: Windows never redirects a write it refuses (no VirtualStore); UAC is asked by the
   # installer itself, only when the game's folder needs it.
   add_executable(x360ui-install src/main.cpp src/x360ui-install.rc ${WIZARD_SOURCES})
+  # The .rc's icon is not an #include: named so a new icon rebuilds it.
+  set_source_files_properties(src/x360ui-install.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/data/icon/x360ui-install.ico)
 else()
   add_executable(x360ui-install src/main.cpp ${WIZARD_SOURCES})
 endif()
