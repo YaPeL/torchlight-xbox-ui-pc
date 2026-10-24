@@ -3498,6 +3498,9 @@ The replay reproduces the recording (the 0.94 straight: 32.20 units against the 
 32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).
 ## 30. A destination each frame (the movement plan's change b, 2026-10-24)
 
+(Parked here at first; measured again on top of the 360's dead zone in 30a, which supersedes the
+measurement below.)
+
 The 360's plain stick walk (`sub_82199E08`) sends a destination each frame, at 5 times the stick's
 length along the stick turned by the camera; the pad sent one every 0.1 s, 2 units ahead
 (the 360's walk after a held action, `sub_8221B8E8`). The owner's route replayed: PC's paths are
@@ -3547,7 +3550,10 @@ on the same route, against the 360 and develop's replay:
 
 At 0.6, 0.7, 0.9 and full tilt the three agree within 0.03. So b brings the fast spins to the
 360's and makes nothing else worse; its earlier result (section 30) came before the dead zone,
-when the factor read the raw stick. Ready to integrate on the owner's word.
+when the factor read the raw stick. The 0.1 s timer stays as a backstop (a frame listener that
+stopped would else hold the hero), and the call's cost goes to the log every 5 s while the stick
+walks (`pad: setDestination us avg ... max ... n ...`): a path request each frame, against
+walls too, to be read in a run before it is integrated.
 
 ## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
 

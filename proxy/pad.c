@@ -1588,7 +1588,9 @@ static void order(void) {
              * Left out: the 360's per-frame sub_8219C070(hero, 0) and its +652 handle's release
              * after the destination (the target's drop is the pad's on the stick's first frame). */
             if (have_world && !skill_locks_movement(hero) &&
-                (x360_walk_dest_on && x360_frames ? x360_frames != dest_frame : now - last_order >= 100)) {
+                ((x360_walk_dest_on && x360_frames && x360_frames != dest_frame) || now - last_order >= 100)) {
+                /* The frame count gates it; the old 0.1 s timer stays as a backstop (a frame
+                 * listener that stopped would else hold the hero: the review). */
                 float ahead = 2.0f;
                 if (x360_walk_dest_on && x360_frames) {
                     ahead = 5.0f * root(((float)lx * lx + (float)ly * ly) / 1000000.0f);
@@ -1597,8 +1599,36 @@ static void order(void) {
                 last_order = now;
                 aim_lx = lx;
                 aim_ly = ly;
-                ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + ahead * world_x,
-                                                          pos[2] + ahead * world_z);
+                {
+                    /* Its cost, in the log every 5 s while the stick walks: a path request each
+                     * frame on the game's thread (the review). */
+                    static long long sum, worst, qpf;
+                    static unsigned count, since;
+                    long long t0, t1;
+                    QueryPerformanceCounter(&t0);
+                    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + ahead * world_x,
+                                                              pos[2] + ahead * world_z);
+                    QueryPerformanceCounter(&t1);
+                    sum += t1 - t0;
+                    if (t1 - t0 > worst) worst = t1 - t0;
+                    count++;
+                    if (now - since >= 5000) {
+                        if (!qpf) QueryPerformanceFrequency(&qpf);
+                        if (since && count && qpf) {
+                            /* In floating point: 64-bit division needs the CRT's __alldiv. */
+                            x360_log("pad: setDestination us avg ");
+                            x360_log_num((long)((double)sum * 1e6 / (double)qpf / (double)count));
+                            x360_log(" max ");
+                            x360_log_num((long)((double)worst * 1e6 / (double)qpf));
+                            x360_log(" n ");
+                            x360_log_num((long)count);
+                            x360_log("\r\n");
+                        }
+                        since = now;
+                        sum = worst = 0;
+                        count = 0;
+                    }
+                }
                 dest_calls++;
                 note(3, "pad: setDestination called\r\n");
             }
