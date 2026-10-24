@@ -108,6 +108,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
+- a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
   itself, if it ever is, must not show it);
 - the stop's black screen closed with A held: the title does not take the A;
