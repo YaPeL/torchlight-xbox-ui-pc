@@ -486,23 +486,32 @@ static void trace_tick(unsigned char *hero, unsigned now) {
             /* The camera at t=0 (its controller, the client's +0x10, keeps it at +0x8, as the
              * 360's client[16] does; Ogre's derived direction and position), and the hero: a
              * comment line, for the walk's direction against the 360's (doc section 30). */
+            /* OgreMain.dll's exports: the direction returned by value (a hidden out pointer), the
+             * position as a const reference. */
             typedef float *(__fastcall *vec_fn)(void *self, void *edx, float *out);
+            typedef const float *(__fastcall *ref_fn)(void *self, void *edx);
             HMODULE ogre = GetModuleHandleA("OgreMain.dll");
-            vec_fn dir = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedDirection@Camera@Ogre@@QBE?BVVector3@2@XZ") : 0;
-            vec_fn at = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedPosition@Camera@Ogre@@QBE?BVVector3@2@XZ") : 0;
+            vec_fn dir = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedDirection@Camera@Ogre@@QBE?AVVector3@2@XZ") : 0;
+            ref_fn at = ogre ? (ref_fn)GetProcAddress(ogre, "?getDerivedPosition@Camera@Ogre@@QBEABVVector3@2@XZ") : 0;
             unsigned char *ctl = trace_client ? *(unsigned char **)(trace_client + 0x10) : 0;
             void *cam = ctl ? *(void **)(ctl + 8) : 0;
             if (cam && dir && at) {
-                float d[3], p[3];
+                float d[3];
+                const float *p;
                 int i;
                 dir(cam, 0, d);
-                at(cam, 0, p);
+                p = at(cam, 0);
                 trace_put("# camera_dir_mu");
                 for (i = 0; i < 3; i++) { trace_put(" "); trace_num(mu(d[i])); }
                 trace_put(" camera_pos_mu");
                 for (i = 0; i < 3; i++) { trace_put(" "); trace_num(mu(p[i])); }
                 trace_put(" hero_mu "); trace_num(mu(pos[0])); trace_put(" "); trace_num(mu(pos[2]));
                 trace_put("\r\n");
+            } else {
+                x360_log("pad: no camera line in the trace:");
+                if (!dir || !at) x360_log(" Ogre's camera functions not found");
+                if (!cam) x360_log(" no camera at the controller's +8");
+                x360_log("\r\n");
             }
         }
         trace_put("t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly\r\n");
