@@ -14,11 +14,14 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include "miniz.h"
+#include "prompts.h"
 #include "text_lines.h"
 #include "wizard.h"
 #include "wizard_screens.h"
 
 namespace x360ui {
+extern const unsigned char* const kWindowIcon;   // data/icon/x360ui-install-64.png, built in (CMakeLists.txt)
+extern const size_t kWindowIconSize;
 extern const unsigned char* const kFontRegular;
 extern const size_t kFontRegularSize;
 extern const unsigned char* const kFontBold;
@@ -179,6 +182,7 @@ int run(const Options& options) {
     SDL_Rect usable;
     if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) && usable.w <= 1280 && usable.h <= 800) fullscreen = true;
   }
+  SDL_SetHint(SDL_HINT_APP_ID, "x360ui-install");   // Wayland takes the icon by the desktop file's name
   SDL_Window* window = SDL_CreateWindow(kTitle, int(float(options.width) * scale), int(float(options.height) * scale),
                                         SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY |
                                             (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
@@ -195,6 +199,15 @@ int run(const Options& options) {
     return 2;
   }
   SDL_SetRenderVSync(renderer, 1);
+  try {
+    // The window's icon (data/icon: the owner's cat, GPL-3.0), decoded by the prompts' own PNG reader.
+    Image icon = read_png(Bytes(kWindowIcon, kWindowIcon + kWindowIconSize));
+    if (SDL_Surface* surface = SDL_CreateSurfaceFrom(icon.width, icon.height, SDL_PIXELFORMAT_RGBA32, icon.rgba.data(), icon.width * 4)) {
+      SDL_SetWindowIcon(window, surface);
+      SDL_DestroySurface(surface);
+    }
+  } catch (const std::exception&) {   // no icon: the window as before
+  }
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   SDL_ShowWindow(window);
 
