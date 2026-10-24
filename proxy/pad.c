@@ -1577,8 +1577,13 @@ static void order(void) {
     }
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
-    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
+    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. Not
+     * during a cinematic: the 360's frame update (sub_821EBA48) toggles its pause (sub_8233D440)
+     * on Start (its +612) only when sub_821ED810 is false (the owner's run of 2026-10-24: the
+     * pause opened over a cinematic). */
     int x360_tip_open(void);
+    void *ui_for_start = *(void **)(client + 0x3c);
+    if ((pressed & 0x0010) && !x360_pause_open() && ui_for_start && ((bool_fn)GOG_UI_HOLDS_PLAY)(ui_for_start, 0)) pressed &= ~0x0010u;
     if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
         x360_pause_pad(pressed, menu_ly);   /* the proxy's menus: the raw stick */
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
