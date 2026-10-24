@@ -1124,8 +1124,8 @@ does it again if CEGUI laid the font out anew. **[read: CEGUI 0.6.2's source]**
   each `X360_` font gets the game's native size (1365x768, copied from PC's `Serif`), is laid out
   at 1280x720 (scaling 0.9375 both ways, the 360's) to read the advances, then for PC's size
   (1920x1080), and its advances are set to the 360's times height / 720. Side by side with the
-  360's English screenshots (`~/torchlight-gog/screens/side-en-*.png`): "town portal scroll",
-  "mana potion", "health potion" take the 360's width and "Miscellaneous" fits its box. **[the run]**
+  360's English screenshots (`~/torchlight-gog/screens/side-en-*.png`): the town portal scroll's,
+  the mana and health potions' names take the 360's width and the misc filter's label fits its box. **[the run]**
 - **A crash on the way:** CEGUI's `setProperty` faulted after the icon background's "can equip"
   check: CEquipment's virtual `+0x164` (GOG `0x4b8660`) takes two arguments (`ret 8`: the
   character and a flag; the 360 passes the hero and 1), and one was passed. The same call in A's
@@ -1162,9 +1162,9 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
     menu reads those fields itself, and so does the proxy; the next level's experience and fame
     from the experience table (`0x5281d0`, then `0x528130` by level, `0x528180` by fame level);
     the name a wstring at `+0x420`. A run read them right (level 1, XP 130/4000, fame 0/1600, HP
-    300, "<the character's name>"). The fame title: below.
+    300, "<the character\'s name>"). The fame title: below.
   - **They did not show at first (stopped after two hypotheses; solved below).** The windows are found, visible,
-    scaled, and hold the texts (read back: "300", "1", "<the character's name>"), yet nothing is drawn; the
+    scaled, and hold the texts (read back: "300", "1", "<the character\'s name>"), yet nothing is drawn; the
     layout's own "MP" label is not drawn either, while "HP", "Level" and "Stats" are. Neither
     taking `AlwaysOnTop` off nor setting `TextColour` white changed it. Open.
   - **Stopped after two hypotheses (2026-10-16).** PC moves its stats menu's windows away from the
@@ -1317,7 +1317,7 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
 ## 11b. The 360's HUD in play (2026-10-16)
 
 The user's order: the 360's interface, PC's hidden. The 360's references: the mods session's
-captures in play (`~/torchlight-gog/screens/ref/x360-ref-en-hud-still.png`, `-pet.png`; the mines floor 3): the orbs top left and right with a potion and its count over LB and RB, the
+captures in play (`~/torchlight-gog/screens/ref/x360-ref-en-hud-still.png`, `-pet.png`; the mines' third floor): the orbs top left and right with a potion and its count over LB and RB, the
 level's name top right, the skill bar at the bottom (Y, LT, RT, B), the experience bar under it,
 the pet's portrait and bars bottom left. **[the screenshots; the runs]**
 
@@ -1450,9 +1450,10 @@ something the hero cannot equip) and identifying with A. **[the runs]**
   every 1.2 s).
 - **The save:** `~/torchlight-gog/save-backups/variety/` (the mine save plus `SPAWNCLASS
   NEWBIE_CHEST_WEAPON,2,1`, `NEWBIE_CHEST_ARMOR,2,1`, `SWORDS_MAGIC_SPAWN,2,1`, `ARMOR_MAGIC,2,1`,
-  `ITEM unique sword,1` (unique, level 15), `ITEM identify scroll,3`, `ITEM healing spell,1`,
-  `MONEY 500`), written by "Exit to Title". Its bag: two "dagger" unidentified, the unique sword unidentified, a common blade and the second blade equipped, a rifle, boots, unidentified
-  shoulder armour and belt, the healing spell spell, identify scrolls, 600 gold.
+  `ITEM <a unique sword's name>,1` (unique, level 15), `ITEM <the identify scroll's name>,3`,
+  `ITEM <the healing spell's name>,1`,
+  `MONEY 500`), written by "Exit to Title". Its bag: two daggers unidentified, the unique sword unidentified, a common blade and the second blade equipped, a rifle, boots, unidentified
+  shoulder armour and belt, the healing spell, identify scrolls, 600 gold.
 - **Checked in the run** (`~/torchlight-gog/screens/x360-gog-identify-compare.png`): unidentified
   rows in red with "???" and "Press A to identify" and a red background; A identified a dagger (an identify scroll spent): DPS 35, price 600, a blue background (magic), the green up
   arrow (35 against the equipped 33), its A now "Equip". "12/63" and the gold 600.
@@ -1850,7 +1851,7 @@ of the brazier (`MERCHANT_ENCHANTER`).
   item" red for a scroll (`screens/gog/enchanter-1`, `enchanter-cannot-1`). An enchantment
   itself is untested (not enough gold). The card's item name is in the 360's SerifBig now (PC's
   layout had FrizQuadrataBig there), in every screen.
-- **identify scroll's card text** (right click, left click) is the item's own text in PC's
+- **The identify scroll's card text** (right click, left click) is the item's own text in PC's
   data, left unchanged.
 
 **Clicks on PC's windows** (runs 8-9). A dialog of PC's (the guide NPC's, by the brazier) took no click on
@@ -2018,10 +2019,10 @@ taken by the proxy at the first live enemy shown: `dump_targets=1` in `x360_ui.i
 in-game/01 differs only in the unit's data: name, level, description, and the fill (full
 health). **Open:**
 - The champion (02): none met in the save.
-- The pet or an NPC (03, "the pet"): PC's mouse-over does not give the pet, so the bar does not
+- The pet or an NPC (03, the pet): PC's mouse-over does not give the pet, so the bar does not
   show it. Not known what makes the 360 show it.
 - A unit killed stays in the bar, empty, for the rest of the 3 s the attacked one is shown (run
-  41: "monster" empty). The 360's rule for a dead target is not read (`sub_821A83C8` is long).
+  41: a monster's, empty). The 360's rule for a dead target is not read (`sub_821A83C8` is long).
 
 ## 15. The final list (2026-10-17)
 
@@ -2301,7 +2302,7 @@ inventory (section 13), so each run's batch is one.
   hero and enter the town: TIP_WELCOME; the first attack, the first inventory, stats or stash give
   more. B on one, Y on another (step 2). Also step 5's regressions.
 - **B. Town, on a copy of `variety`** (already marked by the console): `console=LEVELUP;LEVELUP;
-  LEVELUP;SKILLPOINTS 5;MONEY 20000;ITEM gem,2` (the gem's shown name; if the
+  LEVELUP;SKILLPOINTS 5;MONEY 20000;ITEM <the gem's name>,2` (the gem's shown name; if the
   console wants the unit's `NAME`, it is in `socketables/GEM_AMETHYST_01`). Learn an active and
   a passive skill by hand, map them (step 1); socket a gem in the unique sword (a unique: the
   unique bases carry `SOCKETS`) and take it out at the Gem Recoverer and the Destroyer;
