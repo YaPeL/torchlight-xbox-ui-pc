@@ -7074,9 +7074,9 @@ static void keys_off(void) {
  * its modal frame moved away). A CMenu keeps its board at +0x38 (the modal, CGameUI's +0x304;
  * CMenu's update 0x574477 animates the entity at the board's +0x5c with Entity::_updateAnimation),
  * a shop's screen elsewhere (boards_tick's table, each read in its update). The entity is made invisible
- * (Ogre's MovableObject::setVisible, exported) while the 360's modal or shop frame covers them,
- * and given back after the visibility it had before (the owner's run of 2026-10-24: made visible
- * after a merchant, the boards PC had hidden on closing its menus were seen again). */
+ * (Ogre's MovableObject::setVisible, exported): the modal's and the shops' for good (the 360's
+ * screens show every one of them; the owner's run of 2026-10-24: made visible again as the shop
+ * closed, PC's boards were seen after a merchant). */
 static void board_visible(unsigned char *menu, unsigned at, int visible) {
     /* QA run 8: the entity alone made invisible left the boards seen. Now its scene node, with all
      * it carries (SceneNode::setVisible with cascade), never the scene's root (a node with no
@@ -7084,10 +7084,6 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
     typedef void (__fastcall *set_visible_fn)(void *self, void *edx, int visible);
     typedef void (__fastcall *node_visible_fn)(void *self, void *edx, int visible, int cascade);
     typedef void *(__fastcall *get_ptr_fn)(const void *self, void *edx);
-    typedef unsigned char (__fastcall *get_visible_fn)(const void *self, void *edx);
-    static get_visible_fn get_vis;
-    static struct { unsigned field; int had; } kept[16];   /* each hidden board's visibility before */
-    static int nkept;
     static set_visible_fn set_vis;
     static node_visible_fn node_vis;
     static get_ptr_fn parent_scene_node, node_parent;
@@ -7100,7 +7096,6 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
     if (!set_vis) {
         void *ogre = GetModuleHandleA("OgreMain.dll");
         set_vis = ogre ? (set_visible_fn)GetProcAddress(ogre, "?setVisible@MovableObject@Ogre@@UAEX_N@Z") : 0;
-        get_vis = ogre ? (get_visible_fn)GetProcAddress(ogre, "?getVisible@MovableObject@Ogre@@UBE_NXZ") : 0;
         node_vis = ogre ? (node_visible_fn)GetProcAddress(ogre, "?setVisible@SceneNode@Ogre@@UAEX_N0@Z") : 0;
         parent_scene_node = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParentSceneNode@MovableObject@Ogre@@UBEPAVSceneNode@2@XZ") : 0;
         node_parent = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParent@Node@Ogre@@UBEPAV12@XZ") : 0;
@@ -7121,21 +7116,6 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
             x360_log("\r\n");
         }
         if (!entity || *(void **)entity != entity_vtable) return;
-        {
-            unsigned field = (unsigned)(unsigned long)menu + at;
-            int k = 0;
-            while (k < nkept && kept[k].field != field) k++;
-            if (!visible && k == nkept && nkept < 16 && get_vis) {   /* its own state, kept as it is first hidden */
-                kept[nkept].field = field;
-                kept[nkept++].had = get_vis(entity, 0) != 0;
-            } else if (visible) {
-                if (k < nkept) {
-                    visible = kept[k].had;
-                    kept[k] = kept[--nkept];
-                }
-                x360_log(visible ? "x360 boards: a board given back shown\r\n" : "x360 boards: a board given back hidden, as PC had it\r\n");
-            }
-        }
         set_vis(entity, 0, visible);
         if (parent_scene_node && node_vis && node_parent) {
             node = parent_scene_node(entity, 0);
@@ -7172,9 +7152,10 @@ static void boards_tick(void) {
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
-    static int modal_hidden, shop_hidden;
+    static int modal_hidden;
+    static unsigned char *shop_logged[sizeof shops / sizeof shops[0]];
     unsigned i;
-    int want_modal = modal_shown, want_shop = inventory_open && shop;   /* want_modal: the minimap's */
+    int want_modal = modal_shown;   /* the minimap's */
     if (!ui) return;
     modal_minimap(want_modal);
     {
@@ -7188,13 +7169,14 @@ static void boards_tick(void) {
             modal_hidden = 1;
         }
     }
-    if (want_shop || shop_hidden) {
-        for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
-            unsigned char *m = *(unsigned char **)(ui + shops[i].at);
-            if (m && *(unsigned *)m == shops[i].vtable) board_visible(m, shops[i].board, !want_shop);
-        }
-        if (shop_hidden != want_shop) x360_log(want_shop ? "x360 shop: PC's boards hidden\r\n" : "x360 shop: PC's boards shown again\r\n");
-        shop_hidden = want_shop;
+    /* The shops' boards kept hidden always, as the modal's: the 360's shop frame shows every one
+     * of PC's shop menus, and shown again as it closed they stayed seen after it (the owner's run
+     * of 2026-10-24, a merchant). Each menu's logged once. */
+    for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
+        unsigned char *m = *(unsigned char **)(ui + shops[i].at);
+        if (!m || *(unsigned *)m != shops[i].vtable) continue;
+        board_visible(m, shops[i].board, 0);
+        if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
     }
 }
 
