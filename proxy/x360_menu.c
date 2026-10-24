@@ -581,10 +581,50 @@ static void unclip_tree(void *w, int depth) {
  * hidden while the 360's screen is open, and what was visible is shown again on closing. The 360
  * keeps its own HUD (the orbs, the potions, the minimap) around its frame; PC's is another. */
 typedef unsigned char (__fastcall *is_visible_fn)(const void *self, void *edx, int local_only);
-#define MAX_HIDDEN 64
+#define MAX_HIDDEN 256   /* windows, not only sheets: the tip's sheet is hidden child by child */
 static void *hidden_pc[MAX_HIDDEN];
 static int hidden_count;
 static int is_ours(void *w);
+static void *pc_tip_layout_root;   /* PC's tip window's root (x360_pc_layout_loaded, below) */
+
+typedef void *(__fastcall *parent_of_fn)(const void *self, void *edx);
+/* Whether a is w or one of its parents. */
+static int contains(void *a, void *w) {
+    static parent_of_fn gp;
+    int depth = 0;
+    if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    for (; w && gp && depth < 32; w = gp(w, 0), depth++) if (w == a) return 1;
+    return 0;
+}
+
+/* One of PC's windows hidden, and kept to be shown again (once in the list). */
+static void hide_one_pc(void *w, is_visible_fn is_visible, int *logged) {
+    int q;
+    if (is_ours(w) || !is_visible(w, 0, 1)) return;
+    /* Hidden again when PC shows it again (a shop's menus), kept once in the list: run B3's
+     * side panels showed once the list, then filled with the same windows, stopped hiding. */
+    for (q = 0; q < hidden_count; q++) if (hidden_pc[q] == w) { set_visible(w, 0, 0); return; }
+    if (hidden_count >= MAX_HIDDEN) { set_visible(w, 0, 0); return; }
+    if (!*logged) {
+        typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+        static name_fn gn;
+        if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        x360_log("x360 menu: hiding PC's "); x360_log(c_str(gn(w, 0), 0)); x360_log("\r\n");
+    }
+    set_visible(w, 0, 0);
+    hidden_pc[hidden_count++] = w;
+}
+
+/* PC's windows under w hidden but the tip's window and the sheets that hold it: PC shows its tips
+ * over the 360's screens too (the inventory's TIP_INVENTORY), and tip_tick puts the 360's in its
+ * place (hiding the whole sheet left it unseen until the screen closed). */
+static void hide_pc_but_tip(void *w, is_visible_fn is_visible, int *logged, int depth) {
+    unsigned i, n;
+    if (w == pc_tip_layout_root) return;
+    if (!pc_tip_layout_root || depth > 8 || !contains(w, pc_tip_layout_root)) { hide_one_pc(w, is_visible, logged); return; }
+    n = child_count(w, 0);
+    for (i = 0; i < n; i++) hide_pc_but_tip(child_at(w, 0, i), is_visible, logged, depth + 1);
+}
 
 static void hide_pc_ui(int hide) {
     static is_visible_fn is_visible;
@@ -598,24 +638,7 @@ static void hide_pc_ui(int hide) {
     }
     if (!sheet || !is_visible) return;
     n = child_count(sheet, 0);
-    for (i = 0; i < n; i++) {
-        void *w = child_at(sheet, 0, i);
-        int q, known = 0;
-        if (is_ours(w) || !is_visible(w, 0, 1)) continue;
-        /* Hidden again when PC shows it again (a shop's menus), kept once in the list: run B3's
-         * side panels showed once the list, then filled with the same windows, stopped hiding. */
-        for (q = 0; q < hidden_count; q++) if (hidden_pc[q] == w) { known = 1; break; }
-        if (known) { set_visible(w, 0, 0); continue; }
-        if (hidden_count >= MAX_HIDDEN) { set_visible(w, 0, 0); continue; }
-        if (!logged) {
-            typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
-            static name_fn gn;
-            if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
-            x360_log("x360 menu: hiding PC's "); x360_log(c_str(gn(w, 0), 0)); x360_log("\r\n");
-        }
-        set_visible(w, 0, 0);
-        hidden_pc[hidden_count++] = w;
-    }
+    for (i = 0; i < n; i++) hide_pc_but_tip(child_at(sheet, 0, i), is_visible, &logged, 0);
     logged = 1;
 }
 
@@ -5603,8 +5626,6 @@ static void add_frame_listener(void);
 /* PC's tip window's root (tipmenu.layout, loaded once at the game's start): made transparent as it
  * loads, so PC's tip is never drawn before the 360's takes its place (the owner saw it for a
  * moment); tip_tick shows it again only when it is not a tip (the settings' confirmations). */
-static void *pc_tip_layout_root;
-
 void x360_pc_layout_loaded(const char *file, void *root) {
     static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", "TIPMENU.LAYOUT", 0};
     unsigned n = length(file), i;
@@ -6420,6 +6441,19 @@ static unsigned tip_closed_at;   /* the press that closed a tip does not reach t
  * no buttons then (the 360's CTipMenu keeps the buttons it gets, sub_823589A0 returns 1). */
 int x360_tip_open(void) { return tip_shown || GetTickCount() - tip_closed_at < 300; }
 
+/* A click on PC's tip's button: its sheet brought in front of the 360's inventory for the click
+ * (synchronous: CEGUI's injected mouse), the inventory in front again after. */
+static void press_tip(const char *name) {
+    static parent_of_fn gp;
+    void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0, *top = pc_tip_layout_root, *up;
+    int depth = 0;
+    if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    while (top && gp && depth++ < 32 && (up = gp(top, 0)) && up != sheet) top = up;
+    if (top && inventory_open) move_to_front(top, 0);
+    press_pc(pc_tip_prefix, name);
+    if (inventory_open && master_root) move_to_front(master_root, 0);
+}
+
 /* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
 static void pc_tip_alpha(const char *a) {
     if (pc_tip_layout_root) prop(pc_tip_layout_root, "Alpha", a);
@@ -6523,9 +6557,9 @@ static void tip_tick(void) {
     prev = buttons;
     if (pressed & 0x8000) {                                              /* Y: tips off */
         read_prop(win_of(pc_tip_prefix, "ShowTips"), "Selected", v, sizeof v);
-        if (v[0] == 'T' || v[0] == 't') press_pc(pc_tip_prefix, "ShowTips");
-        press_pc(pc_tip_prefix, "Ok");
-    } else if (pressed & 0x2000) press_pc(pc_tip_prefix, "Ok");          /* B */
+        if (v[0] == 'T' || v[0] == 't') press_tip("ShowTips");
+        press_tip("Ok");
+    } else if (pressed & 0x2000) press_tip("Ok");                        /* B */
 }
 
 /* ---- PC's modal (the 360's CModalMenu, modalmenu.layout) ----
