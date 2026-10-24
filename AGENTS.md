@@ -36,8 +36,31 @@ function and the rule read.
   folders outside the repository; tests use synthetic data only. In code and docs, a game text
   is named by its key and address, never quoted.
 - Small commits on branches; `main` stays green. One commit per logical unit.
-- Before integrating a branch into `main`, have it reviewed by a subagent with a clean context that
-  gets only the diff and the task's description; an important finding is fixed or justified first.
+
+## Integration
+
+- Work goes to `develop` by a pull request from a branch (`CONTRIBUTING.md`). `main` receives
+  `develop` through a pull request from a `to-main-<name>` branch made at `develop`'s head, never
+  with `develop` itself as the head: the repository deletes a merged head branch.
+- `main` and `develop` are protected (the rulesets `main` and `main-checks`): no deletion, no force
+  push, changes only by pull request with CI's checks green (`tests`, `no-game-files`, `proxy`,
+  `installer (ubuntu-24.04)`, `installer (windows-2022)`), no approval required. The owner's
+  Admin role can bypass `main-checks`; **agents never use the bypass.** A check that cannot pass is
+  taken to the owner with the reason, and the owner decides.
+- **Branches:** a pushed branch lives only while it has an open pull request that says what it is
+  and what it waits for. A merged branch is deleted on merge (the repository does it).
+- **Before a review, CI is green:** read the pull request's checks first; a red check is fixed, not
+  sent to review.
+- **Your own branches:** before integrating one, have it reviewed by a subagent with a clean
+  context that gets only the diff, the task's description and `REVIEW.md` (documentation-only
+  branches excepted, as `REVIEW.md` says; they integrate with CI green). An **Important** finding
+  is fixed or justified (in the branch or the merge's message) before the merge.
+- A review finding that comes up a second time goes into this file, a test or a lint, not into
+  another comment. Bugs that reached a QA run or a release, or were caught only after the change
+  was taken as done, are recorded in `docs/regressions.md`, with what catches them now.
+- **Needs the owner's OK first:** visible changes and changed defaults; anything irreversible
+  (deleting releases, tags, branches or remote data; rewriting published history); secrets and
+  repository settings; a release's tag (`v0.X.Y`, with `-alpha` or `-beta` while it is one).
 - Never claim support that is not verified (README, docs, release notes): a store's build is
   "supported" only once it was played with the mod.
 - Code taken from elsewhere keeps its license and says where it came from (`tools/xex/README.md`).
@@ -60,4 +83,8 @@ verified in our own binaries (its addresses are of another build).
   open.
 - **Turns:** an agent only works during a turn. Never end one promising to go on ("sigo con X"):
   do it in the same turn, or say plainly that you stopped and why. When waiting for the owner,
-  say so in the last line.
+  say so in the message's last line ("Waiting for your OK on X"), so who has the ball shows at a
+  glance.
+- **Waits between agents:** when you hand work to another agent or wait for something from it,
+  check when it goes idle whether it delivered; if not, write to it and ask what happened instead
+  of waiting on.
