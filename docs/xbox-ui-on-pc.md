@@ -1124,8 +1124,8 @@ does it again if CEGUI laid the font out anew. **[read: CEGUI 0.6.2's source]**
   each `X360_` font gets the game's native size (1365x768, copied from PC's `Serif`), is laid out
   at 1280x720 (scaling 0.9375 both ways, the 360's) to read the advances, then for PC's size
   (1920x1080), and its advances are set to the 360's times height / 720. Side by side with the
-  360's English screenshots (`~/torchlight-gog/screens/side-en-*.png`): "town portal scroll",
-  "mana potion", "health potion" take the 360's width and "Miscellaneous" fits its box. **[the run]**
+  360's English screenshots (`~/torchlight-gog/screens/side-en-*.png`): the town portal scroll's,
+  the mana and health potions' names take the 360's width and the misc filter's label fits its box. **[the run]**
 - **A crash on the way:** CEGUI's `setProperty` faulted after the icon background's "can equip"
   check: CEquipment's virtual `+0x164` (GOG `0x4b8660`) takes two arguments (`ret 8`: the
   character and a flag; the 360 passes the hero and 1), and one was passed. The same call in A's
@@ -1279,7 +1279,7 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   else `+0x540` if the item's "SET" (`0x4b28f0`) is not empty, `+0x524` unique (isa `0x36`),
   `+0x508` rare (isa `0x37`), `+0x4ec` otherwise. The rows call the same; the default keeps the
   360's grey. A run (`t27-weap.png`, `t27-jewel.png`): the dagger with a suffix in PC's
-  rare blue (`FFC0C0FF`), the unique sword in gold, "prefixed ring" and "prefixed ring" in green.
+  rare blue (`FFC0C0FF`), the unique sword in gold, two prefixed rings in green.
 - **A on an unidentified item** reads "Identify (N)", N the identify scrolls in the bag (the 360's
   screenshot: "A Identify(11)"). The bar's buttons follow each other's text, as there: Y after
   A's text, X after Y's (`Font::getTextExtent`), 10 pixels apart at 768 rows.
@@ -1317,7 +1317,7 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
 ## 11b. The 360's HUD in play (2026-10-16)
 
 The user's order: the 360's interface, PC's hidden. The 360's references: the mods session's
-captures in play (`~/torchlight-gog/screens/ref/x360-ref-en-hud-still.png`, `-pet.png`; the mines floor 3): the orbs top left and right with a potion and its count over LB and RB, the
+captures in play (`~/torchlight-gog/screens/ref/x360-ref-en-hud-still.png`, `-pet.png`; the mines' third floor): the orbs top left and right with a potion and its count over LB and RB, the
 level's name top right, the skill bar at the bottom (Y, LT, RT, B), the experience bar under it,
 the pet's portrait and bars bottom left. **[the screenshots; the runs]**
 
@@ -1450,9 +1450,10 @@ something the hero cannot equip) and identifying with A. **[the runs]**
   every 1.2 s).
 - **The save:** `~/torchlight-gog/save-backups/variety/` (the mine save plus `SPAWNCLASS
   NEWBIE_CHEST_WEAPON,2,1`, `NEWBIE_CHEST_ARMOR,2,1`, `SWORDS_MAGIC_SPAWN,2,1`, `ARMOR_MAGIC,2,1`,
-  `ITEM <a unique sword's name>,1` (unique, level 15), `ITEM <the identify scroll's name>,3`, `ITEM <the healing spell's name>,1`,
-  `MONEY 500`), written by "Exit to Title". Its bag: two "dagger" unidentified, the unique sword unidentified, a common blade and the second blade equipped, a rifle, boots, unidentified
-  shoulder armour and belt, the healing spell spell, identify scrolls, 600 gold.
+  `ITEM <a unique sword's name>,1` (unique, level 15), `ITEM <the identify scroll's name>,3`,
+  `ITEM <the healing spell's name>,1`,
+  `MONEY 500`), written by "Exit to Title". Its bag: two daggers unidentified, the unique sword unidentified, a common blade and the second blade equipped, a rifle, boots, unidentified
+  shoulder armour and belt, the healing spell, identify scrolls, 600 gold.
 - **Checked in the run** (`~/torchlight-gog/screens/x360-gog-identify-compare.png`): unidentified
   rows in red with "???" and "Press A to identify" and a red background; A identified a dagger (an identify scroll spent): DPS 35, price 600, a blue background (magic), the green up
   arrow (35 against the equipped 33), its A now "Equip". "12/63" and the gold 600.
@@ -1850,7 +1851,7 @@ of the brazier (`MERCHANT_ENCHANTER`).
   item" red for a scroll (`screens/gog/enchanter-1`, `enchanter-cannot-1`). An enchantment
   itself is untested (not enough gold). The card's item name is in the 360's SerifBig now (PC's
   layout had FrizQuadrataBig there), in every screen.
-- **identify scroll's card text** (right click, left click) is the item's own text in PC's
+- **The identify scroll's card text** (right click, left click) is the item's own text in PC's
   data, left unchanged.
 
 **Clicks on PC's windows** (runs 8-9). A dialog of PC's (the guide NPC's, by the brazier) took no click on
@@ -2018,10 +2019,10 @@ taken by the proxy at the first live enemy shown: `dump_targets=1` in `x360_ui.i
 in-game/01 differs only in the unit's data: name, level, description, and the fill (full
 health). **Open:**
 - The champion (02): none met in the save.
-- The pet or an NPC (03, "the pet"): PC's mouse-over does not give the pet, so the bar does not
+- The pet or an NPC (03, the pet): PC's mouse-over does not give the pet, so the bar does not
   show it. Not known what makes the 360 show it.
 - A unit killed stays in the bar, empty, for the rest of the 3 s the attacked one is shown (run
-  41: "monster" empty). The 360's rule for a dead target is not read (`sub_821A83C8` is long).
+  41: a monster's, empty). The 360's rule for a dead target is not read (`sub_821A83C8` is long).
 
 ## 15. The final list (2026-10-17)
 
@@ -3192,3 +3193,15 @@ another folder, where no installer's backup looks), `hold_saves=1` (every save h
 them when they write the ini (`install.is_test_option`); the proxy names any it finds at start in
 a notice on screen (PC's modal, once in play), so a forgotten one is never silent. Test:
 `test_test_options_not_kept` (both installers, the same ini).
+
+**Two games found (the GPU agent's review, a low point; 2026-10-23).** With more than one
+supported game and no `--game`, both installers list them; on the console or in windows each is
+offered in turn (the first by default) and the one taken is installed or uninstalled; `--yes`
+takes the first and prints which, so a run without a console still says where it went;
+uninstall offers only the games that have the mod. A question's default is the window's too
+(tkinter's `default`, MessageBox's second button, zenity's `--default-cancel`), and zenity shows
+texts as they are (`--no-markup`: a path with `&` or `<`). Test:
+`test_two_games_shown_and_chosen` (both installers, the same lines). The elevated run passes
+`--game` (no second question). The junction risk (the elevated run writes backups into folders the
+first run names, which a junction could redirect) stays documented as low: UAC is not a security
+boundary, and the folders are the user's own.
