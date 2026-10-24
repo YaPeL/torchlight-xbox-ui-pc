@@ -2115,7 +2115,7 @@ what they still lack. The screens done are in section 14.
 no game, no Proton, no wine. Steam's install was only read (`Torchlight.exe`, `CEGUIBase.dll`
 and the DLLs the proxy names, in `steamapps/common/Torchlight`); `tools/steam_guard.py verify`
 against the last snapshot (`steam-guard-qa21.json`) printed UNCHANGED before the work. Phase B,
-the one run, still waits for the user's OK. README's Steam badge stays "planned".
+the one run, still waits for the user's OK. README's Steam badge says "experimental" (ported, not yet played).
 
 **Why a port is needed:** the proxy names 305 addresses of GOG's `Torchlight.exe` in
 `proxy/*.c`: 164 in its code (functions it calls, patch sites, vtables, IAT slots, strings and
