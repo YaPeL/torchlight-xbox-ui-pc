@@ -9,5 +9,8 @@
 namespace x360ui {
 
 int installer_main(const std::vector<std::string>& args);
+// Windows: the executable, a window program, writes to the console of the terminal it was run from
+// (main.cpp). That console's input is the shell's too, so --console cannot ask questions there.
+void set_shared_console(bool shared);
 
 }  // namespace x360ui

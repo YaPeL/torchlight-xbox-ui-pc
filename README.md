@@ -62,7 +62,8 @@ else to install:
 
 Run it: its questions are shown in windows. To uninstall, run it with `uninstall`
 (`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
-prints the games it finds. The options are the same for both (below). `notices` shows the licence
+prints the games it finds. The options are the same for both (below). On Windows it is a window
+program: from PowerShell, add `| Out-Host` to a command to wait for it and see its output there. `notices` shows the licence
 and the third-party notices it carries; their sources are in the release's
 `sources-and-notices.zip`.
 
@@ -87,7 +88,8 @@ It also asks which bag you want:
   backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
 Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
-questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows).
+questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows; `x360ui-install.exe` on Windows only with
+`--yes`, as a window program shares the terminal's input with the shell).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
   install wrote. Saves are not touched. With the 360's bag installed it warns first and offers PC's

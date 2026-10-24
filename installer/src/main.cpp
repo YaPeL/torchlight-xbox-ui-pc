@@ -7,6 +7,10 @@
 //   x360ui-install dev convert PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]
 //                                                    as tools/convert_x360_ui.py
 #include <cstdio>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -121,7 +125,33 @@ int usage() {
 }
 }  // namespace
 
+#ifdef _WIN32
+// A window program has no console. Its output goes where it was redirected (a pipe, a file); else,
+// run from a terminal, to that terminal's console; on a double click, nowhere (the windows say it).
+static void use_parent_console() {
+  const auto unset = [](DWORD which) {
+    const HANDLE h = GetStdHandle(which);
+    return h == nullptr || h == INVALID_HANDLE_VALUE;
+  };
+  const bool out = unset(STD_OUTPUT_HANDLE), err = unset(STD_ERROR_HANDLE), in = unset(STD_INPUT_HANDLE);
+  // A console given as the input (PowerShell's with `| Out-Host`) is the shell's too.
+  DWORD mode = 0;
+  if (!in && GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode)) set_shared_console(true);   // a console, not NUL
+  if (!(out || err || in) || !AttachConsole(ATTACH_PARENT_PROCESS)) return;
+  if (in) set_shared_console(true);
+  FILE* f = nullptr;
+  if (out) freopen_s(&f, "CONOUT$", "w", stdout);
+  if (err) freopen_s(&f, "CONOUT$", "w", stderr);
+  if (in) freopen_s(&f, "CONIN$", "r", stdin);
+  std::ios::sync_with_stdio(true);
+  std::cout.clear(); std::cerr.clear(); std::cin.clear();
+}
+#endif
+
 int main(int argc, char** argv) {
+#ifdef _WIN32
+  use_parent_console();
+#endif
   std::vector<std::string> args(argv + 1, argv + argc);
   try {
     if (args.size() >= 2 && args[0] == "dev") {

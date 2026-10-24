@@ -32,16 +32,18 @@ function CheckBackups($store, $savesDir) {
   }
 }
 
+# The installer is a window program: PowerShell waits for it (and sets $LASTEXITCODE) only when
+# its output is piped.
 function One($store, $game, $proxy, $bag, $extra) {
   $before = (Tree $game) -join "`n"
-  & $Installer install --game $game --x360-dir (Join-Path $Fixture "x360") --yes --console --bag $bag @extra
+  & $Installer install --game $game --x360-dir (Join-Path $Fixture "x360") --yes --console --bag $bag @extra | Out-Host
   if ($LASTEXITCODE -ne 0) { Fail "${store}: install" }
   if ((Hash (Join-Path $game "CEGUIBase.dll")) -ne (Hash $proxy)) { Fail "${store}: the installed CEGUIBase.dll is not the release's proxy" }
   if (-not (Select-String -LiteralPath (Join-Path $game "x360_ui.ini") -Pattern "^bag=$bag" -Quiet)) { Fail "${store}: no bag=$bag in the ini" }
   foreach ($d in "x360ui", "x360ui-playstation3", "x360ui-playstation4", "x360ui-playstation5", "x360ui-nintendo", "x360ui-nintendo-swapped") {
     if (-not (Test-Path -LiteralPath (Join-Path $game "$d\x360_ui_report.json"))) { Fail "${store}: no $d" }
   }
-  & $Installer uninstall --game $game --yes --console --anyway
+  & $Installer uninstall --game $game --yes --console --anyway | Out-Host
   if ($LASTEXITCODE -ne 0) { Fail "${store}: uninstall" }
   if (((Tree $game) -join "`n") -ne $before) { Fail "${store}: the folder is not as it was after uninstalling" }
   Write-Output "check_release: $store installed and uninstalled"

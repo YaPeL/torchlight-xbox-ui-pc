@@ -100,8 +100,10 @@ else()
 endif()
 target_link_libraries(x360ui-install PRIVATE x360ui_core)
 if(MSVC)
-  # The manifest is the .rc's alone: the linker's own would be a second one.
-  target_link_options(x360ui-install PRIVATE /MANIFEST:NO)
+  # The manifest is the .rc's alone: the linker's own would be a second one. A window program
+  # (no console of its own on a double click: the questions are windows), with main as its entry;
+  # from a terminal it writes to that terminal's console (main.cpp).
+  target_link_options(x360ui-install PRIVATE /MANIFEST:NO /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
 endif()
 if(NOT MSVC AND NOT APPLE)
   # Linux: libstdc++ and libgcc inside the executable, so the AppImage needs only the system's libc.

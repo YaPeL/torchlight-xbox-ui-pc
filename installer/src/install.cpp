@@ -799,7 +799,7 @@ int do_install(const Args& args) {
   Ask ask(args.console, args.yes);
   auto [game, build] = pick_game(args.game, ask, args.yes);
   if (build == "unknown") throw Exit(S(game) + ": a build this version does not support yet.");
-  std::cout << "the game: " << S(game) << " (" << build << " build)\n";
+  std::cout << "the game: " << S(game) << "\n";
   check_real_dll(S(game));
   bool experimental_ok = args.experimental;
   if (is_experimental(build) && !experimental_ok) {
@@ -1059,7 +1059,7 @@ int do_notices() {
 
 int do_list() {
   const auto games = find_games(home_dir());
-  for (const auto& [store, path] : games) std::cout << store << ": " << path << " (" << build_of(path) << " build)\n";
+  for (const auto& [store, path] : games) std::cout << store << ": " << path << (build_of(path) == "unknown" ? " (not supported by this version)" : "") << "\n";
   if (games.empty()) std::cout << "No PC Torchlight found.\n";
   return games.empty() ? 1 : 0;
 }
@@ -1085,9 +1085,18 @@ void report_error(const std::string& text, const std::vector<std::string>& argv)
 }
 }  // namespace
 
+namespace {
+bool g_shared_console = false;
+}  // namespace
+
+void set_shared_console(bool shared) { g_shared_console = shared; }
+
 int installer_main(const std::vector<std::string>& argv) {
   try {
     const Args a = parse(argv);
+    if (g_shared_console && a.console && !a.yes && (a.command == "install" || a.command == "uninstall"))
+      throw Exit("--console asks its questions in the terminal, whose input the shell reads too: give --yes with the "
+                 "options (--game, --package or --x360-dir, --bag), or run it without --console to be asked in windows.");
     g_result_file = a.result_file;
     if (a.command == "list") return do_list();
     if (a.command == "notices") return do_notices();

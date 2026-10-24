@@ -284,6 +284,22 @@ static std::vector<std::string> steam_libraries(const std::string& home) {
   for (const char* p : {".steam/steam", ".steam/debian-installation", ".local/share/Steam", ".var/app/com.valvesoftware.Steam/data/Steam"})
     roots.push_back(join(home, p));
 #ifdef _WIN32
+  // Where Steam says it is (a Steam installed elsewhere than Program Files), then the defaults.
+  const std::pair<HKEY, const wchar_t*> keys[] = {{HKEY_CURRENT_USER, L"Software\\Valve\\Steam"},
+                                                  {HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Valve\\Steam"}};
+  for (const auto& [hive, sub] : keys) {
+    HKEY key;
+    if (RegOpenKeyExW(hive, sub, 0, KEY_READ, &key) != ERROR_SUCCESS) continue;
+    for (const wchar_t* value : {L"SteamPath", L"InstallPath"}) {
+      wchar_t path[1024];
+      DWORD type = 0, n = sizeof path - sizeof(wchar_t);
+      if (RegQueryValueExW(key, value, nullptr, &type, (BYTE*)path, &n) == ERROR_SUCCESS && type == REG_SZ) {
+        path[n / sizeof(wchar_t)] = 0;
+        roots.push_back(utf8_path(fs::path(path)));
+      }
+    }
+    RegCloseKey(key);
+  }
   for (const char* var : {"ProgramFiles(x86)", "ProgramFiles"})
     if (const char* v = std::getenv(var)) roots.push_back(join(v, "Steam"));
 #endif
