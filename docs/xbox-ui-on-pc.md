@@ -3245,3 +3245,13 @@ install under Proton keeps its saves in Steam's prefix, which the installers lea
 uninstall that would back them up now says none was found and asks (no by default) before going
 on without one; `--anyway` goes on and says so. Steam's build has not been played with the mod yet: the README calls it "testing", not
 supported, until the owner's run (the repository's rule).
+
+**The release's files (the owner, 2026-10-23).** A release shows the user four files:
+`x360ui-install.exe`, `x360ui-install-x86_64.AppImage`, `SHA256SUMS` and
+`sources-and-notices.zip` (the proxies on their own, LICENSE, THIRD_PARTY_NOTICES, LGPL-2.1, the
+AppImage runtime's notices, libfuse's source and patch, with their own SHA256SUMS inside). The
+installer carries the licence and the notices itself: `x360ui-install notices` (miniz's MIT notice
+must go with every copy of the executable), embedded by `cmake/embed_blob.cmake`; the AppImage has
+them inside too. Requirements: Windows 10 1903 or later, 64-bit (the manifest's UTF-8 code page),
+and Linux with glibc 2.35 or later (built on Ubuntu 22.04).
+

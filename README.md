@@ -52,17 +52,19 @@ You need:
 From a [release](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases), one file and nothing
 else to install:
 
-- **Windows:** `x360ui-install.exe`. Windows SmartScreen may warn that it is an unknown publisher
+- **Windows 10 1903 or later, 64-bit:** `x360ui-install.exe`. Windows SmartScreen may warn that it is an unknown publisher
   (the file is not signed): *More info*, then *Run anyway*. When the game's folder cannot be written
   as you (for example in Program Files) it asks for administrator permission (UAC), only then.
-- **Linux** (the game under Proton or Wine, for example on the Steam Deck in Desktop Mode):
-  `x360ui-install-x86_64.AppImage`; make it executable (`chmod +x`) and run it.
+- **Linux with glibc 2.35 or later** (the game under Proton or Wine, for example on the Steam Deck
+  in Desktop Mode): `x360ui-install-x86_64.AppImage`; make it executable (`chmod +x`) and run it.
 - Check the file against `SHA256SUMS` from the same release (`sha256sum -c --ignore-missing
   SHA256SUMS` on Linux; `Get-FileHash x360ui-install.exe` in PowerShell on Windows).
 
 Run it: its questions are shown in windows. To uninstall, run it with `uninstall`
 (`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
-prints the games it finds. The options are the same for both (below).
+prints the games it finds. The options are the same for both (below). `notices` shows the licence
+and the third-party notices it carries; their sources are in the release's
+`sources-and-notices.zip`.
 
 ### From this repository
 
