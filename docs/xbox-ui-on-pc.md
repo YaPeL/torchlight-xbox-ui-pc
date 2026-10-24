@@ -3715,9 +3715,11 @@ quicker way for now: PC's screen with the pad, as PC's pause menu (section 17's 
 buttons).
 
 - `pc_menu_tick` finds its prefix by `Resurrect1` (and `Resurrect2` under the same prefix), and
-  while it is attached and shown in play collects the buttons under its `Frame` only (PC's HUD
-  buttons are on the same sheet, transparent).
-- The d-pad or the stick moves between them (top to bottom), A clicks the focused one; B does
-  nothing there. The log names them as `PC's buttons for the pad 4 (resurrection)`.
+  while its `ExitGame` is attached and shown in play, with no screen of the 360's over it (pause,
+  inventory, tip, modal, dialog), collects the buttons under its `Frame` only (PC's HUD buttons
+  are on the same sheet, transparent).
+- The d-pad or the stick moves between them (top to bottom), A clicks the focused one. The play
+  pad gets nothing meanwhile (`x360_pc_menu_up`, as PC's settings: no move, skill, Start or
+  Back). The log names them as `PC's buttons for the pad 4 (resurrection)`.
 - Not ported: the 360's own resurrection screen (its look and its pad, which a port would read in
   the 360's code first).

@@ -4835,7 +4835,8 @@ int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); 
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
 static int x360_pc_settings_up;   /* PC's settings shown (pc_menus_nav_tick) */
-int x360_pc_menu_up(void) { return x360_pc_settings_up; }
+static int x360_pc_die_up;        /* PC's resurrection screen has the pad (pc_menu_tick) */
+int x360_pc_menu_up(void) { return x360_pc_settings_up || x360_pc_die_up; }
 unsigned x360_pad_eaten;          /* buttons PC's menus used, kept from the play pad until let go (proxy/pad.c) */
 void x360_pause_pad(unsigned pressed, int ly) {
     static int held;
@@ -8305,8 +8306,11 @@ static void pc_menus_nav_tick(void) {
     create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
     /* PC's resurrection screen (diemenu.layout: Resurrect1-3, ExitGame), shown when the hero dies:
      * its buttons for the pad as the pause menu's (the owner's run of 2026-10-24: the pad could not
-     * leave it; the 360's own screen is not ported). */
-    die = in_play && die_prefix[0] && pc_attached(die_prefix, "Resurrect1");
+     * leave it; the 360's own screen is not ported). Told by ExitGame, shown whatever choices it
+     * offers; not while a screen of the 360's is over it. The play pad gets nothing meanwhile
+     * (x360_pc_menu_up: no move, skill, pause or inventory). */
+    die = in_play && die_prefix[0] && pc_attached(die_prefix, "ExitGame") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    x360_pc_die_up = die;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     cursor_hook_install();
