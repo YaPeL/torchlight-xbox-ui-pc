@@ -25,6 +25,8 @@
  *   pad_mode=direct                             option b: the proxy calls setDestination (GOG only)
  *   pad_face=0                                  the old movement, setDestination only (to compare)
  *   pad_log=1                                   the pad's detailed diagnosis in the log (costly)
+ *   pad_replay=Z:\path\route.txt               a recorded stick instead of XInput (a test; pad.c)
+ *   pad_trace=1                                 the hero's path to x360_trace.csv (a test; pad.c)
  *   console=ITEM <item name>,3;MONEY 100        game console commands run once in play (test runs)
  *   dialog_fast_scroll=10                       how many times faster a dialog's text rises with X
  *                                               held (the 360's factor is not measured yet; 4 by default)
@@ -277,7 +279,7 @@ static void read_config(void) {
         if (*end) *end++ = 0;
         {
             /* The test options (runs on copies): named in a notice on screen (x360_menu.c). */
-            static const char *const tests[] = {"save_root=", "hold_saves=", "pad_detect=", "console=", "test_", 0};
+            static const char *const tests[] = {"save_root=", "hold_saves=", "pad_detect=", "console=", "test_", "pad_replay=", "pad_trace=", 0};
             int k;
             for (k = 0; tests[k]; k++)
                 if (starts(line, tests[k])) {
@@ -296,6 +298,11 @@ static void read_config(void) {
         if (starts(line, "pad_mode=direct")) pad_direct = 1;
         if (starts(line, "pad_face=0")) pad_old_face = 1;
         if (starts(line, "pad_log=1")) pad_log = 1;
+        if (starts(line, "pad_trace=1")) { extern int x360_pad_trace; x360_pad_trace = 1; }
+        if (starts(line, "pad_replay=")) {
+            extern char x360_pad_replay[400];
+            if (length(line + 11) < 400) memcpy(x360_pad_replay, line + 11, length(line + 11) + 1);
+        }
         if (starts(line, "dialog_pc=1")) { extern int x360_dialog_pc; x360_dialog_pc = 1; }
         if (starts(line, "font_diff=1")) { extern int x360_font_diff; x360_font_diff = 1; }
         if (starts(line, "dump_targets=1")) { extern int x360_dump_targets; x360_dump_targets = 1; }
