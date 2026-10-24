@@ -757,7 +757,7 @@ std::pair<fs::path, std::string> pick_game(const std::string& given, Ask& ask, b
   const auto games = find_games(home_dir());
   for (const auto& [store, path] : games)
     if (is_experimental(build_of(path)))
-      std::cout << store << ": " << path << ": its build is supported experimentally (not yet played with the mod); give it with --game to install there.\n";
+      std::cout << store << ": " << path << ": its build is experimental (not yet played with the mod); give it with --game to install there.\n";
   for (const auto& [store, path] : games)
     if (build_of(path) == "unknown") std::cout << store << ": " << path << ": a build this version does not support yet, left alone.\n";
   std::vector<std::pair<std::string, std::string>> supported;
@@ -793,7 +793,7 @@ int do_install(const Args& args) {
   check_real_dll(S(game));
   bool experimental_ok = args.experimental;
   if (is_experimental(build) && !experimental_ok) {
-    experimental_ok = Ask(args.console, false).yes_no("This game's build (" + build + ") is supported experimentally: the mod was ported to it offline and has not been played on it yet. Install anyway?", false);
+    experimental_ok = Ask(args.console, false).yes_no("This game's build (" + build + ") is experimental: the mod was ported to it offline and has not been played on it yet. Install anyway?", false);
     if (!experimental_ok) {
       std::cout << "not installed (an experimental build needs a yes, or --experimental)\n";
       return 1;

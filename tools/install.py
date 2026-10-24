@@ -486,7 +486,7 @@ def pick_game(given, ask=None, installed_only=False):
     supported = [(s, p) for s, p in games if build_of(p) in PROXY_FILES and build_of(p) not in EXPERIMENTAL]
     for store, path in games:
         if build_of(path) in EXPERIMENTAL:
-            print(f"{store}: {path}: its build is supported experimentally (not yet played with the mod); "
+            print(f"{store}: {path}: its build is experimental (not yet played with the mod); "
                   f"give it with --game to install there.")
     for store, path in games:
         if build_of(path) not in PROXY_FILES:
@@ -516,7 +516,7 @@ def do_install(args):
     print(f"the game: {game} ({build} build)")
     check_real_dll(game)
     if build in EXPERIMENTAL and not (args.get("experimental") or Ask(args.get("console")).yes_no(
-            f"This game's build ({build}) is supported experimentally: the mod was ported to it offline "
+            f"This game's build ({build}) is experimental: the mod was ported to it offline "
             "and has not been played on it yet. Install anyway?", default=False)):
         print("not installed (an experimental build needs a yes, or --experimental)")
         return 1
