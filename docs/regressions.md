@@ -33,6 +33,16 @@ here. Games' texts are named by role, never quoted.
   window's visibility and closed with its sheet shown for the click only; the pad its own over the
   inventory. QA checklist: a new character's first inventory, the tip in front, B closing only it.
 
+## The hero played during a cinematic (fixed on the branch cinematic-pad)
+
+- **What happened:** the pad moved the hero during a cinematic, which the 360's frame update does
+  not allow (it skips the game's input while `sub_821ED810` holds).
+- **Should have been caught by:** reading the 360's frame update whole before writing the pad's
+  (its early skips, not only the stick's and the buttons' handling).
+- **Caught by:** the owner's run on the GOG copy (2026-10-24).
+- **Covered now:** `proxy/pad.c` asks PC's same test (`0x541db0` on CGameUI) before the world's
+  input. QA checklist: a cinematic with the stick held and the buttons pressed: nothing acts.
+
 ## The game saving on Alt+F4 after a stop without the save hook (fixed in a45a7c6)
 
 - **What happened:** with the save hook off, a stop asked the player to close the game, and
