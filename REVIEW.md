@@ -23,6 +23,9 @@ How a review is done in this repository, for people and agents. The project's ru
   read cited in the doc.
 - An address or offset used on a build where it was not verified (GOG's and Epic's executable,
   Steam's `proxy/addresses_steam.txt`), or a hook installed without the check that it matches.
+- A text file read without the mod's one reader (the proxy's `x360_read_text`, the installer's
+  `text_lines`), or one that breaks with CRLF, a lone CR or no final line end: the installer writes
+  CRLF on Windows (`docs/regressions.md`, "The mod's texts read with CRLF"; `TextLfTest`).
 - A claim of support that was not verified (README, docs, release notes, badges).
 - A changed default or anything a player sees, without the owner's OK.
 - A name or text taken from OpenTorchlight that is not marked *(OT)*, or its code copied.

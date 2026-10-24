@@ -36,7 +36,7 @@ IMPORT BOOL __stdcall QueryPerformanceCounter(long long *v);
 IMPORT BOOL __stdcall QueryPerformanceFrequency(long long *v);
 IMPORT HANDLE __stdcall CreateFileA(const char *name, DWORD access, DWORD share, void *security,
                                     DWORD disposition, DWORD flags, HANDLE templ);
-IMPORT BOOL __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *overlapped);
+DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
 IMPORT BOOL __stdcall CloseHandle(HANDLE file);
 IMPORT BOOL __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD *written, void *overlapped);
 IMPORT HWND __stdcall GetActiveWindow(void);
@@ -227,14 +227,15 @@ static unsigned qms(void) {
 
 static void replay_load(const char *path) {
     static char text[262144];
-    DWORD got = 0;
     const char *p = text;
     HANDLE f = CreateFileA(path, 0x80000000UL, 1, 0, 3, 0, 0);
     if (f == (HANDLE)(long)-1) { x360_log("pad: replay file not found\r\n"); return; }
-    ReadFile(f, text, sizeof text - 1, &got, 0);
+    {
+        int full;
+        x360_read_text(f, text, sizeof text, &full);
+        if (full) x360_log("pad: replay file over 256 KB: cut there\r\n");
+    }
     CloseHandle(f);
-    text[got] = 0;
-    if (got == sizeof text - 1) x360_log("pad: replay file over 256 KB: cut there\r\n");
     while (*p) {
         const char *line = p;
         while (*p && *p != '\n') p++;
@@ -399,13 +400,11 @@ static void poll(void) {
         if (raw_rt > 64) buttons |= BUTTON_RT;
     } else if (pad_file[0]) {
         char text[64];
-        DWORD got = 0;
         const char *p = text;
         HANDLE f = CreateFileA(pad_file, 0x80000000UL, 7, 0, 3, 0, 0);
         if (f == (HANDLE)(long)-1) return;
-        ReadFile(f, text, sizeof text - 1, &got, 0);
+        x360_read_text(f, text, sizeof text, 0);
         CloseHandle(f);
-        text[got] = 0;
         lx = parse_int(&p);
         ly = parse_int(&p);
         buttons = (unsigned)parse_int(&p);

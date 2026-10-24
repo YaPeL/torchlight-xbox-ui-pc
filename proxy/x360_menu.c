@@ -7175,7 +7175,7 @@ int x360_black_screen_take(unsigned buttons) {   /* pad.c: 1 while it shows (the
     if (edge) bs_act = 1;
     return 1;
 }
-__declspec(dllimport) int __stdcall ReadFile(void *file, void *data, unsigned long size, unsigned long *got, void *overlapped);
+unsigned long x360_read_text(void *f, char *buf, unsigned long size, int *full);   /* cegui_proxy.c: line ends made LF */
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
 __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
 static void black_screen_tick(void) {
@@ -7807,16 +7807,15 @@ void x360_stop_file_check(void) {
     unsigned short path[600];
     create_fn create = (create_fn)kernel32_fn("CreateFileW");
     void *f = (void *)-1;
-    unsigned long n, got = 0;
+    unsigned long n;
     int i;
     for (i = 0; i < 2 && f == (void *)-1; i++)
         if (stop_path(path, 600, i) && create) f = create(path, 0x80000000, 1, 0, 3, 0x80, 0);   /* GENERIC_READ, OPEN_EXISTING */
     if (f == (void *)-1) return;
     copy(textbuf, sizeof textbuf, "The last game was closed by the mod, and this was not shown then:\n\n", 0);
     n = length(textbuf);
-    ReadFile(f, textbuf + n, sizeof textbuf - n - 1, &got, 0);
+    x360_read_text(f, textbuf + n, sizeof textbuf - n, 0);
     CloseHandle(f);
-    textbuf[n + got] = 0;
     { unsigned k; for (k = 0; k < 600 && (stop_file[k] = path[k]) != 0; k++) {} }
     x360_log("x360 load: a stop's text from the last game: shown at the title\r\n");
     black_screen(textbuf, 0, stop_seen);

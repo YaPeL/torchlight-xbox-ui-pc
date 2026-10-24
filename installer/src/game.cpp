@@ -11,6 +11,7 @@
 #include <sstream>
 
 #include "paths.h"
+#include "text_lines.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -421,8 +422,7 @@ std::vector<std::pair<std::string, uint32_t>> pe_exports(const Bytes& data) {
 
 std::vector<std::pair<std::string, uint32_t>> exports_list() {
   std::vector<std::pair<std::string, uint32_t>> out;
-  std::stringstream ss(kCeguiExports);
-  for (std::string line; std::getline(ss, line);) {
+  for (const std::string& line : text_lines(std::string(kCeguiExports))) {
     if (line.empty() || line[0] == '#') continue;
     std::stringstream l(line);
     uint32_t ord;
