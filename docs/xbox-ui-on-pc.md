@@ -3430,9 +3430,15 @@ the skills), F1 to F12, Shift, Alt, Tab, W, the skills' cycle (`.` `,`), the zoo
 
 How: the game's window is subclassed once (`keys_off`, `proxy/x360_menu.c`); its procedure drops
 WM_KEYDOWN and WM_KEYUP of those keys, and WM_CHAR of Esc, Enter and space (CEGUI's injected
-characters), while in play (`hud_in_play`) and PC's settings are not open (reached from the 360's
-pause menu; the keyboard works there). PC's window procedure (`CGame::WndProc` *(OT)*) is what
-gives the keys to `CGameUI::keyEvent` and `CKeyManager::keyEvent` *(OT)*, so neither sees them. No
-address of the executable is used: the same on GOG's, Epic's and Steam's build. The six screen
+characters), while in play (`hud_in_play`), PC's settings are not open (reached from the 360's
+pause menu; the keyboard works there), the developer console is not shown (its CEGUI window
+`WindowsLook/Console`, typed into) and no cinematic holds (CGameUI's `0x541db0`: PC's keys skip
+it). A key's release is swallowed only when its press was, so PC never keeps a key down across
+those changes. The window procedure is replaced with the window's own kind (ANSI or Unicode), and
+checked each frame. Test scripts that send these keys in play (`tools/send_input.py`) now send
+nothing the game sees. PC's window procedure (`CGame::WndProc` *(OT)*) is what
+gives the keys to `CGameUI::keyEvent` and `CKeyManager::keyEvent` *(OT)*, so neither sees them. The
+one address used is the cinematic's test, already ported to Steam's build
+(`proxy/addresses_steam.txt`). The six screen
 hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
 the keyboard is PC's.

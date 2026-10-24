@@ -6940,32 +6940,72 @@ static void hotkeys_off(void) {
  * bar's close-all showed PC's menus moving behind the 360's). Their key messages never reach the
  * game's window procedure (CGame::WndProc *(OT)* feeds CGameUI's and CKeyManager's keyEvent from
  * WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_SYSKEYDOWN, WM_SYSKEYUP) while in play and PC's settings are
- * not open (the pad's way to them, where the keyboard keeps working). The keys: KEYMAP_INVENTORY I,
+ * not open (the pad's way to them, where the keyboard keeps working), the console is not shown
+ * (typed into) and no cinematic holds (PC's keys skip it). A release is swallowed only when its
+ * press was (no key left down in PC's state across the changes). The keys: KEYMAP_INVENTORY I,
  * PET P, STATS C, SKILLS S, QUESTS Q, JOURNAL J, OPTIONS Esc, PAUSE Enter, CLOSEALL the space bar,
  * AUTOMAP A (the 360's map is on R3); the six of hotkeys_off are kept off there too. The others
  * (the hotbar's 1 to 0, F1 to F12, Shift, Alt, Tab, W, the skills' cycle, the zooms, the console)
- * work as on PC. No address of the executable: the same on every build. */
+ * work as on PC. One address of the executable, the cinematic's test (ported to Steam's). */
 __declspec(dllimport) long __stdcall SetWindowLongW(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall SetWindowLongA(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
 __declspec(dllimport) long __stdcall CallWindowProcW(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) long __stdcall CallWindowProcA(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) int __stdcall IsWindowUnicode(HWND w);
 static long keys_old_proc;
-static int key_swallowed(unsigned vk) {
+static HWND keys_window;
+static int keys_unicode;
+static int keys_open;            /* the filter's state, each frame: in play, no PC settings, console or cinematic */
+static unsigned keys_down;       /* the menu keys whose press was swallowed: only their release is too */
+static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
-    unsigned i;
-    for (i = 0; i < sizeof keys; i++) if (vk == keys[i]) return 1;
-    return 0;
+    int i;
+    for (i = 0; i < (int)sizeof keys; i++) if (vk == keys[i]) return i;
+    return -1;
 }
 static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
-    if ((msg == 0x100 || msg == 0x101) && hud_in_play && !x360_pc_settings_up && key_swallowed(wparam))
-        return 0;   /* WM_KEYDOWN, WM_KEYUP of a menu key: not given to the game */
-    if (msg == 0x102 && hud_in_play && !x360_pc_settings_up && (wparam == 0x1b || wparam == 0x0d || wparam == 0x20))
-        return 0;   /* WM_CHAR of Esc, Enter, space: CEGUI's injected characters (a button's activation) */
-    return CallWindowProcW(keys_old_proc, w, msg, wparam, lparam);
+    int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
+    if (k >= 0 && msg == 0x100 && keys_open) { keys_down |= 1u << k; return 0; }   /* WM_KEYDOWN */
+    if (k >= 0 && msg == 0x101 && (keys_down & (1u << k))) { keys_down &= ~(1u << k); return 0; }   /* its WM_KEYUP */
+    if (k >= 7 && msg == 0x102 && keys_open) return 0;   /* WM_CHAR of Esc, Enter, space: CEGUI's injected characters */
+    return keys_unicode ? CallWindowProcW(keys_old_proc, w, msg, wparam, lparam)
+                        : CallWindowProcA(keys_old_proc, w, msg, wparam, lparam);
 }
 static void keys_off(void) {
-    HWND w;
-    if (keys_old_proc || !(w = active_window())) return;
-    keys_old_proc = SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc);
-    x360_log(keys_old_proc ? "x360 menu: PC's menu keys swallowed in play\r\n" : "x360 menu: PC's menu keys: the window not subclassed\r\n");
+    HWND w = active_window();
+    static void *console;
+    static char console_prefix[48];
+    int console_up = 0, cinematic = 0;
+    if (!w) return;
+    if (!keys_old_proc || w != keys_window || GetWindowLongW(w, -4 /* GWL_WNDPROC */) != (long)keys_proc) {
+        if (keys_old_proc && w == keys_window) return;   /* another subclass came after ours: left alone */
+        keys_unicode = IsWindowUnicode(w);
+        keys_old_proc = keys_unicode ? SetWindowLongW(w, -4, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
+        keys_window = w;
+        x360_log(keys_old_proc ? "x360 menu: PC's menu keys swallowed in play, window " : "x360 menu: PC's menu keys: the window not subclassed, ");
+        x360_log_num((long)w);
+        x360_log(keys_unicode ? " (Unicode)\r\n" : " (ANSI)\r\n");
+    }
+    /* The console (Runic's developer console, a CEGUI window): typed into with the keyboard. */
+    {
+        static unsigned last_search;
+        unsigned now = GetTickCount();
+        if (console && !win_of(console_prefix, "WindowsLook/Console")) console = 0;
+        if (!console && now - last_search >= 1000) {   /* the whole tree: once a second at most */
+            last_search = now;
+            console = find_pc_by_suffix("WindowsLook/Console", 0, console_prefix, sizeof console_prefix);
+        }
+    }
+    if (console) {
+        typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+        static vis_fn vis;
+        if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        console_up = vis && vis(console, 0, 0);
+    }
+    /* A cinematic (CGameUI's test, 0x541db0; proxy/pad.c): PC's own keys skip it. */
+    if (ui) cinematic = ((unsigned char (__fastcall *)(void *, void *))0x00541db0)(ui, 0) != 0;
+    keys_open = hud_in_play && !x360_pc_settings_up && !console_up && !cinematic;
 }
 
 /* PC's menus' 3D boards (QA runs 5, 6: the parchment with chains behind the 360's modal, the
