@@ -244,6 +244,11 @@ static void poll(void) {
             logged_active = active;
         }
     }
+    {
+        /* The proxy's black screen (x360_menu.c) has the pad while it shows: nothing else gets it. */
+        int x360_black_screen_take(unsigned buttons);
+        if (x360_black_screen_take(buttons)) { buttons = 0; lx = ly = ry = 0; }
+    }
     if ((buttons & 0x1000) && !(old & 0x1000)) a_pressed_at = now;
 }
 
