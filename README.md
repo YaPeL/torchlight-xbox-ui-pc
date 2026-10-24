@@ -20,3 +20,8 @@ read those copies and write what they produce into folders outside this reposito
 - `tools/check_no_game_files.py`: run by CI; fails if a game file type is committed.
 
 Tests use synthetic data only.
+
+## License
+
+GPL-3.0 ([LICENSE](LICENSE)), for the code. No file of either game is in this repository: the
+converted interface is made from your own copies, on your machine.
