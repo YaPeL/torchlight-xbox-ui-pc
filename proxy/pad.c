@@ -281,7 +281,10 @@ static void replay_load(const char *path) {
         if (*p) p++;
     }
     HeapFree(GetProcessHeap(), 0, text);
-    while (replay_n && replay[replay_n - 1].t > 4200000) replay_n--;   /* 70 min: the trace's microseconds in 32 bits */
+    if (replay_n && replay[replay_n - 1].t > 4200000) {   /* 70 min: the trace's microseconds in 32 bits */
+        while (replay_n && replay[replay_n - 1].t > 4200000) replay_n--;
+        x360_log("pad: replay over 70 min: cut there\r\n");
+    }
     replay_armed = replay_n != 0;
     x360_log("pad: replay of ");
     x360_log_num((long)replay_n);
@@ -1516,9 +1519,14 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
     if (pad_file[0]) { x360_log(pad_file); x360_log("\r\n"); }
 }
 
-/* The process ends (DLL_PROCESS_DETACH: the game's own exit, Alt+F4 too): the recording's and the
- * trace's last lines written, the line at rest among them. */
+/* The process ends (DLL_PROCESS_DETACH: the game's own exit, Alt+F4 too; or a stop's
+ * TerminateProcess, x360_menu.c): the recording ends with a line at rest (the stick held at the
+ * exit would else stay held in its replay) and both files are written to their end. */
 void x360_pad_shutdown(void) {
+    if (record_file != (HANDLE)(long)-1 && first_play_at) {
+        record_num((long)(qms() - first_play_at));
+        record_put(" 0 0 0 0 0\r\n");
+    }
     record_flush();
     if (record_file != (HANDLE)(long)-1) { CloseHandle(record_file); record_file = (HANDLE)(long)-1; }
     trace_flush();

@@ -3008,6 +3008,7 @@ int x360_inventory_open(void) { return inventory_open; }
 
 /* The pad's Back: the 360's inventory on or off. */
 void x360_run_console(void);
+void x360_pad_shutdown(void);   /* pad.c: the measurement's files written before a stop ends the process */
 
 static int petcmd_open;
 static void petcmd_show(int on);
@@ -7238,7 +7239,7 @@ static void black_screen_tick(void) {
             if (bs_close) {
                 x360_log("x360: the black screen closed: the game ends, unsaved\r\n");
                 black_screen_done();
-                TerminateProcess(GetCurrentProcess(), 1);
+                x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
             }
             set_visible(bs_back, 0, 0);
             bs_state = 3;   /* the pad kept until A is let go */
@@ -7407,7 +7408,7 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
                 last_resort_box(w);
             }
         }
-        TerminateProcess(GetCurrentProcess(), 1);
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
         return (int)item;   /* not reached */
     }
     to = empty_slot_of_section((unsigned char *)inv, item);
@@ -7684,12 +7685,12 @@ static void stop_tick(void) {
     if (stop_state == 4 && bs_state != 2 && (bs_failed || GetTickCount() - stop_t0 > 5000)) {
         x360_log("x360 load: the black screen did not show: Notepad or a Windows box, then the game ends, unsaved\r\n");
         last_resort_box(stop_wbody);
-        TerminateProcess(GetCurrentProcess(), 1);
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
     }
     if (stop_state == 2 && !pc_modal_menu_open()) {
         x360_log("x360 load: the stop's modal closed: the game ends, unsaved\r\n");
         stop_seen();
-        TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
     }
 }
 
