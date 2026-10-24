@@ -388,7 +388,8 @@ class SaveGuardTest(unittest.TestCase):
            "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\User Shell Folders] 1\n"
            '"AppData"="%USERPROFILE%\\\\Wrong"\n\n'
            "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Shell Folders] 1\n"
-           '"AppData"="C:\\\\users\\\\steamuser\\\\AppData\\\\Roaming"\n')
+           '"AppData"="C:\\\\users\\\\steamuser\\\\AppData\\\\Roaming"\n'
+           '"Local AppData"="C:\\\\users\\\\steamuser\\\\AppData\\\\Local"\n')
 
     def prefix(self, root, name="compat", saves=True):
         compat = os.path.join(root, name)
@@ -412,10 +413,14 @@ class SaveGuardTest(unittest.TestCase):
     def test_backup_checked(self):
         with tempfile.TemporaryDirectory() as root:
             compat, save = self.prefix(root)
+            mod = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "x360ui")
+            os.makedirs(mod)
+            write(os.path.join(mod, "x360_settings.ini"), "synthetic=1")
             out = save_guard.backup(compat, os.path.join(root, "b"), root, "t", lambda: False)
             self.assertEqual(save_guard.hashes(os.path.join(out, "save")), save_guard.hashes(save))
+            self.assertEqual(save_guard.hashes(os.path.join(out, "x360ui")), save_guard.hashes(mod))
             with open(os.path.join(out, "SHA256SUMS")) as f:
-                self.assertEqual(len(f.read().splitlines()), 2)
+                self.assertEqual(len(f.read().splitlines()), 3)
             with self.assertRaises(save_guard.GuardError):   # never over an earlier backup
                 save_guard.backup(compat, os.path.join(root, "b"), root, "t", lambda: False)
 
@@ -429,6 +434,11 @@ class SaveGuardTest(unittest.TestCase):
             self.assertIsNone(save_guard.backup(compat, backups, None, "t", lambda: False))
             with self.assertRaises(save_guard.GuardError):   # the game running
                 save_guard.backup(os.path.join(root, "old"), backups, None, "u", lambda: True)
+            roaming = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Roaming")
+            os.makedirs(os.path.join(roaming, "RUNIC GAMES"))
+            with self.assertRaises(save_guard.GuardError):   # two folders differing only in case
+                save_guard.save_folder(compat)
+            os.rmdir(os.path.join(roaming, "RUNIC GAMES"))
             os.remove(os.path.join(compat, "pfx", "user.reg"))
             with self.assertRaises(save_guard.GuardError):   # no way to tell the folder
                 save_guard.backup(compat, backups, None, "v", lambda: False)

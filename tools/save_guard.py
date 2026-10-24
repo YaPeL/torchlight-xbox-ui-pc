@@ -7,8 +7,10 @@ save_guard.py backup COMPAT BACKUPS [--search ROOT]  copy it to BACKUPS/run-<tim
 COMPAT is the Proton prefix `tools/run_gog.sh` runs in (its `pfx` holds Wine's tree). The save
 folder is found the way the game finds it: Wine's `AppData` folder, read from the prefix's
 `user.reg`, then `runic games/torchlight/save` (Wine's paths are case-insensitive). `backup`
-hashes the folder, copies it, hashes the copy and the folder again, and exits 1 if any hash
-differs, if the game is running, or if the folder found has no save while another folder under
+hashes the folder, copies it (with the mod's own folder, `%LOCALAPPDATA%\\x360ui`, if there),
+hashes the copy and the folder again, and exits 1 if any hash
+differs, if the game is running (or that cannot be told), if a folder of the path exists twice
+differing only in case, or if the folder found has no save while another folder under
 ROOT has some (the first prefix's folder was once backed up in place of the one the game used;
 docs/regressions.md). The saves themselves are only read.
 """
@@ -28,13 +30,13 @@ class GuardError(Exception):
     pass
 
 
-def appdata_from_user_reg(text):
-    """The `AppData` value of Shell Folders in a Wine `user.reg`, as a Windows path."""
+def appdata_from_user_reg(text, name="AppData"):
+    """A value of Shell Folders (`AppData`, `Local AppData`) in a Wine `user.reg`, as a Windows path."""
     in_section = False
     for line in text.splitlines():
         if line.startswith("["):
             in_section = line.split("]")[0] + "]" == SHELL_FOLDERS
-        elif in_section and line.startswith('"AppData"='):
+        elif in_section and line.startswith(f'"{name}"='):
             return line.split("=", 1)[1].strip().strip('"').replace("\\\\", "\\")
     return None
 
@@ -48,13 +50,15 @@ def find_ci(base, parts):
         names = [n for n in os.listdir(path) if n.lower() == part.lower()]
         if not names:
             return None
-        path = os.path.join(path, sorted(names)[0])
+        if len(names) > 1:   # Wine could open either: no way to tell which the game uses
+            raise GuardError(f"{path} has {', '.join(sorted(names))}, differing only in case")
+        path = os.path.join(path, names[0])
     return path
 
 
-def save_folder(compat):
-    """(the save folder the game will use, or None if not there yet; the folder it would be)."""
-    if "compatdata/41500" in os.path.abspath(compat).replace(os.sep, "/"):
+def prefix_folder(compat, name, tail):
+    """(the prefix's Shell Folders `name` + tail, or None if not there yet; the folder it would be)."""
+    if "compatdata/41500" in os.path.realpath(compat).replace(os.sep, "/"):
         raise GuardError("refusing: that is Steam's Torchlight prefix")
     pfx = os.path.join(compat, "pfx")
     reg = os.path.join(pfx, "user.reg")
@@ -63,12 +67,21 @@ def save_folder(compat):
     if not os.path.isfile(reg):
         raise GuardError(f"{reg} is missing: cannot tell where the game saves")
     with open(reg, encoding="utf-8", errors="replace") as f:
-        appdata = appdata_from_user_reg(f.read())
-    if not appdata or len(appdata) < 3 or appdata[1:3] != ":\\":
-        raise GuardError(f"no AppData folder in {reg}")
-    parts = ["drive_" + appdata[0].lower()] + [p for p in appdata[3:].split("\\") if p]
-    expected = os.path.join(pfx, *parts, *SAVE_PARTS)
-    return find_ci(pfx, parts + list(SAVE_PARTS)), expected
+        value = appdata_from_user_reg(f.read(), name)
+    if not value or len(value) < 3 or value[1:3] != ":\\":
+        raise GuardError(f"no {name} folder in {reg}")
+    parts = ["drive_" + value[0].lower()] + [p for p in value[3:].split("\\") if p]
+    return find_ci(pfx, parts + list(tail)), os.path.join(pfx, *parts, *tail)
+
+
+def save_folder(compat):
+    """(the save folder the game will use, or None if not there yet; the folder it would be)."""
+    return prefix_folder(compat, "AppData", SAVE_PARTS)
+
+
+def mod_folder(compat):
+    """The mod's own folder (%LOCALAPPDATA%\\x360ui: its settings and log), or None."""
+    return prefix_folder(compat, "Local AppData", ("x360ui",))[0]
 
 
 def hashes(folder):
@@ -106,7 +119,7 @@ def game_running():
     try:
         return subprocess.run(["pgrep", "-f", "Torchlight.exe"], capture_output=True).returncode == 0
     except FileNotFoundError:
-        return False
+        raise GuardError("no pgrep: cannot tell whether the game is running")
 
 
 def backup(compat, backups, search=None, stamp=None, running=game_running):
@@ -129,9 +142,17 @@ def backup(compat, backups, search=None, stamp=None, running=game_running):
     copy, after = hashes(os.path.join(out, "save")), hashes(folder)
     if copy != before or after != before:
         raise GuardError(f"the copy in {out} does not match the saves: do not run")
+    sums = {"save/" + rel: h for rel, h in before.items()}
+    mod = mod_folder(compat)
+    if mod:
+        mod_before = hashes(mod)
+        shutil.copytree(mod, os.path.join(out, "x360ui"))
+        if hashes(os.path.join(out, "x360ui")) != mod_before:
+            raise GuardError(f"the copy in {out} does not match {mod}: do not run")
+        sums.update({"x360ui/" + rel: h for rel, h in mod_before.items()})
     with open(os.path.join(out, "SHA256SUMS"), "w") as f:
-        for rel in sorted(before):
-            f.write(f"{before[rel]}  {rel}\n")
+        for rel in sorted(sums):
+            f.write(f"{sums[rel]}  {rel}\n")
     print(f"saves of {folder}: {len(before)} file(s) backed up to {out}, hashes checked")
     for other in others:
         print(f"note: not used by this run: {other}")

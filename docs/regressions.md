@@ -115,7 +115,8 @@ here. Games' texts are named by role, never quoted.
 - **Covered now:** `tools/run_gog.sh` calls `tools/save_guard.py backup` before every run: the save
   folder found from the run's prefix, copied to `save-backups/run-<time>`, the copy and the folder
   hashed again, and the run stopped if a hash differs, if the game is running, or if the folder
-  found is empty while another folder under `~/torchlight-gog` has saves. Tests on synthetic
+  found is empty while another folder under `~/torchlight-gog` has saves; the mod's own folder
+  (`%LOCALAPPDATA%\x360ui`) is copied and checked with the saves. Tests on synthetic
   prefixes (`SaveGuardTest`).
 
 ## QA checklist
