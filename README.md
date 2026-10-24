@@ -5,7 +5,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![GOG](https://img.shields.io/badge/GOG-supported-86328A?logo=gogdotcom&logoColor=white)](#installing)
 [![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-supported-313131?logo=epicgames&logoColor=white)](#installing)
-[![Steam](https://img.shields.io/badge/Steam-planned-1b2838?logo=steam&logoColor=white)](#known-limitations)
+[![Steam](https://img.shields.io/badge/Steam-experimental-1b2838?logo=steam&logoColor=white)](#known-limitations)
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
 version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
@@ -38,13 +38,29 @@ This is a **beta**, tested under Linux (Proton). See
 
 You need:
 
-- Torchlight for PC, from **GOG** or the **Epic Games Store**. Steam's build is not supported yet.
+- Torchlight for PC, from **GOG** or the **Epic Games Store**. Steam's build is experimental: the mod
+  was ported to it but not yet played on it, and the installer asks before installing there.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
-- Python 3. Nothing else: the package is read and its executable decrypted in plain Python
-  (pycryptodome, if installed, makes it faster).
+From a [release](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases), one file and nothing
+else to install:
 
-Run `python3 tools/install.py`. It finds the PC game (GOG, Steam and Epic installs, also inside
+- **Windows:** `x360ui-install.exe`. Windows SmartScreen may warn that it is an unknown publisher
+  (the file is not signed): *More info*, then *Run anyway*. When the game is in Program Files it
+  asks for administrator permission (UAC), only then.
+- **Linux** (the game under Proton or Wine, for example on the Steam Deck in Desktop Mode):
+  `x360ui-install-x86_64.AppImage`; make it executable (`chmod +x`) and run it.
+- Check the file against `SHA256SUMS` from the same release (`sha256sum -c --ignore-missing
+  SHA256SUMS` on Linux; `Get-FileHash x360ui-install.exe` in PowerShell on Windows).
+
+Run it: its questions are shown in windows. To uninstall, run it with `uninstall`
+(`x360ui-install.exe uninstall`, `./x360ui-install-x86_64.AppImage uninstall`), and `list`
+prints the games it finds. The options below are the same.
+
+From this repository instead: Python 3 and `python3 tools/install.py` (nothing else: the package is
+read and its executable decrypted in plain Python; pycryptodome, if installed, makes it faster).
+
+Either one finds the PC game (GOG, Steam and Epic installs, also inside
 Wine and Proton prefixes), asks for your 360 package, checks that it is Torchlight's, converts the
 360's interface into the game's folder (one copy per pad style: Xbox, PlayStation 3/4/5 and
 Nintendo), writes `x360_ui.ini` and installs the proxy. The game's real `CEGUIBase.dll` is kept as
@@ -56,7 +72,8 @@ It also asks which bag you want:
 - **The 360's**: one section of 50 slots for every kind of item, as on the console. The installer
   backs up the saves it finds first. See [The 360's bag and your saves](#the-360s-bag-and-your-saves).
 
-Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--yes` (no
+Options: `--game DIR`, `--package FILE` or `--x360-dir DIR`, `--bag pc|360`, `--experimental`
+(install on Steam's experimental build without asking), `--yes` (no
 questions, the defaults: PC's bag; at uninstall, see below), `--console` (questions on the console, not in windows).
 
 - `python3 tools/install.py uninstall` puts the real `CEGUIBase.dll` back and removes what the
@@ -113,8 +130,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 
 ## Known limitations
 
-- **GOG and the Epic Games Store only.** Steam sells an older build (17685): every address the
-  mod uses is already found in it, and its test is still to come.
+- **GOG and the Epic Games Store; Steam's build is experimental.** Steam sells an older build
+  (17685): every address the mod uses is already found in it, and the proxy is built for it, but it
+  has not been played with the mod yet.
 - **The bag.** With PC's bag (the default) the main section holds 21 items; the 360's bag is an
   install option, with its notes on saves (above). A check of the saves in the installer, before
   changing the bag, is still to come.
