@@ -3354,3 +3354,10 @@ installer again through UAC with every answer, while the window shows that run's
 `X360UI_TEST_NEEDS_PERMISSION` (the folder taken as needing it) and `X360UI_TEST_ELEVATE_AS_USER`
 (the second run started as the same user, without UAC's prompt). The prompt itself is the owner's
 Windows test.
+
+**PC's tip never drawn (2026-10-24).** The owner saw PC's tip window for a moment before the 360's
+took its place: `tip_tick` looked for it every 250 ms and loaded the 360's layout the first time it
+saw it, so PC's showed until then. PC loads `tipmenu.layout` once, at the game's start; its root
+(`Frame`) is now made transparent there, in `x360_pc_layout_loaded` as the HUDs are, and kept so
+`tip_tick` finds the window at once. It is shown again only when its text is none of PC's tips (the
+settings' confirmations, used with the mouse), and made transparent again each time it closes.

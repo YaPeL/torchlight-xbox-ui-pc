@@ -18,6 +18,17 @@ here. Games' texts are named by role, never quoted.
   always (doc section 23). QA checklist: a level change and a load watched frame by frame, PC's
   HUDs never seen.
 
+## PC's tip window seen before the 360's (fixed on the branch tip-hidden)
+
+- **What happened:** at a new game the tip of the welcome showed PC's window for a moment, then the
+  360's over it. The 360's replaced PC's only once `tip_tick` had found PC's window (a search every
+  250 ms) and loaded its own layout.
+- **Should have been caught by:** the rule the HUDs' flash left (a window PC shows is made
+  transparent as its layout loads, not once it is seen); it was applied to the HUDs only.
+- **Caught by:** the owner's run on the GOG copy (2026-10-24), after the first Windows test.
+- **Covered now:** PC's `tipmenu.layout` transparent as it loads (`x360_pc_layout_loaded`). QA
+  checklist: a new game, the welcome's tip watched frame by frame.
+
 ## The game saving on Alt+F4 after a stop without the save hook (fixed in a45a7c6)
 
 - **What happened:** with the save hook off, a stop asked the player to close the game, and
@@ -81,6 +92,7 @@ here. Games' texts are named by role, never quoted.
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
+- a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - the stop's black screen closed with A held: the title does not take the A;
 - a stop's text on the black screen at 1280x720 and on the Steam Deck: wrapped, all of it seen;
 - with `test_save_hook_fails=1` and with `test_load_hook_fails=1`, on a copy of a save: the game

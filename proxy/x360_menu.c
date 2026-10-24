@@ -5600,8 +5600,13 @@ static void add_frame_listener(void);
 /* PC's bottom HUD and pet HUD made transparent as PC loads their layouts, at the game's start: the
  * HUD tick did it only once play was entered, so they showed for its first frames (the owner saw
  * them flash at each load). PC changes their visibility, never their alpha. */
+/* PC's tip window's root (tipmenu.layout, loaded once at the game's start): made transparent as it
+ * loads, so PC's tip is never drawn before the 360's takes its place (the owner saw it for a
+ * moment); tip_tick shows it again only when it is not a tip (the settings' confirmations). */
+static void *pc_tip_layout_root;
+
 void x360_pc_layout_loaded(const char *file, void *root) {
-    static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", 0};
+    static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", "TIPMENU.LAYOUT", 0};
     unsigned n = length(file), i;
     if (!resolve()) return;
     for (i = 0; hidden[i]; i++) {
@@ -5613,7 +5618,12 @@ void x360_pc_layout_loaded(const char *file, void *root) {
             same = c == hidden[i][j];
         }
         if (!same) continue;
-        __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+        if (i == 2) {   /* the tip: not let through to the mouse (the settings' confirmations use it) */
+            __try { prop(root, "Alpha", "0"); } __except (1) { return; }
+            pc_tip_layout_root = root;
+        } else {
+            __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+        }
         x360_log("x360 hud: PC's "); x360_log(hidden[i]); x360_log(" transparent as it loads\r\n");
     }
 }
@@ -6405,12 +6415,35 @@ static void *tip_root;
 static char pc_tip_prefix[48];
 static int tip_failed, tip_shown;
 
+/* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
+static void pc_tip_alpha(const char *a) {
+    if (pc_tip_layout_root) prop(pc_tip_layout_root, "Alpha", a);
+    prop(win_of(pc_tip_prefix, "Frame"), "Alpha", a);
+}
+
 static void tip_tick(void) {
     static unsigned last_search, prev;
     static void *pc_tip;
     unsigned now = GetTickCount(), buttons, pressed;
     char v[2048];
     if (tip_failed) return;
+    /* Its window found at once when its layout was seen loading (its root, "<prefix>Frame"). */
+    if (!pc_tip && pc_tip_layout_root) {
+        typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
+        static name_fn gn;
+        const char *name;
+        unsigned len;
+        if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
+        name = gn ? c_str(gn(pc_tip_layout_root, 0), 0) : 0;
+        len = name ? length(name) : 0;
+        if (len > 5 && len - 5 < sizeof pc_tip_prefix && name[len - 5] == 'F' && name[len - 4] == 'r' &&
+            name[len - 3] == 'a' && name[len - 2] == 'm' && name[len - 1] == 'e') {
+            unsigned i;
+            for (i = 0; i < len - 5; i++) pc_tip_prefix[i] = name[i];
+            pc_tip_prefix[len - 5] = 0;
+            pc_tip = win_of(pc_tip_prefix, "ShowTips");
+        }
+    }
     if (!pc_tip && now - last_search > 250) { last_search = now; pc_tip = find_pc_by_suffix("ShowTips", 0, pc_tip_prefix, sizeof pc_tip_prefix); }
     if (!pc_tip) return;
     if (!pc_attached(pc_tip_prefix, "Frame")) {
@@ -6418,8 +6451,8 @@ static void tip_tick(void) {
             tip_shown = 0;
             overlay_closed_at = GetTickCount();
             set_visible(tip_root, 0, 0);
-            prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
         }
+        pc_tip_alpha("0");   /* ready unseen for the next one */
         return;
     }
     if (!tip_root) {
@@ -6443,7 +6476,7 @@ static void tip_tick(void) {
         read_prop(win_of(pc_tip_prefix, "Dialog"), "Text", t, sizeof t);
         if (!x360_text_key_of("pctip.", t)) {
             if (tip_shown) { tip_shown = 0; set_visible(tip_root, 0, 0); overlay_closed_at = GetTickCount(); }
-            prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "1");
+            pc_tip_alpha("1");
             return;
         }
     }
@@ -6454,7 +6487,7 @@ static void tip_tick(void) {
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
         tip_shown = 1;
         set_visible(tip_root, 0, 1);
-        prop(win_of(pc_tip_prefix, "Frame"), "Alpha", "0");
+        pc_tip_alpha("0");
         move_to_front(tip_root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
     }
