@@ -573,7 +573,7 @@ class InstallCppTest(unittest.TestCase):
                "--browse-from", self.x360, "--dll", self.proxy, *extra]
         if shots:
             cmd += ["--shots", shots]
-        extra_env = {k: v for k, v in os.environ.items() if k.startswith("X360UI_TEST_")}
+        extra_env = {k: v for k, v in os.environ.items() if k.startswith("X360UI_TEST_") or k == "X360UI_NO_ELEVATE"}
         return subprocess.run(cmd, capture_output=True, text=True, timeout=600,
                               env=dict(self.env, **extra_env, HOME=home, USERPROFILE=home))
 
@@ -637,26 +637,35 @@ class InstallCppTest(unittest.TestCase):
     def test_the_wizard_through_the_elevated_run(self):
         """The game's folder taken as needing an administrator (X360UI_TEST_NEEDS_PERMISSION): the
         wizard's install goes through the second run (as UAC's, without its prompt:
-        X360UI_TEST_ELEVATE_AS_USER), its result and progress through their files; the same
-        bytes as install.py's; the summary says Windows will ask."""
-        env = dict(X360UI_TEST_NEEDS_PERMISSION="1", X360UI_TEST_ELEVATE_AS_USER="1")
-        saved = {k: os.environ.get(k) for k in env}
-        os.environ.update(env)
-        try:
-            shots = os.path.join(self.root, "uac-shots")
-            os.makedirs(shots)
-            steps = list(self.WIZARD_INSTALL_360)
-            steps.insert(steps.index("screen summary") + 1, "shot summary")
-            r = self.wizard(steps + ["quit"], shots=shots)
-        finally:
-            for k, v in saved.items():
-                if v is None:
-                    os.environ.pop(k, None)
-                else:
-                    os.environ[k] = v
+        X360UI_TEST_ELEVATE_AS_USER); with that run refused (X360UI_NO_ELEVATE) nothing is
+        changed, which shows the install was the second run's; the same bytes as install.py's,
+        and the saves backed up by it."""
+        game, saves = self.games["cpp"]
+        before = _tree(game)
+
+        def run(**env):
+            saved = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
+            try:
+                return self.wizard(list(self.WIZARD_INSTALL_360) + ["quit"])
+            finally:
+                for k, v in saved.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
+        r = run(X360UI_TEST_NEEDS_PERMISSION="1", X360UI_NO_ELEVATE="1")   # the second run refused
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(_tree(game), before)
+        r = run(X360UI_TEST_NEEDS_PERMISSION="1", X360UI_TEST_ELEVATE_AS_USER="1")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.install("py", "--bag", "360").returncode, 0)
         self.same_install()
+        backups = [d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]
+        self.assertEqual(len(backups), 1)
+        with open(os.path.join(os.path.dirname(saves), backups[0], "0.svt"), "rb") as f:
+            self.assertEqual(f.read(), b"a synthetic save")
 
     def test_the_wizards_screenshots(self):
         """Every screen drawn, each reached with the simulated pad; with X360UI_SHOTS (a folder),
