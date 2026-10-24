@@ -3159,3 +3159,29 @@ with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then ba
 before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
 same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
 without the flag after a switch is out there.
+
+**Saves held while items are aside, and the stop's fallbacks (the GPU agent's review, items 1 to
+3, and the owner's decisions after the runs; 2026-10-23).** Every save is refused from the first
+item kept aside at load until all are placed (`load_items_aside`), so leaving during the wait for
+the pet loses nothing. The save's hook is installed first. Without it the load hook only stops
+(`load_cut_only`): at the first item of the player's load that PC would destroy, the item is kept
+and the game ends at once, before any save (Torchlight saves on closing, Alt+F4 too: QA run g1-3,
+whose save was written four seconds before the game ended). Without the load hook nothing protects
+the items: a black screen at the title says so before any character is loaded. A stop whose modal
+does not show in 15 s (or that waits two minutes behind another modal) gives its text on the
+proxy's black screen (the converted UI's black image, the text laid out as the dialog's paragraphs,
+A or Enter; the pad its own until A is let go), and only if that cannot show, `x360_stop.txt` in
+Notepad or a Windows box (blank under Proton). `x360_stop.txt` is in `%LOCALAPPDATA%\x360ui`
+(the game's folder may be Program Files: no write, or VirtualStore); it is removed once the player
+has seen the stop, and one left by a game that ended at once is shown at the next start's title.
+More than 64 items kept aside are kept alive and stop the game. PC's loader's puts are logged per
+phase: a level change loads the hero's items again, with the load armed (QA run g1-1).
+
+QA runs g1 (the redirected folder `savetest4`, the owner's two save folders' hashes and Steam's
+the same before and after each): 1, `test_no_stop`: five saves refused, the save byte for byte;
+2b, the normal stop: the 360's modal with the text, A closed the game, the save byte for byte;
+2, `test_stop_modal_fails` (before the black screen): the fallback box blank under Proton; 3,
+`test_save_hook_fails`: the game ended while the character loaded, the save byte for byte; 3b, the
+next start: the stop's text on the black screen at the title, A dismissed it without reaching the
+title's menu; 4, `test_save_hook_fails` and `test_load_hook_fails`: the warning on the black screen
+at the title, wrapped, before any character was loaded.

@@ -6983,15 +6983,14 @@ static void black_screen_tick(void) {
             add_child(bs_back, 0, bs_text);
             add_child(bs_back, 0, bs_hint);
             {
+                /* Only the properties this scheme's StaticText has (FrameEnabled and
+                 * BackgroundEnabled threw, QA run g1-4); the text itself is laid out by rich_text,
+                 * as the dialog's paragraphs: WordWrapLeftAligned, each one's height measured. */
                 void *list[2]; int i;
                 list[0] = bs_text; list[1] = bs_hint;
                 for (i = 0; i < 2; i++) {
                     prop(list[i], "Font", "X360_Serif");
-                    prop(list[i], "FrameEnabled", "False");
-                    prop(list[i], "BackgroundEnabled", "False");
                     prop(list[i], "TextColour", "FFFFFFFF");
-                    prop(list[i], "HorzTextFormatting", "WordWrapCentred");   /* this scheme's StaticText (the journal's) */
-                    prop(list[i], "VertFormatting", "CentreAligned");
                 }
             }
         }
@@ -6999,8 +6998,8 @@ static void black_screen_tick(void) {
         set_size(bs_back, 0, 0, width, height);
         set_size(bs_text, width * 0.15f, height * 0.25f, width * 0.7f, height * 0.4f);
         set_size(bs_hint, width * 0.15f, height * 0.7f, width * 0.7f, height * 0.08f);
-        text(bs_text, bs_utf8);
-        text(bs_hint, bs_close ? "A: close the game" : "A: continue");
+        rich_text(bs_text, "x360bs_", "body", bs_utf8);
+        rich_text(bs_hint, "x360bs_", "hintline", bs_close ? "A: close the game" : "A: continue");
         set_visible(bs_back, 0, 1);
         move_to_front(bs_back, 0);
         bs_state = 2;
