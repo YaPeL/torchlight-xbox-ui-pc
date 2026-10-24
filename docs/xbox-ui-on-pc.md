@@ -3165,6 +3165,19 @@ before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both i
 same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
 without the flag after a switch is out there.
 
+**No item left out of every bag (the GPU agent's review, item 5; 2026-10-23).** Every move the
+pad's menus make (unequip, swap, drop, the pet's bag, buy, sell, the stash, the transmuter, the
+enchanter, a gem into a socket) takes the item out with `move_out`, which remembers it and its
+place, and ends with `move_done` once it is somewhere. A put PC refuses is answered by
+`give_back` (its slot when free, else its bag); the old items of a swap that no longer fit go to
+the ground, as PC's swap drops them; one that can be put nowhere is kept (never destroyed) and
+stops the game before any save (`move_lost`, the stop of section 21). The menus' pad input runs
+in `__try` (`x360_inventory_pad`): an exception with a move under way, or a move left
+unfinished, stops the game at once without touching the item (`move_cut_short`): where it went
+is not known (it may be placed already, or merged into a stack and freed, 0x4e9743), so giving it
+back could duplicate it; no save is written, and loading again has it where it was. A sale now puts the item in the merchant's bag before paying, so an
+interrupted sale gives back the item, never the gold with it.
+
 **Saves held while items are aside, and the stop's fallbacks (the GPU agent's review, items 1 to
 3, and the owner's decisions after the runs; 2026-10-23).** Every save is refused from the first
 item kept aside at load until all are placed (`load_items_aside`), so leaving during the wait for
