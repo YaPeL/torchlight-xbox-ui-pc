@@ -3556,6 +3556,26 @@ walks with `pad_log=1` or a trace on (`pad: setDestination us avg ... max ... n 
 request each frame, against
 walls too, to be read in a run before it is integrated.
 
+**Its cost (2026-10-24, the owner's request).** The owner's new route with the fixed b: the gap to
+the 360 0.73 largest and 0.21 mean, the fast spins 5.06 to 5.44, the start 868 ms. Against walls
+(the first 8-direction file, 2 s pushes from the boxed-in town start), with b and with
+`pad_walk_dest=0`, at 60 fps with vsync (`VSYNCH :1`, `MAX_FPS :60` in the measuring copy's
+`local_settings.txt`) and uncapped (`VSYNCH :0`, `MAX_FPS :1000`); each frame's time and the
+`setDestination` time in it from `x360_frames-<date>.csv` (pad_trace), 6 to 30 s:
+
+| | 60, b | 60, no b | uncapped, b | uncapped, no b |
+|---|---|---|---|---|
+| frames a second | 60 | 60 | 172 | 182 |
+| frame ms p50 / p95 / p99 | 16.64 / 17.29 / 17.55 | 16.66 / 17.42 / 17.84 | 5.19 / 8.58 / 9.20 | 4.60 / 9.55 / 10.48 |
+| largest frame | 84 ms | 100 ms | 64 ms | 52 ms |
+| frames over 18 ms | 7 | 10 | 1 | 1 |
+| of them with `setDestination` over 1 ms | 0 | 0 | 0 | 0 |
+| `setDestination`: calls, mean, largest | 954, 30 us, 71 us | 160, 23 us, 48 us | 2775, 41 us, 386 us | 160, 28 us, 363 us |
+
+The long frames (52 to 100 ms) are on both sides, with `setDestination` at 30 us at most in
+them: the game's. At 60 fps b makes no frame miss its 16.6 ms; uncapped it costs 0.6 ms of the
+median frame. (On the route at 200 fps three 5 s windows had a call of 3.3 to 3.7 ms; none here.)
+
 ## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
 
 The 360's plain walk (`sub_82199E08`) turns the stick by the camera's yaw: `f10 = atan2` of the
