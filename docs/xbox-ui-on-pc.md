@@ -3496,3 +3496,13 @@ a partial tilt): merged only with the owner's OK after a test by hand.
 
 The replay reproduces the recording (the 0.94 straight: 32.20 units against the recording's
 32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).
+## 30. A destination each frame (the movement plan's change b, 2026-10-24; parked)
+
+The 360's plain stick walk (`sub_82199E08`) sends a destination each frame, at 5 times the stick's
+length along the stick turned by the camera (27b); the pad sent one every 0.1 s, 2 units ahead
+(the 360's walk after a held action, `sub_8221B8E8`). The owner's route replayed: PC's paths are
+polygons of 0.1 s chords where the 360's are curves (the spins). Now `setDestination` goes once
+per game frame (the proxy's frame listener counts them, `x360_frames`) at `5 * len` along the
+stick's world direction; the facing each frame and the release (`stopPathing`) are unchanged.
+`pad_walk_dest=0` keeps the old one, to compare.
+
