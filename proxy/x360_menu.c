@@ -5973,6 +5973,7 @@ static void qd_show(int on) {
 
 /* The pad's A on an NPC (proxy/pad.c): PC's dialog is looked for at every frame for a while,
  * not every 250 ms (run B: PC's showed for a moment the first time). */
+int x360_tip_open(void);   /* the tip has the pad over the 360's other screens (tip_tick) */
 static unsigned dialog_expected_at;
 void x360_dialog_expect(void) { dialog_expected_at = GetTickCount(); }
 
@@ -6096,6 +6097,7 @@ static void dialog_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~qd_prev_buttons;
     qd_prev_buttons = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     /* The frame's time, faster with X held. */
     if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
     qd_last = now;
@@ -6373,6 +6375,7 @@ static void fishing_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     if (pressed & 0x1000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 0xe); x360_log("x360 fishing: A (PC's command 0xe)\r\n"); }
     if (pressed & 0x2000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 6); x360_log("x360 fishing: B (PC's command 6)\r\n"); }
 }
@@ -6729,6 +6732,7 @@ static void modal_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     if (pressed & 0x1000) { modal_frame_away(0); press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok"); }   /* A */
     if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) { modal_frame_away(0); press_pc(pc_modal_prefix, "Decline"); }   /* B */
 }
