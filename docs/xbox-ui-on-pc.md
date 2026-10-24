@@ -3503,13 +3503,29 @@ length along the stick turned by the camera; the pad sent one every 0.1 s, 2 uni
 (the 360's walk after a held action, `sub_8221B8E8`). The owner's route replayed: PC's paths are
 polygons of 0.1 s chords where the 360's are curves (the spins). Now `setDestination` goes once
 per game frame (the proxy's frame listener counts them, `x360_frames`) at `5 * len` along the
-stick's world direction (the screen probe's, refreshed on a turn of more than 5 degrees or every
-0.1 s, by its own timer); the facing each frame and the release (`stopPathing`) are unchanged.
+stick's world direction (the camera's yaw since section 31, refreshed on a turn of more than 5
+degrees or every 0.1 s, by its own timer); the facing each frame and the release (`stopPathing`) are unchanged.
 Left out: the 360's `sub_8219C070(hero, 0)` and its `+652` handle's release each frame after the
 destination (the pad drops the target on the stick's first frame). The 360 runs it at about 60
 frames a second, PC at its uncapped rate (100 to 200): twice to four times the path requests;
 measured in the replay (the frame rate in the trace). `pad_walk_dest=0` keeps the old one, to
 compare.
+
+**Measured (2026-10-24, the owner's route replayed; units per second over each route).** Change
+(a) alone brought the partial-tilt spins to the 360's (2.0 turns a second at half tilt: 2.33,
+the 360's 2.35; 1.5 at 0.85: 3.32 against 3.39). With (b) on top they moved away again (3.21 and
+3.61; 0.66 turns a second at half tilt: 3.63, the 360's 2.41, (a) alone 3.17); the straights did
+not change. Two causes were tried and left out:
+- the destination each frame itself was the change being measured;
+- the screen probe's direction against the 360's camera yaw: the angle between the stick and the
+  walk varies the same way on both builds (about 20 degrees across the stick's directions), with
+  a constant offset of about 6 degrees between them, so the probe does not bend it (wrong, as
+  the 8-direction replay at full tilt showed: section 31).
+Stopped there (two causes in a row): (b) is parked, (a) stands alone. Not tried yet: the frame
+rate (the 360's replay ran at about 177 frames a second, PC's at 105 to 120: a destination each
+frame is then a different rate), and the 360's per-frame `sub_8219C070`, left out. Both were
+tried later and changed nothing (a replay each); then the 360's stick dead zone was found
+(section 32), which changes the factor's input, and (b) was measured again on top of it (30a).
 
 
 ## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
