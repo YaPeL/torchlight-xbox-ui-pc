@@ -2160,16 +2160,17 @@ static void refresh_all(void) {
 
 /* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
  * bag is spent and the item identified as PC does it (the identify effect's handler, GOG 0x4b388b:
- * +0x2fc set, CItem::destroyItemText 0x4d1cc0). The scroll is found by its name (GOG's English
- * "identify scroll"); a stack loses one, the last one is taken out and destroyed as PC destroys an
+ * +0x2fc set, CItem::destroyItemText 0x4d1cc0). The scroll is found by its unit's name, the 360's
+ * text item.identify (no game text in the code); a stack loses one, the last one is taken out
+ * and destroyed as PC destroys an
  * item (removeEquipment, then the virtual destructor +0 with 1). */
 #define GOG_DESTROY_ITEM_TEXT 0x004d1cc0
 /* The hero's first identify scroll stack, and in *count the scrolls of every stack. */
+static int unit_named(unsigned char *item, const char *key);
 static unsigned char *identify_scrolls(int *count) {
     unsigned char *inv = (unsigned char *)(hero ? *(void **)(hero + GOG_INVENTORY) : 0), *scroll = 0;
     void **refs;
     unsigned n, i;
-    char name[64];
     if (count) *count = 0;
     if (!inv) return 0;
     refs = *(void ***)(inv + INV_REFS);
@@ -2177,12 +2178,7 @@ static unsigned char *identify_scrolls(int *count) {
     for (i = 0; i < n; i++) {
         unsigned char *ref = (unsigned char *)refs[i], *it;
         if (!ref || !(it = *(unsigned char **)(ref + REF_ITEM))) continue;
-        item_name(it, name, sizeof name);
-        {
-            const char *a = name, *b = "identify scroll";
-            while (*a && *a == *b) a++, b++;
-            if (*a || *b) continue;
-        }
+        if (!unit_named(it, "item.identify")) continue;   /* as usable_now tells the scroll */
         if (!scroll) scroll = it;
         if (count) *count += *(int *)(it + GOG_STACK);
     }
