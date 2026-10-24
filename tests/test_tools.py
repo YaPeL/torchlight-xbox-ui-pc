@@ -467,6 +467,47 @@ class PadTraceTest(unittest.TestCase):
             write(p, "# x360ui pad trace v1 pc\n1,2,3\n")
             with self.assertRaises(ValueError):
                 pad_trace.read_trace(p)
+class ProxyTextsTest(unittest.TestCase):
+    """The proxy's x360_strings.txt parser (proxy/cegui_proxy.c, between its markers), compiled
+    on the host: LF and CRLF files give the same texts (the owner's Windows run of 2026-10-24: a
+    CR kept at every text's end, no tip of PC's matched)."""
+
+    def test_lf_and_crlf(self):
+        import shutil as sh
+        cc = sh.which("cc") or sh.which("gcc") or sh.which("clang")
+        if not cc:
+            self.skipTest("no C compiler")
+        src = Path(__file__).resolve().parent.parent / "proxy" / "cegui_proxy.c"
+        text = src.read_text()
+        body = text[text.index("/* texts-parse: begin */"):text.index("/* texts-parse: end */")]
+        main = body + r"""
+#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+    static char buf[4096];
+    const char *k[16], *v[16];
+    FILE *f = fopen(argv[1], "rb");
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    int i, c;
+    buf[n] = 0;
+    c = x360_parse_texts(buf, k, v, 16);
+    for (i = 0; i < c; i++) printf("[%s]=[%s]\n", k[i], v[i]);
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as root:
+            c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
+            write(c_file, main)
+            subprocess.run([cc, "-o", exe, c_file], check=True, capture_output=True)
+            outs = []
+            for eol in (b"\n", b"\r\n"):
+                data = eol.join([b"pctip.TIP_A=Synthetic tip, a = sign", b"no equals sign", b"tip.TIP_A=x", b""])
+                path = os.path.join(root, "s.txt")
+                write(path, data)
+                outs.append(subprocess.run([exe, path], check=True, capture_output=True).stdout)
+            self.assertEqual(outs[0], outs[1])
+            self.assertEqual(outs[0].decode().splitlines(),
+                             ["[pctip.TIP_A]=[Synthetic tip, a = sign]", "[tip.TIP_A]=[x]"])
 
 
 class SaveGuardTest(unittest.TestCase):

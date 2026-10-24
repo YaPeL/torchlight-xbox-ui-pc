@@ -119,12 +119,29 @@ here. Games' texts are named by role, never quoted.
   (`%LOCALAPPDATA%\x360ui`) is copied and checked with the saves. Tests on synthetic
   prefixes (`SaveGuardTest`).
 
+## PC's tips shown on Windows, never the 360's (fixed on the branch texts-crlf)
+
+- **What happened:** in the owner's first Windows run (the Epic copy, the GOG build) every tip was
+  PC's window: the first one, and the ones PC shows after an NPC's dialog. The installer writes
+  `x360_strings.txt` with CRLF on Windows (as `install.py` does there); the proxy's reader cut each
+  line at its LF and then looked for the CR at the cut itself, so every text kept a CR at its end.
+  No tip text of PC's matched its `pctip.` entry, so `tip_tick` took each tip for one of the
+  settings' confirmations and showed PC's window. The log had no `x360 tip:` line at all.
+- **Should have been caught by:** a test of the proxy's file readers with the files as the Windows
+  installer writes them; every run of the proxy so far had read the Linux installer's LF files.
+- **Caught by:** the owner's Windows run (2026-10-24) and its log.
+- **Covered now:** the CR taken before the cut; the parser between markers in `cegui_proxy.c`,
+  compiled on the host by `ProxyTextsTest` with LF and CRLF files; the log says how many texts and
+  PC's tips were read (`x360: x360_strings.txt: N texts, M of PC's tips`). QA checklist: on
+  Windows, the first tip is the 360's and the log has its `x360 tip:` line.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
+- on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
 - a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
