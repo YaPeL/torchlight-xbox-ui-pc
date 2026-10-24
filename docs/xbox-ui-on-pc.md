@@ -3434,10 +3434,14 @@ characters), while in play (`hud_in_play`), PC's settings are not open (reached 
 pause menu; the keyboard works there), the developer console is not shown (its CEGUI window
 `WindowsLook/Console`, typed into) and no cinematic holds (CGameUI's `0x541db0`: PC's keys skip
 it). A press's repeats and release go as the press went, so PC never keeps a key down across those
-changes; out of play, or when the frame tick stops refreshing the state, nothing is swallowed.
+changes; out of play, or when the frame tick has not refreshed the state for 2 s, nothing is
+swallowed. The console's window is looked for at once when its key (`` ` ``) goes down.
 The game's window (its title) is subclassed once, with its own kind (ANSI or Unicode). Test scripts that send these keys in play (`tools/send_input.py`) now send
-nothing the game sees. PC's window procedure (`CGame::WndProc` *(OT)*) is what
-gives the keys to `CGameUI::keyEvent` and `CKeyManager::keyEvent` *(OT)*, so neither sees them. The
+nothing the game sees. PC's window procedure (`CGame::WndProc` *(OT)*, in OpenTorchlight's
+build; not located in GOG's) is what gives the keys to `CGameUI::keyEvent` and
+`CKeyManager::keyEvent` *(OT)*, so neither sees them. That GOG's keys come by the window's
+messages is seen in every run: the pad's skills are `WM_KEYDOWN` messages it posts (`post_key`,
+`proxy/pad.c`), which PC's hotbar acts on. The
 one address used is the cinematic's test, already ported to Steam's build
 (`proxy/addresses_steam.txt`). The six screen
 hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu

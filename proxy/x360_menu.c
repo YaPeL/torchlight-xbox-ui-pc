@@ -6954,12 +6954,15 @@ __declspec(dllimport) long __stdcall SetWindowLongA(HWND w, int index, long valu
 __declspec(dllimport) long __stdcall CallWindowProcW(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
 __declspec(dllimport) long __stdcall CallWindowProcA(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
 __declspec(dllimport) int __stdcall IsWindowUnicode(HWND w);
+__declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
+__declspec(dllimport) long __stdcall GetWindowLongA(HWND w, int index);
 __declspec(dllimport) int __stdcall GetWindowTextA(HWND w, char *text, int size);
 static long keys_old_proc;       /* the game window's own procedure: subclassed once, never again */
 static int keys_unicode;
 static int keys_open;            /* set each frame by keys_off: in play, no PC settings, console or cinematic */
 static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
 static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
+static int keys_console_key;     /* the console's key went down: look for its window at once */
 static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
     int i;
@@ -6967,11 +6970,12 @@ static int key_index(unsigned vk) {
     return -1;
 }
 static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
-    int open = keys_open && GetTickCount() - keys_open_at < 250;
+    int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
     int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
     if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
+    if (msg == 0x100 && wparam == 0xc0) keys_console_key = 1;   /* KEYMAP_CONSOLEKEY_PRESS (`) */
     if (k >= 0 && msg == 0x100) {        /* WM_KEYDOWN: a new press (lParam bit 30 clear) or a repeat */
-        if (!(lparam & 0x40000000)) {
+        if (!(lparam & 0x40000000) || !(keys_down & (1u << k))) {   /* a press, or a repeat after a focus loss */
             if (open) keys_down |= 1u << k; else keys_down &= ~(1u << k);
         }
         if (keys_down & (1u << k)) return 0;   /* the press and its repeats, as the press went */
@@ -6987,16 +6991,19 @@ static void keys_off(void) {
     static char console_prefix[48];
     int console_up = 0, cinematic = 0;
     if (!tried && hud_in_play) {
-        /* The game's window, once: the active window in play, its title the game's. */
+        /* The game's window, once: the active window in play, its title the game's (600 frames'
+         * tries, then given up, said in the log). */
+        static int tries;
         HWND w = active_window();
         char title[64];
-        if (w && GetWindowTextA(w, title, sizeof title) > 0 && title[0] == 'T' && title[1] == 'o' && title[2] == 'r' &&
-            title[3] == 'c' && title[4] == 'h') {
-            long old;
+        if (++tries > 600) { tried = 1; x360_log("x360 menu: PC's menu keys: no window titled Torchlight, not swallowed\r\n"); }
+        else if (w && GetWindowTextA(w, title, sizeof title) > 0 && title[0] == 'T' && title[1] == 'o' && title[2] == 'r' &&
+                 title[3] == 'c' && title[4] == 'h') {
+            long old = 0;
             tried = 1;
             keys_unicode = IsWindowUnicode(w);
-            old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
-            if (old == (long)keys_proc) old = 0;   /* never our own: it would call itself */
+            if ((keys_unicode ? GetWindowLongW(w, -4) : GetWindowLongA(w, -4)) != (long)keys_proc)   /* never onto itself */
+                old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
             keys_old_proc = old;
             x360_log(old ? "x360 menu: PC's menu keys swallowed in play, window " : "x360 menu: PC's menu keys: the window not subclassed, ");
             x360_log_num((long)w);
@@ -7009,8 +7016,9 @@ static void keys_off(void) {
         static unsigned last_search;
         unsigned now = GetTickCount();
         if (console && !win_of(console_prefix, "WindowsLook/Console")) console = 0;
-        if (!console && now - last_search >= 1000) {   /* the whole tree: once a second at most */
+        if (!console && (now - last_search >= 1000 || keys_console_key)) {   /* the whole tree: once a second, or at the console's key */
             last_search = now;
+            keys_console_key = 0;
             console = find_pc_by_suffix("WindowsLook/Console", 0, console_prefix, sizeof console_prefix);
         }
     }
