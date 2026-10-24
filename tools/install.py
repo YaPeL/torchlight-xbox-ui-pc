@@ -597,6 +597,16 @@ def do_uninstall(args):
             pass
     for folder in mod_data_folders(game):
         shutil.rmtree(folder, ignore_errors=True)
+    if os.name == "nt" and os.environ.get("LOCALAPPDATA"):
+        # Files an older version wrote beside the game in Program Files, which Windows redirected
+        # into the user's VirtualStore.
+        store = os.path.join(os.environ["LOCALAPPDATA"], "VirtualStore",
+                             os.path.splitdrive(os.path.abspath(game))[1].lstrip("\\/"))
+        for name in ("x360_ui.log", "x360_settings.ini", "x360_stop.txt"):
+            try:
+                os.remove(os.path.join(store, name))
+            except OSError:
+                pass
     ask.info(f"Uninstalled from {game}." + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
     return 0
 

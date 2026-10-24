@@ -111,31 +111,21 @@ const char *x360_pad_style(void) {
 }
 
 /* ---- Nintendo's layout: A and B swapped (the owner, after the recomp's swap_confirm_cancel) ----
- * The setting, x360_settings.ini's swap_confirm_cancel=1 beside the DLL (the mod's own file, written
+ * The setting, x360_settings.ini's swap_confirm_cancel=1 (the mod's own file, in %LOCALAPPDATA%\\x360ui: x360_data_path; written
  * by the tick in PC's settings screen), acts only while the active pad is Nintendo's and not
  * behind Steam Input (whose own Nintendo layout option swaps already: never twice). The prompts'
  * folder is chosen at start (x360ui-nintendo-swapped with it on); the swap itself follows the pad
  * (x360_swap_recheck at each pad connection). */
 int x360_swap_active;
 static int swap_setting = -1;
-static void settings_path(char *out, unsigned size) {
-    extern void *x360_self_module(void);
-    DWORD n = GetModuleFileNameA((HMODULE)x360_self_module(), out, size - 24);
-    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
-    {
-        static const char name[] = "x360_settings.ini";
-        unsigned i;
-        for (i = 0; i < sizeof name; i++) out[n + i] = name[i];
-    }
-}
+HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);   /* cegui_proxy.c */
 int x360_swap_setting(void) {
     if (swap_setting < 0) {
-        char path[600], text[256];
+        char text[256];
         DWORD got = 0;
         HANDLE f;
-        settings_path(path, sizeof path);
         swap_setting = 0;
-        f = CreateFileA(path, 0x80000000UL, 1, 0, 3, 0, 0);
+        f = x360_data_open("x360_settings.ini", 0x80000000UL, 1, 3);   /* GENERIC_READ, OPEN_EXISTING */
         if (f != (HANDLE)(long)-1) {
             ReadFile(f, text, sizeof text - 1, &got, 0);
             CloseHandle(f);
@@ -146,12 +136,10 @@ int x360_swap_setting(void) {
     return swap_setting;
 }
 void x360_swap_setting_write(int on) {
-    char path[600];
     static const char yes[] = "swap_confirm_cancel=1\r\n", no[] = "swap_confirm_cancel=0\r\n";
     DWORD done;
     HANDLE f;
-    settings_path(path, sizeof path);
-    f = CreateFileA(path, 0x40000000UL, 0, 0, 2, 0x80, 0);   /* GENERIC_WRITE, CREATE_ALWAYS */
+    f = x360_data_open("x360_settings.ini", 0x40000000UL, 0, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
     if (f == (HANDLE)(long)-1) { x360_log("x360 prompts: x360_settings.ini not written\r\n"); return; }
     WriteFile(f, on ? yes : no, sizeof yes - 1, &done, 0);
     CloseHandle(f);

@@ -2996,7 +2996,7 @@ The owner's request, after the recomp's `swap_confirm_cancel` (the mods agent's 
 B swapped, X and Y kept; the prompts follow, from a "nintendo-swapped" set of icons; off by default,
 the bottom button confirming as on the 360; its checkbox greyed for Xbox and PlayStation prompts).
 Here:
-- **The setting:** `x360_settings.ini` beside the DLL, `swap_confirm_cancel=1`, the mod's own file
+- **The setting:** `x360_settings.ini` in `%LOCALAPPDATA%\x360ui` (beside the DLL until 2026-10-24), `swap_confirm_cancel=1`, the mod's own file
   (not PC's settings), written when the checkbox changes; removed by uninstall.
 - **The checkbox:** made in PC's settings screen when it shows, of PC's own checkbox type, in the
   parent of its last checkbox and one row below it; its text says it needs a restart. Enabled only
@@ -3222,3 +3222,13 @@ texts as they are (`--no-markup`: a path with `&` or `<`). Test:
 `--game` (no second question). The junction risk (the elevated run writes backups into folders the
 first run names, which a junction could redirect) stays documented as low: UAC is not a security
 boundary, and the folders are the user's own.
+
+**The mod's own files out of the game's folder (2026-10-24).** `x360_ui.log` and
+`x360_settings.ini`, like `x360_stop.txt`, are in `%LOCALAPPDATA%\x360ui` (under Wine or
+Proton, the prefix's `users/<user>/AppData/Local/x360ui`), through `x360_data_path` in
+`cegui_proxy.c`; beside the DLL only without LOCALAPPDATA. The game's folder may be Program Files,
+which the game (a 32-bit executable without a manifest) cannot write: Windows redirects its
+writes into the user's VirtualStore, where no uninstaller looked. Both uninstallers remove the
+`x360ui` folder, and on Windows the three files an older version left in the VirtualStore copy of
+the game's folder. `x360_ui.ini` stays beside the game: the installer writes it (elevated when it
+must), the proxy only reads it.

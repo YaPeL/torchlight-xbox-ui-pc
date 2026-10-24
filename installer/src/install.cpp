@@ -986,7 +986,13 @@ int do_uninstall(const Args& args) {
     std::vector<fs::path> data;
     for (const fs::path& f : save_folders(game)) data.push_back(f.parent_path().parent_path().parent_path().parent_path() / "Local" / "x360ui");
 #ifdef _WIN32
-    if (const char* l = std::getenv("LOCALAPPDATA")) data.push_back(fs::path(P(l)) / "x360ui");
+    if (const char* l = std::getenv("LOCALAPPDATA")) {
+      data.push_back(fs::path(P(l)) / "x360ui");
+      // Files an older version wrote beside the game in Program Files, which Windows redirected
+      // into the user's VirtualStore (install.py the same).
+      const fs::path store = fs::path(P(l)) / "VirtualStore" / fs::absolute(game).relative_path();
+      for (const char* n : {"x360_ui.log", "x360_settings.ini", "x360_stop.txt"}) fs::remove(store / n, ec);
+    }
 #endif
     for (const fs::path& d : data) if (is_dir(d)) fs::remove_all(d, ec);
   } catch (...) {
