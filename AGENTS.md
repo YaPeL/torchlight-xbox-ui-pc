@@ -28,6 +28,8 @@ function and the rule read.
 
 ## The repository
 
+- Work in `~/torchlight-xbox-ui-pc-public`, this public repository's clone. `~/torchlight-xbox-ui-pc` is
+  only a copy of the archived private repository: never add this repository's remote to it.
 - No file of the game, from the 360 or PC, is ever committed: assets, executables, extracted
   data, captures, saves, run logs, or text copied from the game (CI checks it with
   `tools/check_no_game_files.py`; do not weaken it). Tools convert from the user's copies into
