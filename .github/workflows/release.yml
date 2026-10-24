@@ -201,6 +201,7 @@ jobs:
              artifacts/proxies/CEGUIBase-gog.dll artifacts/proxies/CEGUIBase-steam.dll release/
           cp LICENSE release/LICENSE.txt
           cp installer/third_party/NOTICES.md release/THIRD_PARTY_NOTICES.md
+          cp installer/third_party/LGPL-2.1.txt release/LGPL-2.1.txt
           cp packaging/linux/APPIMAGE_NOTICES.md release/APPIMAGE_NOTICES.md
           packaging/linux/get_sources.sh release
           (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)

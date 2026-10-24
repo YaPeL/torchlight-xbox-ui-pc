@@ -551,6 +551,89 @@ class InstallCppTest(unittest.TestCase):
             self.assertEqual(len(backups), 1, who)
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
 
+    def test_the_360_bag_remembered_until_uninstall(self):
+        """The report's case: the 360's bag, then PC's (uninstall's switch), then uninstall: still a
+        question and a backup, until the player says each character was loaded and saved with PC's
+        bag; the same in both installers (ini, backups, the folder as it was)."""
+        before = {who: _tree(g) for who, (g, _) in self.games.items()}
+        cmd = lambda who: [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+        for who in ("py", "cpp"):
+            self.assertEqual(self.install(who, "--bag", "360").returncode, 0)
+            self.assertEqual(self.uninstall(who, "--yes").returncode, 0)            # switched to PC's bag
+            game, saves = self.games[who]
+            for d in os.listdir(os.path.dirname(saves)):
+                if "-backup-" in d:
+                    __import__("shutil").rmtree(os.path.join(os.path.dirname(saves), d))
+        self.same_install()
+        for who in ("py", "cpp"):                                                       # a reinstall keeps it
+            self.assertEqual(self.install(who, "--bag", "pc").returncode, 0)
+        self.same_install()
+        for who in ("py", "cpp"):
+            with open(os.path.join(self.games[who][0], "x360_ui.ini"), "rb") as f:
+                ini = f.read()
+            self.assertIn(b"bag=pc\r\nbag_360_used=1\r\n", ini, who)
+        no_backup = lambda saves: not any("-backup-" in d for d in os.listdir(os.path.dirname(saves)))
+        for who in ("py", "cpp"):
+            game, saves = self.games[who]
+            installed = _tree(game)
+            r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
+                               env=self.env, input="n\n")
+            self.assertNotEqual(r.returncode, 0, who)                                  # not confirmed: not uninstalled
+            self.assertEqual(_tree(game), installed, who)
+            self.assertTrue(no_backup(saves), who)
+            r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--yes", "--console"], capture_output=True,
+                               text=True, env=self.env)
+            self.assertNotEqual(r.returncode, 0, who)                                  # --yes: the default, no
+            self.assertEqual(_tree(game), installed, who)
+            self.assertTrue(no_backup(saves), who)
+            r = subprocess.run(cmd(who) + ["uninstall", "--game", game, "--console"], capture_output=True, text=True,
+                               env=self.env, input="y\n")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            self.assertEqual(_tree(game), before[who], who)
+            backups = [d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]
+            self.assertEqual(len(backups), 1, who)
+            self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
+
+    def test_two_games_shown_and_chosen(self):
+        """Two supported games found: both installers name them, in the order they are found (the
+        folders' own order, the same in both); --yes takes the first and says so; on the console a
+        no to the first and a yes to the second installs into the second; a no to both installs
+        nothing; uninstall offers only the game that has the mod."""
+        import shutil
+        home = os.path.join(self.root, "home2")
+        games = [os.path.join(home, n, "p", "x", "drive_c", "GOG Games", "Torchlight") for n in ("a", "b")]
+        env = dict(self.env, HOME=home, USERPROFILE=home)
+        cmd = lambda who: [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+        outs = {}
+        for who in ("py", "cpp"):
+            shutil.rmtree(home, ignore_errors=True)
+            for g in games:
+                shutil.copytree(self.games["py"][0], g)
+            common = ["install", "--x360-dir", self.x360, "--console", "--dll", self.proxy, "--bag", "pc"]
+            r = subprocess.run(cmd(who) + common + ["--yes"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            outs[who] = [l for l in r.stdout.splitlines() if "supported PC Torchlights" in l or l.startswith(("gog: ", "using "))]
+            order = [l[len("gog: "):] for l in outs[who] if l.startswith("gog: ")]   # as found
+            self.assertEqual(sorted(order), sorted(os.path.realpath(g) for g in games), who)
+            self.assertIn("x360_ui.ini", os.listdir(order[0]), who)                   # --yes: the first
+            self.assertNotIn("x360_ui.ini", os.listdir(order[1]), who)
+            shutil.rmtree(order[0]); shutil.copytree(self.games["py"][0], order[0])
+            r = subprocess.run(cmd(who) + common, capture_output=True, text=True, env=env, input="n\nn\n")
+            self.assertNotEqual(r.returncode, 0, who)                                  # a no to both
+            self.assertIn("No game chosen", r.stdout + r.stderr, who)
+            self.assertFalse(any("x360_ui.ini" in os.listdir(g) for g in order), who)
+            r = subprocess.run(cmd(who) + common, capture_output=True, text=True, env=env, input="n\ny\n")
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            outs[who] += [l for l in r.stdout.split("\n") if "Use " in l]               # the questions, as shown
+            self.assertNotIn("x360_ui.ini", os.listdir(order[0]), who)                # no to the first, yes to the second
+            self.assertIn("x360_ui.ini", os.listdir(order[1]), who)
+            before = _tree(self.games["py"][0])
+            r = subprocess.run(cmd(who) + ["uninstall", "--console", "--yes"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)               # only the one with the mod offered
+            self.assertEqual(_tree(order[1]), before, who)
+        self.assertEqual(outs["cpp"], outs["py"])
+        self.assertEqual(len([l for l in outs["py"] if l.startswith("gog: ")]), 2)
+
     def test_an_ini_read_as_python(self):
         """An ini of the user's with bytes outside UTF-8, a lone CR, Unicode spaces and an owned key:
         rewritten as install.py rewrites it."""

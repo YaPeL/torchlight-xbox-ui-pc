@@ -28,6 +28,8 @@ folders, x360_ui.ini, the mod's logs). Saves are not touched. With the 360's bag
 first (the original game deletes the items that do not fit PC's bag) and offers PC's bag instead
 (the default; then load and save each character, and uninstall); uninstalling anyway (a yes, or
 --anyway) backs the saves up first.
+Once the 360's bag was used, uninstall with PC's bag back asks whether each character was loaded
+and saved with it (no by default, --yes included; --anyway answers yes) and backs the saves up.
 
 The questions are asked in windows (tkinter) when there is a display, else on the console
 (--console forces it); --yes takes the defaults (PC's bag; at uninstall with the 360's bag, PC's
@@ -66,6 +68,9 @@ NO_MOD_WARNING = (
     "Without the mod (uninstalled, or removed by Steam or GOG when they verify, repair or update the "
     "game) the original game deletes the items that do not fit PC's bag. Before uninstalling, install "
     "PC's bag, then load and save each character.")
+NO_MOD_WARNING_AFTER = (
+    "A character not loaded and saved with PC's bag since keeps its items where the 360's bag put "
+    "them, and without the mod the original game deletes those that do not fit PC's bag.")
 BAG_WARNING = (
     "The 360's bag has one section of 50 slots for every kind of item; PC's has three of 21 (any "
     "item, spells, fish).\n\n"
@@ -338,7 +343,8 @@ class Ask:
         if self.yes:
             return default
         if self.tk:
-            return self.messagebox.askyesno("Torchlight: the Xbox 360 interface", text)
+            return self.messagebox.askyesno("Torchlight: the Xbox 360 interface", text,
+                                            default="yes" if default else "no")
         try:
             answer = input(f"{text} [{'Y/n' if default else 'y/N'}] ").strip().lower()
         except EOFError:
@@ -373,8 +379,12 @@ def read_ini(game):
 def write_ini(game, out, bag="pc"):
     """x360_ui.ini with the keys the installer owns set; other lines kept."""
     path = os.path.join(game, "x360_ui.ini")
+    old = read_ini(game)
+    # Remembered once the 360's bag was used, until uninstall: a character not yet loaded and saved
+    # with PC's bag would lose what does not fit it.
+    used = bag == "360" or old.get("bag") == "360" or old.get("bag_360_used") == "1"
     owned = {"mode": "scheme", "out": wine_path(out), "pad": "1", "pad_mode": "direct", "prompts": "auto",
-             "bag": bag, "update_check": None}
+             "bag": bag, "bag_360_used": "1" if used else None, "update_check": None}
     lines = []
     if os.path.isfile(path):
         with open(path, encoding="utf-8", errors="ignore") as f:
@@ -439,7 +449,11 @@ def check_real_dll(game, exports_list=cegui_exports.LIST):
         raise SystemExit(f"{real} is not the CEGUIBase.dll this mod is made for ({len(diff)} exports differ).")
 
 
-def pick_game(given):
+def has_mod(game):
+    return os.path.isfile(os.path.join(game, "x360_ui.ini")) or os.path.isfile(os.path.join(game, "CEGUIBase_orig.dll"))
+
+
+def pick_game(given, ask=None, installed_only=False):
     if given:
         game = os.path.realpath(given)
         if not is_game(game):
@@ -456,12 +470,24 @@ def pick_game(given):
             print(f"{store}: {path}: a build this version does not support yet, left alone.")
     if not supported:
         raise SystemExit("No supported PC Torchlight found; give its folder with --game.")
+    if installed_only and any(has_mod(p) for _, p in supported):   # uninstall: only those with the mod
+        supported = [(s, p) for s, p in supported if has_mod(p)]
+    if len(supported) > 1:
+        # More than one: each shown, and the player says which (--yes: the first, said so).
+        found = f"{len(supported)} supported PC Torchlights were found:\n" + "\n".join(f"{s}: {p}" for s, p in supported)
+        if not ask or ask.yes:
+            print(found + f"\nusing {supported[0][0]}: {supported[0][1]} (--game picks another)")
+            return supported[0][1], build_of(supported[0][1])
+        for i, (store, path) in enumerate(supported):
+            if ask.yes_no(found + f"\n\nUse {store}: {path}?", default=i == 0):
+                return path, build_of(path)
+        raise SystemExit("No game chosen; give its folder with --game.")
     return supported[0][1], build_of(supported[0][1])
 
 
 def do_install(args):
     ask = Ask(args.get("console"), args.get("yes"))
-    game, build = pick_game(args.get("game"))
+    game, build = pick_game(args.get("game"), ask)
     if build not in PROXY_FILES:
         raise SystemExit(f"{game}: a build this version does not support yet.")
     print(f"the game: {game} ({build} build)")
@@ -507,7 +533,7 @@ def do_install(args):
 
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
-    game, _ = pick_game(args.get("game"))
+    game, _ = pick_game(args.get("game"), ask, installed_only=True)
     backups = []
     if read_ini(game).get("bag", "pc") == "360":
         if not args.get("anyway") and ask.yes_no(
@@ -520,6 +546,16 @@ def do_uninstall(args):
                 "Uninstall anyway? The original game will delete the items that do not fit PC's bag. "
                 "Your saves are backed up first.", default=False):
             print("not uninstalled")
+            return 1
+        backups = back_up_saves(save_folders(game))
+        for b in backups:
+            print(f"saves backed up: {b}")
+    elif read_ini(game).get("bag_360_used") == "1":
+        if not args.get("anyway") and not ask.yes_no(
+                "PC's bag is installed, and the 360's was used before. " + NO_MOD_WARNING_AFTER +
+                "\n\nHave you loaded and saved each character with PC's bag? Your saves are backed up first.",
+                default=False):
+            print("not uninstalled (load and save each character with PC's bag first)")
             return 1
         backups = back_up_saves(save_folders(game))
         for b in backups:

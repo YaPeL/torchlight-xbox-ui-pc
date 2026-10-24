@@ -3032,7 +3032,8 @@ Python installer kept until the C++ one gives the same files byte for byte, then
 `installer/` (CMake, C++17):
 - `src/stfs.cpp`: tools/stfs.py's reading, step for step (its generator's next-block reads
   included, so a damaged package fails the same way).
-- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, its notice in
+- `src/lzx.cpp`: tools/xex/lzx_decompress.py ported (MIT, and derived from libmspack's LZX
+  decoder, originally LGPL-2.1, under GPL-3.0 per its section 3: the notices in
   `installer/third_party/NOTICES.md`), Python's integers as 64-bit ones.
 - `src/xex.cpp`: tools/xex/xex_dump.py; AES-128 CBC by tiny-AES-c (The Unlicense, commit
   `23856752`, one code path on every system, CBC only).
@@ -3082,7 +3083,8 @@ the C++ one:
   aside, then removed. `X360UI_TEST_FAIL_AFTER_PROXY` makes a test's run fail at the end.
 - **The bag.** The 360's bag's warning (with uninstalling and the stores' verify, repair or
   update), the saves backed up first; the uninstaller with the 360's bag offering PC's bag (the
-  default) or uninstalling anyway with the saves backed up.
+  default) or uninstalling anyway with the saves backed up; once the 360's bag was used, with PC's bag
+  back, a question whether each character was loaded and saved with it, and a backup.
 - **The proxy.** Given with `--dll`, else the release's built in (`-DX360UI_PROXY_GOG`,
   `-DX360UI_PROXY_STEAM`). The real DLL is checked against proxy/cegui_exports.txt (built in).
 - **Questions.** Windows' own boxes and file dialog; on Linux zenity or kdialog when there is a
@@ -3138,3 +3140,38 @@ release is made of, makes only the artifacts.
   workflows: no script downloaded and run, and the proxies' SHA-256 printed in the log are a local
   build's. Both workflows declare `contents: read`; only the draft job writes, on a pushed tag. The
   container images stay pinned by tag.
+
+**Licences (the GPU agent's review, items 7 and 8; 2026-10-23).** The LZX decoder
+(`tools/xex/lzx_decompress.py` and its C++ port `installer/src/lzx.cpp`) mirrors libmspack's
+`lzxd.c` (with its `lzx.h` and `readhuff.h`): the same state (`header_read`, `block_remaining`,
+`intel_filesize`, `intel_started`, the length tables with `lzx.h`'s `LENTABLE_SAFETY` 64), the same
+frame by frame decoding, `readhuff.h`'s table build, and the Python file's own comments name
+`lzxd.c`. So it is taken as derived from libmspack ((C) 2003-2023 Stuart Caie, originally LGPL-2.1):
+credited in `installer/third_party/NOTICES.md`, `tools/xex/README.md` and both files' headers, the
+licence's text in `installer/third_party/LGPL-2.1.txt`, under GPL-3.0 per its section 3.
+The release carries `THIRD_PARTY_NOTICES.md`, `LGPL-2.1.txt`, `LICENSE.txt` and
+`APPIMAGE_NOTICES.md` beside the `.exe` (the AppImage carries them inside too), and the AppImage
+runtime's libfuse source: `fuse-3.15.0.tar.xz`, `type2-runtime-8f39b89.tar.gz` and the patch alone,
+`libfuse-mount.c.diff`.
+
+**The 360's bag remembered (the GPU agent's review, item 4; 2026-10-23).** Uninstall's switch to
+PC's bag wrote `bag=pc` alone, so the next uninstall neither warned nor backed up, though a
+character not yet loaded and saved with PC's bag still had its items where the 360's put them.
+Both installers now write `bag_360_used=1` with the 360's bag and keep it through later installs
+and switches; with it and PC's bag, uninstall asks whether each character was loaded and saved
+with PC's bag (no by default, `--yes` included; `--anyway` answers yes), then backs the saves up
+before uninstalling. Test: `test_the_360_bag_remembered_until_uninstall` (both installers, the
+same ini, refusal, backup and folder). No release had the earlier switch, so no ini written
+without the flag after a switch is out there.
+
+**Two games found (the GPU agent's review, a low point; 2026-10-23).** With more than one
+supported game and no `--game`, both installers list them; on the console or in windows each is
+offered in turn (the first by default) and the one taken is installed or uninstalled; `--yes`
+takes the first and prints which, so a run without a console still says where it went;
+uninstall offers only the games that have the mod. A question's default is the window's too
+(tkinter's `default`, MessageBox's second button, zenity's `--default-cancel`), and zenity shows
+texts as they are (`--no-markup`: a path with `&` or `<`). Test:
+`test_two_games_shown_and_chosen` (both installers, the same lines). The elevated run passes
+`--game` (no second question). The junction risk (the elevated run writes backups into folders the
+first run names, which a junction could redirect) stays documented as low: UAC is not a security
+boundary, and the folders are the user's own.
