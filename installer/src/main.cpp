@@ -120,7 +120,8 @@ int usage() {
                "x360ui-install dev xex-dump IN.xex OUT.bin\n"
                "x360ui-install dev aes-cbc KEY IV IN OUT\n"
                "x360ui-install dev lzx WINDOW_BITS SIZE IN OUT\n"
-               "x360ui-install dev convert PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]\n");
+               "x360ui-install dev convert PAK OUT [--prompts STYLE] [--swap-confirm-cancel] [--image IMAGE] [--pc-pak PCPAK]\n"
+               "x360ui-install dev games | game-in FOLDER | package-check SOURCE | saves GAME\n");
   return 2;
 }
 }  // namespace
@@ -162,6 +163,23 @@ int main(int argc, char** argv) {
       if (cmd == "aes-cbc" && rest.size() == 4) return dev_aes(rest);
       if (cmd == "lzx" && rest.size() == 4) return dev_lzx(rest);
       if (cmd == "convert") return dev_convert(rest);
+      // The wizard's questions, for the tests: one line per game, tab-separated.
+      if (cmd == "games" || (cmd == "game-in" && rest.size() == 1)) {
+        const auto games = cmd == "games" ? games_found() : std::vector<GameFound>{game_in(rest[0])};
+        for (const GameFound& g : games)
+          std::printf("%s\t%s\t%d\t%d\t%s\t%d\t%d\n", g.store.c_str(), g.path.c_str(), g.supported, g.has_mod,
+                      g.bag.c_str(), g.bag_360_used, !g.path.empty() && needs_permission(g.path));
+        return 0;
+      }
+      if (cmd == "package-check" && rest.size() == 1) {
+        const std::string problem = package_problem(rest[0]);
+        std::printf("%s\n", problem.empty() ? "ok" : problem.c_str());
+        return problem.empty() ? 0 : 1;
+      }
+      if (cmd == "saves" && rest.size() == 1) {
+        for (const std::string& f : saves_to_back_up(rest[0])) std::printf("%s\n", f.c_str());
+        return 0;
+      }
       if (cmd == "strings-table") {
         for (const auto& [k, a] : strings_table()) std::printf("%s=0x%08X\n", k.c_str(), a);
         return 0;

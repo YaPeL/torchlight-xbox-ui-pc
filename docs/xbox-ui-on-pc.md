@@ -3276,3 +3276,16 @@ The shell does not wait for a window program and keeps reading that console's in
 without `--console` the questions are windows. A partial redirection (`2>err.txt` alone) leaves the
 other handles as the console's, written without attaching (not checked on Windows yet).
 
+
+**What the wizard asks first (`install.h`).** The wizard (the owner's design, 2026-10-24) collects
+every answer in its window and then runs the same `installer_main` with all of them given
+(`--yes --console` and the options), so what it installs is what the command line installs, and
+the tests that compare the C++ installer with `install.py` cover it. Before that it asks, without
+questions: `games_found` (each install found, Steam's first, with whether its build is supported,
+whether it has the mod, its bag and whether the 360's bag was ever used), `game_in` (a folder or its
+`Torchlight.exe` the player chose), `package_problem` (the 360 copy's header and the files it must
+hold, without extracting or decrypting), `saves_to_back_up` and `needs_permission`. The tests reach
+them through `dev games`, `dev game-in`, `dev package-check` and `dev saves`. The install reports
+its progress by phases (reading the 360 copy, the backup, each of the six conversions, putting it
+in place) through `set_progress`; an elevated run writes it to `--progress-file` (one line,
+`fraction<TAB>text`, replaced whole each time), which the first run reads while it waits.

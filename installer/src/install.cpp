@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <thread>
 
 #include "bytes.h"
 #include "convert.h"
@@ -251,6 +252,24 @@ std::string lower_ascii(std::string s) {
   return s;
 }
 
+// The first pak.zip, default.xex and default.bin of a folder extracted from the 360 package, as
+// os.walk finds them: each folder's files, then its subfolders, top down (install.read_360_copy).
+std::map<std::string, fs::path> files_of_360_folder(const fs::path& folder) {
+  std::map<std::string, fs::path> found;
+  std::function<void(const fs::path&)> walk = [&](const fs::path& d) {
+    std::vector<fs::path> subs;
+    std::error_code ec;
+    for (fs::directory_iterator it(d, ec), end; !ec && it != end; it.increment(ec)) {
+      if (it->is_directory(ec)) { subs.push_back(it->path()); continue; }
+      const std::string low = lower_ascii(S(it->path().filename()));
+      if ((low == "pak.zip" || low == "default.xex" || low == "default.bin") && !found.count(low)) found[low] = it->path();
+    }
+    for (const auto& s : subs) walk(s);
+  };
+  walk(folder);
+  return found;
+}
+
 // (pak.zip, decrypted image) of the 360 copy into work (install.read_360_copy).
 std::pair<fs::path, fs::path> read_360_copy(std::string source, const fs::path& work) {
   const fs::path pak = work / "pak.zip", xex = work / "default.xex";
@@ -285,19 +304,7 @@ std::pair<fs::path, fs::path> read_360_copy(std::string source, const fs::path& 
       if (!out) throw Exit("cannot write " + S(dest));
     }
   } else if (is_dir(P(source))) {
-    std::map<std::string, fs::path> found;
-    // os.walk: each folder's files, then its subfolders, top down.
-    std::function<void(const fs::path&)> walk = [&](const fs::path& d) {
-      std::vector<fs::path> subs;
-      std::error_code ec;
-      for (fs::directory_iterator it(d, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->is_directory(ec)) { subs.push_back(it->path()); continue; }
-        const std::string low = lower_ascii(S(it->path().filename()));
-        if ((low == "pak.zip" || low == "default.xex" || low == "default.bin") && !found.count(low)) found[low] = it->path();
-      }
-      for (const auto& s : subs) walk(s);
-    };
-    walk(P(source));
+    std::map<std::string, fs::path> found = files_of_360_folder(P(source));
     if (!found.count("pak.zip")) throw Exit("No pak.zip in " + source + ".");
     fs::copy_file(found["pak.zip"], pak, fs::copy_options::overwrite_existing);
     if (found.count("default.bin")) image = found["default.bin"];
@@ -637,7 +644,7 @@ std::wstring quote(const std::string& a) {
 
 // The same installer again, elevated, with the answers already given; its exit status, or -1 when
 // the elevation was declined (or a test asks for that: X360UI_NO_ELEVATE).
-int run_elevated(const std::vector<std::string>& args) {
+int run_elevated(const std::vector<std::string>& args, const std::function<void()>& poll) {
   if (std::getenv("X360UI_NO_ELEVATE")) return -1;
   wchar_t self[MAX_PATH];
   GetModuleFileNameW(nullptr, self, MAX_PATH);
@@ -654,7 +661,8 @@ int run_elevated(const std::vector<std::string>& args) {
   if (!ec) sei.lpDirectory = cwd.c_str();
   sei.nShow = SW_SHOWNORMAL;
   if (!ShellExecuteExW(&sei)) return -1;   // ERROR_CANCELLED: the user said no
-  WaitForSingleObject(sei.hProcess, INFINITE);
+  while (WaitForSingleObject(sei.hProcess, 100) == WAIT_TIMEOUT) poll();
+  poll();
   DWORD code = 1;
   GetExitCodeProcess(sei.hProcess, &code);
   CloseHandle(sei.hProcess);
@@ -664,6 +672,46 @@ int run_elevated(const std::vector<std::string>& args) {
 
 // The elevated run's last message (its result or its error), written where the first run reads it.
 std::string g_result_file;
+
+// The progress: given to the wizard (set_progress) and, in an elevated run, written to the file
+// the first run reads (one line, "fraction<TAB>text", replaced each time).
+Progress g_progress;
+std::string g_progress_file;
+
+void progress(double fraction, const std::string& text) {
+  if (g_progress) g_progress(fraction, text);
+  if (!g_progress_file.empty()) {
+    char f[16];
+    std::snprintf(f, sizeof f, "%.4f", fraction);
+    const fs::path tmp = P(g_progress_file + ".new");
+    {
+      std::ofstream out(tmp, std::ios::binary);
+      out << f << "\t" << text << "\n";
+    }
+    std::error_code ec;
+    fs::rename(tmp, P(g_progress_file), ec);   // whole lines only for the reader
+    if (ec) {                                  // the reader had it open: once more
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      fs::rename(tmp, P(g_progress_file), ec);
+    }
+  }
+}
+
+// The elevated run's progress line, given to this run's progress.
+[[maybe_unused]] void forward_progress(const fs::path& file) {
+  // Never throws: the elevated run goes on whatever happens to its progress line here.
+  std::ifstream f(file, std::ios::binary);
+  std::string line;
+  if (!f || !std::getline(f, line)) return;
+  const size_t tab = line.find('\t');
+  if (tab == std::string::npos) return;
+  std::string text = line.substr(tab + 1);
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+  try {
+    if (g_progress) g_progress(std::atof(line.substr(0, tab).c_str()), text);
+  } catch (...) {
+  }
+}
 
 void finish(Ask& ask, const std::string& text) {
   if (!g_result_file.empty()) {
@@ -685,7 +733,12 @@ int with_permission(Ask& ask, const fs::path& game, std::vector<std::string> ans
   const fs::path result = fs::temp_directory_path(ec) / ("x360ui-result-" + std::to_string(GetCurrentProcessId()) + ".txt");
   fs::remove(result, ec);
   answered.insert(answered.end(), {"--result-file", S(result)});
-  const int code = run_elevated(answered);
+  const fs::path progress_file = fs::temp_directory_path(ec) / ("x360ui-progress-" + std::to_string(GetCurrentProcessId()) + ".txt");
+  fs::remove(progress_file, ec);
+  answered.insert(answered.end(), {"--progress-file", S(progress_file)});
+  const int code = run_elevated(answered, [&] { forward_progress(progress_file); });
+  fs::remove(progress_file, ec);
+  fs::remove(S(progress_file) + ".new", ec);
   if (code < 0) throw Exit("No administrator's permission was given; nothing was changed.");
   std::string text;
   if (is_file(result)) {
@@ -718,7 +771,7 @@ fs::path proxy_file(const std::string& build, const std::string& given, const fs
 }
 
 struct Args {
-  std::string command = "install", game, package, x360_dir, bag, dll, result_file;
+  std::string command = "install", game, package, x360_dir, bag, dll, result_file, progress_file;
   bool yes = false, console = false, experimental = false, anyway = false, elevated = false;
   // Given to the elevated run by the first one: the save folders it found (that account's, not the
   // administrator's) and the answer that no backup is fine.
@@ -742,6 +795,7 @@ Args parse(const std::vector<std::string>& argv) {
     else if (s == "--no-backup-ok") a.no_backup_ok = true;
     else if (i + 1 < argv.size() && s == "--save-folder") a.saves.push_back(argv[++i]);
     else if (i + 1 < argv.size() && s == "--result-file") a.result_file = argv[++i];
+    else if (i + 1 < argv.size() && s == "--progress-file") a.progress_file = argv[++i];
     else if (i + 1 < argv.size() && (s == "--game" || s == "--package" || s == "--x360-dir" || s == "--bag" || s == "--dll")) {
       const std::string& v = argv[++i];
       (s == "--game" ? a.game : s == "--package" ? a.package : s == "--x360-dir" ? a.x360_dir : s == "--bag" ? a.bag : a.dll) = v;
@@ -861,10 +915,12 @@ int do_install(const Args& args) {
     fs::path p;
     ~Cleanup() { std::error_code ec; fs::remove_all(p, ec); }
   } cleanup{work};
+  progress(0.02, "Reading the 360 copy");
   const auto [pak, image] = read_360_copy(source, work);
   std::cout << "the 360 copy: " << source << "\n";
   std::vector<fs::path> backups;
   if (bag == "360") {
+    progress(0.15, "Backing up the saves");
     backups = back_up_saves(folders);
     for (const auto& b : backups) std::cout << "saves backed up: " << S(b) << "\n";
   }
@@ -890,10 +946,12 @@ int do_install(const Args& args) {
     o.style = style == "nintendo-swapped" ? "nintendo" : style;
     o.swap_confirm_cancel = style == "nintendo-swapped";
     std::cout << "converting the 360's interface (" << style << ")\n";
+    progress(0.2 + 0.75 * double(k) / double(dests.size()), "Converting the 360's interface (" + style + ")");
     convert_ui(o);
   }
   const fs::path proxy = proxy_file(build, args.dll, work);
   // One step: the old folders aside, the new in place, the ini, the proxy; undone if any fails.
+  progress(0.95, "Putting the mod in place");
   Change ch(game);
   try {
     for (size_t k = 0; k < dests.size(); k++) {
@@ -908,6 +966,7 @@ int do_install(const Args& args) {
     ch.rollback();
     throw;
   }
+  progress(1.0, "Installed");
   std::string done = "Installed. Start Torchlight with a pad connected.";
   if (!backups.empty()) {
     done += "\n\nYour saves were backed up:";
@@ -933,6 +992,7 @@ int do_uninstall(const Args& args) {
       Change ch(game);
       ch.write(game / "x360_ui.ini", ini_text(game, converted_folders(game)[0], "pc"));
       ch.commit();
+      progress(1.0, "PC's bag installed");
       finish(ask, "PC's bag installed; nothing uninstalled. Load and save each character, then uninstall.");
       return 0;
     }
@@ -974,6 +1034,7 @@ int do_uninstall(const Args& args) {
     if (code >= 0) return code;
   }
   std::vector<fs::path> backups;
+  progress(0.1, backup ? "Backing up the saves" : "Removing the mod");
   if (backup) {
     backups = back_up_saves(folders);
     for (const auto& b : backups) std::cout << "saves backed up: " << S(b) << "\n";
@@ -1025,6 +1086,7 @@ int do_uninstall(const Args& args) {
     ch.rollback();
     throw;
   }
+  progress(1.0, "Uninstalled");
   std::string done = "Uninstalled from " + S(game) + ".";
   std::error_code ec;
   for (fs::directory_iterator it(game, ec), end; !ec && it != end; it.increment(ec))
@@ -1098,6 +1160,7 @@ int installer_main(const std::vector<std::string>& argv) {
       throw Exit("--console asks its questions in the terminal, whose input the shell reads too: give --yes with the "
                  "options (--game, --package or --x360-dir, --bag), or run it without --console to be asked in windows.");
     g_result_file = a.result_file;
+    g_progress_file = a.progress_file;
     if (a.command == "list") return do_list();
     if (a.command == "notices") return do_notices();
     if (a.command == "uninstall") return do_uninstall(a);
@@ -1113,6 +1176,85 @@ int installer_main(const std::vector<std::string>& argv) {
     return 1;
   }
 }
+
+// ---- what the wizard asks (install.h) ----
+
+void set_progress(Progress p) { g_progress = std::move(p); }
+
+namespace {
+GameFound describe(const std::string& store, const fs::path& game) {
+  GameFound g;
+  g.store = store;
+  g.path = S(game);
+  const std::string build = build_of(g.path);
+  g.supported = build != "unknown" && !is_experimental(build);
+  g.has_mod = has_mod(g.path);
+  if (g.has_mod) {
+    auto ini = read_ini(game);
+    g.bag = ini["bag"] == "360" ? "360" : "pc";
+    g.bag_360_used = ini["bag"] == "360" || ini["bag_360_used"] == "1";
+  }
+  return g;
+}
+}  // namespace
+
+std::vector<GameFound> games_found() {
+  std::vector<GameFound> out;
+  for (const auto& [store, path] : find_games(home_dir())) out.push_back(describe(store, P(path)));
+  std::stable_partition(out.begin(), out.end(), [](const GameFound& g) { return g.store == "steam"; });
+  return out;
+}
+
+GameFound game_in(const std::string& chosen) {
+  std::error_code ec;
+  fs::path g = fs::weakly_canonical(fs::absolute(P(chosen), ec), ec);
+  if (!is_dir(g)) g = g.parent_path();
+  if (!is_game(S(g))) return {};
+  return describe("", g);
+}
+
+std::string package_problem(const std::string& given) {
+  std::string source = given;
+  if (is_file(P(source))) {
+    std::ifstream f(P(source), std::ios::binary);
+    char magic[4] = {};
+    f.read(magic, 4);
+    const std::string m(magic, size_t(f.gcount()));
+    if (m != "CON " && m != "LIVE" && m != "PIRS") source = S(P(source).parent_path());   // a file of an extracted folder
+  }
+  if (is_file(P(source))) {
+    try {
+      StfsPackage pkg(source);
+      const std::string problem = check_package(pkg);
+      if (!problem.empty()) return problem;
+      for (const char* name : {"pak.zip", "default.xex"})
+        if (!pkg.find(name)) return std::string("The package has no ") + name + ".";
+    } catch (const Error& e) {
+      return "Cannot read " + source + " as an Xbox 360 package: " + e.what();
+    }
+    return "";
+  }
+  if (!is_dir(P(source))) return source + " does not exist.";
+  // What read_360_copy takes: the first pak.zip found, which must be the 360's.
+  auto found = files_of_360_folder(P(source));
+  if (!found.count("pak.zip")) return "No pak.zip in " + source + ".";
+  if (!found.count("default.bin") && !found.count("default.xex")) return "No default.xex in " + source + ".";
+  bool x360 = false;
+  try {
+    x360 = zip_has_name(S(found["pak.zip"]), kX360Layout);
+  } catch (const std::exception&) {
+  }
+  if (!x360) return "The pak.zip found is not the Xbox 360 game's.";
+  return "";
+}
+
+std::vector<std::string> saves_to_back_up(const std::string& game) {
+  std::vector<std::string> out;
+  for (const fs::path& f : save_folders(P(game))) out.push_back(S(f));
+  return out;
+}
+
+bool needs_permission(const std::string& game) { return !can_write(P(game)); }
 
 namespace {
 bool is_x360_pak(const fs::path& path) {
