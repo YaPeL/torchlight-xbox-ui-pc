@@ -3682,3 +3682,17 @@ within 1 %. The one difference left is the fastest spins: with the stick turning
 5.5 (27.75 to 28.25 s, 51.0 to 51.25 s), 5 to 12 % less over those 2 s windows; at 430 to 600
 degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 360's every frame
 (change b, parked in section 30 before the dead zone was found).
+
+## 35. Start during a cinematic (2026-10-24)
+
+The owner saw the pause misbehave during a cinematic. **[read]** The 360's frame update
+(`sub_821EBA48`) handles Start (its `+612` set to 1) only when no menu at the client's `+968` is
+visible, the level is up (`+44`'s virtual `+32`) and `sub_821ED810` (the cinematic, section 26) is
+false; then, unless the client's `+6161` or a dialog (`+5312`) holds it, it closes any open menu
+(`sub_821E4B78`, then `sub_8233E998`) or, with none open, toggles the pause (`sub_8233D440`, the
+menu at CGameUI's `+932`, `COptionsMenu`). During a cinematic Start does nothing.
+
+`proxy/pad.c` opened the 360's pause on Start before it asked about the cinematic. Now Start is
+dropped while PC's `0x541db0` (the same test) holds and the pause is not open; an open pause still
+takes its own Start. Not changed: Back during a cinematic (the 360's `+705` toggles CGameUI's
+`+1000` after the cinematic's test, not traced further).
