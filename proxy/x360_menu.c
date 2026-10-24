@@ -6935,6 +6935,39 @@ static void hotkeys_off(void) {
     x360_log("x360 menu: PC's screen hotkeys off: "); x360_log_num((long)n); x360_log(" of 6\r\n");
 }
 
+/* PC's menu keys swallowed in play (the owner, 2026-10-24): with the 360's interface the pad opens
+ * the screens (Start, Back, R3), and PC's keys opened or animated PC's own under them (the space
+ * bar's close-all showed PC's menus moving behind the 360's). Their key messages never reach the
+ * game's window procedure (CGame::WndProc *(OT)* feeds CGameUI's and CKeyManager's keyEvent from
+ * WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_SYSKEYDOWN, WM_SYSKEYUP) while in play and PC's settings are
+ * not open (the pad's way to them, where the keyboard keeps working). The keys: KEYMAP_INVENTORY I,
+ * PET P, STATS C, SKILLS S, QUESTS Q, JOURNAL J, OPTIONS Esc, PAUSE Enter, CLOSEALL the space bar,
+ * AUTOMAP A (the 360's map is on R3); the six of hotkeys_off are kept off there too. The others
+ * (the hotbar's 1 to 0, F1 to F12, Shift, Alt, Tab, W, the skills' cycle, the zooms, the console)
+ * work as on PC. No address of the executable: the same on every build. */
+__declspec(dllimport) long __stdcall SetWindowLongW(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall CallWindowProcW(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+static long keys_old_proc;
+static int key_swallowed(unsigned vk) {
+    static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
+    unsigned i;
+    for (i = 0; i < sizeof keys; i++) if (vk == keys[i]) return 1;
+    return 0;
+}
+static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    if ((msg == 0x100 || msg == 0x101) && hud_in_play && !x360_pc_settings_up && key_swallowed(wparam))
+        return 0;   /* WM_KEYDOWN, WM_KEYUP of a menu key: not given to the game */
+    if (msg == 0x102 && hud_in_play && !x360_pc_settings_up && (wparam == 0x1b || wparam == 0x0d || wparam == 0x20))
+        return 0;   /* WM_CHAR of Esc, Enter, space: CEGUI's injected characters (a button's activation) */
+    return CallWindowProcW(keys_old_proc, w, msg, wparam, lparam);
+}
+static void keys_off(void) {
+    HWND w;
+    if (keys_old_proc || !(w = active_window())) return;
+    keys_old_proc = SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc);
+    x360_log(keys_old_proc ? "x360 menu: PC's menu keys swallowed in play\r\n" : "x360 menu: PC's menu keys: the window not subclassed\r\n");
+}
+
 /* PC's menus' 3D boards (QA runs 5, 6: the parchment with chains behind the 360's modal, the
  * boards at the shops' sides; neither a CEGUI window, they stayed with PC's interface hidden and
  * its modal frame moved away). A CMenu keeps its board at +0x38 (the modal, CGameUI's +0x304;
@@ -8357,6 +8390,7 @@ void x360_frame_tick(void) {
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { keys_off(); } __except (1) { x360_log("x360 menu: exception swallowing PC's menu keys\r\n"); }
     __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
     __try { stop_tick(); } __except (1) { x360_log("x360 load: exception in the stop\r\n"); }
     __try { notice_tick(); } __except (1) { x360_log("x360: exception showing a notice\r\n"); }

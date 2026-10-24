@@ -3417,3 +3417,22 @@ the frame. PC's client input (`0x415125`) has the same branch: it clears its inp
 (`0x4e7350` on `+0xf4c`, `+0x54`..`+0x56`), and if the hero performs a skill (`0x486550` or
 `0x486390`) calls its virtual `+0x174` with 2, then returns. PC runs it every frame by itself, so
 the pad has only to give no orders while it holds.
+
+## 28. PC's menu keys swallowed in play (2026-10-24)
+
+The owner's first Windows run: the space bar (PC's KEYMAP_CLOSEALL) made PC's menus move behind
+the 360's. With the 360's interface the pad opens the screens, so in play the mod keeps PC's menu
+keys from the game, by the owner's list: KEYMAP_INVENTORY (I), PET (P), STATS (C), SKILLS (S),
+QUESTS (Q), JOURNAL (J), OPTIONS (Esc), PAUSE (Enter), CLOSEALL (the space bar) and AUTOMAP (A:
+the map is on R3, section 9). The rest work as on PC: the hotbar's 1 to 0 (the pad sends them for
+the skills), F1 to F12, Shift, Alt, Tab, W, the skills' cycle (`.` `,`), the zooms (`=` `-`,
+`]` `[`) and the console's key. A dual mode (the keyboard's menus as PC's) may come later.
+
+How: the game's window is subclassed once (`keys_off`, `proxy/x360_menu.c`); its procedure drops
+WM_KEYDOWN and WM_KEYUP of those keys, and WM_CHAR of Esc, Enter and space (CEGUI's injected
+characters), while in play (`hud_in_play`) and PC's settings are not open (reached from the 360's
+pause menu; the keyboard works there). PC's window procedure (`CGame::WndProc` *(OT)*) is what
+gives the keys to `CGameUI::keyEvent` and `CKeyManager::keyEvent` *(OT)*, so neither sees them. No
+address of the executable is used: the same on GOG's, Epic's and Steam's build. The six screen
+hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
+the keyboard is PC's.
