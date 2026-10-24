@@ -101,6 +101,24 @@ here. Games' texts are named by role, never quoted.
   on Windows CI, now a required check of `develop` and `main` (`AGENTS.md`: CI green before a
   review is asked).
 
+## The saves backed up from the wrong prefix (fixed on the branch save-guard)
+
+- **What happened:** before two runs on the GOG copy (2026-10-23), the agent backed up the saves of
+  `~/torchlight-gog/prefix`, the first prefix (Wine alone, now only the game folder), whose save
+  folder was empty. The game runs in `~/torchlight-gog/compat` and saves in its `pfx`; one of those
+  runs changed a test character's save. Its earlier copy was in the installer's own backup
+  (`save-backup-20261023-162202`) and was restored from it on 2026-10-24, the hashes checked.
+- **Should have been caught by:** a backup step that finds the folder the game will use (the
+  prefix the run is given, its `AppData` as Wine records it) and stops on an empty folder while
+  another has saves, not one typed by hand.
+- **Caught by:** the agent, reading the save's time against the runs.
+- **Covered now:** `tools/run_gog.sh` calls `tools/save_guard.py backup` before every run: the save
+  folder found from the run's prefix, copied to `save-backups/run-<time>`, the copy and the folder
+  hashed again, and the run stopped if a hash differs, if the game is running, or if the folder
+  found is empty while another folder under `~/torchlight-gog` has saves; the mod's own folder
+  (`%LOCALAPPDATA%\x360ui`) is copied and checked with the saves. Tests on synthetic
+  prefixes (`SaveGuardTest`).
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:

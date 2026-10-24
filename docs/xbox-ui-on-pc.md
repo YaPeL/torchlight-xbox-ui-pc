@@ -46,7 +46,10 @@ This repository is the whole of this project; the recomp's repository is only a 
 1. Snapshot Steam:
    `tools/steam_guard.py snapshot ~/torchlight-gog/hashes/steam-guard.json ~/.steam/debian-installation/steamapps/compatdata/41500 ~/.steam/debian-installation/userdata/<steam-id>/41500`.
    If a snapshot was already taken, check that it still holds with `verify` before overwriting it.
-2. Run `tools/run_gog.sh`. It calls `proton run` from Proton Experimental with:
+2. Run `tools/run_gog.sh`. First it backs up the saves the run will use with
+   `tools/save_guard.py backup` (the folder found from the prefix's own `user.reg`, copied to
+   `~/torchlight-gog/save-backups/run-<time>` and checked by hash) and stops if that fails. Then it
+   calls `proton run` from Proton Experimental with:
    - `STEAM_COMPAT_DATA_PATH=~/torchlight-gog/compat`;
    - `STEAM_COMPAT_CLIENT_INSTALL_PATH` set to Steam's folder, only so the script finds it;
    - `SteamGameId=gogtl` and `SteamAppId=0`, both needed: without them the script exits at once
@@ -94,6 +97,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 | `grab_window.py` | A screenshot of the game's window (X11 under Xwayland) |
 | `send_input.py` | Mouse and keyboard input for the game, sent from inside its prefix (`send_input.exe`, built by `build_proxy.py`) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
+| `save_guard.py` | The save folder a GOG run will use, backed up and checked before the run |
 | `run_gog.sh` | The GOG run above (shell, no test) |
 | `check_no_game_files.py` | The CI check |
 
