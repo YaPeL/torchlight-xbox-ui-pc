@@ -3490,13 +3490,43 @@ window's height ahead, so the distance is fixed and the triggers are not analog.
 two fields in GOG's skill class and decide with the owner whether the aim follows the 360's (a
 point given to PC's skill call, not a key).
 
+**The proposal (2026-10-24, for the owner's OK; not done).** The pad keeps pressing PC's hotbar key
+(PC's own skill call, its costs and cooldowns), but puts the virtual cursor on the screen point of
+the 360's target instead of 14% of the window ahead:
+- the direction: the stick's, or with the stick at rest the hero's facing (`sub_8221C838`), as
+  today;
+- the distance: for a skill on B or Y, the middle of its two range fields; for one on LT or RT,
+  `near + (far − 0.1 − near) × pressure`, the trigger's byte over 255 read when it is pressed (the
+  360 reads it on the frame the skill is used). The two fields are to be located in GOG's skill
+  class first (the 360's `+84` and `+88` of the skill's data; the `+0xc` rule is the hero's, not
+  checked for the skill class).
+- the trigger's threshold to count as pressed stays the pad's (64 of 255); the 360 uses the
+  trigger's own button bit, to read.
+
+What changes for the player: a skill aimed at the ground (an area, a summon, a jump) lands at the
+middle of its range instead of about 2 units ahead, so farther for most; on a trigger, a light
+press puts it near and a full press near its far end; a skill that fires at a target or along a
+line (a missile) changes little, since only its direction counts. Measured: the trace gains the
+aimed point (`aim_x_mu`, `aim_z_mu` on the frame a skill key is sent) with its distance from the
+hero; per skill, the distance against the formula from its two fields (exact, a unit test of the
+formula and a run), and against the recompiled 360's trace with the trigger fully pressed (its dev
+input script has the triggers on or off only, so a partial press is checked against the formula
+alone).
+
 ### 27d. LB and RB (open)
 
-Not found yet. The frame update's two buttons at the record's `+80` and `+85` call
+Not found yet. Read and ruled out in the frame update: `sub_8221B8E8` (the held action's walk),
+`sub_8221BC80` (skills and X), `sub_8221B3A8` (an action repeated every 0.25 s while its button is
+held, the timer at the client's `+0x1468` from the pool's `+0xF8`: by its targets, the item and
+the unit, most likely A's interaction; the pad acts on A's press only, a difference to confirm
+when the button is named). The frame update's two buttons at the record's `+80` and `+85` call
 `sub_8221ACD8(client, 0 or 1)`, which switches the active skill set (the client's `+5220`, a
 sound, `sub_822DF5F0`): not potions. The ten skill slots (`hero+2112` to `+2192`) take their
 buttons from a table filled at start (`0x83557554`, zero in the image). Next: the table's
-initializer, and PC's potion use (*(OT)* `CGameUI::useItem`) located in GOG.
+initializer, the frame update's calls still unread (`sub_8233E998`, `sub_8233D520`,
+`sub_8233D440`, `sub_8233EEF8`, on the client's `+60`, the game's UI; `sub_822E35D8`,
+`sub_822D6EE0`, `sub_821FB950`, `sub_821AFE28`), and PC's potion use (*(OT)* `CGameUI::useItem`)
+located in GOG.
 
 ### 27e. Start and Back during a cinematic (open)
 
