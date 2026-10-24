@@ -424,6 +424,28 @@ static void trace_num(long v) {
 }
 static long mu(float v) { return (long)(v * 1000.0f + (v < 0 ? -0.5f : 0.5f)); }
 
+/* With pad_trace=1 and a replay, each frame's time and the walk's setDestination time in it
+ * (x360_frames-<date>.csv beside the trace: t_us,frame_us,dest_us,dest_calls), called from the
+ * frame listener (proxy/x360_menu.c): change b's cost against the frame's (doc section 30a). */
+static long long frame_dest_ticks;
+static unsigned frame_dest_calls;
+static HANDLE frames_file = (HANDLE)(long)-1;
+static char frames_buf[16384];
+static unsigned frames_len;
+static void frames_put(const char *s) {
+    DWORD w;
+    while (*s) {
+        if (frames_len == sizeof frames_buf) { WriteFile(frames_file, frames_buf, frames_len, &w, 0); frames_len = 0; }
+        frames_buf[frames_len++] = *s++;
+    }
+}
+static void frames_num(unsigned long u) {
+    char d[16];
+    int n = 0;
+    do { d[n++] = (char)('0' + u % 10); u /= 10; } while (u);
+    while (n) { char c[2] = {d[--n], 0}; frames_put(c); }
+}
+
 /* One line when something moved; called from order() in play, with the hero's position. */
 static void trace_line(const long *cur, unsigned long t_us) {
     int i;
@@ -504,6 +526,52 @@ static void trace_tick(unsigned char *hero, unsigned now) {
     for (i = 0; i < 7; i++) last[i] = cur[i];
     trace_line(cur, (unsigned long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf));   /* no 64-bit division without a CRT */
     if (now - trace_flushed_at >= 500) { trace_flushed_at = now; trace_flush(); }
+}
+
+void x360_pad_frame(void) {
+    static int opened, done;
+    static long long qpf, q0, last;
+    long long q;
+    HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
+    if (!x360_pad_trace || !replay_n || !replay_t0 || done) return;
+    QueryPerformanceCounter(&q);
+    if (!opened) {
+        char name[48];
+        const char *st = session_stamp();
+        unsigned n = 0, k;
+        static const char a[] = "x360_frames", b[] = ".csv";
+        opened = 1;
+        for (k = 0; a[k]; k++) name[n++] = a[k];
+        for (k = 0; st[k]; k++) name[n++] = st[k];
+        for (k = 0; b[k]; k++) name[n++] = b[k];
+        name[n] = 0;
+        frames_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+        if (frames_file == (HANDLE)(long)-1) { done = 1; return; }
+        QueryPerformanceFrequency(&qpf);
+        q0 = q - (long long)((double)(qms() - replay_t0) * (double)qpf / 1000.0);   /* t=0 at replay_t0 */
+        last = q;
+        frames_put("# x360ui frames v1\r\nt_us,frame_us,dest_us,dest_calls\r\n");
+        frame_dest_ticks = 0; frame_dest_calls = 0;
+        return;
+    }
+    frames_num((unsigned long)((double)(q - q0) * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num((unsigned long)((double)(q - last) * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num((unsigned long)((double)frame_dest_ticks * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num(frame_dest_calls);
+    frames_put("\r\n");
+    last = q;
+    frame_dest_ticks = 0; frame_dest_calls = 0;
+    if (qms() - replay_t0 > replay[replay_n - 1].t + 2000) {
+        DWORD w;
+        if (frames_len) WriteFile(frames_file, frames_buf, frames_len, &w, 0);
+        CloseHandle(frames_file);
+        frames_file = (HANDLE)(long)-1;
+        done = 1;
+        x360_log("pad: frame times written\r\n");
+    }
 }
 
 /* The 360's sub_821FE778 on a stick of -1000..1000 (it works in XInput's shorts; the same up to
@@ -1612,6 +1680,8 @@ static void order(void) {
                     sum += t1 - t0;
                     if (t1 - t0 > worst) worst = t1 - t0;
                     count++;
+                    frame_dest_ticks += t1 - t0;
+                    frame_dest_calls++;
                     if ((verbose || x360_pad_trace) && now - since >= 5000) {
                         if (!qpf) QueryPerformanceFrequency(&qpf);
                         if (since && count && qpf) {
