@@ -1450,7 +1450,7 @@ something the hero cannot equip) and identifying with A. **[the runs]**
   every 1.2 s).
 - **The save:** `~/torchlight-gog/save-backups/variety/` (the mine save plus `SPAWNCLASS
   NEWBIE_CHEST_WEAPON,2,1`, `NEWBIE_CHEST_ARMOR,2,1`, `SWORDS_MAGIC_SPAWN,2,1`, `ARMOR_MAGIC,2,1`,
-  `ITEM <a unique sword's name>,1` (unique, level 15), `ITEM <the identify scroll's name>,3`, `ITEM <the healing spell's name>,1`,
+  `ITEM unique sword,1` (unique, level 15), `ITEM identify scroll,3`, `ITEM healing spell,1`,
   `MONEY 500`), written by "Exit to Title". Its bag: two "dagger" unidentified, the unique sword unidentified, a common blade and the second blade equipped, a rifle, boots, unidentified
   shoulder armour and belt, the healing spell spell, identify scrolls, 600 gold.
 - **Checked in the run** (`~/torchlight-gog/screens/x360-gog-identify-compare.png`): unidentified
@@ -2301,7 +2301,7 @@ inventory (section 13), so each run's batch is one.
   hero and enter the town: TIP_WELCOME; the first attack, the first inventory, stats or stash give
   more. B on one, Y on another (step 2). Also step 5's regressions.
 - **B. Town, on a copy of `variety`** (already marked by the console): `console=LEVELUP;LEVELUP;
-  LEVELUP;SKILLPOINTS 5;MONEY 20000;ITEM <the gem's name>,2` (the gem's shown name; if the
+  LEVELUP;SKILLPOINTS 5;MONEY 20000;ITEM gem,2` (the gem's shown name; if the
   console wants the unit's `NAME`, it is in `socketables/GEM_AMETHYST_01`). Learn an active and
   a passive skill by hand, map them (step 1); socket a gem in the unique sword (a unique: the
   unique bases carry `SOCKETS`) and take it out at the Gem Recoverer and the Destroyer;

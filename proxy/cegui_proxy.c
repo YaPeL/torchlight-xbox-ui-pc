@@ -25,7 +25,7 @@
  *   pad_mode=direct                             option b: the proxy calls setDestination (GOG only)
  *   pad_face=0                                  the old movement, setDestination only (to compare)
  *   pad_log=1                                   the pad's detailed diagnosis in the log (costly)
- *   console=ITEM <the identify scroll's name>,3;MONEY 100    game console commands run once in play (test runs)
+ *   console=ITEM <item name>,3;MONEY 100        game console commands run once in play (test runs)
  *   dialog_fast_scroll=10                       how many times faster a dialog's text rises with X
  *                                               held (the 360's factor is not measured yet; 4 by default)
  * In mode=scheme, OUT is added to Ogre's world resource group (a FileSystem location, recursive),
