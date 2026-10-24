@@ -171,6 +171,22 @@ here. Games' texts are named by role, never quoted.
 - **If it is seen without automation** (a load that does not end in a normal session), it is a
   bug of the mod: report it with the log.
 
+## A tip over another of the 360's screens, the buttons to the one behind (fixed on the branch tip-has-pad)
+
+- **What happened:** in the owner's GOG session (2026-10-24) the mod's test-options notice (the
+  360's modal over PC's) showed, and a tip came over it, drawn in front; A went to the notice
+  behind. The modal, the NPC dialog and the fishing screen read the pad themselves, each frame,
+  whatever else was open; the tip's own gate (`x360_tip_open`) kept only the inventory and the
+  world from the buttons.
+- **Should have been caught by:** the night's note that "if a tip showed over them, B would reach
+  both" (the dialog, the modal, fishing): left as uncovered, not fixed.
+- **Caught by:** the owner's run.
+- **Covered now:** while a tip is shown (and 0.3 s after it closes) the modal's, the dialog's and
+  fishing's pads read nothing, as the inventory's: the screen drawn in front has the pad. The tip
+  acts on B and Y only, so A does nothing while it is up. The tip's tick runs before theirs, so on
+  the frame it shows they already leave it the pad. QA
+  checklist: a tip over the test-options notice (or over a dialog): A and B act on the tip only.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
@@ -178,6 +194,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
+- a tip over the test-options notice or a dialog: A and B act on the tip only;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
 - a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
