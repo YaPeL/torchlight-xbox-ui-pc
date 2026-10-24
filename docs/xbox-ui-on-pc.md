@@ -98,6 +98,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 | `send_input.py` | Mouse and keyboard input for the game, sent from inside its prefix (`send_input.exe`, built by `build_proxy.py`) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
 | `save_guard.py` | The save folder a GOG run will use, backed up and checked before the run |
+| `pad_trace.py` | The movement's measurement: the recorded stick routes (`routes`), a trace's numbers (`summary`), and a trace against the recompiled 360's (`compare`, with an SVG plot) |
 | `run_gog.sh` | The GOG run above (shell, no test) |
 | `check_no_game_files.py` | The CI check |
 
@@ -829,6 +830,23 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   searches themselves take at most tens of microseconds (measured apart: units and items); the
   rest was the diagnosis lines written, through Wine, during the 3 s after each press of X or A.
   That log is now off unless `pad_log=1` is in `x360_ui.ini`.
+
+**The movement measured (2026-10-24).** Two test options of `x360_ui.ini`, named on the screen's
+test notice like the others: `pad_replay=PATH` plays a recorded stick (`tools/pad_trace.py
+routes`) in place of XInput, from 3 s after the first frame in play (the file's `# start_ms`); with
+the option set the hand's pad is not read at all in that session (the menus too get the replay's
+buttons, none before t=0, the last line's after the end), and the replay's clock is the performance counter (Windows'
+`GetTickCount` moves by 15.6 ms). `pad_trace=1` writes the hero's path to `x360_trace.csv` in the
+mod's folder: the time, its position, its facing, GOG's `+0x200` and `+0x204` and the raw stick,
+a line whenever one of them changes, until 2 s after the replay's end, with a last line there. If
+the pad's input is held by a menu, a tip or a cinematic while the replay runs, the log says
+"replay disturbed" and that run does not count. The formats are in
+`proxy/pad.c` and `tools/pad_trace.py`; the recompiled 360 build writes the same trace from its
+own dev input script, so `pad_trace.py compare` can set the two side by side. The tolerances
+proposed: the two paths at most 0.5 units apart at the same time (about the hero's width), to the
+later trace's end (the slide after the release counts); and in each 250 ms span where the 360's
+hero moves at a steady speed (not a start or a stop), the speed within 10% of the 360's, allowing
+one 30 fps frame of lag; none moving where it rests.
 
 **Doors and barrels (2026-10-15, two regressions the user found).** **[read; the logs]**
 - GOG keeps doors and levers as `CTriggerUnit` and barrels as `CBreakable` in the level's item

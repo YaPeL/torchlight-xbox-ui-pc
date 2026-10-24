@@ -1,5 +1,6 @@
 """Tests of the tools, on synthetic data only (no game file)."""
 import json
+import math
 import glob
 import os
 import shutil
@@ -27,6 +28,7 @@ import aes128  # noqa: E402
 import layout_windows  # noqa: E402
 import port_addresses  # noqa: E402
 import send_input  # noqa: E402
+import pad_trace  # noqa: E402
 import save_guard  # noqa: E402
 import steam_guard  # noqa: E402
 from pe_info import PE  # noqa: E402
@@ -381,6 +383,90 @@ class SteamGuardTest(unittest.TestCase):
             self.assertTrue(any(line.startswith("changed:") and line.endswith("settings.txt") for line in lines))
             self.assertTrue(any(line.startswith("new:") and line.endswith("new.txt") for line in lines))
             self.assertTrue(any(line.startswith("gone:") and line.endswith("0.svt") for line in lines))
+
+
+def synthetic_trace(path, speed=5.0, curve=0.0, frames=120, dt_us=16667, start_frames=10, lag_us=0,
+                    slide_frames=0, only_changes=False):
+    """A hero walking at speed (units/s), turning by curve (radians/s), after start_frames at rest."""
+    lines = ["# x360ui pad trace v1 synthetic", "t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly"]
+    x = z = a = 0.0
+    last = None
+    for i in range(frames + slide_frames + 60):
+        t = i * dt_us + lag_us
+        moving = start_frames <= i < frames + slide_frames
+        if moving:
+            x += math.cos(a) * speed * dt_us / 1e6
+            z += math.sin(a) * speed * dt_us / 1e6
+            a += curve * dt_us / 1e6
+        held = start_frames <= i < frames
+        lx, ly = (int(32767 * math.cos(a)), int(32767 * math.sin(a))) if held else (0, 0)
+        row = (round(x * 1000), round(z * 1000), lx, ly)
+        if only_changes and row == last:
+            continue
+        last = row
+        lines.append(f"{t},{i},{row[0]},{row[1]},0,1000,1000,{round(speed * 1000)},{lx},{ly}")
+    write(path, "\n".join(lines) + "\n")
+
+
+class PadTraceTest(unittest.TestCase):
+    def test_routes(self):
+        with tempfile.TemporaryDirectory() as root:
+            names = pad_trace.write_routes(root)
+            self.assertIn("spin2-half", names)
+            with open(os.path.join(root, "straight-half.txt")) as f:
+                lines = f.read().splitlines()
+            self.assertEqual(lines[0], "# x360ui pad replay v1")
+            t, lx, ly, lt, rt, b = (int(v) for v in lines[2].split())
+            self.assertEqual((t, lx, lt, rt, b), (0, 0, 0, 0, 0))
+            self.assertEqual(ly, 16384)                 # half tilt, straight up
+            self.assertEqual(lines[-1].split()[1:3], ["0", "0"])   # at rest at the end
+
+    def test_summary_and_compare(self):
+        with tempfile.TemporaryDirectory() as root:
+            ref, same, slow, bent = (os.path.join(root, n) for n in ("ref", "same", "slow", "bent"))
+            synthetic_trace(ref)
+            synthetic_trace(same, lag_us=40000)         # started later: aligned on the stick
+            synthetic_trace(slow, speed=2.25)
+            synthetic_trace(bent, curve=3.0)
+            info = pad_trace.summary(pad_trace.read_trace(ref))
+            self.assertAlmostEqual(info["mean_speed"], 5.0, places=2)
+            self.assertAlmostEqual(info["net"], info["length"], places=3)
+            self.assertTrue(pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(same))["pass"])
+            res = pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(slow))
+            self.assertFalse(res["pass"])
+            self.assertTrue(res["speed_spans_off"])
+            res = pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(bent))
+            self.assertFalse(res["pass"])
+            self.assertGreater(res["max_gap"], pad_trace.MAX_GAP)
+            out = os.path.join(root, "plot.svg")
+            self.assertEqual(pad_trace.main(["compare", ref, same, "--svg", out]), 0)
+            with open(out) as f:
+                self.assertIn("<polyline", f.read())
+
+    def test_the_stop_counts(self):
+        # The 360's hero slides 0.4 s after the release, written every frame; PC's stops at once,
+        # written only on change: its trace ends earlier, and the slide must still be compared.
+        with tempfile.TemporaryDirectory() as root:
+            ref, mine = os.path.join(root, "ref"), os.path.join(root, "mine")
+            synthetic_trace(ref, slide_frames=24)
+            synthetic_trace(mine, only_changes=True)
+            res = pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(mine))
+            self.assertFalse(res["pass"])
+            self.assertGreater(res["max_gap"], 1.5)
+
+    def test_a_frame_of_lag_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            ref, mine = os.path.join(root, "ref"), os.path.join(root, "mine")
+            synthetic_trace(ref)
+            synthetic_trace(mine, dt_us=33333, frames=61, start_frames=6)   # the same walk at 30 fps
+            self.assertTrue(pad_trace.compare(pad_trace.read_trace(ref), pad_trace.read_trace(mine))["pass"])
+
+    def test_bad_line(self):
+        with tempfile.TemporaryDirectory() as root:
+            p = os.path.join(root, "t")
+            write(p, "# x360ui pad trace v1 pc\n1,2,3\n")
+            with self.assertRaises(ValueError):
+                pad_trace.read_trace(p)
 
 
 class SaveGuardTest(unittest.TestCase):
