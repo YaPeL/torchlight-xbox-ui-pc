@@ -3433,9 +3433,9 @@ WM_KEYDOWN and WM_KEYUP of those keys, and WM_CHAR of Esc, Enter and space (CEGU
 characters), while in play (`hud_in_play`), PC's settings are not open (reached from the 360's
 pause menu; the keyboard works there), the developer console is not shown (its CEGUI window
 `WindowsLook/Console`, typed into) and no cinematic holds (CGameUI's `0x541db0`: PC's keys skip
-it). A key's release is swallowed only when its press was, so PC never keeps a key down across
-those changes. The window procedure is replaced with the window's own kind (ANSI or Unicode), and
-checked each frame. Test scripts that send these keys in play (`tools/send_input.py`) now send
+it). A press's repeats and release go as the press went, so PC never keeps a key down across those
+changes; out of play, or when the frame tick stops refreshing the state, nothing is swallowed.
+The game's window (its title) is subclassed once, with its own kind (ANSI or Unicode). Test scripts that send these keys in play (`tools/send_input.py`) now send
 nothing the game sees. PC's window procedure (`CGame::WndProc` *(OT)*) is what
 gives the keys to `CGameUI::keyEvent` and `CKeyManager::keyEvent` *(OT)*, so neither sees them. The
 one address used is the cinematic's test, already ported to Steam's build
