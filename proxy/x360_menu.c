@@ -7045,7 +7045,8 @@ static void keys_off(void) {
  * CMenu's update 0x574477 animates the entity at the board's +0x5c with Entity::_updateAnimation),
  * a shop's screen elsewhere (boards_tick's table, each read in its update). The entity is made invisible
  * (Ogre's MovableObject::setVisible, exported) while the 360's modal or shop frame covers them,
- * and visible again after. */
+ * and given back after the visibility it had before (the owner's run of 2026-10-24: made visible
+ * after a merchant, the boards PC had hidden on closing its menus were seen again). */
 static void board_visible(unsigned char *menu, unsigned at, int visible) {
     /* QA run 8: the entity alone made invisible left the boards seen. Now its scene node, with all
      * it carries (SceneNode::setVisible with cascade), never the scene's root (a node with no
@@ -7053,6 +7054,10 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
     typedef void (__fastcall *set_visible_fn)(void *self, void *edx, int visible);
     typedef void (__fastcall *node_visible_fn)(void *self, void *edx, int visible, int cascade);
     typedef void *(__fastcall *get_ptr_fn)(const void *self, void *edx);
+    typedef unsigned char (__fastcall *get_visible_fn)(const void *self, void *edx);
+    static get_visible_fn get_vis;
+    static struct { unsigned field; int had; } kept[16];   /* each hidden board's visibility before */
+    static int nkept;
     static set_visible_fn set_vis;
     static node_visible_fn node_vis;
     static get_ptr_fn parent_scene_node, node_parent;
@@ -7065,6 +7070,7 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
     if (!set_vis) {
         void *ogre = GetModuleHandleA("OgreMain.dll");
         set_vis = ogre ? (set_visible_fn)GetProcAddress(ogre, "?setVisible@MovableObject@Ogre@@UAEX_N@Z") : 0;
+        get_vis = ogre ? (get_visible_fn)GetProcAddress(ogre, "?getVisible@MovableObject@Ogre@@UBE_NXZ") : 0;
         node_vis = ogre ? (node_visible_fn)GetProcAddress(ogre, "?setVisible@SceneNode@Ogre@@UAEX_N0@Z") : 0;
         parent_scene_node = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParentSceneNode@MovableObject@Ogre@@UBEPAVSceneNode@2@XZ") : 0;
         node_parent = ogre ? (get_ptr_fn)GetProcAddress(ogre, "?getParent@Node@Ogre@@UBEPAV12@XZ") : 0;
@@ -7085,6 +7091,21 @@ static void board_visible(unsigned char *menu, unsigned at, int visible) {
             x360_log("\r\n");
         }
         if (!entity || *(void **)entity != entity_vtable) return;
+        {
+            unsigned field = (unsigned)(unsigned long)menu + at;
+            int k = 0;
+            while (k < nkept && kept[k].field != field) k++;
+            if (!visible && k == nkept && nkept < 16 && get_vis) {   /* its own state, kept as it is first hidden */
+                kept[nkept].field = field;
+                kept[nkept++].had = get_vis(entity, 0) != 0;
+            } else if (visible) {
+                if (k < nkept) {
+                    visible = kept[k].had;
+                    kept[k] = kept[--nkept];
+                }
+                x360_log(visible ? "x360 boards: a board given back shown\r\n" : "x360 boards: a board given back hidden, as PC had it\r\n");
+            }
+        }
         set_vis(entity, 0, visible);
         if (parent_scene_node && node_vis && node_parent) {
             node = parent_scene_node(entity, 0);

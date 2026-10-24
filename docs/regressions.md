@@ -187,10 +187,26 @@ here. Games' texts are named by role, never quoted.
   the frame it shows they already leave it the pad. QA
   checklist: a tip over the test-options notice (or over a dialog): A and B act on the tip only.
 
+## PC's menus' boards seen again after a merchant (fixed on the branch shop-boards-restore, the cause not settled)
+
+- **What happened:** in the owner's GOG run of 2026-10-24 (evening), after leaving a merchant,
+  PC's menus were seen again; the 3D boards (the parchment PC draws behind its menus) are the
+  likely part.
+- **Why (a hypothesis):** the proxy hides the shops' boards while the 360's shop frame is open
+  and, when it closes, made every one of them visible: a board PC had hidden as its menu closed
+  was shown again.
+- **Should have been caught by:** QA runs 8-10 looked at the boards while the shop was open, not
+  after it closed.
+- **Caught by:** the owner's run.
+- **Covered now:** each board is given back the visibility it had when the proxy first hid it
+  (`x360 boards: a board given back hidden, as PC had it` or `... shown`). QA checklist: after a
+  merchant, a stash and the enchanter, none of PC's boards is seen.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
+- after a merchant, a stash and the enchanter are closed: none of PC's 3D boards is seen;
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
