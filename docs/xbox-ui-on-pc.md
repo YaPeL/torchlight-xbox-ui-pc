@@ -3576,3 +3576,39 @@ up then down and right then left at full tilt, up then down at 0.7, 2 s each), o
 speed while its facing turns (180 degrees in about 150 ms, settled by 300 ms): no turn in place
 there either. The two at full tilt ended against a wall before the reversal (no speed before
 it), so they do not count. PC's replay of the same route is next.
+
+### 30c. Direction against speed: full tilt in 8 directions (2026-10-24, the owner's request)
+
+A synthetic replay (`dirs8.txt`, outside the repository): a lead-in (left at full tilt, 1.4 s)
+to an open place in town (about (-26.4, 23.8) on all three runs), then full tilt at once in 8
+directions, 0.6 s each with 1 s at rest, in opposite pairs, then two reversals. (A first version
+with 2 s pushes from the start point hit walls: the start is boxed in.) At full tilt the stick's
+threshold and rescaling do not act, so the angle left is direction alone. The walk's angle in the
+world (atan2 of z, x) from 0.15 to 0.55 s after the press, every push at a steady 5.8 to 6.7 units
+a second (no wall):
+
+| Stick | 360 | PC, screen probe (`pad_walk_yaw=0`) | PC, camera yaw (`pad_walk_yaw=1`) |
+|---|---|---|---|
+| up | 139.3 | 128.7 (-10.6) | 141.8 (+2.4) |
+| down | -33.1 | -41.3 (-8.2) | -30.0 (+3.2) |
+| right | -135.0 | -142.0 (-7.0) | -135.0 (0.0) |
+| left | 45.0 | 52.0 (+7.0) | 45.0 (0.0) |
+| up-right | -179.9 | 163.2 (-16.9) | -180.0 (0.0) |
+| down-left | 1.6 | -4.5 (-6.1) | 2.0 (+0.4) |
+| up-left | 84.7 | 103.2 (+18.5) | 85.2 (+0.5) |
+| down-right | -86.0 | -90.2 (-4.2) | -86.1 (0.0) |
+
+The screen probe bends the walk by 4 to 18.5 degrees, with a sign that changes with the
+direction; the camera's yaw (the 360's rule in `sub_82199E08`) matches the 360 within 0.5
+degrees in six directions and 2.4 and 3.2 in the other two (up and down deviate from the exact
+diagonal on both builds there: the ground's, not the pad's). The reversals match too: at 0.7 and
+at full tilt the hero walks the new way within 6 to 15 ms on both builds, and its facing turns
+150 degrees in 196 ms on the 360, 197 to 202 with the yaw, 224 to 249 with the probe.
+
+The recomp agent's probe on `sub_82191018`'s result (its `.stick.csv` beside the trace): at full
+tilt the game reads the given stick exactly ((32767, 0) as 1.000, (23170, 23170) as 0.707); at
+0.7 it reads 0.481. The stick is rescaled before the game reads it, about `(l - 0.42) / (1 - 0.42)`,
+in none of the code paths read so far (the script driver, rexglue's `GetState`, `MergeInto`,
+`AdjustDeadzoneLevels` at 0, `XamInputGetState`, the game's `sub_821FEA58` and `sub_821FE8A8`);
+whether a real console does the same is not known. This corrects 30b: the threshold is not the
+game's code either. Its measured curve comes from `route-pc.txt` with the probe.
