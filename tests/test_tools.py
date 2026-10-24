@@ -515,9 +515,10 @@ int main(int argc, char **argv) {
 
 class TextLfTest(unittest.TestCase):
     """The rule: every text the mod reads tolerates CRLF (docs/regressions.md). The proxy's one
-    reader (x360_read_text, its x360_lf between markers in cegui_proxy.c) compiled on the host:
-    each text file the proxy reads, written with LF, CRLF and a lone CR, gives the same text; and
-    no reader of the proxy or the installer goes around it."""
+    reader's line-end step (x360_lf, between markers in cegui_proxy.c) compiled on the host: the
+    contents of each text file the proxy reads, written with LF, CRLF and a lone CR, come out the
+    same (the readers' own loops then see only LF); and no reader of the proxy or the installer
+    goes around x360_read_text or text_lines."""
 
     SAMPLES = {   # synthetic contents of each file the proxy reads, one line per item
         "x360_strings.txt": ["pctip.TIP_A=Synthetic tip, a = sign", "tip.TIP_A=x", "key=value"],
@@ -577,15 +578,21 @@ int main(int argc, char **argv) {
     def test_no_reader_around_it(self):
         import re
         repo = Path(__file__).resolve().parent.parent
-        for c in sorted((repo / "proxy").glob("*.c")):
+        read_file = re.compile(r"\bReadFile\b")
+        for c in sorted((repo / "proxy").glob("*.[ch]")):
             for n, line in enumerate(c.read_text().splitlines(), 1):
-                if "ReadFile(" in line and "IMPORT" not in line and "dllimport" not in line:
+                if read_file.search(line) and "IMPORT" not in line and "dllimport" not in line:
                     self.assertIn("if (!ReadFile(f, buf, size - 1, &got, 0))", line,
                                   f"{c.name}:{n}: a file read outside x360_read_text")
-        two_args = re.compile(r"getline\((?!std::cin)[^,()]+,\s*[^,()]+\)")   # a line, not a split by '/'
-        for c in sorted((repo / "installer" / "src").rglob("*.cpp")):
+        line_reads = [
+            re.compile(r"getline\((?!std::cin)[^,()]+,\s*[^,()]+\)"),          # a line (not a split by '/')
+            re.compile(r"getline\([^,()]+,\s*[^,()]+,\s*'\\[nr]'\)"),        # a line, its end named
+            re.compile(r"\bifstream\b[^;]*;[^\n]*>>|\bf\s*>>\s*\w"),        # words from a text stream
+        ]
+        for c in sorted(p for p in (repo / "installer" / "src").rglob("*") if p.suffix in (".cpp", ".h", ".inc")):
             for n, line in enumerate(c.read_text().splitlines(), 1):
-                self.assertIsNone(two_args.search(line), f"{c.name}:{n}: a line read outside text_lines")
+                for r in line_reads:
+                    self.assertIsNone(r.search(line), f"{c.name}:{n}: a line read outside text_lines")
 
 
 class SaveGuardTest(unittest.TestCase):

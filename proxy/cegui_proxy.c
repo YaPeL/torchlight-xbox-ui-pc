@@ -212,8 +212,8 @@ static unsigned long x360_lf(char *s, unsigned long n) {
 }
 /* text-lf: end */
 
-/* A text file's bytes into buf (size includes the NUL), line ends made LF: the length then.
- * *full, if given, says whether the file filled buf (it may have been cut). */
+/* A text file's bytes into buf (size includes the NUL; 0 writes nothing), line ends made LF: the
+ * length then. *full, if given, says whether the file filled buf (it may have been cut). */
 DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full) {
     DWORD got = 0;
     if (!size) return 0;

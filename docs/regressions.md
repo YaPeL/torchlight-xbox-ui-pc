@@ -149,9 +149,10 @@ here. Games' texts are named by role, never quoted.
   splits every text through `text_lines` (`installer/src/text_lines.h`: `x360_ui.ini`, the export
   list, the elevated run's progress, the wizard's test scripts and run output); the Python tools
   read in text mode, which does the same.
-- **Covered now:** `TextLfTest` compiles the proxy's reader on the host and gives it each of those
-  files written with LF, CRLF and a lone CR, ended or not, which must read the same; it also fails
-  if a `ReadFile` in `proxy/` or a line read in `installer/src` goes around the two functions. The
+- **Covered now:** `TextLfTest` compiles the proxy's line-end step (`x360_lf`) on the host and
+  gives it the contents of each of those files written with LF, CRLF and a lone CR, ended or not,
+  which must come out the same (the readers' loops then see only LF); it also fails if a
+  `ReadFile` in `proxy/` or a line read in `installer/src` goes around the two functions. The
   C++ `core_test` tests `text_lines` with the same cases. A new reader of text uses them.
 
 ## QA checklist
