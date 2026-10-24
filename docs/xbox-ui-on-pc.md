@@ -3464,20 +3464,35 @@ one address used is the cinematic's test, already ported to Steam's build
 hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
 the keyboard is PC's.
 
-### 27g. The stick's speed factor, written (change a, 2026-10-24; its measurement next)
+## 29. The stick's speed factor (the movement plan's change a, 2026-10-24)
 
-The owner's recording replayed on the recompiled 360 build (its agent's trace, the same input)
-confirmed 27a: a straight at a 0.72 tilt walked at 4.36 units/s there, 6.22 on PC (the formula's
-0.72 gives 4.47), and the half-tilt spins at 2.4 units/s there, 5.3 and 4.1 on PC. The factor is
-now in GOG's character update (`proxy/pad.c`, `walk_scale`): a jump at its join (`0x4a8062`;
-Steam's `0x4a5dd8`) to a trampoline that scales the speed's stack slot (read from the store just
-before: GOG's `[esp+0x1c]`, Steam's `[esp+0x18]`) by `min(len^2 + 0.2, 1)` past the stick's 0.1,
-for the hero only, unless its AI state is 7 or 9 or the 360's `sub_821DC600` holds (inlined in
-GOG's `setDestination`, `0x494b67`: the skill's `+0xb4`, `+0x3c`, the hero's `+0x20b`, `+0x2c0`)
-with the skill's byte `+0x40` set. The factor is computed each frame while the hero is not aiming
+The 360's plain stick walk (`sub_82199E08`) writes `hero+1500 = min(len^2 + 0.2, 1)`, and its
+character update (`sub_821D5410`, `0x821D6ED0`..`0x821D6F10`) multiplies the speed's scale by it;
+GOG's same update (`0x4a6930`) has no such block (the audit's analysis, PR #30). The owner's
+recording replayed on the recompiled 360 build (its agent's trace, the same input) confirmed it: a
+straight at a 0.72 tilt walked at 4.36 units/s there, 6.22 on PC (the formula's 0.72 gives 4.47),
+and the half-tilt spins at 2.4 units/s there, 5.3 and 4.1 on PC.
+
+The factor is now in GOG's character update (`proxy/pad.c`, `walk_scale`): a jump at its join
+(`0x4a8062`; Steam's `0x4a5dd8`) to a trampoline that scales the speed's stack slot (read from the
+store just before: GOG's `[esp+0x1c]`, Steam's `[esp+0x18]`) by `min(len^2 + 0.2, 1)`, for the
+hero only, unless its AI state is 7 or 9 or the 360's `sub_821DC600` holds (inlined in GOG's
+`setDestination`, `0x494b67`: the skill's `+0xb4`, `+0x3c`, the hero's `+0x20b`, `+0x2c0`) with
+the skill's byte `+0x40` set. The factor is computed each frame while the hero is not aiming
 (`+0x20a`) and its AI state is not 34, and kept otherwise, as the 360 keeps `+1500`; from the
 stick only while the pad's walk takes it (its dead zone, until change c gives it the 360's 0.1),
-else 1. It changes what the player sees (slower at a partial tilt): merged only after the replay
-of the owner's route is measured against the recompiled 360's and the owner's OK.
-`pad_walk_factor=0` leaves it out, to compare.
+else 1. `pad_walk_factor=0` leaves it out, to compare. It changes what the player sees (slower at
+a partial tilt): merged only with the owner's OK after a test by hand.
 
+**Measured** (the owner's route replayed on GOG with the factor; units per second over each route):
+
+| Route | PC before | With the factor | The 360 |
+|---|---|---|---|
+| a spin at 2.0 turns/s, half tilt | 4.10 | 2.33 | 2.35 |
+| a spin at 1.5 turns/s, 0.85 tilt | 3.50 | 3.32 | 3.39 |
+| a spin at 0.66 turns/s, half tilt | 5.35 | 3.17 | 2.41 |
+| a straight at 0.72 tilt | 6.22 | 5.09 | 4.36 |
+| a straight at 0.94 tilt (factor 1) | 6.22 | 6.22 | 5.37 |
+
+The replay reproduces the recording (the 0.94 straight: 32.20 units against the recording's
+32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).

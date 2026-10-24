@@ -1245,7 +1245,7 @@ static int skill_locks_movement(unsigned char *hero) {
     return *(float *)(hero + 0x2c0) > 0.0f && !hero[0x2bd];
 }
 
-/* ---- The stick's speed factor (doc section 27a, the plan's change a) ----
+/* ---- The stick's speed factor (doc section 29, the movement plan's change a) ----
  * The 360's plain stick walk (sub_82199E08, called each frame by the frame update while the hero is
  * not aiming, hero[510], and its AI state is not 34) writes hero+1500 = min(len^2 + 0.2, 1) with the
  * stick out of its 0.1 dead zone, 1 at rest; the character's update (sub_821D5410, 0x821D6ED0)
