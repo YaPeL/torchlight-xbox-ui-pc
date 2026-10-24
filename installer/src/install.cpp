@@ -117,7 +117,7 @@ class Ask {
   }
   bool yes_no(const std::string& text, bool def) {
     if (yes_) return def;
-    if (gui_) return gui_yes_no(text);
+    if (gui_) return gui_yes_no(text, def);
     std::cout << text << (def ? " [Y/n] " : " [y/N] ") << std::flush;
     std::string a;
     if (!std::getline(std::cin, a)) return def;
@@ -145,7 +145,9 @@ class Ask {
 #ifdef _WIN32
   static std::wstring w(const std::string& s) { return fs_path(s).wstring(); }
   static bool gui_available() { return true; }
-  static bool gui_yes_no(const std::string& t) { return MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_YESNO | MB_ICONQUESTION) == IDYES; }
+  static bool gui_yes_no(const std::string& t, bool def) {
+    return MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_YESNO | MB_ICONQUESTION | (def ? 0 : MB_DEFBUTTON2)) == IDYES;
+  }
   static void gui_info(const std::string& t) { MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_OK | MB_ICONINFORMATION); }
   static void gui_error(const std::string& t) { MessageBoxW(nullptr, w(t).c_str(), w(kTitle).c_str(), MB_OK | MB_ICONERROR); }
   static std::string gui_file(const std::string& title) {
@@ -193,18 +195,20 @@ class Ask {
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
   }
   static bool is_zenity() { return tool().find("zenity") != std::string::npos; }
-  static bool gui_yes_no(const std::string& t) {
-    return run(is_zenity() ? std::vector<std::string>{tool(), "--question", "--title", kTitle, "--text", t, "--width", "500"}
+  static bool gui_yes_no(const std::string& t, bool def) {
+    std::vector<std::string> z = {tool(), "--question", "--no-markup", "--title", kTitle, "--text", t, "--width", "500"};
+    if (!def) z.push_back("--default-cancel");   // the default the console shows, in the window too
+    return run(is_zenity() ? z
                            : std::vector<std::string>{tool(), "--title", kTitle, "--yesno", t},
                nullptr) == 0;
   }
   static void gui_info(const std::string& t) {
-    run(is_zenity() ? std::vector<std::string>{tool(), "--info", "--title", kTitle, "--text", t, "--width", "500"}
+    run(is_zenity() ? std::vector<std::string>{tool(), "--info", "--no-markup", "--title", kTitle, "--text", t, "--width", "500"}
                     : std::vector<std::string>{tool(), "--title", kTitle, "--msgbox", t},
         nullptr);
   }
   static void gui_error(const std::string& t) {
-    run(is_zenity() ? std::vector<std::string>{tool(), "--error", "--title", kTitle, "--text", t, "--width", "500"}
+    run(is_zenity() ? std::vector<std::string>{tool(), "--error", "--no-markup", "--title", kTitle, "--text", t, "--width", "500"}
                     : std::vector<std::string>{tool(), "--title", kTitle, "--error", t},
         nullptr);
   }
@@ -736,7 +740,9 @@ Args parse(const std::vector<std::string>& argv) {
   return a;
 }
 
-std::pair<fs::path, std::string> pick_game(const std::string& given) {
+bool has_mod(const std::string& game) { return is_file(P(game) / "x360_ui.ini") || is_file(P(game) / "CEGUIBase_orig.dll"); }
+
+std::pair<fs::path, std::string> pick_game(const std::string& given, Ask& ask, bool yes, bool installed_only = false) {
   if (!given.empty()) {
     std::error_code ec;
     const fs::path g = fs::weakly_canonical(fs::absolute(P(given)), ec);
@@ -749,14 +755,34 @@ std::pair<fs::path, std::string> pick_game(const std::string& given) {
       std::cout << store << ": " << path << ": its build is supported experimentally (not yet played with the mod); give it with --game to install there.\n";
   for (const auto& [store, path] : games)
     if (build_of(path) == "unknown") std::cout << store << ": " << path << ": a build this version does not support yet, left alone.\n";
+  std::vector<std::pair<std::string, std::string>> supported;
   for (const auto& [store, path] : games)
-    if (build_of(path) != "unknown" && !is_experimental(build_of(path))) return {P(path), build_of(path)};
-  throw Exit("No supported PC Torchlight found; give its folder with --game.");
+    if (build_of(path) != "unknown" && !is_experimental(build_of(path))) supported.push_back({store, path});
+  if (supported.empty()) throw Exit("No supported PC Torchlight found; give its folder with --game.");
+  if (installed_only && std::any_of(supported.begin(), supported.end(), [](const auto& g) { return has_mod(g.second); })) {
+    std::vector<std::pair<std::string, std::string>> with_mod;   // uninstall: only those with the mod
+    for (const auto& g : supported) if (has_mod(g.second)) with_mod.push_back(g);
+    supported = with_mod;
+  }
+  if (supported.size() > 1) {
+    // More than one: each shown, and the player says which (--yes: the first, said so).
+    std::string found = std::to_string(supported.size()) + " supported PC Torchlights were found:";
+    for (const auto& [store, path] : supported) found += "\n" + store + ": " + path;
+    if (yes) {
+      std::cout << found << "\nusing " << supported[0].first << ": " << supported[0].second << " (--game picks another)\n";
+      return {P(supported[0].second), build_of(supported[0].second)};
+    }
+    for (size_t i = 0; i < supported.size(); i++)
+      if (ask.yes_no(found + "\n\nUse " + supported[i].first + ": " + supported[i].second + "?", i == 0))
+        return {P(supported[i].second), build_of(supported[i].second)};
+    throw Exit("No game chosen; give its folder with --game.");
+  }
+  return {P(supported[0].second), build_of(supported[0].second)};
 }
 
 int do_install(const Args& args) {
   Ask ask(args.console, args.yes);
-  auto [game, build] = pick_game(args.game);
+  auto [game, build] = pick_game(args.game, ask, args.yes);
   if (build == "unknown") throw Exit(S(game) + ": a build this version does not support yet.");
   std::cout << "the game: " << S(game) << " (" << build << " build)\n";
   check_real_dll(S(game));
@@ -878,7 +904,7 @@ int do_install(const Args& args) {
 
 int do_uninstall(const Args& args) {
   Ask ask(args.console, args.yes);
-  auto [game, build] = pick_game(args.game);
+  auto [game, build] = pick_game(args.game, ask, args.yes, true);
   (void)build;
   bool backup = false;
   if (read_ini(game)["bag"] == "360") {
