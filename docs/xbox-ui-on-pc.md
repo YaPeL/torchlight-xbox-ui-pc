@@ -3499,10 +3499,15 @@ The replay reproduces the recording (the 0.94 straight: 32.20 units against the 
 ## 30. A destination each frame (the movement plan's change b, 2026-10-24; parked)
 
 The 360's plain stick walk (`sub_82199E08`) sends a destination each frame, at 5 times the stick's
-length along the stick turned by the camera (27b); the pad sent one every 0.1 s, 2 units ahead
+length along the stick turned by the camera; the pad sent one every 0.1 s, 2 units ahead
 (the 360's walk after a held action, `sub_8221B8E8`). The owner's route replayed: PC's paths are
 polygons of 0.1 s chords where the 360's are curves (the spins). Now `setDestination` goes once
 per game frame (the proxy's frame listener counts them, `x360_frames`) at `5 * len` along the
-stick's world direction; the facing each frame and the release (`stopPathing`) are unchanged.
-`pad_walk_dest=0` keeps the old one, to compare.
+stick's world direction (the screen probe's, refreshed on a turn of more than 5 degrees or every
+0.1 s, by its own timer); the facing each frame and the release (`stopPathing`) are unchanged.
+Left out: the 360's `sub_8219C070(hero, 0)` and its `+652` handle's release each frame after the
+destination (the pad drops the target on the stick's first frame). The 360 runs it at about 60
+frames a second, PC at its uncapped rate (100 to 200): twice to four times the path requests;
+measured in the replay (the frame rate in the trace). `pad_walk_dest=0` keeps the old one, to
+compare.
 
