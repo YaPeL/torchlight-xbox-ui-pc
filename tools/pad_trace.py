@@ -11,13 +11,17 @@ pad_trace.py compare REF TRACE [--svg OUT]  TRACE against REF (the recompiled 36
 
 Formats (the same for this repository's proxy and for the recompiled 360 build):
   replay: "# x360ui pad replay v1", "# start_ms N", then "t_ms lx ly lt rt buttons" (XInput's raw
-          values, each held until the next line).
+          values, each held until the next line; the last to the end, at rest in the routes).
   trace:  "# x360ui pad trace v1 SOURCE", the header line, then
           "t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly" (thousandths of world units).
 Traces are compared from the first sample whose stick is out of the 360's dead zone (0.1), so the
-two builds' starts need not match; positions are relative to the hero's at that moment.
+two builds' starts need not match; positions are relative to the hero's at that moment. Both are
+compared to the later trace's end (the slide after the stick is let go counts, by the paths' gap);
+the speed is compared in the spans where the reference's is steady (its neighbours within the
+tolerance), and may match it one 30 fps frame earlier or later.
 """
 import argparse
+import html
 import math
 import os
 import sys
@@ -30,6 +34,8 @@ MAX_GAP = 0.5
 # ... and each 250 ms span's speed within this ratio of the reference's, where the reference moves.
 SPEED_TOLERANCE = 0.10
 MOVING = 0.5                    # units per second: below it a span counts as at rest
+SHIFT_S = 1 / 30                # a span's speed may match the reference's this much earlier or
+                                # later: a frame of input lag at 30 fps, aligning does not remove it
 
 
 def stick(x, y):
@@ -44,7 +50,7 @@ def route_lines(samples, start_ms=3000):
     return "\n".join(out) + "\n"
 
 
-def straight(length, tilt, angle_deg=90.0, ms=2000, step=10):
+def straight(tilt, angle_deg=90.0, ms=2000, step=10):
     a = math.radians(angle_deg)
     s = [(t, tilt * math.cos(a), tilt * math.sin(a)) for t in range(0, ms, step)]
     return s + [(ms, 0.0, 0.0)]
@@ -65,9 +71,9 @@ def reversal(tilt=1.0, ms=1000, step=10):
 
 
 ROUTES = {
-    "straight-full": lambda: straight(2000, 1.0),
-    "straight-half": lambda: straight(2000, 0.5),
-    "straight-edge": lambda: straight(2000, 0.12),
+    "straight-full": lambda: straight(1.0),
+    "straight-half": lambda: straight(0.5),
+    "straight-edge": lambda: straight(0.12),
     "spin1-full": lambda: spin(1.0, 1.0),
     "spin2-full": lambda: spin(2.0, 1.0),
     "spin1-half": lambda: spin(1.0, 0.5),
@@ -127,18 +133,23 @@ def summary(rows):
         return {"samples": len(rows), "moved": False}
     length = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(p, p[1:]))
     farthest = max(math.hypot(q[1], q[2]) for q in p)
-    duration = p[-1][0] - p[0][0]
+    moved = [b for a, b in zip(p, p[1:]) if (a[1], a[2]) != (b[1], b[2])]
+    duration = (moved[-1][0] if moved else p[-1][0]) - p[0][0]   # to the last move, not the trace's end
     return {"samples": len(rows), "moved": True, "duration_s": duration, "length": length,
             "net": math.hypot(p[-1][1], p[-1][2]), "farthest": farthest,
             "mean_speed": length / duration if duration > 0 else 0.0}
 
 
-def spans(path, end):
-    """Speed (units per second) in each SPAN_US span from 0 to end."""
+def span_speed(path, t):
+    a, b = at(path, t), at(path, t + SPAN_US / 1e6)
+    return math.hypot(b[0] - a[0], b[1] - a[1]) / (SPAN_US / 1e6)
+
+
+def spans(path, end, shift=0.0):
+    """Speed (units per second) in each SPAN_US span from 0 to end, the spans moved by shift."""
     out, t = [], 0.0
     while t + SPAN_US / 1e6 <= end + 1e-9:
-        a, b = at(path, t), at(path, t + SPAN_US / 1e6)
-        out.append(math.hypot(b[0] - a[0], b[1] - a[1]) / (SPAN_US / 1e6))
+        out.append(span_speed(path, max(0.0, t + shift)))
         t += SPAN_US / 1e6
     return out
 
@@ -147,7 +158,9 @@ def compare(ref_rows, rows):
     ref, mine = aligned(ref_rows), aligned(rows)
     if not ref or not mine:
         return {"pass": False, "reason": "a trace whose stick never leaves the dead zone"}
-    end = min(ref[-1][0], mine[-1][0])
+    # To the later end: a trace written only on change stops at the hero's stop, and the slide
+    # after the stick is let go is part of what is compared (at() holds the last position).
+    end = max(ref[-1][0], mine[-1][0])
     gap, worst_t, t = 0.0, 0.0, 0.0
     while t <= end:
         a, b = at(ref, t), at(mine, t)
@@ -156,9 +169,13 @@ def compare(ref_rows, rows):
             gap, worst_t = d, t
         t += 0.01
     rs, ms = spans(ref, end), spans(mine, end)
-    bad = [i for i, (r, m) in enumerate(zip(rs, ms))
-           if r >= MOVING and abs(m - r) > SPEED_TOLERANCE * r]
-    still = [i for i, (r, m) in enumerate(zip(rs, ms)) if r < MOVING and m >= MOVING]
+    shifted = [spans(mine, end, -SHIFT_S), ms, spans(mine, end, SHIFT_S)]
+    def steady(i):   # the reference's neighbours at its speed: not a start or a stop, where a
+        # frame's difference in when it happens moves the span's speed more than the tolerance
+        return all(abs(rs[j] - rs[i]) <= SPEED_TOLERANCE * rs[i] for j in (i - 1, i + 1) if 0 <= j < len(rs))
+    bad = [i for i, r in enumerate(rs)
+           if r >= MOVING and steady(i) and all(abs(m[i] - r) > SPEED_TOLERANCE * r for m in shifted)]
+    still = [i for i, r in enumerate(rs) if r < MOVING and all(m[i] >= MOVING for m in shifted)]
     ok = gap <= MAX_GAP and not bad and not still
     return {"pass": ok, "max_gap": gap, "max_gap_at_s": worst_t, "spans": len(rs),
             "speed_spans_off": bad, "moving_where_ref_rests": still,
@@ -178,14 +195,14 @@ def svg(paths, out, title=""):
         return (size / 2 + (x - cx) / span * size, size / 2 - (z - cz) / span * size)
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size + 40}" '
              f'viewBox="0 0 {size} {size + 40}"><rect width="100%" height="100%" fill="#fff"/>',
-             f'<text x="8" y="{size + 16}" font-family="sans-serif" font-size="12">{title} '
+             f'<text x="8" y="{size + 16}" font-family="sans-serif" font-size="12">{html.escape(title)} '
              f'(scale: {span:.2f} units across)</text>']
     for i, (name, p) in enumerate(paths):
         c = colors[i % len(colors)]
         d = " ".join(f"{px(q[1], q[2])[0]:.1f},{px(q[1], q[2])[1]:.1f}" for q in p)
         parts.append(f'<polyline fill="none" stroke="{c}" stroke-width="1.5" points="{d}"/>')
         parts.append(f'<text x="{8 + 160 * i}" y="{size + 34}" fill="{c}" font-family="sans-serif" '
-                     f'font-size="12">{name}</text>')
+                     f'font-size="12">{html.escape(name)}</text>')
     x0, y0 = px(0, 0)
     parts.append(f'<circle cx="{x0:.1f}" cy="{y0:.1f}" r="3" fill="#000"/></svg>')
     with open(out, "w") as f:

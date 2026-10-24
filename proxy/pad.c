@@ -194,7 +194,7 @@ static int parse_int(const char **s) {
  *   # start_ms 3000            how long after the first frame in play t=0 comes (default 3000)
  *   t_ms lx ly lt rt buttons   XInput's raw values (sticks -32767..32767, y up; triggers 0..255;
  *                              buttons its mask), each held until the next line's t_ms
- * After the last line the pad is at rest. The trace, x360_trace.csv in the mod's folder, integers
+ * The last line holds to the end (the routes end with one at rest). The trace, x360_trace.csv in the mod's folder, integers
  * only (no CRT here):
  *   # x360ui pad trace v1 pc
  *   t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly
@@ -202,15 +202,28 @@ static int parse_int(const char **s) {
  * written when the hero's position, its facing or the stick changed); x, z the hero's position and
  * fx, fz its rotation's column 2 (m[0][2], m[2][2]), all times 1000; scale and speed GOG's +0x200
  * and +0x204 (the 360's +500 and +504) times 1000; lx, ly the raw stick. From t=0 to 2 s after
- * the replay's last line (or, without a replay, from the first frame in play). */
+ * the replay's last line, with a last line then (or, without a replay, from the first frame in
+ * play for at most 10 minutes). A replay running while the pad's input is held by a menu, a tip
+ * or a cinematic is named in the log ("replay disturbed"): that run does not count. */
 #define REPLAY_MAX 8192
 static struct { unsigned t; short lx, ly; unsigned char lt, rt; unsigned short buttons; } replay[REPLAY_MAX];
 static unsigned replay_n, replay_start_ms = 3000;
-static unsigned replay_t0;          /* GetTickCount at t=0; 0 until the first frame in play */
+static unsigned replay_t0;          /* qms() at t=0; 0 until the first frame in play */
+static unsigned world_at;           /* qms() of order()'s last frame that reached the world's input */
 static int replay_armed;
 static int raw_lx, raw_ly;          /* the stick as XInput gives it, from the pad or the replay */
 static unsigned char raw_lt, raw_rt;
 static unsigned raw_buttons;
+
+/* Milliseconds by the performance counter: GetTickCount moves by 15.6 ms on Windows, coarser than
+ * the routes' 10 ms samples. In double (no 64-bit division without a CRT). */
+static unsigned qms(void) {
+    static long long f;
+    long long q;
+    if (!f) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&q);
+    return (unsigned)((double)q * 1000.0 / (double)f);
+}
 
 static void replay_load(const char *path) {
     static char text[262144];
@@ -221,6 +234,7 @@ static void replay_load(const char *path) {
     ReadFile(f, text, sizeof text - 1, &got, 0);
     CloseHandle(f);
     text[got] = 0;
+    if (got == sizeof text - 1) x360_log("pad: replay file over 256 KB: cut there\r\n");
     while (*p) {
         const char *line = p;
         while (*p && *p != '\n') p++;
@@ -229,12 +243,18 @@ static void replay_load(const char *path) {
             while (*k == ' ') k++;
             if (k[0] == 's' && k[1] == 't' && k[2] == 'a' && k[3] == 'r' && k[4] == 't' && k[5] == '_' &&
                 k[6] == 'm' && k[7] == 's') {
+                int v;
                 k += 8;
-                replay_start_ms = (unsigned)parse_int(&k);
+                v = parse_int(&k);
+                replay_start_ms = v < 0 ? 0 : v > 600000 ? 600000 : (unsigned)v;
             }
-        } else if (replay_n < REPLAY_MAX) {
+        } else {
             const char *q = line;
             while (*q == ' ' || *q == '\t' || *q == '\r') q++;
+            if (*q >= '0' && *q <= '9' && replay_n == REPLAY_MAX) {
+                x360_log("pad: replay over 8192 samples: cut there\r\n");
+                break;
+            }
             if (*q >= '0' && *q <= '9') {
                 int v;
                 replay[replay_n].t = (unsigned)parse_int(&q);
@@ -266,11 +286,7 @@ static int replay_sample(unsigned now) {
     }
     t = now - replay_t0;
     while (at + 1 < replay_n && replay[at + 1].t <= t) at++;
-    if (t > replay[replay_n - 1].t + 100) {
-        if (replay_armed) { replay_armed = 0; x360_log("pad: replay ended\r\n"); }
-        raw_lx = raw_ly = 0; raw_lt = raw_rt = 0; raw_buttons = 0;
-        return 2;   /* ended: at rest */
-    }
+    if (t > replay[replay_n - 1].t && replay_armed) { replay_armed = 0; x360_log("pad: replay ended\r\n"); }
     if (t < replay[0].t) { raw_lx = raw_ly = 0; raw_lt = raw_rt = 0; raw_buttons = 0; return 1; }
     raw_lx = replay[at].lx; raw_ly = replay[at].ly;
     raw_lt = replay[at].lt; raw_rt = replay[at].rt; raw_buttons = replay[at].buttons;
@@ -304,25 +320,38 @@ static void trace_num(long v) {
 static long mu(float v) { return (long)(v * 1000.0f + (v < 0 ? -0.5f : 0.5f)); }
 
 /* One line when something moved; called from order() in play, with the hero's position. */
-static void trace_tick(unsigned char *hero, const float *pos, unsigned now) {
+static void trace_line(const long *cur, long t_us) {
+    int i;
+    trace_num(t_us); trace_put(",");
+    trace_num((long)trace_lines++);
+    for (i = 0; i < 6; i++) { trace_put(","); trace_num(cur[i]); }
+    trace_put(","); trace_num(raw_lx); trace_put(","); trace_num(raw_ly); trace_put("\r\n");
+}
+
+/* One line when something moved; called from order() in play, before the menus' gates. */
+static void trace_tick(unsigned char *hero, unsigned now) {
     static long last[7];
-    static int open_tried, done;
+    static int open_tried, done, disturbed;
     long cur[7];
     long long q;
+    float pos[3];
     int i, same = 1;
+    unsigned end;
     HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
     if (!x360_pad_trace || done) return;
     if (!replay_t0) return;
     if ((int)(now - replay_t0) < 0) return;
-    if (replay_n && now - replay_t0 > replay[replay_n - 1].t + 2000) {
-        done = 1;
-        trace_flush();
-        if (trace_file != (HANDLE)(long)-1) CloseHandle(trace_file);
-        trace_file = (HANDLE)(long)-1;
-        x360_log("pad: trace written: ");
-        x360_log_num((long)trace_lines);
-        x360_log(" lines\r\n");
-        return;
+    end = replay_n ? replay[replay_n - 1].t + 2000 : 600000;
+    if (replay_n && !disturbed && now - replay_t0 <= replay[replay_n - 1].t && now - world_at > 100) {
+        disturbed = 1;   /* the last frames went to a menu, a tip or a cinematic, not the world */
+        x360_log("pad: replay disturbed (the pad held by a menu, a tip or a cinematic): this run does not count\r\n");
+    }
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    {
+        const float *r = (const float *)(hero + GOG_UNIT_ROTATION);
+        cur[0] = mu(pos[0]); cur[1] = mu(pos[2]); cur[2] = mu(r[2]); cur[3] = mu(r[10]);
+        cur[4] = mu(*(float *)(hero + 0x200)); cur[5] = mu(*(float *)(hero + 0x204));
+        cur[6] = (long)raw_lx * 65536 + raw_ly;
     }
     if (!open_tried) {
         open_tried = 1;
@@ -333,20 +362,22 @@ static void trace_tick(unsigned char *hero, const float *pos, unsigned now) {
         trace_q0 -= (long long)((double)(now - replay_t0) * (double)trace_qpf / 1000.0);   /* t=0 at replay_t0 */
         trace_put("# x360ui pad trace v1 pc\r\nt_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly\r\n");
     }
-    {
-        const float *r = (const float *)(hero + GOG_UNIT_ROTATION);
-        cur[0] = mu(pos[0]); cur[1] = mu(pos[2]); cur[2] = mu(r[2]); cur[3] = mu(r[10]);
-        cur[4] = mu(*(float *)(hero + 0x200)); cur[5] = mu(*(float *)(hero + 0x204));
-        cur[6] = (long)raw_lx * 65536 + raw_ly;
+    QueryPerformanceCounter(&q);
+    if (now - replay_t0 > end) {
+        done = 1;
+        trace_line(cur, (long)end * 1000);   /* the last line: where the hero is at the end */
+        trace_flush();
+        CloseHandle(trace_file);
+        trace_file = (HANDLE)(long)-1;
+        x360_log("pad: trace written: ");
+        x360_log_num((long)trace_lines);
+        x360_log(" lines\r\n");
+        return;
     }
     for (i = 0; i < 7; i++) if (cur[i] != last[i]) same = 0;
     if (same && trace_lines) return;
     for (i = 0; i < 7; i++) last[i] = cur[i];
-    QueryPerformanceCounter(&q);
-    trace_num((long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf)); trace_put(",");   /* no 64-bit division without a CRT */
-    trace_num((long)trace_lines++);
-    for (i = 0; i < 6; i++) { trace_put(","); trace_num(cur[i]); }
-    trace_put(","); trace_num(raw_lx); trace_put(","); trace_num(raw_ly); trace_put("\r\n");
+    trace_line(cur, (long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf));   /* no 64-bit division without a CRT */
     if (now - trace_flushed_at >= 500) { trace_flushed_at = now; trace_flush(); }
 }
 
@@ -356,7 +387,7 @@ static void poll(void) {
     if (now - last_poll < POLL_MS && last_poll) return;
     last_poll = now;
     if (replay_n) {
-        replay_sample(now);   /* at rest before t=0 and after the end: the hand's pad is not read */
+        replay_sample(qms());   /* at rest before t=0; the hand's pad is not read */
         buttons = raw_buttons;
         lx = raw_lx * 1000 / 32767;
         ly = raw_ly * 1000 / 32767;
@@ -1180,9 +1211,10 @@ static void order(void) {
         int x360_pc_menu_up(void);
         if (!x360_in_play()) return;
         if (!replay_t0 && (replay_n || x360_pad_trace)) {
-            replay_t0 = now + (replay_n ? replay_start_ms : 0);
+            replay_t0 = qms() + (replay_n ? replay_start_ms : 0);
             if (!replay_t0) replay_t0 = 1;
         }
+        trace_tick(hero, qms());
         /* PC's settings over the game (opened from its pause menu, which closes): the pad is
          * theirs (QA run 20: A and B there also acted in the world). */
         if (x360_pc_menu_up()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
@@ -1216,7 +1248,7 @@ static void order(void) {
         x360_automap_cycle();
     }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
-    trace_tick(hero, pos, now);
+    world_at = qms();   /* this frame reached the world's input (trace_tick: a disturbed replay) */
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {
         /* How far the hero went after the stick was let go. */

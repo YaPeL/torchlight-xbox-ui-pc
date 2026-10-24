@@ -262,7 +262,8 @@ void x360_load_hook_install(void);
 
 void x360_test_options_notice(const char *names);
 static void read_config(void) {
-    char path[520], text[1024], *line, test_names[160];
+    static char text[4096];   /* static: over a page on the stack needs __chkstk, which is in the CRT */
+    char path[520], *line, test_names[160];
     DWORD n = GetModuleFileNameA(self_module, path, 500), got = 0;
     HANDLE f;
     while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
@@ -272,6 +273,7 @@ static void read_config(void) {
     ReadFile(f, text, sizeof text - 1, &got, 0);
     CloseHandle(f);
     text[got] = 0;
+    if (got == sizeof text - 1) put("x360_ui.ini over 4 KB: the rest is not read\r\n");
     test_names[0] = 0;
     for (line = text; *line;) {
         char *end = line;
