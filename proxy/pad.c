@@ -1360,8 +1360,51 @@ static int direction_changed(void) {
     return c < 0.996f;
 }
 
+/* pad_walk_yaw=1 (a diagnosis, doc section 30): the stick's world direction as the 360's
+ * sub_82199E08 takes it, the stick turned by the camera's yaw (the atan2 of the camera's forward,
+ * client[16]->+8, less 90 degrees), instead of the screen probe's (a point beside the hero on the
+ * screen, cast to the ground: perspective bends it, by up to ~7 degrees away from the screen's
+ * axes). Up is the camera's forward on the ground, right that turned a quarter (-fz, fx). */
+int x360_walk_yaw;
+static int camera_ground(unsigned char *client, float *fx, float *fz) {
+    typedef float *(__fastcall *vec_fn)(void *self, void *edx, float *out);
+    static vec_fn dir;
+    unsigned char *ctl = client ? *(unsigned char **)(client + 0x10) : 0;
+    void *cam = ctl ? *(void **)(ctl + 8) : 0;
+    float d[3], len;
+    if (!dir) {
+        HMODULE ogre = GetModuleHandleA("OgreMain.dll");
+        dir = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedDirection@Camera@Ogre@@QBE?AVVector3@2@XZ") : 0;
+    }
+    if (!dir || !cam) return 0;
+    dir(cam, 0, d);
+    len = root(d[0] * d[0] + d[2] * d[2]);
+    if (len < 1e-3f) return 0;
+    *fx = d[0] / len;
+    *fz = d[2] / len;
+    return 1;
+}
+
 static int probe(unsigned char *client, unsigned char *hero, const float *pos) {
     float hit[3], dx, dz, len;
+    if (x360_walk_yaw) {
+        float fx, fz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f;
+        if (camera_ground(client, &fx, &fz)) {
+            dx = sx * -fz + sy * fx;
+            dz = sx * fx + sy * fz;
+            len = root(dx * dx + dz * dz);
+            if (len < 1e-3f) return 0;
+            world_x = dx / len;
+            world_z = dz / len;
+            face_x = world_x;
+            face_z = world_z;
+            probed_lx = lx;
+            probed_ly = ly;
+            have_world = 1;
+            return 1;
+        }
+        note(2, "pad: no camera for the walk's yaw: the screen probe\r\n");
+    }
     in_probe = 1;
     if (!((find_world_fn)GOG_FIND_WORLD_LOCATION)(client, 0, hit, hero[GOG_HOLD_POSITION])) {
         in_probe = 0;

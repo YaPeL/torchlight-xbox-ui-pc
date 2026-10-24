@@ -3524,3 +3524,26 @@ Stopped there (two causes in a row): (b) is parked, (a) stands alone. Not tried 
 rate (the 360's replay ran at about 177 frames a second, PC's at 105 to 120: a destination each
 frame is then a different rate), and the 360's per-frame `sub_8219C070`, left out.
 
+
+### 30a. The two causes left untried, and the 6 degrees (2026-10-24, the owner's replays 1 and 2)
+
+The owner's route replayed twice more on (a)+(b), each with one diagnosis on (`x360_ui.ini`):
+- `pad_walk_target=1`, the target dropped each frame as the 360's `sub_8219C070(hero, 0)`: no
+  change (route 3's start, 146 ms and 21 degrees of turn before the hero moves, against 143 ms
+  and 21 without; the spins within 0.4 units);
+- `pad_face_walk=0`, no `setTargetDirection` in the plain walk: no change either (143 ms, 19
+  degrees). The 360 takes 742 ms and turns 54 degrees there, and 1791 ms at route 0; GOG's
+  engine walks as it turns whether or not the pad sets the facing.
+Both left out; the start's delay is open (two causes in a row, stopped there).
+
+The camera: the trace's first comment line (`# camera_dir_mu ... camera_pos_mu ... hero_mu`,
+Ogre's `Camera::getDerivedDirection` and `getDerivedPosition` of the controller's camera,
+client `+0x10` then `+8`) reads direction (-0.485, -0.728, 0.485) and position (-19.584, 18.896,
+4.756) at the town's start; the recomp agent read the 360's (`sub_82199E08`'s camera, its
+`+0x410` orientation and `+0x420` position): (-0.48507, -0.72761, 0.48507) and (-19.583, 18.896,
+4.755). The cameras are the same, an exact 45 degree diagonal, so the walk's offset of about 6
+degrees is the pad's: the screen probe (a point beside the hero on the screen cast to the
+ground) against the 360's stick turned by the camera's yaw (`f9 = atan2(x, z) * 57.2958 - 90`).
+From the 360's trace the rule is: stick up walks along the camera's forward on the ground
+`(fx, fz)`, stick right along `(-fz, fx)`. `pad_walk_yaw=1` (a diagnosis) takes the direction
+that way instead of the probe, to replay.
