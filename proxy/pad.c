@@ -1582,8 +1582,8 @@ static void order(void) {
             if (have_world && face_each_frame)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
             /* The 360's walk (sub_82199E08, change b): a destination each frame, 5 times the
-             * stick's length along it (the 360 turns the stick by the camera's yaw; the pad takes
-             * the screen probe's world direction); pad_walk_dest=0 (or no frame count yet) keeps
+             * stick's length (after the 360's dead zone) along the stick turned by the camera's
+             * yaw (probe()); pad_walk_dest=0 (or no frame count yet) keeps
              * the old one, 2 units every 0.1 s (sub_8221B8E8's, the 360's walk after a held action).
              * Left out: the 360's per-frame sub_8219C070(hero, 0) and its +652 handle's release
              * after the destination (the target's drop is the pad's on the stick's first frame). */
