@@ -3857,3 +3857,16 @@ world's pause; stopped after two tries). The place's name (`x360hud_LevelName`) 
 `LevelName` only while that was seen on screen, and the 360's inventory hides PC's sheets: it now
 follows PC's window's own visibility. Played by the owner (2026-10-25): the world and the camera
 still under the inventory, the place's name kept.
+
+## 42. A blue line at 16:10 (the Steam Deck, 2026-10-25)
+
+The owner's Deck (1280x800): a 1-pixel blue line at the top and the left of the 3D view, with
+the mod only, in play (PC's own main menu shows it at the left without the mod too). PC's 3D view
+leaves its first row and column uncovered at 16:10, and PC's bottom HUD (`BOTTOMHUD.LAYOUT`) has
+four 1-pixel black borders (`LeftBorder`, `RightBorder`, `TopBorder`, `BottomBorder`, the image
+`GuiLook/BlackLine`) that cover them in play. The port makes that HUD transparent as it loads
+(section 23): the four borders now keep their own alpha (`InheritsAlpha False`, `Alpha 1`).
+Reproduced and checked on GOG at 1280x800 under Proton; the owner saw it gone in play.
+PC's own main menu shows the same line at the left of its 3D view, without the mod too: at the
+owner's request two 1-pixel black lines of the same image are added under its root
+(`MAINMENUFRAME.LAYOUT`) at its left and top (`main_menu_borders`); the owner saw it gone.

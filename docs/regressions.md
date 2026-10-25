@@ -262,6 +262,20 @@ here. Games' texts are named by role, never quoted.
   once missed it. Now the tests stay patched until 2 s after the last frame at the shop.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
+## PC's main menu frame flickering away at a screen change (open)
+
+- **What happened:** the owner (2026-10-25, every store): going from PC's main menu to the load
+  or the creation screen and back, PC's frame (its title at the top, the bottom bar with the
+  buttons) vanishes for an instant, the 3D scene alone seen.
+- **Found:** not without the mod; not with the mod and `pad=0` (the mouse used): so something run
+  only with the pad's ticks. Not the shops' and the modal's 3D boards (hidden in play only: still
+  seen), not PC's interactive bars (`pc_bars_off`, transparent in play only: still seen). Stopped
+  after those two tries; at the owner's suggestion a third: not the cursor's hiding either (an
+  experiment with Windows' and CEGUI's cursors always shown: still seen). Next, by a diagnosis
+  build with each of the pad's out-of-play ticks switched off by an ini key, one run each:
+  `pc_menu_tick`'s cursor moves (`nav_point` on a new screen's first button), `hotkeys_off`,
+  `keys_off`, the HUD's tick, the frame listener's other ticks.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:

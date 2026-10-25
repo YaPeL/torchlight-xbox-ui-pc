@@ -5644,10 +5644,53 @@ static void add_frame_listener(void);
 /* PC's tip window's root (tipmenu.layout, loaded once at the game's start): made transparent as it
  * loads, so PC's tip is never drawn before the 360's takes its place (the owner saw it for a
  * moment); tip_tick shows it again only when it is not a tip (the settings' confirmations). */
+/* PC's main menu leaves its 3D view's first column and row uncovered at 16:10 (the Steam Deck: a
+ * blue line, PC's own, without the mod too; the owner asked for it gone): two 1-pixel black lines
+ * of PC's own image (GuiLook/BlackLine, its HUD's borders') at its left and top, under its root. */
+static void main_menu_borders(void *root) {
+    typedef void *(__fastcall *create_fn)(void *wm, void *edx, const void *type, const void *name, const void *prefix);
+    static create_fn create;
+    static const char *const names[2] = {"LeftLine", "TopLine"};
+    static const char *const rects[2] = {"{{0,0},{0,0},{0,1},{1,0}}", "{{0,0},{0,0},{1,0},{0,1}}"};
+    void *wm = window_manager();
+    int b;
+    if (!create) create = (create_fn)need("?createWindow@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00@Z");
+    if (!create || !wm || !root) return;
+    for (b = 0; b < 2; b++) {
+        object t, nm, pre;
+        void *w;
+        string_ctor(&t, 0, "GuiLook/StaticImage");
+        string_ctor(&nm, 0, names[b]);
+        string_ctor(&pre, 0, "x360mmb_");
+        __try { w = create(wm, 0, &t, &nm, &pre); } __except (1) { w = 0; }
+        string_dtor(&pre, 0); string_dtor(&nm, 0); string_dtor(&t, 0);
+        if (!w) { x360_log("x360 menu: the main menu's border not made\r\n"); return; }
+        prop(w, "UnifiedAreaRect", rects[b]);
+        prop(w, "Image", "set:GuiLook image:BlackLine");
+        prop(w, "FrameEnabled", "False");
+        prop(w, "BackgroundEnabled", "False");
+        prop(w, "MousePassThroughEnabled", "True");
+        prop(w, "AlwaysOnTop", "True");
+        add_child(root, 0, w);
+    }
+    x360_log("x360 menu: the main menu's 1-pixel borders added\r\n");
+}
+
 void x360_pc_layout_loaded(const char *file, void *root) {
     static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", "TIPMENU.LAYOUT", 0};
     unsigned n = length(file), i;
     if (!resolve()) return;
+    {
+        static const char mm[] = "MAINMENUFRAME.LAYOUT";
+        unsigned m = sizeof mm - 1, j;
+        int same = n >= m;
+        for (j = 0; same && j < m; j++) {
+            char c = file[n - m + j];
+            if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+            same = c == mm[j];
+        }
+        if (same) __try { main_menu_borders(root); } __except (1) { x360_log("x360 menu: exception adding the main menu's borders\r\n"); }
+    }
     for (i = 0; hidden[i]; i++) {
         unsigned m = length(hidden[i]), j;
         int same = n >= m;
@@ -5665,6 +5708,18 @@ void x360_pc_layout_loaded(const char *file, void *root) {
             pc_tip_layout_root = root;
         } else {
             __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+            if (i == 0) {
+                /* Its four 1-pixel black borders kept: PC's 3D view leaves its first row and column
+                 * uncovered at 16:10 (the Steam Deck's 1280x800: a blue line at the top and the left,
+                 * seen in PC's own main menu too), and these cover it in play; made transparent
+                 * with the rest, the line showed (the owner's Deck). */
+                static const char *const borders[] = {"LeftBorder", "RightBorder", "TopBorder", "BottomBorder"};
+                unsigned b;
+                for (b = 0; b < 4; b++) {
+                    void *w = descendant_ending(root, borders[b]);
+                    __try { prop(w, "InheritsAlpha", "False"); prop(w, "Alpha", "1"); } __except (1) { }
+                }
+            }
         }
         x360_log("x360 hud: PC's "); x360_log(hidden[i]); x360_log(" transparent as it loads\r\n");
     }
