@@ -1493,7 +1493,7 @@ static void refresh(void) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
                 a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant")
-                    : at_enchant == 0x1b && can_retire(item) ? x360_text("act.retire") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
+                    : at_enchant == 0x1b && can_retire(item) && !panels[active_panel].is_pet ? x360_text("act.retire") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
             } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
                  * transmuter's own prompt under its rows. */
@@ -7354,7 +7354,7 @@ static int keys_open;            /* set each frame by keys_off: in play, no PC s
 static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
 static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
 static int keys_console_key;     /* the console's key went down: look for its window at once */
-HWND x360_keys_window(void) { return keys_window; }
+HWND x360_keys_window(void) { return keys_old_proc ? keys_window : 0; }   /* only once subclassed: what is posted to it reaches keys_proc */
 static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
     int i;
