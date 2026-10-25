@@ -308,8 +308,10 @@ here. Games' texts are named by role, never quoted.
   descendant saved (`save.tmp`) with and without the mod. PC's Retire button is command 9 of its
   enchant menu, which calls the act `0x57a800` the port calls.
 - **Ruled out:** PC's sheets left hidden after the shop (shown again out of play: no change, none
-  was hidden); the 360's bag (`bag=pc`: the same). Stopped after two tries. Next: the creation's
-  CreatePlayer clicked with the mouse instead of the pad's A, to tell the pad's click from the rest.
+  was hidden); the 360's bag (`bag=pc`: the same); the pad's click (CreatePlayer clicked with the
+  mouse: the same). Stopped. Left: what the port does between the retirement and the creation
+  (its shop's closing, the side panels' test patch, the boards, the load hook armed by a menu
+  giving way), to be switched off one by one in a diagnosis build.
 
 ## QA checklist
 
