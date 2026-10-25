@@ -5869,13 +5869,15 @@ static void press_pc(const char *prefix, const char *name) {
 static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
 
 /* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
- * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), clicked as the pad's A does out of
- * play (proxy/pad.c). */
+ * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), a left click at its centre
+ * (press_pc). */
 void x360_cinematic_skip(void) {
     static char cin_prefix[64];
     static const char *const needs[] = {"DialogTextFrame", 0};
-    if (!cin_prefix[0] || !win_of(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
-    if (cin_prefix[0] && pc_shown_in(cin_prefix, "Skip")) press_pc(cin_prefix, "Skip");
+    /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
+     * other layout of PC's has a window ending in Skip. */
+    if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
+    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) press_pc(cin_prefix, "Skip");
     else x360_log("x360 menu: Start in a cinematic, PC's Skip not shown\r\n");
 }
 
