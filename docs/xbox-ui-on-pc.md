@@ -3683,6 +3683,25 @@ within 1 %. The one difference left is the fastest spins: with the stick turning
 degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 360's every frame
 (change b, parked in section 30 before the dead zone was found).
 
+## 34. PC's resurrection screen with the pad (2026-10-24)
+
+In the owner's run of 2026-10-24 the hero died and PC's resurrection screen (`diemenu.layout`:
+`Frame` holding `Title`, `Resurrect1`-`3` with their `Choice1`-`3` texts, and `ExitGame`) could
+not be left with the pad: no code gave its buttons to the pad. The 360 has its own screen (its
+`diemenu.layout`, converted with the others) that the port does not show yet; the owner chose the
+quicker way for now: PC's screen with the pad, as PC's pause menu (section 17's list of PC's
+buttons).
+
+- `pc_menu_tick` finds its prefix by `Resurrect1` (and `Resurrect2` under the same prefix), and
+  while its `ExitGame` is attached and shown in play, with no screen of the 360's over it (pause,
+  inventory, tip, modal, dialog), collects the buttons under its `Frame` only (PC's HUD buttons
+  are on the same sheet, transparent).
+- The d-pad or the stick moves between them (top to bottom), A clicks the focused one. The play
+  pad gets nothing meanwhile (`x360_pc_menu_up`, as PC's settings: no move, skill, Start or
+  Back). The log names them as `PC's buttons for the pad 4 (resurrection)`.
+- Not ported: the 360's own resurrection screen (its look and its pad, which a port would read in
+  the 360's code first).
+
 ## 35. Start during a cinematic (2026-10-24)
 
 The owner saw the pause misbehave during a cinematic. **[read]** The 360's frame update
@@ -3722,3 +3741,14 @@ are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of
 CCinematicMenu's input) is not read. **[seen]** The owner: PC's Escape does there what the 360's
 Start does. `x360_cinematic_skip` now posts Escape (key down and up, as `pad.c`'s `post_key`) to the game's window when
 no Skip is attached; `keys_proc` lets it through while the cinematic holds.
+
+## 36. PC's waypoint portals with the pad (2026-10-24)
+
+The owner, on a strong test character past the first boss: PC's waypoint portals screen
+(`waypointmenu.layout`: `Frame` holding `Title`, `Button1`-`10` with their `Choice1`-`10` texts,
+and `Cancel`) could not be moved in with the pad. The owner's decision: PC's screen for now, with
+the pad, as the resurrection's (section 34). Its prefix is found by `Choice10` (with `Button10` and
+`Cancel` under it); while its `Cancel` is attached and shown in play, with no screen of the 360's
+over it, its `Frame`'s visible buttons are the pad's (the d-pad or the stick, A), B clicks its
+`Cancel`, and the play pad gets nothing (`x360_pc_menu_up`). The log names them as `PC's buttons
+for the pad N (waypoints)`. Not ported: the 360's own waypoint screen.

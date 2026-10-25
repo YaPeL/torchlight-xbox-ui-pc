@@ -4835,7 +4835,8 @@ int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); 
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
 static int x360_pc_settings_up;   /* PC's settings shown (pc_menus_nav_tick) */
-int x360_pc_menu_up(void) { return x360_pc_settings_up; }
+static int x360_pc_die_up;        /* PC's resurrection screen has the pad (pc_menu_tick) */
+int x360_pc_menu_up(void) { return x360_pc_settings_up || x360_pc_die_up; }
 unsigned x360_pad_eaten;          /* buttons PC's menus used, kept from the play pad until let go (proxy/pad.c) */
 void x360_pause_pad(unsigned pressed, int ly) {
     static int held;
@@ -4963,30 +4964,35 @@ static void left_column_for(int stash) {
     for (j = 0; j < 6; j++) { panels[2].selected[j] = kept[kind].selected[j]; panels[2].top[j] = kept[kind].top[j]; }
 }
 
-/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window CEGUI
- * has under the mouse (System::getWindowContainingMouse), its name and its parents'. */
-static void log_click_window(void) {
+/* The window CEGUI has under the mouse (System::getWindowContainingMouse), its name and its
+ * parents', logged after label. */
+static void log_under_mouse(const char *label) {
     typedef void *(__fastcall *under_fn)(const void *self, void *edx);
     typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
     typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
     static under_fn under; static name_fn gn; static parent_fn gp;
-    static int was_down;
-    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
     void *sys, *w;
     int depth = 0;
-    if (down == was_down) return;
-    was_down = down;
-    if (!down) return;
     if (!under) under = (under_fn)need("?getWindowContainingMouse@System@CEGUI@@QBEPAVWindow@2@XZ");
     if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
     sys = system_ptr();
     if (!under || !gn || !gp || !sys) return;
     w = under(sys, 0);
-    x360_log("x360 click: under the mouse");
+    x360_log(label);
     for (; w && depth < 6; w = gp(w, 0), depth++) { x360_log(depth ? " < " : " "); x360_log(c_str(gn(w, 0), 0)); }
     if (!depth) x360_log(" nothing");
     x360_log("\r\n");
+}
+
+/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window under
+ * the mouse. */
+static void log_click_window(void) {
+    static int was_down;
+    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+    if (down == was_down) return;
+    was_down = down;
+    if (down) log_under_mouse("x360 click: under the mouse");
 }
 
 void x360_shop_tick(void) {
@@ -6490,17 +6496,41 @@ static int pc_tip_up(void) {
  * brought in front again. */
 static void press_tip(const char *name) {
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    typedef void *(__fastcall *get_target_fn)(const void *self, void *edx);
+    typedef void (__fastcall *set_target_fn)(void *self, void *edx, void *w);
     static vis_fn vis;
-    void *top = pc_tip_sheet();
-    int was_hidden;
+    static get_target_fn get_target;
+    static set_target_fn set_target;
+    static parent_of_fn gp;
+    void *top = pc_tip_sheet(), *sys = system_ptr(), *target = 0, *up;
+    int was_hidden, depth = 0;
     if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!get_target) get_target = (get_target_fn)need("?getModalTarget@System@CEGUI@@QBEPAVWindow@2@XZ");
+    if (!set_target) set_target = (set_target_fn)need("?setModalTarget@System@CEGUI@@QAEXPAVWindow@2@@Z");
+    if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    /* A window opened over the tip (PC's modal, as the mod's notice: the owner's run of
+     * 2026-10-24, where the tip's clicks closed nothing) must not take the click: the tip's sheet
+     * in front for it, and another window's CEGUI modal target, if any, let go for the click
+     * only. Which window got it is logged (the cause is not settled). */
+    if (sys && get_target && set_target && gp) {
+        target = get_target(sys, 0);
+        for (up = target; up && depth++ < 32; up = gp(up, 0))
+            if (up == top) { target = 0; break; }
+        if (target) { set_target(sys, 0, 0); x360_log("x360 tip: another window was modal, let go for the click\r\n"); }
+    }
     was_hidden = top && vis && !vis(top, 0, 1);
     if (was_hidden) set_visible(top, 0, 1);
-    if (top && inventory_open) move_to_front(top, 0);
+    if (top) move_to_front(top, 0);
     press_pc(pc_tip_prefix, name);
+    log_under_mouse("x360 tip: the click went to");
     if (was_hidden) set_visible(top, 0, 0);
     if (inventory_open && master_root) move_to_front(master_root, 0);
+    if (target && !get_target(sys, 0)) set_target(sys, 0, target);
 }
+
+/* A tip up: the 360's shown, or PC's window shown and not yet seen by tip_tick (which runs after
+ * the notice and the stop). PC's modal is not opened over it: it would take the tip's clicks. */
+static int tip_up_now(void) { return x360_tip_open() || (pc_tip_prefix[0] && pc_tip_up()); }
 
 /* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
 static void pc_tip_alpha(const char *a) {
@@ -7702,7 +7732,9 @@ static void queue_notice(const char *text) {   /* appended to any notice not sho
 }
 static void notice_tick(void) {
     static unsigned short wide[1400];
-    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
+    /* Not while a tip is up (the owner's run of 2026-10-24: the new game's welcome tip, then the
+     * notice over it, and neither closed): shown once the tip is closed. */
+    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open() || tip_up_now()) return;
     utf8_to_wide(notice_utf8, wide, sizeof wide / sizeof wide[0]);
     if (open_pc_modal("The mod", wide)) { notice_pending = 0; notice_utf8[0] = 0; x360_log("x360: the notice shows\r\n"); }
 }
@@ -7803,7 +7835,7 @@ static void stop_unsaved(const char *why, int count) {
     stop_state = 3;   /* opened by stop_tick once no other modal is open (closing that one must not end the game) */
 }
 static void stop_tick(void) {
-    if (stop_state == 3 && !pc_modal_menu_open()) {
+    if (stop_state == 3 && !pc_modal_menu_open() && !tip_up_now()) {   /* a tip closed first; STOP_WAIT_MS still holds */
         stop_state = x360_test_stop_modal_fails ? 1 : open_pc_modal("The bag", stop_wbody);   /* the test: asked, never shown */
         stop_t0 = GetTickCount();   /* its own 15 s, from now */
         if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
@@ -8255,7 +8287,11 @@ static void pc_menus_nav_tick(void) {
     static const char *const settings_needs[] = {"Cancel", 0};
     static char create_prefix[64];
     static const char *const create_needs[] = {"Vanquisher", 0};
-    int create = 0;
+    static char die_prefix[64];
+    static const char *const die_needs[] = {"Resurrect2", 0};
+    static char wp_prefix[64];
+    static const char *const wp_needs[] = {"Button10", "Cancel", 0};
+    int create = 0, die = 0, wp = 0;
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
@@ -8271,10 +8307,13 @@ static void pc_menus_nav_tick(void) {
     if (!sheet || !rect_of) return;
     /* PC's settings screen: its Apply and Cancel shown. */
     /* The searches walk PC's whole GUI: every 250 ms at most (the review); the checks each frame. */
-    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer"))) {
+    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer") ||
+                                    !die_prefix[0] || !win_of(die_prefix, "Resurrect1") || !wp_prefix[0] || !win_of(wp_prefix, "Choice10"))) {
         last_search = now;
         if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
         if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
+        if (!die_prefix[0] || !win_of(die_prefix, "Resurrect1")) find_pc_by_suffix("Resurrect1", die_needs, die_prefix, sizeof die_prefix);
+        if (!wp_prefix[0] || !win_of(wp_prefix, "Choice10")) find_pc_by_suffix("Choice10", wp_needs, wp_prefix, sizeof wp_prefix);
     }
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
@@ -8282,6 +8321,17 @@ static void pc_menus_nav_tick(void) {
     /* And PC's character creation (its name is typed): the mouse shown there too (the user). Told by
      * its Destroyer, always there (its CreatePlayer shows once a name is typed: QA run 16). */
     create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
+    /* PC's resurrection screen (diemenu.layout: Resurrect1-3, ExitGame), shown when the hero dies:
+     * its buttons for the pad as the pause menu's (the owner's run of 2026-10-24: the pad could not
+     * leave it; the 360's own screen is not ported). Told by ExitGame, shown whatever choices it
+     * offers; not while a screen of the 360's is over it. The play pad gets nothing meanwhile
+     * (x360_pc_menu_up: no move, skill, pause or inventory). */
+    die = in_play && die_prefix[0] && pc_attached(die_prefix, "ExitGame") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    /* PC's waypoint portals (waypointmenu.layout: Frame, Button1-10 with Choice1-10, Cancel), opened
+     * at a waypoint once the first boss is dead: PC's screen with the pad, as the resurrection's
+     * (the owner, 2026-10-24: kept PC's for now; the pad could not move in it). B its Cancel. */
+    wp = !die && in_play && wp_prefix[0] && pc_attached(wp_prefix, "Cancel") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    x360_pc_die_up = die || wp;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     cursor_hook_install();
@@ -8298,7 +8348,7 @@ static void pc_menus_nav_tick(void) {
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
         }
     }
-    if (in_play && !pc_pause_open() && !settings) { nav_count = 0; return; }
+    if (in_play && !pc_pause_open() && !settings && !die && !wp) { nav_count = 0; return; }
     /* Collected every frame: no pointer kept from one frame to the next (the review: a window
      * destroyed meanwhile, as a load ends, was used). */
     (void)last_collect;
@@ -8327,6 +8377,8 @@ static void pc_menus_nav_tick(void) {
                 top = up;
             }
             if (top) nav_collect(top, 0, 1);
+        } else if (die || wp) {
+            nav_collect(win_of(die ? die_prefix : wp_prefix, "Frame"), 0, 1);   /* its own windows only: PC's HUD buttons are on its sheet */
         } else if (in_play) {
             static unsigned char *logged_pm;
             unsigned char *pm = pc_pause_menu();
@@ -8370,7 +8422,7 @@ static void pc_menus_nav_tick(void) {
             static str_fn gn;
             if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
             x360_log("x360 menu: PC's buttons for the pad "); x360_log_num(nav_count);
-            x360_log(in_play ? " (pause):" : ":");
+            x360_log(die ? " (resurrection):" : wp ? " (waypoints):" : in_play ? " (pause):" : ":");
             for (i = 0; i < nav_count && gn; i++) { x360_log(" "); x360_log(c_str(gn(nav_list[i], 0), 0)); }
             x360_log("\r\n");
         }
@@ -8437,7 +8489,7 @@ static void pc_menus_nav_tick(void) {
             if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
         }
     }
-    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings)) {
+    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings && !wp)) {
         /* B: the screen's way back, its Cancel (settings, the delete popup) or Back (creation,
          * difficulty, load), clicked (the user, QA run 19). In play PC's pause menu is closed by
          * x360_pause_pad. */
