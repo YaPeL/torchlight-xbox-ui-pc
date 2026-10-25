@@ -234,6 +234,11 @@ here. Games' texts are named by role, never quoted.
   when the proxy showed PC's sheets again (`hide_pc_ui(0)`) at once as the 360's shop frame
   closed. Now at a shop's close PC's sheets come back 600 ms later (`pc_ui_back_at`, checked in
   `pc_menus_guard`).
+- **Then (the owner's run):** the panels' content no longer seen, but two blue columns still
+  moved at the close: the world's viewport narrowing (PC's `0x402603`..`0x4027f1` size it from
+  the side tests and the panels' widths, `0x541290`, `0x5411d0`). The log showed the tests given
+  back at once at a close, not 2 s after: the grace keyed on a change of the shop's state seen
+  once missed it. Now the tests stay patched until 2 s after the last frame at the shop.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist

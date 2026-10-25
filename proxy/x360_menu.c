@@ -8489,13 +8489,13 @@ void x360_frame_tick(void) {
          * narrowed the world, its strips blue with the boards hidden for good (the owner's run of
          * 2026-10-24). Not always: the same tests hold PC's game-state changes back while a side
          * panel is open (its client update, 0x41ba36), which must keep PC's rule (the review). */
-        static unsigned shop_closed_at;
-        static int was_shop;
+        static unsigned last_at_shop;   /* the last frame with the shop frame open (0: none yet) */
         int at_shop = inventory_open && shop;
-        if (was_shop && !at_shop) shop_closed_at = GetTickCount() | 1;
-        was_shop = at_shop;
-        if (shop_closed_at && GetTickCount() - shop_closed_at > 2000) shop_closed_at = 0;
-        __try { side_panels_test(at_shop || shop_closed_at != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
+        if (at_shop) last_at_shop = GetTickCount() | 1;
+        else if (last_at_shop && GetTickCount() - last_at_shop > 2000) last_at_shop = 0;
+        /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
+         * once as a shop closed, the world's width moved, two blue columns). */
+        __try { side_panels_test(last_at_shop != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
