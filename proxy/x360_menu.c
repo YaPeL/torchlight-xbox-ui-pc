@@ -5987,7 +5987,9 @@ static void interact_prompt(void) {
          * agent's reading): pos + (0.4, 1.0 - unit+348, 0.4) + the camera's up axis (its orientation's
          * Y, unit length). The 360's +348 measured on the recomp (2026-10-25): 0.8 for the units that
          * stand (merchants, stashes, Goldenrod), 0.3 for the ones that walk (Syl, Trill-Bot, Alma);
-         * PC's field is not known yet (DIAGNOSIS below), 0.8 taken meanwhile. */
+         * PC's unit has it at the same +348 (logged on GOG: the same 0.8 and 0.3). The owner's capture
+         * at the stash: the prompt within some 30 pixels of the 360's at 1080 (its camera not quite
+         * the same). */
         typedef float *(__fastcall *vec_fn)(const void *self, void *edx, float *out);
         static vec_fn derived_up;
         static int looked;
@@ -6001,18 +6003,8 @@ static void interact_prompt(void) {
         }
         if (derived_up && cam) derived_up(cam, 0, up);
         pos[0] += 0.4f + up[0];
-        pos[1] += 1.0f - 0.8f + up[1];
+        pos[1] += 1.0f - *(float *)(u + 348) + up[1];
         pos[2] += 0.4f + up[2];
-        {   /* DIAGNOSIS: the floats around the 360's +348 in PC's unit, once per target */
-            static unsigned char *logged;
-            int o;
-            if (u != logged) {
-                logged = u;
-                x360_log("x360 interact: unit floats");
-                for (o = 0x150; o <= 0x180; o += 4) { x360_log(" +"); x360_log_num(o); x360_log("="); x360_log_num((long)(*(float *)(u + o) * 1000)); }
-                x360_log("\r\n");
-            }
-        }
     }
     if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
     m = 26.0f * k;
