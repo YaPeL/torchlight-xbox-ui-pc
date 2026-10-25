@@ -3156,6 +3156,20 @@ static void frame_load(void) {
 
 static void shop_close(void);
 static void set_page(int p);
+/* The world frozen while the 360's inventory is open, as on the 360 (the owner, 2026-10-25: it
+ * stops as with Start; the port's kept going). PC's own pause: CGame's update (GOG 0x40a281..)
+ * sets its "paused" (CGame +0x81) when both side panels cover the screen (0x549b70, which the
+ * port answers no for), a modal is open (0x540e80) or CGameUI's +0x173d is set (its togglePause
+ * *(OT)*); that byte is set here while the inventory is open, and cleared after only if it was
+ * set here (PC's pause keeps its own). */
+#define GOG_UI_PAUSED 0x173d
+static int inventory_paused;
+static void inventory_pause(int on) {
+    if (!ui) return;
+    if (on && !ui[GOG_UI_PAUSED]) { ui[GOG_UI_PAUSED] = 1; inventory_paused = 1; x360_log("x360 menu: the world paused under the inventory\r\n"); }
+    else if (!on && inventory_paused) { ui[GOG_UI_PAUSED] = 0; inventory_paused = 0; }
+}
+
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
     if (inventory_open && shop && !shop_closing) { shop_close(); return; }
@@ -3168,6 +3182,7 @@ void x360_inventory_toggle(void) {
     frame_load();
     if (!inventory_root) return;
     inventory_open = !inventory_open;
+    __try { inventory_pause(inventory_open); } __except (1) { inventory_paused = 0; }
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
         /* At the transmuter the bag is focused (town/05). */
@@ -5354,8 +5369,9 @@ static void mirror_bar(const char *bar, const char *sub, int horizontal, float f
     mirror_bar_of(HUD_PREFIX, bar, sub, horizontal, full);
 }
 
-/* A window of the 360's HUD shown as PC's of the same name, with its text. */
-static void mirror_text_of(const char *prefix, const char *name) {
+/* A window of the 360's HUD shown as PC's of the same name, with its text; with own_only, as PC's
+ * window itself is, its sheet's hiding not counted (the 360's inventory hides PC's sheets). */
+static void mirror_text_shown(const char *prefix, const char *name, int own_only) {
     void *p = pc_window(name), *x = win_of(prefix, name);
     char value[256];
     static is_visible_fn vis;
@@ -5364,8 +5380,9 @@ static void mirror_text_of(const char *prefix, const char *name) {
     if (!p || !vis) { show(x, 0); return; }
     read_prop(p, "Text", value, sizeof value);
     prop(x, "Text", value);
-    show(x, vis(p, 0, 0));
+    show(x, vis(p, 0, own_only ? 1 : 0));
 }
+static void mirror_text_of(const char *prefix, const char *name) { mirror_text_shown(prefix, name, 0); }
 
 static void mirror_text(const char *name) { mirror_text_of(HUD_PREFIX, name); }
 
@@ -5761,7 +5778,8 @@ static void hud_tick(void) {
             }
         }
     }
-    mirror_text("LevelName");
+    /* The place's name stays with the 360's inventory open, as on the 360 (the owner, 2026-10-25). */
+    mirror_text_shown(HUD_PREFIX, "LevelName", 1);
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
     hud_stage = "target";
