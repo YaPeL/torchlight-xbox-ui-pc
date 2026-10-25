@@ -8555,6 +8555,35 @@ void x360_frame_tick(void) {
         if (was_shop && !at_shop) shop_closed_at = GetTickCount() | 1;
         was_shop = at_shop;
         if (shop_closed_at && GetTickCount() - shop_closed_at > 2000) shop_closed_at = 0;
+        {
+            /* DIAGNOSIS (branch diag-shop-close, not for develop): for 6 s after a shop closes,
+             * every 100 ms, each of CGameUI's side panels (+0x16b8..+0x16bc) and its virtuals +8
+             * and +0xc (0x541090 is true for one with +8 false and +0xc true), and PC's merchant
+             * menu's byte +0x18. */
+            typedef unsigned char (__fastcall *vb_fn)(void *self, void *edx);
+            static unsigned diag_from, diag_last, diag_seen;
+            if (shop_closed_at && shop_closed_at != diag_seen) diag_from = diag_seen = shop_closed_at;
+            if (diag_from && GetTickCount() - diag_from > 6000) diag_from = 0;
+            if (diag_from && GetTickCount() - diag_last >= 100 && ui) {
+                void **b = *(void ***)(ui + 0x16b8), **e = *(void ***)(ui + 0x16bc);
+                unsigned char *mm = *(unsigned char **)(ui + 0x2d8);
+                diag_last = GetTickCount();
+                x360_log("diag: shop closed + ms "); x360_log_num((long)(GetTickCount() - diag_from));
+                x360_log(" merchant+0x18 "); x360_log_num(mm ? mm[0x18] : -1);
+                x360_log(" panels");
+                __try {
+                    for (; b && e && b < e && e - b < 32; b++) {
+                        void *pnl = *b;
+                        void **vt = pnl ? *(void ***)pnl : 0;
+                        if (!vt) continue;
+                        x360_log(" "); x360_log_num((long)vt);
+                        x360_log(((vb_fn)vt[2])(pnl, 0) ? ":8=1" : ":8=0");
+                        x360_log(((vb_fn)vt[3])(pnl, 0) ? ",c=1" : ",c=0");
+                    }
+                } __except (1) { x360_log(" (exception)"); }
+                x360_log("\r\n");
+            }
+        }
         __try { side_panels_test(at_shop || shop_closed_at != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
