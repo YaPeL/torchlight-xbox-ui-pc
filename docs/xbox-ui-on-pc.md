@@ -3889,5 +3889,10 @@ PC opens CEnchantMenu in mode `0x1b` for it, and its act (`0x57a800`, the mode's
 `0x57c42f`) does the same on the item in the hero's slot 14 (`removeEquipment`, the rename while
 `+0x22c` is 0, `0x4c0090`, `+0x2478`/`+0x247c`, the hero's `+0x9c4`). The port opens its enchanter
 frame for `0x1b` with the `retire` panel, A on a weapon, armour or trinket of the hero's bag puts
-it in slot 14 and calls PC's act (the pet's bag: nothing). **Retiring ends the character: tested
-only on a copy of a save.** Not played yet.
+it in slot 14 and calls PC's act (the pet's bag: nothing), posted to the game's window and run
+from its messages as PC's Retire button's. PC's enchant tip there is closed, as the 360 shows none
+(the tips the 360 never shows, the branch of PC's tips). Leaving play at once, the retirement left
+PC's menus mid-closing; the side-panel tests are kept patched out of play (regressions.md). **Retiring
+ends the character: tested only on a copy of a save.** Played by the owner (2026-10-25, the recomp
+agent's save): the screen as the 360's, the hero retired, the descendant created, its difficulty
+screen and its game.
