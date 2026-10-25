@@ -478,13 +478,7 @@ struct Screens::State {
     if (entered) {
       focus(bag == "pc" ? 0 : 1);
     }
-    // A on the bag already chosen goes on, as Next (the owner, 2026-10-25: A seemed to do nothing);
-    // A on the other one chooses it first (the 360's shows its warning before going on).
-    const bool can_go = bag == "pc" || !saves.empty() || no_backup_ok;
-    if (ImGui::Selectable("##pc", bag == "pc", 0, ImVec2(0, h))) {
-      if (bag == "pc") go(Screen::Summary);
-      bag = "pc";
-    }
+    if (ImGui::Selectable("##pc", bag == "pc", 0, ImVec2(0, h))) bag = "pc";
     ImGui::SameLine(ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginGroup();
     ImGui::PushFont(fonts.bold, 0.0f);
@@ -492,10 +486,7 @@ struct Screens::State {
     ImGui::PopFont();
     muted("Three sections of 21 slots: any item, spells, fish. The game stays as it is without the mod.");
     ImGui::EndGroup();
-    if (ImGui::Selectable("##360", bag == "360", 0, ImVec2(0, h))) {
-      if (bag == "360" && can_go) go(Screen::Summary);
-      bag = "360";
-    }
+    if (ImGui::Selectable("##360", bag == "360", 0, ImVec2(0, h))) bag = "360";
     ImGui::SameLine(ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginGroup();
     ImGui::PushFont(fonts.bold, 0.0f);

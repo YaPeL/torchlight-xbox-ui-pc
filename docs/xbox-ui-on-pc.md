@@ -3827,5 +3827,6 @@ took only a file (the folder's "Use this folder" not reached); on the result, wi
 the buttons below (open the game, start again, close) could not be reached. Each screen's body is
 an ImGui child window, and the pad's navigation stayed inside it: every body now has
 `ImGuiChildFlags_NavFlattened` (Dear ImGui 1.92.5), so the d-pad goes on to the footer's buttons.
-In the bag's screen, A on the bag already chosen goes on as Next; on the other one it chooses it
-first (the 360's warning shown before going on). Not run with a pad yet.
+In the bag's screen A chooses a bag and the d-pad reaches Next (or Start goes on): an A that also
+went on was dropped, a Selectable reporting one A at its press and its release on a slow frame
+(CI). Not run with a pad yet.
