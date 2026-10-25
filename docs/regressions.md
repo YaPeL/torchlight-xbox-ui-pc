@@ -266,6 +266,7 @@ here. Games' texts are named by role, never quoted.
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
+- a town NPC without a portrait after one with it: no portrait shown;
 - a quest offer with reward items: the left stick's left and right go through them, each one's card shown, and back to none;
 - a waypoint's portals screen: a destination chosen with the d-pad and A, B cancels;
 - the hero's death: PC's resurrection screen's buttons chosen with the d-pad and A;
