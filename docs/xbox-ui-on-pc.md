@@ -3820,6 +3820,22 @@ the ini is written over the converted folder already in place; nothing is conver
 wizard's "Change to the 360's bag" goes to the bag's screen and the summary, without the package.
 A test runs both installers' `set-bag` both ways (the ini, one backup, the converted files the same).
 
+## 39. The wizard with a pad: the buttons under a screen's body (2026-10-25)
+
+The owner, with a pad: in the bag's screen A on a bag seemed to do nothing; in the file browser A
+took only a file (the folder's "Use this folder" not reached); on the result, with "Details" open,
+the buttons below (open the game, start again, close) could not be reached. Each screen's body is
+an ImGui child window, and the pad's navigation stayed inside it: every body now has
+`ImGuiChildFlags_NavFlattened` (Dear ImGui 1.92.5), so the d-pad goes on to the footer's buttons.
+In the bag's screen A chooses a bag and the d-pad reaches Next (or Start goes on): an A that also
+went on was dropped, a Selectable reporting one A at its press and its release on a slow frame
+(CI). Not run with a pad yet.
+The screens' default items were focused by SetKeyboardFocusHere, asked before the item: inside a
+NavFlattened child it was never resolved, the focus left on the last screen's footer button of the
+same id (the wizard's tests: the bag's first option never focused, A took Next, the summary passed).
+The focus is now given right after the item (ImGui's SetFocusID), and a request no item took is
+dropped at the next frame. The installer's tests pass (local and CI).
+
 ## 40. Steam's executable moved by Windows (ASLR, 2026-10-25)
 
 The owner's Windows log with Steam's build: `Torchlight.exe is not Steam's build 17685 at its
