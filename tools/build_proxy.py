@@ -106,6 +106,8 @@ def substitute(text, table):
     """The C source with each address in its code replaced from table; and the addresses missing."""
     out, last, missing = [], 0, set()
     for start, end, value in port_addresses.addresses_in(text, code_only=True):
+        while end < len(text) and text[end] in "uUlL":   # a suffix goes inside: (0x... + x360_reloc)u is no C
+            end += 1
         if value not in table:
             missing.add(value)
             continue

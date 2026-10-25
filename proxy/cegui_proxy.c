@@ -756,10 +756,12 @@ void x360_inject_left(int down, float x, float y) {
 
 /* The build of Torchlight.exe this proxy was compiled for (tools/build_proxy.py --target): the
  * addresses in the sources are GOG's build 17870; for Steam's build 17685 the build substitutes
- * them from proxy/addresses_steam.txt and defines X360_TARGET_STEAM. In any other executable, or
- * in this one loaded away from its preferred base (Steam's has relocations), every part that
- * touches the executable's code or data (the pad, the 360's screens, the bag patch) stays off:
- * the converted scheme and layouts load through CEGUI and Ogre by name only. */
+ * them from proxy/addresses_steam.txt plus x360_reloc (Steam's executable has relocations and
+ * Windows may load it elsewhere) and defines X360_TARGET_STEAM. In any other executable, or GOG's
+ * away from its base (it has no relocations), every part that touches the executable's code or
+ * data (the pad, the 360's screens, the bag patch) stays off: the converted scheme and layouts
+ * load through CEGUI and Ogre by name only. Steam's is told by its timestamp alone; each patch
+ * still checks its bytes before it is made. */
 #ifdef X360_TARGET_STEAM
 #define X360_EXE_TIMESTAMP 0x4b5f7519UL
 #define X360_TARGET "Steam's build 17685"
