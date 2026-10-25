@@ -3766,6 +3766,6 @@ item tooltip at the slot; with none, it hides both.
 
 `dialog_tick` now does that: the stick's left and right (past half, one step per push) move the
 selection over the shown reward slots, wrapping through none; the 360's `ItemHighlight` takes the
-selected `ItemBkgN`'s rect, and the cursor (hidden) goes to PC's `ItemSlotN`, where PC shows the
+selected `ItemBkgN`'s position (its own size kept, as the 360), PC's card is kept in front, and the cursor (hidden) goes to PC's `ItemSlotN`, where PC shows the
 item's card as on a hover; with none the cursor goes off the slots. The log names each step
 (`x360 dialog: reward item N`). Not run yet.
