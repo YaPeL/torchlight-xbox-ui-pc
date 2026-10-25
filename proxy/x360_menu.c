@@ -719,7 +719,7 @@ typedef void (__fastcall *request_tip_fn)(void *ui, void *edx, int index);
 typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
 typedef void (__fastcall *play_sound_at_fn)(void *sounds, void *edx, int id, void *node, float a, float b, int flag);
 
-static unsigned char *hero, *level, *ui;
+static unsigned char *hero, *level, *ui, *the_client;
 
 static int find_world(void) {
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
@@ -728,6 +728,7 @@ static int find_world(void) {
     level = client ? *(unsigned char **)(client + 0x38) : 0;
     /* CGameUI: the client's +0x3c (its hover code, GOG 0x41b56b, calls CGameUI's methods on it);
      * its hero is at +0x1c (useItem reads it there). Checked before use. */
+    the_client = client;
     ui = client ? *(unsigned char **)(client + 0x3c) : 0;
     if (ui && *(unsigned char **)(ui + 0x1c) != hero) ui = 0;
     return hero && level;
@@ -3157,17 +3158,17 @@ static void frame_load(void) {
 static void shop_close(void);
 static void set_page(int p);
 /* The world frozen while the 360's inventory is open, as on the 360 (the owner, 2026-10-25: it
- * stops as with Start; the port's kept going). PC's own pause: CGame's update (GOG 0x40a281..)
- * sets its "paused" (CGame +0x81) when both side panels cover the screen (0x549b70, which the
- * port answers no for), a modal is open (0x540e80) or CGameUI's +0x173d is set (its togglePause
- * *(OT)*); that byte is set here while the inventory is open, and cleared after only if it was
- * set here (PC's pause keeps its own). */
-#define GOG_UI_PAUSED 0x173d
+ * stops as with Start; the port's kept going). The client's own pause byte (+0x1017, written only
+ * by its constructor, GOG 0x40fcba) is read first by its getIsPaused *(OT)* (GOG 0x40de90), which
+ * its update asks before moving the world; set here while the inventory is open, cleared after
+ * only if set here. Not CGameUI's +0x173d (PC's pause menu's togglePause *(OT)*): with it the
+ * camera kept turning behind the inventory (the owner's run), PC's pause showing its world so. */
+#define GOG_CLIENT_PAUSED 0x1017
 static int inventory_paused;
 static void inventory_pause(int on) {
-    if (!ui) return;
-    if (on && !ui[GOG_UI_PAUSED]) { ui[GOG_UI_PAUSED] = 1; inventory_paused = 1; x360_log("x360 menu: the world paused under the inventory\r\n"); }
-    else if (!on && inventory_paused) { ui[GOG_UI_PAUSED] = 0; inventory_paused = 0; }
+    if (!the_client) return;
+    if (on && !the_client[GOG_CLIENT_PAUSED]) { the_client[GOG_CLIENT_PAUSED] = 1; inventory_paused = 1; x360_log("x360 menu: the world paused under the inventory\r\n"); }
+    else if (!on && inventory_paused) { the_client[GOG_CLIENT_PAUSED] = 0; inventory_paused = 0; }
 }
 
 void x360_inventory_toggle(void) {

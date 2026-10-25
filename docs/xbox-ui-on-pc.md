@@ -3844,8 +3844,11 @@ inventory open; the port's went. **[read, GOG]** CGame's update (around `0x40a28
 "paused" (CGame `+0x81`) when both of PC's side panels cover the screen (`0x401200` → `0x549b70`,
 which the port answers no for, section 16b's side tests), a modal is open (`0x401220` →
 `0x540e80`), or CGameUI's `+0x173d` is set (the pause's own flag, `CGameUI::togglePause` *(OT)*;
-`CGameClient::getIsPaused` *(OT)* reads the same). The port now sets `+0x173d` while the 360's
-inventory is open (`inventory_pause`), and clears it after only if it set it. The 360's own way
+`CGameClient::getIsPaused` *(OT)* reads the same). A first try set `+0x173d` while the 360's
+inventory was open: the world stopped, but the camera kept turning behind it (PC's pause shows its
+world so; the owner's run). Now the client's own pause byte, `+0x1017` (written only by its
+constructor, GOG `0x40fcba`; read first by its `getIsPaused` *(OT)*, GOG `0x40de90`, which the
+client's update asks), is set while the inventory is open and cleared after only if set here. The 360's own way
 was not found (its housing's setOpen writes CGameUI `+6162`, read by a unit's update, not the
 world's pause; stopped after two tries). The place's name (`x360hud_LevelName`) mirrored PC's
 `LevelName` only while that was seen on screen, and the 360's inventory hides PC's sheets: it now
