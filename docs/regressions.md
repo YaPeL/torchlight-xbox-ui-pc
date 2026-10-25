@@ -191,7 +191,7 @@ here. Games' texts are named by role, never quoted.
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
-- Start during a cinematic: no pause opens; after it ends, Start opens the pause;
+- Start during a cinematic: it is skipped, no pause opens; Back there opens nothing; at a merchant or a stash, Start closes it as Back;
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
