@@ -6156,6 +6156,24 @@ static void dialog_tick(void) {
             first_image_under(win_of(pc_qd_prefix, slot), v, sizeof v);
             prop(win_of(QD_PREFIX, slot), "Image", v);
             {
+                /* The icon square, as the 360 draws it (the owner's capture: not stretched over the
+                 * slot's 40x65 window): the window made as tall as it is wide, its middle kept. */
+                static unsigned char squared[4];
+                void *sw = win_of(QD_PREFIX, slot);
+                char rr[128];
+                float q[8], wdt, hgt;
+                if (sw && !squared[i]) {
+                    read_prop(sw, "UnifiedAreaRect", rr, sizeof rr);
+                    if (parse_rect(rr, q) && (wdt = q[5] - q[1]) > 0 && (hgt = q[7] - q[3]) > wdt) {
+                        q[3] += (hgt - wdt) * 0.5f;
+                        q[7] = q[3] + wdt;
+                        write_rect(rr, q);
+                        prop(sw, "UnifiedAreaRect", rr);
+                    }
+                    squared[i] = 1;
+                }
+            }
+            {
                 /* Its empty sockets: PC's overlay over the slot (QuestRewardSocketsO, "onesocketglow",
                  * "twosocketglow"); the 360's EmptySocketN_0 and _1 shown for as many. */
                 char e[24];

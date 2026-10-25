@@ -3774,7 +3774,9 @@ capacity `+8`); PC's mouse-over keeps the item at the menu's `+0x118`. Its card 
 (`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge 6 % of the
 slot's width into the slot, its middle at the slot's (measured against the port's capture); hidden with none and when the talk closes. The first
 try (the hidden cursor on PC's slot, PC's own hover card) drew PC's card, with its golden frame,
-its description beside it: dropped. The selected slot comes in front of the highlight with its own background off (the rollover
+its description beside it: dropped. The reward's icon is drawn square (its window, 40x65 in the layout, made as tall as wide, its
+middle kept), not stretched: the 360 draws it so (the owner's capture; PC's icon art has less
+margin than the 360's, so PC's gem stays larger). The selected slot comes in front of the highlight with its own background off (the rollover
 image's centre is opaque; the 360 shows the icon over the gold frame). The selection is dropped
 when the slots or their item change; the hidden cursor is moved off
 PC's slots. The log names each step (`x360 dialog: reward item N`). Not run yet.
