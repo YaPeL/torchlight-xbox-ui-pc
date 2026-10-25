@@ -3801,4 +3801,8 @@ middle kept), not stretched: the 360 draws it so (the owner's capture; PC's icon
 margin than the 360's, so PC's gem stays larger). The selected slot comes in front of the highlight with its own background off (the rollover
 image's centre is opaque; the 360 shows the icon over the gold frame). The selection is dropped
 when the slots or their item change; the hidden cursor is moved off
-PC's slots. The log names each step (`x360 dialog: reward item N`). Not run yet.
+PC's slots. The log names each step (`x360 dialog: reward item N`). Played by the owner
+(2026-10-25): the selection, the square icon over the gold frame and the card's place as the 360's.
+**Differs:** the card's width, about 446 px against the 360's 786 at 1920x1080: PC lays its card
+out at its own width (`fill_card`, the inventory's), so the text wraps into more lines and the
+card is taller. Matching it needs PC's card laid out wider (to do).

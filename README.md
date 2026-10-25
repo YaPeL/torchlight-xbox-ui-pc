@@ -169,6 +169,8 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
   - the black bars shown with the zoom do not look like the 360's;
   - the name shown on entering a town or a dungeon does not fade out as on the 360;
   - the loading screens are PC's, not the 360's.
+  - the item card shown for a quest's reward is narrower than the 360's (PC's card, so its text
+    wraps into more lines and the card is taller).
 - Windows-only binaries; on Linux the game runs under Proton or Wine.
 
 ## Tools
