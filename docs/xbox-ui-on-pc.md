@@ -3848,7 +3848,10 @@ which the port answers no for, section 16b's side tests), a modal is open (`0x40
 inventory was open: the world stopped, but the camera kept turning behind it (PC's pause shows its
 world so; the owner's run). Now the client's own pause byte, `+0x1017` (written only by its
 constructor, GOG `0x40fcba`; read first by its `getIsPaused` *(OT)*, GOG `0x40de90`, which the
-client's update asks), is set while the inventory is open and cleared after only if set here. The 360's own way
+client's update asks), is set while the inventory is open and cleared after only if set here;
+not at a shop (the enchanter's and gem goblins' results come after PC's 3D sign has dropped,
+which a paused world may not animate; the review). The place's name follows PC's window's own
+visibility only while the 360's inventory is open (PC's own hiding of its parent counted otherwise). The 360's own way
 was not found (its housing's setOpen writes CGameUI `+6162`, read by a unit's update, not the
 world's pause; stopped after two tries). The place's name (`x360hud_LevelName`) mirrored PC's
 `LevelName` only while that was seen on screen, and the 360's inventory hides PC's sheets: it now

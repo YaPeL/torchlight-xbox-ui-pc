@@ -3183,7 +3183,9 @@ void x360_inventory_toggle(void) {
     frame_load();
     if (!inventory_root) return;
     inventory_open = !inventory_open;
-    __try { inventory_pause(inventory_open); } __except (1) { inventory_paused = 0; }
+    /* Not at a shop: the enchanter's and gem goblins' results come after PC's 3D sign has dropped,
+     * which a paused world may not animate (the review); the 360's own inventory, the one paused. */
+    __try { inventory_pause(inventory_open && !shop); } __except (1) { inventory_paused = 0; }
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
         /* At the transmuter the bag is focused (town/05). */
@@ -5780,7 +5782,7 @@ static void hud_tick(void) {
         }
     }
     /* The place's name stays with the 360's inventory open, as on the 360 (the owner, 2026-10-25). */
-    mirror_text_shown(HUD_PREFIX, "LevelName", 1);
+    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open);   /* PC's own hiding counted otherwise */
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
     hud_stage = "target";
