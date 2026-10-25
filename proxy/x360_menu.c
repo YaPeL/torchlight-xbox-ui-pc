@@ -7122,10 +7122,10 @@ static void boards_tick(void) {
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
-    static int modal_hidden, inv_hidden;
+    static int modal_hidden;
     static unsigned char *shop_logged[sizeof shops / sizeof shops[0]];
     unsigned i;
-    int want_modal = modal_shown, want_shop = inventory_open && shop;   /* want_modal: the minimap's */
+    int want_modal = modal_shown;   /* the minimap's */
     if (!ui) return;
     modal_minimap(want_modal);
     {
@@ -7141,31 +7141,14 @@ static void boards_tick(void) {
     }
     /* The shops' boards kept hidden always, as the modal's: the 360's shop frame shows every one
      * of PC's shop menus, and shown again as it closed they stayed seen after it (the owner's run
-     * of 2026-10-24, a merchant). Each menu's logged once. Not CInventoryMenu's (the first): the
-     * 360's inventory shows its doll through that menu's scene (show_doll_of), which the board's
-     * node might hold; hidden while a shop is open only, as before. */
+     * of 2026-10-24, a merchant). Each menu's logged once. CInventoryMenu's too (the owner's
+     * decision, 2026-10-24: shown again after a shop, it was seen sliding away), though the 360's
+     * inventory draws its doll through that menu's scene (show_doll_of): QA checks the doll. */
     for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
         unsigned char *m = *(unsigned char **)(ui + shops[i].at);
         if (!m || *(unsigned *)m != shops[i].vtable) continue;
-        if (i == 0) {
-            /* Hidden for its closing too: shown again as the shop closed, PC's inventory's board was
-             * seen sliding away at the side (the owner's run of 2026-10-24; its panel answers open
-             * for about 330 ms after, logged by diag-shop-close). Shown again 1.5 s after. */
-            static unsigned inv_until;
-            unsigned t = GetTickCount();
-            if (want_shop) { board_visible(m, shops[i].board, 0); inv_until = 0; }
-            else if (inv_hidden) {
-                if (!inv_until) inv_until = (t + 1500) | 1;
-                if ((int)(t - inv_until) >= 0) { board_visible(m, shops[i].board, 1); inv_until = 0; inv_hidden = 0; }
-            }
-            continue;
-        }
         board_visible(m, shops[i].board, 0);
         if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
-    }
-    {
-        /* PC's inventory's board: hidden while a shop is open, and until 1.5 s after (above). */
-        if (want_shop) inv_hidden = 1;
     }
 }
 

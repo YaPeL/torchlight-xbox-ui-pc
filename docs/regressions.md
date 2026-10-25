@@ -227,6 +227,8 @@ here. Games' texts are named by role, never quoted.
   inventory's board held hidden 1.5 s. Stopped (three tries on this point). Not yet tried: the
   inventory's board hidden for good, checking the 360's doll; or finding what else PC draws for
   its side menus' closing (the panel at `0xab8730` also answered open at the close).
+- **The owner's decision:** PC's inventory's board hidden for good too, as the other four; QA
+  checks that the 360's inventory still shows the hero's doll.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist
