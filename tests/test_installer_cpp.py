@@ -610,13 +610,12 @@ class InstallCppTest(unittest.TestCase):
 
     def test_the_wizard_asks_before_the_360_bag_without_a_backup(self):
         """A game with the mod on PC's bag and no save folder found: "Change to the 360's bag" goes
-        through the bag's screen (its warning), and without the no-backup box ticked Start does
-        not leave it; nothing is changed."""
+        straight to the bag's screen (its warning; no package asked: set-bag), and without the
+        no-backup box ticked Start does not leave it; nothing is changed."""
         import shutil
         self.assertEqual(self.install("cpp", "--bag", "pc").returncode, 0)
         shutil.rmtree(self.games["cpp"][1])
-        steps = ["screen games", "press a", "screen action", "press down", "press a", "screen package", "press a",
-                 "screen browser", "press down", "press down", "press a", "screen package", "press start",
+        steps = ["screen games", "press a", "screen action", "press down", "press a",
                  "screen bag", "press start", "wait 10", "screen bag 1", "quit"]
         r = self.wizard(steps)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -728,6 +727,30 @@ class InstallCppTest(unittest.TestCase):
             backups = [d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]
             self.assertEqual(len(backups), 1, who)
             self.assertEqual(_tree(os.path.join(os.path.dirname(saves), backups[0])), {"0.svt": b"a synthetic save"})
+
+    def test_set_bag_without_the_package(self):
+        """set-bag on an installed game, no 360 package given: the 360's bag writes the ini and backs
+        the saves up, PC's bag writes the ini only; the converted folders are not touched; the same
+        in both installers."""
+        cmd = lambda who: [sys.executable, os.path.join(TOOLS, "install.py")] if who == "py" else [BINARY]
+        for who in ("py", "cpp"):
+            self.assertEqual(self.install(who, "--bag", "pc").returncode, 0)
+        converted = {who: {k: v for k, v in _tree(self.games[who][0]).items() if k != "x360_ui.ini"} for who in ("py", "cpp")}
+        for who in ("py", "cpp"):
+            game, saves = self.games[who]
+            r = subprocess.run(cmd(who) + ["set-bag", "--game", game, "--bag", "360", "--yes", "--console"],
+                               capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            with open(os.path.join(game, "x360_ui.ini"), "rb") as f:
+                self.assertIn(b"bag=360\r\nbag_360_used=1\r\n", f.read(), who)
+            self.assertEqual(len([d for d in os.listdir(os.path.dirname(saves)) if "-backup-" in d]), 1, who)
+            self.assertEqual({k: v for k, v in _tree(game).items() if k != "x360_ui.ini"}, converted[who], who)
+            r = subprocess.run(cmd(who) + ["set-bag", "--game", game, "--bag", "pc", "--yes", "--console"],
+                               capture_output=True, text=True, env=self.env)
+            self.assertEqual(r.returncode, 0, who + r.stdout + r.stderr)
+            with open(os.path.join(game, "x360_ui.ini"), "rb") as f:
+                self.assertIn(b"bag=pc\r\nbag_360_used=1\r\n", f.read(), who)
+        self.same_install()
 
     def test_the_360_bag_remembered_until_uninstall(self):
         """The report's case: the 360's bag, then PC's (uninstall's switch), then uninstall: still a
