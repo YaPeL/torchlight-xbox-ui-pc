@@ -3748,6 +3748,8 @@ click at its centre) and Back is dropped; not while a tip is up (it keeps every 
 Back and B do (`x360_inventory_pad`); elsewhere in the inventory it keeps the pet's commands.
 
 **[seen]** In an NPC's talk (PC's dialog counts as a cinematic for `0x541db0`) Start on the 360 goes
-through the pages and accepts the quest they end with. `dialog_tick` now does that on Start: Ok on
-each page every 200 ms (Accept when shown, which ends it), until no page has come for 1 s;
-`x360_cinematic_skip` leaves a talk to it.
+through the pages and accepts the quest they end with (its handler not read). `dialog_tick` now
+does that on Start: Ok on each page every 200 ms (the proxy's pace, not the 360's), Accept when
+shown, which ends it; it stops too on a page with neither, under a tip, or when the talk closes.
+Only a shown button is pressed. `x360_cinematic_skip` leaves a talk to it, and `proxy/pad.c` does
+not open the pause on that Start.
