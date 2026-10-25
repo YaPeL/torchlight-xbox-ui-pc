@@ -297,6 +297,34 @@ here. Games' texts are named by role, never quoted.
   shown after the hover time.
 - **QA checklist:** the load and creation screens left by B: no box; a slot's tooltip still shows.
 
+## One sword, two references, after the transmuter (fixed)
+
+- **What happened:** the owner (2026-10-25, GOG, the pad): the equipped sword put into the
+  transmuter with X, the transmuter closed and opened again: two swords, one of them unusable.
+- **Found (a diagnosis build logging the items' and references' addresses):** one item, two
+  references: before X one reference at slot 0 (equipped); X logs it placed at slot 15 (the
+  transmuter's first place, a slot of the hero's own inventory); at the next opening the same
+  reference object is at slot 0 again and a new one at slot 23 (PC's closing put slot 15's item in
+  the bag). PC's `removeEquipment` (GOG `0x4e9ca0`) does take the reference out of the list (and
+  calls the item's unequip, its virtual `+0x17c`). The 360 moves the item into the transmuter's own
+  inventory (`sub_8236BA20`: `sub_822E3218` then `sub_822E29F8`); PC's transmuter places are the
+  hero's slots 15 to 18.
+- **Tried, not the fix:** the item taken off first as A does (`pickupEquipment` into the bag), then
+  moved from the bag: the same two references (the owner's run).
+- **Cause:** PC's transmuter closing (CCombineMenu's setOpen, GOG `0x569220`) gives each item in its
+  places back where the map it made as it opened says it came from (`0x568fe0`, the map by
+  `0x567090`): the sword, mapped to slot 0 when it opened, goes back there by `0x4ea200`, and that
+  success falls into the path for items not in the map, which picks it up again into the bag
+  (`0x569085` to `0x5690de`, `pickupEquipment` at `0x5690f1`): two references. Its own drag keeps
+  that map; the pad's X did not.
+- **Fix:** the items X put there are given back by the mod before PC's closing, as PC does
+  (`removeEquipment`, then `0x4ea200` to the slot X took it from, else `pickupEquipment`; the pet's
+  to the pet's bag); PC finds the places empty. Whoever closes it: its setOpen (the vtable's
+  `+0x1c`) is replaced by one that does this first. An ingredient a recipe leaves keeps its origin. The owner's run: one sword, back in the hand. The enchanter and the gem goblins
+  take their item out of slot 14 themselves after the act, so PC's closing finds nothing there.
+- **QA checklist:** an equipped item into the transmuter by X, the transmuter closed and opened
+  again: one item, back where it was.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
