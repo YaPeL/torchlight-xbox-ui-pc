@@ -5903,6 +5903,41 @@ void x360_hud_tick(void) {
  * not the pet, with no 360 screen, dialog or modal open. The 360 places it at the unit's position
  * 1.0 up and 0.4 aside, projected and kept 26 pixels inside the screen (pool 0x820AA2C0 +64, +140,
  * +1608); here under the unit's own label, which PC places over the unit's head (its +0x198). */
+/* A world point on the screen, in the window's pixels, by Ogre's camera (the client's +0x10, its
+ * +8, as proxy/pad.c reads it): its projection and view matrices; 0 behind the camera. */
+static int world_to_screen(const float *p, float sw, float sh, float *x, float *y) {
+    typedef const float *(__fastcall *mat_fn)(const void *self, void *edx);
+    static mat_fn view, proj;
+    static int looked;
+    unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+    void *cam = ctl ? *(void **)(ctl + 8) : 0;
+    const float *v, *q;
+    float e[4], c[4];
+    int i;
+    if (!looked) {
+        void *ogre = GetModuleHandleA("OgreMain.dll");
+        looked = 1;
+        view = ogre ? (mat_fn)GetProcAddress(ogre, "?getViewMatrix@Camera@Ogre@@UBEABVMatrix4@2@XZ") : 0;
+        proj = ogre ? (mat_fn)GetProcAddress(ogre, "?getProjectionMatrix@Frustum@Ogre@@UBEABVMatrix4@2@XZ") : 0;
+    }
+    if (!cam || !view || !proj) return 0;
+    v = view(cam, 0);
+    q = proj(cam, 0);
+    for (i = 0; i < 4; i++) e[i] = v[i * 4] * p[0] + v[i * 4 + 1] * p[1] + v[i * 4 + 2] * p[2] + v[i * 4 + 3];   /* row-major, as Ogre's */
+    for (i = 0; i < 4; i++) c[i] = q[i * 4] * e[0] + q[i * 4 + 1] * e[1] + q[i * 4 + 2] * e[2] + q[i * 4 + 3] * e[3];
+    if (c[3] <= 1e-4f) return 0;
+    *x = (c[0] / c[3] + 1.0f) * 0.5f * sw;
+    *y = (1.0f - c[1] / c[3]) * 0.5f * sh;
+    return 1;
+}
+/* The "A Interact" prompt (the 360's HUD update sub_821A83C8, 0x821AB364-0x821AB518, the recomp
+ * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
+ * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
+ * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
+ * not the pet, with no 360 screen, dialog or modal open. Placed as the 360's: the unit's position
+ * 1.0 up and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
+ * top left there, kept between 0 and the screen less 26 pixels (of 720; +68, +1608). */
 static void interact_prompt(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -5911,49 +5946,32 @@ static void interact_prompt(void) {
     int x360_overlay_open(void);
     static pixel_rect_fn6 rect_of;
     static parent_fn gp;
-    void *w = win_of(HUD_PREFIX, "TargetInteractHover"), *lw, *par;
+    void *w = win_of(HUD_PREFIX, "TargetInteractHover"), *par;
     unsigned char *u = (unsigned char *)x360_pad_interact_unit();
-    rect6 lr, pr;
-    float W, H;
+    rect6 pr;
+    float pos[3], x, y, sw, sh, m;
+    HWND hw = active_window();
+    RECT r;
     if (!w) return;
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
-    {   /* DIAGNOSIS: the target and why the prompt is not shown, once per target */
-        static unsigned char *logged = (unsigned char *)1;
-        void *x360_pad_candidate(void);
-        if (u != logged) {
-            logged = u;
-            x360_log("x360 interact: target "); x360_log_num((long)u);
-            x360_log(" candidate "); x360_log_num((long)x360_pad_candidate());
-            if (u) { x360_log(" label "); x360_log_num((long)*(void **)(u + 0x198)); x360_log(" pet "); x360_log_num(u == the_pet()); }
-            x360_log(" inv "); x360_log_num(inventory_open); x360_log(" shop "); x360_log_num(shop != 0);
-            x360_log(" qd "); x360_log_num(qd_shown); x360_log(" modal "); x360_log_num(modal_shown); x360_log("\r\n");
-        }
-    }
     if (!u || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || !rect_of || !gp ||
-        !(lw = *(void **)(u + 0x198)) || !(par = gp(w, 0))) { show(w, 0); return; }
-    rect_of(lw, 0, &lr);
+        !(par = gp(w, 0)) || !hw || !GetClientRect(hw, &r) || r.right <= r.left) { show(w, 0); return; }
+    sw = (float)(r.right - r.left);
+    sh = (float)(r.bottom - r.top);
+    ((get_position_fn)GOG_GET_POSITION)(u, 0, pos, 1);
+    pos[0] += 0.4f; pos[1] += 1.0f; pos[2] += 0.4f;
+    if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
+    m = 26.0f * k;
+    if (x < 0) x = 0;
+    if (x > sw - m) x = sw - m;
+    if (y < 0) y = 0;
+    if (y > sh - m) y = sh - m;
     rect_of(par, 0, &pr);
-    W = 110.0f * k;
-    H = 27.0f * k;
-    if (lr.right <= lr.left) { show(w, 0); return; }
-    {
-        float x = (lr.left + lr.right) * 0.5f - W * 0.5f, y = lr.bottom;
-        HWND hw = active_window();
-        RECT r;
-        if (hw && GetClientRect(hw, &r)) {   /* kept inside the screen, as the 360's 26 pixels (of 720) */
-            float m = 26.0f * k, sw = (float)(r.right - r.left), sh = (float)(r.bottom - r.top);
-            if (x < m) x = m;
-            if (x > sw - m - W) x = sw - m - W;
-            if (y < m) y = m;
-            if (y > sh - m - H) y = sh - m - H;
-        }
-        set_size(w, x - pr.left, y - pr.top, W, H);
-        {   /* DIAGNOSIS */
-            static unsigned char *logged;
-            if (u != logged) { logged = u; x360_log("x360 interact: shown at "); x360_log_num((long)x); x360_log(","); x360_log_num((long)y);
-                               x360_log(" parent at "); x360_log_num((long)pr.left); x360_log(","); x360_log_num((long)pr.top); x360_log("\r\n"); }
-        }
+    {   /* the window's own size, its layout's: kept, only moved */
+        rect6 wr;
+        rect_of(w, 0, &wr);
+        set_size(w, x - pr.left, y - pr.top, wr.right - wr.left, wr.bottom - wr.top);
     }
     show(w, 1);
 }
