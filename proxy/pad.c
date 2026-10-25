@@ -1616,6 +1616,19 @@ static void order(void) {
         void x360_automap_cycle(void);
         x360_automap_cycle();
     }
+    {
+        /* The 360 moves, chooses and acts on nothing while the hero is dying or dead: its frame
+         * update (sub_821EBA48, at 0x821EC0E8) skips to 0x821EC9F4 when the hero's AI state (+632,
+         * GOG's +0x284) is 5 or 6 (OT's AISTATE_DYING and AISTATE_DEAD) or the hero is not alive
+         * (its virtual +0x20). The candidates and their highlight are dropped. */
+        int state = *(int *)(hero + 0x284);
+        if (state == 5 || state == 6 || !((bool_fn)(*(void ***)hero)[0x20 / 4])(hero, 0)) {
+            candidate = any_candidate = item_candidate = 0;
+            highlight(level, 0);
+            highlight_item(level, 0);
+            return;
+        }
+    }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
     world_at = qms();   /* this frame reached the world's input (trace_tick: a disturbed replay) */
     measure_turn(hero, now);
