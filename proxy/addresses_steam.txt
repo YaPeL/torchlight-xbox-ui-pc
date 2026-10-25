@@ -238,6 +238,7 @@
 0x00591200 0x0058bd20 checked    code    by hand: vtable slot (COptionsMenu +0x18), strings 7 of 12, the same instructions but the prologue; the body windows chose a copy of it (0x5788b0)
 0x005920c0 0x00578ab3 single     comment window
 0x005980e7 0x00592b4d verified   comment window, local
+0x0059be40 0x00596940 verified   comment window 16, body +0x8,+0x18,+0x30
 0x0059f180 0x00599b40 verified   code    window, callers x6
 0x005a0330 0x0059acb0 verified   comment vtable, body
 0x005a58b0 0x005a0120 verified   comment window, body
@@ -269,6 +270,7 @@
 0x005ea120 0x005e4010 verified   code    callers x5
 0x005efa20 0x005e9750 verified   comment window, callers x6
 0x005f0f50 0x005eaf90 verified   code    callers x2
+0x005f4760 0x005ee7c0 verified   code    window 16, callers 0x59be70, 0x59beca, 0x5a109e, 0x5a111e
 0x005f9e70 0x005f3d10 verified   code    window, body, callers x4
 0x005f9f90 0x005f3e30 verified   code    window, callers x4, callers-global
 0x005fa360 0x005f4360 verified   code    window, body, callers-global, callers x5
@@ -299,7 +301,7 @@
 0x00ab7d04 0x00a8ee54 verified   code    rtti, refs
 0x00ab7d78 0x00a8eec8 verified   code    rtti, refs
 0x00ab7de0 0x00a8ef30 verified   code    rtti, refs x2
-0x00ab7ff0 0x00a8f140 verified   comment rtti, refs
+0x00ab7ff0 0x00a8f140 verified   code    rtti, refs
 0x00ab8730 0x00a8f880 verified   code    rtti, refs x2
 0x00ab87c4 0x00a8f914 verified   code    rtti, refs x2
 0x00aba608 0x00a91758 verified   code    refs x5; content equal (4 bytes)

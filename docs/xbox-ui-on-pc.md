@@ -3774,3 +3774,35 @@ the pad, as the resurrection's (section 34). Its prefix is found by `Choice10` (
 over it, its `Frame`'s visible buttons are the pad's (the d-pad or the stick, A), B clicks its
 `Cancel`, and the play pad gets nothing (`x360_pc_menu_up`). The log names them as `PC's buttons
 for the pad N (waypoints)`. Not ported: the 360's own waypoint screen.
+
+## 37. The quest offer's reward items with the left stick (2026-10-24)
+
+The owner: offering a quest, the 360 lets the left stick go through the reward items and shows
+each one's card (its stats); the port did nothing. **[read]** The 360's quest dialog pad
+(`sub_82357ED0`, its table at `0x82357F10` by code - 5): A (5) sends the menu's command 9 or 10,
+B (6) 8 unless its `+450`, X (7) turns its `+452`, the left stick's left (19) and right (20) take
+one from or add one to its `+464`, then `sub_82358058`; the other codes (the d-pad, Start, Back)
+do nothing. `sub_82358058` wraps `+464` from -1 (none) to the last reward and back; with one, it
+shows `ItemHighlight` (`+440`) at that slot (the slots' windows at `+408`) and puts the item in the
+item tooltip at the slot; with none, it hides both.
+
+`dialog_tick` now does that: the stick's left and right (past half, one step per push) move the
+selection over the shown reward slots, wrapping through none; the 360's `ItemHighlight` takes the
+selected `ItemBkgN`'s position (its own size kept, as the 360). The item itself is PC's, found as
+PC's own mouse-over finds it (GOG `0x59be40`, `CQuestDialogMenu::handle_MouseOver` *(OT)*): CGameUI's
+`+0x2fc` (vtable `0xab7ff0`), its dialog at `+0x98`, the dialog's quest at `+8`, the quest's
+rewards at `+0x150`, their items' list from `0x5f4760` (`getRewardItems` *(OT)*: data, count `+4`,
+capacity `+8`); PC's mouse-over keeps the item at the menu's `+0x118`. Its card is the 360's
+(`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge 6 % of the
+slot's width into the slot, its middle at the slot's (measured against the port's capture); hidden with none and when the talk closes. The first
+try (the hidden cursor on PC's slot, PC's own hover card) drew PC's card, with its golden frame,
+its description beside it: dropped. The reward's icon is drawn square (its window, 40x65 in the layout, made as tall as wide, its
+middle kept), not stretched: the 360 draws it so (the owner's capture; PC's icon art has less
+margin than the 360's, so PC's gem stays larger). The selected slot comes in front of the highlight with its own background off (the rollover
+image's centre is opaque; the 360 shows the icon over the gold frame). The selection is dropped
+when the slots or their item change; the hidden cursor is moved off
+PC's slots. The log names each step (`x360 dialog: reward item N`). Played by the owner
+(2026-10-25): the selection, the square icon over the gold frame and the card's place as the 360's.
+**Differs:** the card's width, about 446 px against the 360's 786 at 1920x1080: PC lays its card
+out at its own width (`fill_card`, the inventory's), so the text wraps into more lines and the
+card is taller. Matching it needs PC's card laid out wider (to do).

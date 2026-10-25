@@ -5994,8 +5994,47 @@ static void quest_marker(int hide) {
     }
 }
 
+static int qd_reward;   /* the reward item the stick selected (the 360's +464), -1 none */
+static int qd_card;     /* the 360's item card shown for a reward (fill_card's card 0) */
+static void *qd_card_item;   /* its item */
+/* The selected slot drawn over the highlight (the 360's capture: the gold frame around, the item's
+ * icon over it; the rollover image's centre is opaque, so the slot comes in front with its own
+ * background image off, given back when the selection goes). */
+static void *qd_lifted;
+static char qd_lifted_image[96];
+static void qd_lift(void *bkg) {
+    if (qd_lifted == bkg) return;
+    if (qd_lifted) prop(qd_lifted, "Image", qd_lifted_image);
+    qd_lifted = bkg;
+    if (!bkg) return;
+    read_prop(bkg, "Image", qd_lifted_image, sizeof qd_lifted_image);
+    prop(bkg, "Image", "");
+    move_to_front(bkg, 0);
+}
+static void nav_point(float x, float y);   /* below: the hidden cursor moved */
+/* The reward item i of the quest PC's dialog offers, 0 if none: PC's own mouse-over (GOG 0x59be40,
+ * CQuestDialogMenu::handle_MouseOver *(OT)*) takes CGameUI's +0x2fc, its dialog at +0x98, that
+ * dialog's quest at +8, the quest's rewards at +0x150 and their items' list from 0x5f4760
+ * (getRewardItems *(OT)*: the data, the count at +4, the capacity at +8). */
+static void *qd_reward_item(int i) {
+    typedef unsigned char *(__fastcall *list_fn)(void *self, void *edx);
+    void *found = 0;
+    __try {
+        unsigned char *menu = ui ? *(unsigned char **)(ui + 0x2fc) : 0;
+        if (menu && *(unsigned *)menu != 0x00ab7ff0) menu = 0;   /* CQuestDialogMenu's vtable */
+        unsigned char *dlg = menu ? *(unsigned char **)(menu + 0x98) : 0;
+        unsigned char *quest = dlg ? *(unsigned char **)(dlg + 8) : 0;
+        unsigned char *rw = quest ? *(unsigned char **)(quest + 0x150) : 0;
+        unsigned char *list = rw ? ((list_fn)0x005f4760)(rw, 0) : 0;
+        if (list && i >= 0 && i < *(int *)(list + 4) && (unsigned)i < *(unsigned *)(list + 8)) found = (*(void ***)list)[i];
+    } __except (1) { found = 0; }
+    return found;
+}
 static void qd_show(int on) {
     if (on == qd_shown) return;
+    qd_reward = -1;
+    if (qd_card) { hide_card(0); qd_card = 0; }
+    qd_lift(0);
     quest_marker(on);
     qd_shown = on;
     if (!on) overlay_closed_at = GetTickCount();
@@ -6117,6 +6156,24 @@ static void dialog_tick(void) {
             first_image_under(win_of(pc_qd_prefix, slot), v, sizeof v);
             prop(win_of(QD_PREFIX, slot), "Image", v);
             {
+                /* The icon square, as the 360 draws it (the owner's capture: not stretched over the
+                 * slot's 40x65 window): the window made as tall as it is wide, its middle kept. */
+                static unsigned char squared[4];
+                void *sw = win_of(QD_PREFIX, slot);
+                char rr[128];
+                float q[8], wdt, hgt;
+                if (sw && !squared[i]) {
+                    read_prop(sw, "UnifiedAreaRect", rr, sizeof rr);
+                    if (parse_rect(rr, q) && (wdt = q[5] - q[1]) > 0 && (hgt = q[7] - q[3]) > wdt) {
+                        q[3] += (hgt - wdt) * 0.5f;
+                        q[7] = q[3] + wdt;
+                        write_rect(rr, q);
+                        prop(sw, "UnifiedAreaRect", rr);
+                    }
+                    squared[i] = 1;
+                }
+            }
+            {
                 /* Its empty sockets: PC's overlay over the slot (QuestRewardSocketsO, "onesocketglow",
                  * "twosocketglow"); the 360's EmptySocketN_0 and _1 shown for as many. */
                 char e[24];
@@ -6128,7 +6185,63 @@ static void dialog_tick(void) {
                 }
             }
         }
-        show(win_of(QD_PREFIX, "ItemHighlight"), 0);
+        /* The left stick's left and right select a reward item (the 360's pad, sub_82357ED0: codes
+         * 19 and 20 move +464 by one; sub_82358058 wraps it from -1, none, to the last and back,
+         * puts ItemHighlight (+440) on the slot (+408) and the item in the item tooltip there;
+         * the d-pad does nothing). Here the highlight on the 360's slot, and the cursor (hidden)
+         * on PC's slot, where PC shows that item's card as its hover does (the owner, 2026-10-24:
+         * the stick did nothing). */
+        {
+            int x360_pad_lx(void);
+            static int held;
+            int lx = x360_tip_open() ? 0 : x360_pad_lx(), dir = lx < -500 ? -1 : lx > 500 ? 1 : 0;
+            if (dir && !held && items > 0) {
+                qd_reward += dir;
+                if (qd_reward < -1) qd_reward = items - 1;
+                if (qd_reward >= items) qd_reward = -1;
+                if (qd_card) { hide_card(0); qd_card = 0; }
+                if (qd_reward < 0) qd_lift(0);
+                if (qd_reward >= 0) {
+                    typedef struct { float top, bottom, left, right; } rect6;
+                    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+                    static pixel_rect_fn6 rect_of;
+                    char slot[16], r[128];
+                    void *item = qd_reward_item(qd_reward), *bkg;
+                    float h;
+                    rect6 br;
+                    copy(slot, sizeof slot, "ItemBkg", 0); slot[7] = (char)('1' + qd_reward); slot[8] = 0;
+                    bkg = win_of(QD_PREFIX, slot);
+                    read_prop(bkg, "UnifiedPosition", r, sizeof r);   /* its place only, as the 360 (+248) */
+                    prop(win_of(QD_PREFIX, "ItemHighlight"), "UnifiedPosition", r);
+                    qd_lift(bkg);
+                    /* The item's card, the 360's (the inventory's, fill_card), where the 360 draws
+                     * it (the owner's captures of the 360 and the port, 2026-10-24, 1920x1080): its
+                     * right edge 6 % of the slot's width into the slot, its middle at the slot's;
+                     * its size is its text's (the 360's in Spanish there, wider). */
+                    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+                    h = item ? fill_card(0, item, 0, 0) : 0;
+                    if (h > 0) { qd_card = 1; qd_card_item = item; }   /* shown by fill_card: tracked whatever follows */
+                    if (h > 0 && bkg && rect_of) {
+                        fresh_rects(bkg);
+                        rect_of(bkg, 0, &br);
+                        place_card(0, br.left + 0.06f * (br.right - br.left) - card_width(0), 0, (br.top + br.bottom) * 0.5f - h * 0.5f);
+                    }
+                    nav_point(1.0f, 1.0f);   /* the hidden cursor off PC's slots: no hover card of PC's too */
+                    if (!item) x360_log("x360 dialog: no item for that reward\r\n");
+                }
+                x360_log("x360 dialog: reward item "); x360_log_num(qd_reward); x360_log("\r\n");
+            }
+            held = dir != 0;
+            /* The selection dropped when the slots or their item change under it (the talk's next
+             * page or quest): no card left on an item no longer offered. */
+            if (qd_reward >= items || (qd_card && qd_reward_item(qd_reward) != qd_card_item)) {
+                qd_reward = -1;
+                if (qd_card) { hide_card(0); qd_card = 0; }
+                qd_lift(0);
+            }
+        }
+        show(win_of(QD_PREFIX, "ItemHighlight"), qd_reward >= 0);
+        if (qd_card && card_root(0)) move_to_front(card_root(0), 0);   /* the card over the 360's dialog */
         /* "Rewards" with the stick's prompt when there are items (town/04; not town/13). */
         show(win_of(QD_PREFIX, "RewardsTooltip"), items > 0);
     }
