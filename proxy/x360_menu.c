@@ -5963,6 +5963,25 @@ static void interact_prompt(void) {
     sw = (float)(r.right - r.left);
     sh = (float)(r.bottom - r.top);
     ((get_position_fn)GOG_GET_POSITION)(u, 0, pos, 1);
+    {
+        /* sub_821B8D70(player, unit): within 2.0 on the ground (2.75 while the player stands:
+         * its +508 0; here the stick at rest), and an interactive unit: the 360's registry
+         * (sub_821E3C48, not ported) or one of the types 130 ENCHANTER, 175 RETIREMENTCHARACTER,
+         * 132 and 133 the gem goblins, 134 COMBINER, 41 MERCHANT, 128 STASH, 170 SHAREDSTASH, 104 NPC. */
+        static const int types[] = {130, 175, 132, 133, 134, 41, 128, 170, 104};
+        int x360_pad_lx(void), x360_pad_ly(void);
+        float hp[3], dx, dz, reach;
+        int t, ok = 0;
+        for (t = 0; t < 9 && !ok; t++) ok = isa(u, types[t]);
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, hp, 1);
+        dx = pos[0] - hp[0];
+        dz = pos[2] - hp[2];
+        {
+            int sx = x360_pad_lx(), sy = x360_pad_ly();   /* raw (of 1000): at rest under the 360's dead zone, about 240 */
+            reach = sx * sx + sy * sy < 240 * 240 ? 2.75f : 2.0f;
+        }
+        if (!ok || dx * dx + dz * dz > reach * reach) { show(w, 0); return; }
+    }
     pos[0] += 0.4f; pos[1] += 1.0f; pos[2] += 0.4f;
     if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
     m = 26.0f * k;
