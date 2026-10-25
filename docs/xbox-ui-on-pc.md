@@ -3819,3 +3819,13 @@ bag the saves are backed up first (as install does, the same questions when none
 the ini is written over the converted folder already in place; nothing is converted again. The
 wizard's "Change to the 360's bag" goes to the bag's screen and the summary, without the package.
 A test runs both installers' `set-bag` both ways (the ini, one backup, the converted files the same).
+
+## 39. The wizard with a pad: the buttons under a screen's body (2026-10-25)
+
+The owner, with a pad: in the bag's screen A on a bag seemed to do nothing; in the file browser A
+took only a file (the folder's "Use this folder" not reached); on the result, with "Details" open,
+the buttons below (open the game, start again, close) could not be reached. Each screen's body is
+an ImGui child window, and the pad's navigation stayed inside it: every body now has
+`ImGuiChildFlags_NavFlattened` (Dear ImGui 1.92.5), so the d-pad goes on to the footer's buttons.
+In the bag's screen, A on the bag already chosen goes on as Next; on the other one it chooses it
+first (the 360's warning shown before going on). Not run with a pad yet.

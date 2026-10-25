@@ -325,7 +325,7 @@ struct Screens::State {
   // ---- the screens ----
   void games_screen() {
     heading("Which Torchlight?", "1  Game   >   2  Package   >   3  Bag   >   4  Summary");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     if (games.empty()) muted("No PC Torchlight was found. Choose its folder below.");
     for (size_t i = 0; i < games.size(); i++) {
       const GameFound& g = games[i];
@@ -380,7 +380,7 @@ struct Screens::State {
 
   void action_screen() {
     heading("The mod is already installed here", "1  Game   >   What to do");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     muted(game.path);
     wrapped(game.bag == "360" ? "It is installed with the 360's bag." : "It is installed with PC's bag.");
     ImGui::Spacing();
@@ -411,7 +411,7 @@ struct Screens::State {
 
   void uninstall_screen() {
     heading("Uninstall", "1  Game   >   Uninstall");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     muted(game.path);
     ImGui::Spacing();
     const float w = ImGui::GetFontSize() * 18;
@@ -450,7 +450,7 @@ struct Screens::State {
 
   void package_screen() {
     heading("Your Xbox 360 package", "1  Game   >   2  Package   >   3  Bag   >   4  Summary");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     wrapped("Torchlight's Xbox LIVE Arcade package, copied from your console: a file without an extension, in "
             "Content\\0000000000000000\\58410A7E\\000D0000\\ on the console's drive. A folder extracted from it works too.");
     ImGui::Spacing();
@@ -473,12 +473,18 @@ struct Screens::State {
 
   void bag_screen() {
     heading("Which bag?", "1  Game   >   2  Package   >   3  Bag   >   4  Summary");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     const float h = ImGui::GetTextLineHeightWithSpacing() * 2 + ImGui::GetStyle().FramePadding.y;
     if (entered) {
       focus(bag == "pc" ? 0 : 1);
     }
-    if (ImGui::Selectable("##pc", bag == "pc", 0, ImVec2(0, h))) bag = "pc";
+    // A on the bag already chosen goes on, as Next (the owner, 2026-10-25: A seemed to do nothing);
+    // A on the other one chooses it first (the 360's shows its warning before going on).
+    const bool can_go = bag == "pc" || !saves.empty() || no_backup_ok;
+    if (ImGui::Selectable("##pc", bag == "pc", 0, ImVec2(0, h))) {
+      if (bag == "pc") go(Screen::Summary);
+      bag = "pc";
+    }
     ImGui::SameLine(ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginGroup();
     ImGui::PushFont(fonts.bold, 0.0f);
@@ -486,7 +492,10 @@ struct Screens::State {
     ImGui::PopFont();
     muted("Three sections of 21 slots: any item, spells, fish. The game stays as it is without the mod.");
     ImGui::EndGroup();
-    if (ImGui::Selectable("##360", bag == "360", 0, ImVec2(0, h))) bag = "360";
+    if (ImGui::Selectable("##360", bag == "360", 0, ImVec2(0, h))) {
+      if (bag == "360" && can_go) go(Screen::Summary);
+      bag = "360";
+    }
     ImGui::SameLine(ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginGroup();
     ImGui::PushFont(fonts.bold, 0.0f);
@@ -539,7 +548,7 @@ struct Screens::State {
   }
   void summary_screen() {
     heading("Ready", "1  Game   >   2  Package   >   3  Bag   >   4  Summary");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     const bool install = goal == Goal::Install || goal == Goal::Reinstall;
     const bool to360 = goal == Goal::To360Bag;
     if (ImGui::BeginTable("summary", 2)) {
@@ -627,7 +636,7 @@ struct Screens::State {
   }
   void working_screen() {
     heading("Working", "Please wait: the game's folder is being changed");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     double f;
     std::string t;
     {
@@ -670,7 +679,7 @@ struct Screens::State {
     const bool switched = goal == Goal::ToPcBag || goal == Goal::UninstallStep1;
     heading(!ok ? "It did not work" : goal == Goal::To360Bag ? (bag == "360" ? "The 360's bag installed" : "PC's bag kept")
                                     : installed ? "Installed" : switched ? "PC's bag installed" : "Uninstalled", "Done");
-    ImGui::BeginChild("body", ImVec2(0, body_height()));
+    ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     if (!ok) {
       error_text(result_text.empty() ? "The installer stopped (status " + std::to_string(code) + ")." : result_text);
     } else {
@@ -707,7 +716,8 @@ struct Screens::State {
     heading(browse_for_game ? "Choose the game's folder" : "Choose the package, or a folder extracted from it",
             "Your files");
     muted(browse_drives ? "This computer" : utf8(browse_dir));
-    ImGui::BeginChild("body", ImVec2(0, body_height() - ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("body", ImVec2(0, body_height() - ImGui::GetFrameHeightWithSpacing()),
+                      ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     int i = 0;
     if (!browse_drives) {
       if (entered) focus();
