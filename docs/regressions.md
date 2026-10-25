@@ -283,6 +283,20 @@ here. Games' texts are named by role, never quoted.
 - **QA checklist:** the main menu to the load screen and to the creation screen and back, by the
   pad: PC's frame never vanishes.
 
+## An empty box over PC's Back at a screen change, with the pad (fixed)
+
+- **What happened:** the owner (2026-10-25): going from the load or the creation screen back by
+  the pad, a small empty framed box showed for a second above Back; not with the mouse.
+- **Cause:** CEGUI's tooltip (`CEGUI::System::default__auto_tooltip__`, found by a diagnosis build
+  logging every window shown out of play): shown over the first character slot or class, where the
+  pad puts the cursor; B made the cursor jump onto Back, which has no tooltip text, and the tooltip
+  followed it there, its empty frame showing while it faded. The mouse crosses the screen's
+  background on the way, which takes the tooltip off.
+- **Fix:** before the pad moves the cursor, a shown tooltip is made inactive (`nav_tooltip_off`:
+  no target, `switchToInactiveState`). The owner's run: the box gone, the slots' tooltips still
+  shown after the hover time.
+- **QA checklist:** the load and creation screens left by B: no box; a slot's tooltip still shows.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
