@@ -5982,7 +5982,38 @@ static void interact_prompt(void) {
         }
         if (!ok || dx * dx + dz * dz > reach * reach) { show(w, 0); return; }
     }
-    pos[0] += 0.4f; pos[1] += 1.0f; pos[2] += 0.4f;
+    {
+        /* The 360's anchor (sub_821AB3F0.., the projection sub_8233E1C0 with its offset, the recomp
+         * agent's reading): pos + (0.4, 1.0 - unit+348, 0.4) + the camera's up axis (its orientation's
+         * Y, unit length). The 360's +348 measured on the recomp (2026-10-25): 0.8 for the units that
+         * stand (merchants, stashes, Goldenrod), 0.3 for the ones that walk (Syl, Trill-Bot, Alma);
+         * PC's field is not known yet (DIAGNOSIS below), 0.8 taken meanwhile. */
+        typedef float *(__fastcall *vec_fn)(const void *self, void *edx, float *out);
+        static vec_fn derived_up;
+        static int looked;
+        unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+        void *cam = ctl ? *(void **)(ctl + 8) : 0;
+        float up[3] = {0, 1, 0};
+        if (!looked) {
+            void *ogre = GetModuleHandleA("OgreMain.dll");
+            looked = 1;
+            derived_up = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedUp@Camera@Ogre@@QBE?AVVector3@2@XZ") : 0;
+        }
+        if (derived_up && cam) derived_up(cam, 0, up);
+        pos[0] += 0.4f + up[0];
+        pos[1] += 1.0f - 0.8f + up[1];
+        pos[2] += 0.4f + up[2];
+        {   /* DIAGNOSIS: the floats around the 360's +348 in PC's unit, once per target */
+            static unsigned char *logged;
+            int o;
+            if (u != logged) {
+                logged = u;
+                x360_log("x360 interact: unit floats");
+                for (o = 0x150; o <= 0x180; o += 4) { x360_log(" +"); x360_log_num(o); x360_log("="); x360_log_num((long)(*(float *)(u + o) * 1000)); }
+                x360_log("\r\n");
+            }
+        }
+    }
     if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
     m = 26.0f * k;
     if (x < 0) x = 0;
