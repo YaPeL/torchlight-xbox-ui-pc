@@ -4835,7 +4835,8 @@ int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); 
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
 static int x360_pc_settings_up;   /* PC's settings shown (pc_menus_nav_tick) */
-int x360_pc_menu_up(void) { return x360_pc_settings_up; }
+static int x360_pc_die_up;        /* PC's resurrection screen has the pad (pc_menu_tick) */
+int x360_pc_menu_up(void) { return x360_pc_settings_up || x360_pc_die_up; }
 unsigned x360_pad_eaten;          /* buttons PC's menus used, kept from the play pad until let go (proxy/pad.c) */
 void x360_pause_pad(unsigned pressed, int ly) {
     static int held;
@@ -8251,7 +8252,9 @@ static void pc_menus_nav_tick(void) {
     static const char *const settings_needs[] = {"Cancel", 0};
     static char create_prefix[64];
     static const char *const create_needs[] = {"Vanquisher", 0};
-    int create = 0;
+    static char die_prefix[64];
+    static const char *const die_needs[] = {"Resurrect2", 0};
+    int create = 0, die = 0;
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
@@ -8267,10 +8270,12 @@ static void pc_menus_nav_tick(void) {
     if (!sheet || !rect_of) return;
     /* PC's settings screen: its Apply and Cancel shown. */
     /* The searches walk PC's whole GUI: every 250 ms at most (the review); the checks each frame. */
-    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer"))) {
+    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer") ||
+                                    !die_prefix[0] || !win_of(die_prefix, "Resurrect1"))) {
         last_search = now;
         if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
         if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
+        if (!die_prefix[0] || !win_of(die_prefix, "Resurrect1")) find_pc_by_suffix("Resurrect1", die_needs, die_prefix, sizeof die_prefix);
     }
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
@@ -8278,6 +8283,13 @@ static void pc_menus_nav_tick(void) {
     /* And PC's character creation (its name is typed): the mouse shown there too (the user). Told by
      * its Destroyer, always there (its CreatePlayer shows once a name is typed: QA run 16). */
     create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
+    /* PC's resurrection screen (diemenu.layout: Resurrect1-3, ExitGame), shown when the hero dies:
+     * its buttons for the pad as the pause menu's (the owner's run of 2026-10-24: the pad could not
+     * leave it; the 360's own screen is not ported). Told by ExitGame, shown whatever choices it
+     * offers; not while a screen of the 360's is over it. The play pad gets nothing meanwhile
+     * (x360_pc_menu_up: no move, skill, pause or inventory). */
+    die = in_play && die_prefix[0] && pc_attached(die_prefix, "ExitGame") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    x360_pc_die_up = die;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     cursor_hook_install();
@@ -8294,7 +8306,7 @@ static void pc_menus_nav_tick(void) {
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
         }
     }
-    if (in_play && !pc_pause_open() && !settings) { nav_count = 0; return; }
+    if (in_play && !pc_pause_open() && !settings && !die) { nav_count = 0; return; }
     /* Collected every frame: no pointer kept from one frame to the next (the review: a window
      * destroyed meanwhile, as a load ends, was used). */
     (void)last_collect;
@@ -8323,6 +8335,8 @@ static void pc_menus_nav_tick(void) {
                 top = up;
             }
             if (top) nav_collect(top, 0, 1);
+        } else if (die) {
+            nav_collect(win_of(die_prefix, "Frame"), 0, 1);   /* its own windows only: PC's HUD buttons are on its sheet */
         } else if (in_play) {
             static unsigned char *logged_pm;
             unsigned char *pm = pc_pause_menu();
@@ -8366,7 +8380,7 @@ static void pc_menus_nav_tick(void) {
             static str_fn gn;
             if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
             x360_log("x360 menu: PC's buttons for the pad "); x360_log_num(nav_count);
-            x360_log(in_play ? " (pause):" : ":");
+            x360_log(die ? " (resurrection):" : in_play ? " (pause):" : ":");
             for (i = 0; i < nav_count && gn; i++) { x360_log(" "); x360_log(c_str(gn(nav_list[i], 0), 0)); }
             x360_log("\r\n");
         }
