@@ -3760,5 +3760,5 @@ after entering the mine, `0x541db0` held for a while with no talk shown and no S
 twelve Starts logged `PC's Skip not shown` and nothing was skipped. So PC's in-play cinematics
 are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of its own, its
 CCinematicMenu's input) is not read. **[seen]** The owner: PC's Escape does there what the 360's
-Start does. `x360_cinematic_skip` now posts Escape (key down, char, up) to the game's window when
+Start does. `x360_cinematic_skip` now posts Escape (key down and up, as `pad.c`'s `post_key`) to the game's window when
 no Skip is attached; `keys_proc` lets it through while the cinematic holds.

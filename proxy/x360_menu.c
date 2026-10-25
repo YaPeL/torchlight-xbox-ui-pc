@@ -5898,7 +5898,6 @@ void x360_cinematic_skip(void) {
         HWND w = x360_keys_window();
         if (w) {
             PostMessageW(w, 0x100, 0x1b, 0x00010001);           /* WM_KEYDOWN Esc (scan code 1) */
-            PostMessageW(w, 0x102, 0x1b, 0x00010001);           /* WM_CHAR */
             PostMessageW(w, 0x101, 0x1b, (long)0xc0010001);     /* WM_KEYUP */
             x360_log("x360 menu: Start in a cinematic, Escape posted\r\n");
         } else x360_log("x360 menu: Start in a cinematic, no Skip and no game window\r\n");
