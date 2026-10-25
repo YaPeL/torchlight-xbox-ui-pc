@@ -6840,8 +6840,8 @@ static void pc_menus_guard(void) {
     unsigned i;
     int closed = 0;
     if (!ui) return;
-    if (inventory_open) hide_pc_ui(1);
-    else if (pc_ui_back_at && (int)(GetTickCount() - pc_ui_back_at) >= 0) { pc_ui_back_at = 0; hide_pc_ui(0); }
+    if (inventory_open || pc_ui_back_at) hide_pc_ui(1);   /* during the delay too: what PC shows again stays hidden */
+    if (!inventory_open && pc_ui_back_at && (int)(GetTickCount() - pc_ui_back_at) >= 0) { pc_ui_back_at = 0; hide_pc_ui(0); }
     if (shop) return;
     /* A shop's menu opens PC's inventory with it (the merchant, enchanter, transmuter, stash): left
      * to the shop's code (QA run 1: closing it closed the shop before the port saw it). */
