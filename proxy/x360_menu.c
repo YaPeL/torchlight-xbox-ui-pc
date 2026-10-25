@@ -8870,21 +8870,6 @@ void x360_frame_tick(void) {
         __try { if (bs_back) set_visible(bs_back, 0, 0); } __except (1) {}   /* never a screen left over the game */
     }
     __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
-    /* PC's sheets hidden under a 360 screen are shown again by pc_menus_guard, in play only: play
-     * left first (Goldenrod's retirement leaves it as its menu closes, before the 600 ms after a
-     * shop) kept them hidden, and PC's difficulty screen after the descendant's creation with
-     * them (the owner, 2026-10-25). Out of play for a second, they are shown again. */
-    {
-        int x360_in_play(void);
-        static unsigned out_since;
-        if (x360_in_play()) out_since = 0;
-        else if (!out_since) out_since = GetTickCount() | 1;
-        else if ((hidden_count || pc_ui_back_at) && GetTickCount() - out_since > 1000) {
-            pc_ui_back_at = 0;
-            hide_pc_ui(0);
-            x360_log("x360 menu: out of play, PC's hidden sheets shown again\r\n");
-        }
-    }
     if (!find_world()) return;
     minimap_tick();   /* the corner minimap where the 360 draws it, before this frame is drawn */
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the
