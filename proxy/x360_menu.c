@@ -5997,6 +5997,20 @@ static void quest_marker(int hide) {
 static int qd_reward;   /* the reward item the stick selected (the 360's +464), -1 none */
 static int qd_card;     /* the 360's item card shown for a reward (fill_card's card 0) */
 static void *qd_card_item;   /* its item */
+/* The selected slot drawn over the highlight (the 360's capture: the gold frame around, the item's
+ * icon over it; the rollover image's centre is opaque, so the slot comes in front with its own
+ * background image off, given back when the selection goes). */
+static void *qd_lifted;
+static char qd_lifted_image[96];
+static void qd_lift(void *bkg) {
+    if (qd_lifted == bkg) return;
+    if (qd_lifted) prop(qd_lifted, "Image", qd_lifted_image);
+    qd_lifted = bkg;
+    if (!bkg) return;
+    read_prop(bkg, "Image", qd_lifted_image, sizeof qd_lifted_image);
+    prop(bkg, "Image", "");
+    move_to_front(bkg, 0);
+}
 static void nav_point(float x, float y);   /* below: the hidden cursor moved */
 /* The reward item i of the quest PC's dialog offers, 0 if none: PC's own mouse-over (GOG 0x59be40,
  * CQuestDialogMenu::handle_MouseOver *(OT)*) takes CGameUI's +0x2fc, its dialog at +0x98, that
@@ -6020,6 +6034,7 @@ static void qd_show(int on) {
     if (on == qd_shown) return;
     qd_reward = -1;
     if (qd_card) { hide_card(0); qd_card = 0; }
+    qd_lift(0);
     quest_marker(on);
     qd_shown = on;
     if (!on) overlay_closed_at = GetTickCount();
@@ -6167,6 +6182,7 @@ static void dialog_tick(void) {
                 if (qd_reward < -1) qd_reward = items - 1;
                 if (qd_reward >= items) qd_reward = -1;
                 if (qd_card) { hide_card(0); qd_card = 0; }
+                if (qd_reward < 0) qd_lift(0);
                 if (qd_reward >= 0) {
                     typedef struct { float top, bottom, left, right; } rect6;
                     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -6179,16 +6195,18 @@ static void dialog_tick(void) {
                     bkg = win_of(QD_PREFIX, slot);
                     read_prop(bkg, "UnifiedPosition", r, sizeof r);   /* its place only, as the 360 (+248) */
                     prop(win_of(QD_PREFIX, "ItemHighlight"), "UnifiedPosition", r);
+                    qd_lift(bkg);
                     /* The item's card, the 360's (the inventory's, fill_card), where the 360 draws
-                     * it (the owner's capture of the 360, 2026-10-24): its right edge on the slot's
-                     * left part, its middle at the slot's. */
+                     * it (the owner's captures of the 360 and the port, 2026-10-24, 1920x1080): its
+                     * right edge 6 % of the slot's width into the slot, its middle at the slot's;
+                     * its size is its text's (the 360's in Spanish there, wider). */
                     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
                     h = item ? fill_card(0, item, 0, 0) : 0;
                     if (h > 0) { qd_card = 1; qd_card_item = item; }   /* shown by fill_card: tracked whatever follows */
                     if (h > 0 && bkg && rect_of) {
                         fresh_rects(bkg);
                         rect_of(bkg, 0, &br);
-                        place_card(0, br.left + 0.17f * (br.right - br.left) - card_width(0), 0, (br.top + br.bottom) * 0.5f - h * 0.5f);
+                        place_card(0, br.left + 0.06f * (br.right - br.left) - card_width(0), 0, (br.top + br.bottom) * 0.5f - h * 0.5f);
                     }
                     nav_point(1.0f, 1.0f);   /* the hidden cursor off PC's slots: no hover card of PC's too */
                     if (!item) x360_log("x360 dialog: no item for that reward\r\n");
@@ -6201,6 +6219,7 @@ static void dialog_tick(void) {
             if (qd_reward >= items || (qd_card && qd_reward_item(qd_reward) != qd_card_item)) {
                 qd_reward = -1;
                 if (qd_card) { hide_card(0); qd_card = 0; }
+                qd_lift(0);
             }
         }
         show(win_of(QD_PREFIX, "ItemHighlight"), qd_reward >= 0);

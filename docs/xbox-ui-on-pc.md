@@ -3771,8 +3771,10 @@ PC's own mouse-over finds it (GOG `0x59be40`, `CQuestDialogMenu::handle_MouseOve
 `+0x2fc` (vtable `0xab7ff0`), its dialog at `+0x98`, the dialog's quest at `+8`, the quest's
 rewards at `+0x150`, their items' list from `0x5f4760` (`getRewardItems` *(OT)*: data, count `+4`,
 capacity `+8`); PC's mouse-over keeps the item at the menu's `+0x118`. Its card is the 360's
-(`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge on the
-slot's left part, its middle at the slot's; hidden with none and when the talk closes. The first
+(`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge 6 % of the
+slot's width into the slot, its middle at the slot's (measured against the port's capture); hidden with none and when the talk closes. The first
 try (the hidden cursor on PC's slot, PC's own hover card) drew PC's card, with its golden frame,
-its description beside it: dropped. The selection is dropped when the slots or their item change; the hidden cursor is moved off
+its description beside it: dropped. The selected slot comes in front of the highlight with its own background off (the rollover
+image's centre is opaque; the 360 shows the icon over the gold frame). The selection is dropped
+when the slots or their item change; the hidden cursor is moved off
 PC's slots. The log names each step (`x360 dialog: reward item N`). Not run yet.
