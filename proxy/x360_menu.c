@@ -5876,10 +5876,22 @@ void x360_cinematic_skip(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
     /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
      * other layout of PC's has a window ending in Skip. */
-    if (qd_shown) return;   /* a talk: its own Start skips it (dialog_tick) */
+    if (qd_shown) return;   /* a talk: Start does nothing there (dialog_tick) */
     if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
-    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) press_pc(cin_prefix, "Skip");
-    else x360_log("x360 menu: Start in a cinematic, PC's Skip not shown\r\n");
+    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) { press_pc(cin_prefix, "Skip"); return; }
+    /* In play no Skip is shown: PC's Escape skips it, as the 360's Start (the owner, 2026-10-24),
+     * posted to the game's window (keys_proc lets it through while the cinematic holds). */
+    {
+        __declspec(dllimport) int __stdcall PostMessageA(HWND w, unsigned msg, unsigned wparam, long lparam);
+        extern HWND x360_keys_window(void);
+        HWND w = x360_keys_window();
+        if (w) {
+            PostMessageA(w, 0x100, 0x1b, 0x00010001);           /* WM_KEYDOWN Esc (scan code 1) */
+            PostMessageA(w, 0x102, 0x1b, 0x00010001);           /* WM_CHAR */
+            PostMessageA(w, 0x101, 0x1b, (long)0xc0010001);     /* WM_KEYUP */
+            x360_log("x360 menu: Start in a cinematic, Escape posted\r\n");
+        } else x360_log("x360 menu: Start in a cinematic, no Skip and no game window\r\n");
+    }
 }
 
 /* The first non-empty Image of w or a window under it. */
@@ -6984,11 +6996,13 @@ __declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
 __declspec(dllimport) long __stdcall GetWindowLongA(HWND w, int index);
 __declspec(dllimport) int __stdcall GetWindowTextA(HWND w, char *text, int size);
 static long keys_old_proc;       /* the game window's own procedure: subclassed once, never again */
+static HWND keys_window;         /* the game's window (keys_off) */
 static int keys_unicode;
 static int keys_open;            /* set each frame by keys_off: in play, no PC settings, console or cinematic */
 static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
 static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
 static int keys_console_key;     /* the console's key went down: look for its window at once */
+HWND x360_keys_window(void) { return keys_window; }
 static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
     int i;
@@ -7028,6 +7042,7 @@ static void keys_off(void) {
             long old = 0;
             tried = 1;
             keys_unicode = IsWindowUnicode(w);
+            keys_window = w;
             if ((keys_unicode ? GetWindowLongW(w, -4) : GetWindowLongA(w, -4)) != (long)keys_proc)   /* never onto itself */
                 old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
             keys_old_proc = old;
