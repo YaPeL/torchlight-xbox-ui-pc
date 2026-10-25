@@ -3747,9 +3747,16 @@ and no pause or inventory is open, Start clicks PC's cinematic menu's `Skip`
 click at its centre) and Back is dropped; not while a tip is up (it keeps every button). In the 360's inventory at a shop, Start closes the shop as
 Back and B do (`x360_inventory_pad`); elsewhere in the inventory it keeps the pet's commands.
 
-**[seen]** In an NPC's talk (PC's dialog counts as a cinematic for `0x541db0`) Start on the 360 goes
-through the pages and accepts the quest they end with (its handler not read). `dialog_tick` now
-does that on Start: Ok on each page every 200 ms (the proxy's pace, not the 360's), Accept when
-shown, which ends it; it stops too on a page with neither, under a tip, or when the talk closes.
-Only a shown button is pressed. `x360_cinematic_skip` leaves a talk to it, and `proxy/pad.c` does
-not open the pause on that Start.
+**[seen]** The owner on the 360: in a quest's talk Start and Back do nothing; a common talk is
+closed by them; a merchant's too; an in-play cinematic is skipped by Start, which also accepts
+its quest. Now Start and Back do nothing in any talk (`proxy/pad.c` keeps them from the pause and
+the inventory while a talk or another of the 360's overlays is up): right for a quest's talk; a
+common talk is not closed by them, because its pages look the same as a quest's first ones (Ok
+only) and the port has no sign yet of which it is (the quest marker is taken off without reading
+which it was).
+
+**Not working (the owner's run of 2026-10-24, late; stopped after two failed tries):** in play,
+after entering the mine, `0x541db0` held for a while with no talk shown and no Skip attached:
+twelve Starts logged `PC's Skip not shown` and nothing was skipped. So PC's in-play cinematics
+are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of its own, its
+CCinematicMenu's input) is not read.
