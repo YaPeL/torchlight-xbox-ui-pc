@@ -297,6 +297,23 @@ here. Games' texts are named by role, never quoted.
   shown after the hover time.
 - **QA checklist:** the load and creation screens left by B: no box; a slot's tooltip still shows.
 
+## One sword, two references, after the transmuter (open)
+
+- **What happened:** the owner (2026-10-25, GOG, the pad): the equipped sword put into the
+  transmuter with X, the transmuter closed and opened again: two swords, one of them unusable.
+- **Found (a diagnosis build logging the items' and references' addresses):** one item, two
+  references: before X one reference at slot 0 (equipped); X logs it placed at slot 15 (the
+  transmuter's first place, a slot of the hero's own inventory); at the next opening the same
+  reference object is at slot 0 again and a new one at slot 23 (PC's closing put slot 15's item in
+  the bag). PC's `removeEquipment` (GOG `0x4e9ca0`) does take the reference out of the list (and
+  calls the item's unequip, its virtual `+0x17c`). The 360 moves the item into the transmuter's own
+  inventory (`sub_8236BA20`: `sub_822E3218` then `sub_822E29F8`); PC's transmuter places are the
+  hero's slots 15 to 18.
+- **Tried, not the fix:** the item taken off first as A does (`pickupEquipment` into the bag), then
+  moved from the bag: the same two references (the owner's run). Stopped after two tries. Next: the
+  references logged after X and after the closing, to see when slot 0's comes back. The enchanter
+  and the gem goblins move an item into slot 14 the same way (not seen yet).
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
