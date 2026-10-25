@@ -2764,6 +2764,24 @@ void x360_retire_act(void) {
     }
     x360_log("x360 retire: the hero retired with "); log_item_name(item); x360_log("\r\n");
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    /* PC's side-panel tests (0x541090, 0x541130: each menu's virtual +0xc, CEnchantMenu's 0x575930:
+     * open, or its closed flag +0x39 still 0) hold PC's game-state changes back while one is not
+     * closed (its client update, 0x41ba36). The act closes the menu, but its closing (the board's,
+     * hidden for good by the port) never ended once play was left: PC never reached the descendant's
+     * difficulty screen (the owner's runs: with the tests left patched, it came). Its closing taken
+     * as ended, as PC's own would end. */
+    if (!m[ENCHANT_OPEN] && !m[ENCHANT_OPEN + 1]) {
+        m[ENCHANT_OPEN + 1] = 1;
+        x360_log("x360 retire: the enchant menu's closing taken as ended\r\n");
+    }
+    {   /* PC's side panels still not closed, logged (CGameUI's list at +0x16b8, the virtual +0xc) */
+        typedef unsigned char (__fastcall *test_fn)(void *self, void *edx);
+        void **b = *(void ***)(ui + 0x16b8), **e = *(void ***)(ui + 0x16bc);
+        for (; b && b < e; b++)
+            if (*b && ((test_fn)(*(void ***)*b)[3])(*b, 0)) {
+                x360_log("x360 retire: a side panel of PC's not closed, vtable "); x360_log_num((long)*(void **)*b); x360_log("\r\n");
+            }
+    }
     /* PC's act takes the item out of slot 14 itself; one left there is put back. */
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
         move_out(bag, item, ENCHANT_SLOT);
