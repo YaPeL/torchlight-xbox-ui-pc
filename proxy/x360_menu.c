@@ -5646,7 +5646,7 @@ static int hidden_mimic(void *unit) {
 }
 
 /* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, "Undead - Fast";
- * none for an NPC), as UTF-8; "" if it has none. */
+ * an NPC's its role, "Retires characters and improves Heirlooms"), as UTF-8; "" if it has none. */
 static void unit_description(void *unit, char *out, unsigned size) {
     static const unsigned short empty[] = {0};
     wstr_ctor_fn ctor;
@@ -5689,8 +5689,11 @@ static void target_tick(void) {
     unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
     if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) x360_hud_attacked(unit);
     if (attacked.unit && (int)(now - attacked_until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&attacked, 0, 0);
-    /* The 360's order: the unit under the cursor, else the one attacked. */
+    /* The 360's order: the unit under the cursor, else the one attacked. The 360's "cursor" is
+     * the pad's target (its HUD's +72: an NPC near shows its name, level and description in
+     * gold, the owner's capture of Goldenrod); PC's unit under the mouse first, for the mouse. */
     unit = ui ? *(unsigned char **)(ui + GOG_UI_MOUSE_OVER) : 0;
+    if (!unit) { void *x360_pad_unit_target(void); unit = (unsigned char *)x360_pad_unit_target(); }
     if (!unit) unit = (unsigned char *)attacked.unit;
     if (unit && hidden_mimic(unit)) unit = 0;
     show(x, unit != 0);
