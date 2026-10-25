@@ -4,11 +4,11 @@
 [![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-xbox-ui-pc?include_prereleases&sort=semver)](https://github.com/YaPeL/torchlight-xbox-ui-pc/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![GOG](https://img.shields.io/badge/GOG-supported-86328A?logo=gogdotcom&logoColor=white)](#installing)
-[![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-testing-313131?logo=epicgames&logoColor=white)](#installing)
-[![Steam](https://img.shields.io/badge/Steam-testing-1b2838?logo=steam&logoColor=white)](#known-limitations)
+[![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-supported-313131?logo=epicgames&logoColor=white)](#installing)
+[![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
-> **Alpha:** tested with GOG's build under Proton on Linux; Steam, the Epic Games Store, Windows
-> and the Steam Deck are being tested. Report problems in
+> **Alpha:** played with GOG's build under Proton on Linux, with Epic's and Steam's builds on
+> Windows, and on the Steam Deck (the installer and the game). Report problems in
 > [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
@@ -41,9 +41,9 @@ See [Known limitations](#known-limitations).
 
 You need:
 
-- Torchlight for PC, from **Steam**, **GOG** or the **Epic Games Store**. GOG's build has been
-  played with the mod. Epic's `Torchlight.exe` is GOG's, byte for byte, and Steam's build is an
-  older one the mod is ported to: both are in their first test with the mod.
+- Torchlight for PC, from **Steam**, **GOG** or the **Epic Games Store**. All three have been
+  played with the mod: GOG's under Proton on Linux, Epic's (its `Torchlight.exe` is GOG's, byte
+  for byte) and Steam's (an older build the mod is ported to) on Windows, and the Steam Deck.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
 
@@ -154,11 +154,8 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 
 ## Known limitations
 
-- **Epic's build is in its first test.** Its `Torchlight.exe` is GOG's, byte for byte; it has not
-  been played with the mod yet.
-- **Steam's build is in its first test.** Steam sells an older build (17685) than GOG and Epic:
-  every address the mod uses is found in it and the proxy is built for it; it has not been played
-  with the mod yet. With more than one install, the installer takes Steam's first.
+- **Steam's build** is older (17685) than GOG's and Epic's: every address the mod uses is found in
+  it and the proxy is built for it. With more than one install, the installer takes Steam's first.
 - **The bag.** With PC's bag (the default) the main section holds 21 items; the 360's bag is an
   install option, with its notes on saves (above). A check of the saves in the installer, before
   changing the bag, is still to come.
@@ -217,6 +214,8 @@ Tests use synthetic data only: `python3 -m unittest discover -s tests`.
   `installer/src/lzx.cpp`.
 - The prompt icons in `data/prompts` are Kenney's
   [Input Prompts](https://kenney.nl/assets/input-prompts) (CC0).
+- Special thanks to [OpenTorchlight](https://github.com/Qweasd123tg/OpenTorchlight) for its
+  documentation of the game, which helped find our way in PC's code. No code of it is used here.
 
 ## License
 
