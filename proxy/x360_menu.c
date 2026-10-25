@@ -6863,10 +6863,24 @@ static void tip_tick(void) {
                                                 "TIP_PETINVENTORY", "TIP_STASH", "TIP_FISHING", "TIP_SHAREDSTASH",
                                                 "TIP_HOWTOATTACK", 0};
             int t;
-            for (t = 0; never[t]; t++) {
+            /* The inventory's tip is the 360's for its own inventory only (its caller 8236F700, an
+             * inventory menu): PC opens its inventory with a shop's menu and the tip with it (the
+             * owner, 2026-10-25: at a gem goblin; none there on the 360). */
+            int at_a_shop = 0;
+            if (ui) {
+                typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+                static const unsigned menus[] = {0x2d8, 0x2dc, 0x2e0, 0x2e4};
+                int q;
+                for (q = 0; q < 4; q++) {
+                    unsigned char *m = *(unsigned char **)(ui + menus[q]);
+                    if (m && ((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) at_a_shop = 1;
+                }
+            }
+            for (t = at_a_shop ? -1 : 0; t < 0 || never[t]; t++) {
+                const char *n = t < 0 ? "TIP_INVENTORY" : never[t];
                 unsigned c = 0;
-                while (never[t][c] && id[c] == never[t][c]) c++;
-                if (never[t][c] || id[c]) continue;
+                while (n[c] && id[c] == n[c]) c++;
+                if (n[c] || id[c]) continue;
                 set_visible(tip_root, 0, 0);
                 press_tip("Ok");
                 x360_log("x360 tip: closed, the 360 never shows it\r\n");
