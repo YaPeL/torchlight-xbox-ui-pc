@@ -1414,6 +1414,32 @@ static void walk_patch_install(void) {
     x360_log(")\r\n");
 }
 
+/* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
+ * expanded nodes (sub_82217DA8 after sub_822F6B70: hero+512's +68 = 200; the pet's 800), PC at 800
+ * (GOG 0x416d40: push 0x320, then 0x486130 writes [hero+0x20c]+0x44; the pet's 800 at 0x416e92 and
+ * 0x4199bb). Both snap a blocked goal to the nearest open cell within 16 and walk a partial path to
+ * the node nearest it when the cap is reached (360 0x8221F3E4, 0x8221FA44; GOG 0x421e5d, 0x422b29).
+ * With 800 and the stick's destination 5 units ahead each frame (section 30a), a goal snapped
+ * beyond a narrow passage's wall got a long detour, a new one each frame: the hero turned in circles
+ * at the passage up to the fishing spot (the owner, 2026-10-25; replays: 2 units ahead or the old
+ * destination went in, 60 destinations a second did not). The push made 200 while the pad is on;
+ * pad_path_cap=0 leaves PC's 800. */
+int x360_path_cap_on = 1;
+#define GOG_HERO_PATH_CAP 0x00416d40
+static void path_cap_patch(void) {
+    unsigned char *at = (unsigned char *)GOG_HERO_PATH_CAP;
+    DWORD old;
+    if (!x360_path_cap_on) { x360_log("pad: the hero's path search left at PC's 800 nodes (pad_path_cap=0)\r\n"); return; }
+    if (at[0] != 0x68 || at[1] != 0x20 || at[2] != 0x03 || at[3] != 0x00 || at[4] != 0x00) {
+        x360_log("pad: the hero's path cap not as read: left at PC's\r\n");
+        return;
+    }
+    if (!VirtualProtect(at, 5, 0x40, &old)) { x360_log("pad: the hero's path cap not writable\r\n"); return; }
+    at[1] = 200; at[2] = 0;
+    VirtualProtect(at, 5, old, &old);
+    x360_log("pad: the hero's path search capped at 200 nodes, as the 360's\r\n");
+}
+
 extern unsigned x360_frames;            /* proxy/x360_menu.c's frame listener */
 int x360_walk_dest_on = 1;              /* x360_ui.ini pad_walk_dest=0: the old destination (to compare) */
 static unsigned dest_frame;
@@ -1826,6 +1852,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
+    if (x360_pad_running) path_cap_patch();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
