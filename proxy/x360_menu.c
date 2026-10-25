@@ -8456,14 +8456,17 @@ static void nav_point(float x, float y) {
  * Injected from the frame listener instead, PC's main menu closed (CMainMenu's onClick, its
  * setOpen(false) taking its root off at once *(OT)*) and the frame was drawn before the next
  * screen opened: its title and bottom bar gone for an instant (the owner, 2026-10-25). Injected
- * here only when the game's window is not the active one. */
+ * here only when the game's window is not the active one or the press cannot be posted. */
 static void nav_click(float x, float y) {
     __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
     void x360_inject_left(int down, float x, float y);
     HWND w = GetActiveWindow();
     long lp = ((long)y & 0xffff) << 16 | ((long)x & 0xffff);
     nav_point(x, y);
-    if (w && PostMessageW(w, 0x0201 /* WM_LBUTTONDOWN */, 1 /* MK_LBUTTON */, lp) && PostMessageW(w, 0x0202 /* WM_LBUTTONUP */, 0, lp)) return;
+    if (w && PostMessageW(w, 0x0201 /* WM_LBUTTONDOWN */, 1 /* MK_LBUTTON */, lp)) {
+        if (!PostMessageW(w, 0x0202 /* WM_LBUTTONUP */, 0, lp)) PostMessageW(w, 0x0202, 0, lp);   /* never a press left held */
+        return;
+    }
     x360_inject_left(1, x, y);
     x360_inject_left(0, x, y);
 }
