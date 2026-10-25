@@ -266,7 +266,7 @@ STRINGS = {
     "bag.mine": 0x820D0E6C, "bag.pet": 0x820D0E7C, "title.merchant": 0x820D0E8C, "title.stash": 0x820D0EA0,
     "title.gambler": 0x820D0EE0, "title.sharedstash": 0x820D0EC4, "title.transmuter": 0x820D0EAC,
     "filter.transmute": 0x820D0C40, "title.enchanter": 0x820D058C, "title.enchanting": 0x820D17E4,
-    "title.destroygems": 0x820D1044, "title.recovergems": 0x820D1028, "act.enchant": 0x820CF118, "ench.chance": 0x820CF164, "ench.max": 0x820CF128, "ench.cannot": 0x820CF18C,
+    "title.destroygems": 0x820D1044, "title.recovergems": 0x820D1028, "title.retire": 0x820CB084, "act.retire": 0x820CB084, "act.enchant": 0x820CF118, "ench.chance": 0x820CF164, "ench.max": 0x820CF128, "ench.cannot": 0x820CF18C,
     "act.unequip": 0x820D0FB0, "act.equip": 0x820D0FA4, "act.use": 0x820D0F9C, "act.learn": 0x820D1080,
     "act.drop": 0x820D0F90, "act.swap": 0x820D0F84, "act.identify": 0x820D1014, "act.buy": 0x820D0F48,
     "act.sell": 0x820D0F50, "act.socket": 0x820D1060, "act.insert": 0x820D1070, "filter.insert": 0x820D0C54,

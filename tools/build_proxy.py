@@ -106,11 +106,15 @@ def substitute(text, table):
     """The C source with each address in its code replaced from table; and the addresses missing."""
     out, last, missing = [], 0, set()
     for start, end, value in port_addresses.addresses_in(text, code_only=True):
+        while end < len(text) and text[end] in "uUlL":   # a suffix goes inside: (0x... + x360_reloc)u is no C
+            end += 1
         if value not in table:
             missing.add(value)
             continue
         out.append(text[last:start])
-        out.append(f"{table[value]:#010x}")
+        # Plus x360_reloc: Steam's executable has relocations and Windows loads it away from its
+        # base (proxy/cegui_proxy.c sets it at start).
+        out.append(f"({table[value]:#010x} + x360_reloc)")
         last = end
     out.append(text[last:])
     return "".join(out), missing
@@ -208,7 +212,7 @@ def target_sources(repo, out, target):
             missing.setdefault(v, []).append(n)
         paths[n] = os.path.join(src, n)
         with open(paths[n], "w", encoding="utf-8") as f:
-            f.write(text)
+            f.write("extern unsigned long x360_reloc;   /* tools/build_proxy.py: the executable's move */\n" + text)
     if missing:
         raise SystemExit(f"no accepted {target} address in proxy/{table_name} for:\n  "
                          + "\n  ".join(f"{v:#010x} ({', '.join(fs)})" for v, fs in sorted(missing.items())))

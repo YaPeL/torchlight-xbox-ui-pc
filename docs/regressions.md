@@ -262,10 +262,102 @@ here. Games' texts are named by role, never quoted.
   once missed it. Now the tests stay patched until 2 s after the last frame at the shop.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
+## PC's main menu frame flickering away at a screen change (fixed)
+
+- **What happened:** the owner (2026-10-25, every store): going from PC's main menu to the load
+  or the creation screen and back, PC's frame (its title at the top, the bottom bar with the
+  buttons) vanishes for an instant, the 3D scene alone seen.
+- **Found:** not without the mod; not with the mod and `pad=0` (the mouse used): so something run
+  only with the pad's ticks. Not the shops' and the modal's 3D boards (hidden in play only: still
+  seen), not PC's interactive bars (`pc_bars_off`, transparent in play only: still seen). Stopped
+  after those two tries; at the owner's suggestion a third: not the cursor's hiding either (an
+  experiment with Windows' and CEGUI's cursors always shown: still seen).
+- **Cause:** the pad's clicks. PC injects a mouse click into CEGUI from its window's message handler
+  (CGameUI's, GOG `0x53ff90`, the game's only calls of `injectMouseButtonDown` and `Up`), as the
+  messages are pumped, before the frame's update; the pad injected its own from the frame listener,
+  after it. PC's main menu closes in its click handler, taking its root off at once *(OT)*, so the
+  frame was drawn before the next screen opened.
+- **Fix:** the pad's clicks on PC's menus (`nav_click`) are posted to the game's window as
+  `WM_LBUTTONDOWN` and `WM_LBUTTONUP`, PC's own path. The owner's run (2026-10-25): the frame no
+  longer vanishes.
+- **QA checklist:** the main menu to the load screen and to the creation screen and back, by the
+  pad: PC's frame never vanishes.
+
+## An empty box over PC's Back at a screen change, with the pad (fixed)
+
+- **What happened:** the owner (2026-10-25): going from the load or the creation screen back by
+  the pad, a small empty framed box showed for a second above Back; not with the mouse.
+- **Cause:** CEGUI's tooltip (`CEGUI::System::default__auto_tooltip__`, found by a diagnosis build
+  logging every window shown out of play): shown over the first character slot or class, where the
+  pad puts the cursor; B made the cursor jump onto Back, which has no tooltip text, and the tooltip
+  followed it there, its empty frame showing while it faded. The mouse crosses the screen's
+  background on the way, which takes the tooltip off.
+- **Fix:** before the pad moves the cursor, a shown tooltip is made inactive (`nav_tooltip_off`:
+  no target, `switchToInactiveState`). The owner's run: the box gone, the slots' tooltips still
+  shown after the hover time.
+- **QA checklist:** the load and creation screens left by B: no box; a slot's tooltip still shows.
+
+## After Goldenrod's retirement, no difficulty screen (fixed)
+
+- **What happened:** the owner (2026-10-25, GOG, the pad, the recomp agent's 5-ordrak save): a
+  hero retired by the port's Goldenrod screen, the descendant created (PC's creation, the pad's A
+  on CreatePlayer): PC's frame and menus gone, the 3D scene alone, nothing more. Without the mod
+  (the mouse, PC's own windows) PC shows its difficulty screen there.
+- **Found:** a UI dump in that state: PC's GUI sheet holds no menu at all (the console and the
+  tooltip only): the difficulty screen is not hidden, it was never attached. PC's log shows the
+  descendant saved (`save.tmp`) with and without the mod. PC's Retire button is command 9 of its
+  enchant menu, which calls the act `0x57a800` the port calls.
+- **Ruled out:** PC's sheets left hidden after the shop (shown again out of play: no change, none
+  was hidden); the 360's bag (`bag=pc`: the same); the pad's click (CreatePlayer clicked with the
+  mouse: the same). Stopped. Left: what the port does between the retirement and the creation
+  (its shop's closing, the side panels' test patch, the boards, the load hook armed by a menu
+  giving way), to be switched off one by one in a diagnosis build.
+- **Cause (a diagnosis build switching the out-of-play ticks off, one run each):** PC's side-panel
+  tests (`0x541090`, `0x541130`: each menu's virtual `+0xc`) hold PC's game-state changes back while
+  a panel has not finished closing (its client update, `0x41ba36`). The retirement leaves play as
+  the enchant menu and the inventory close; out of play PC does not update its menus, so their
+  closing never ends (both logged not closed: `CEnchantMenu`'s `0x575930` reads its closed flag
+  `+0x39`). The port gave the tests back (they are patched at a shop and 2 s after) out of play:
+  PC held the difficulty screen forever. Without the mod the tests are never patched and the
+  closings end before play is left.
+- **Fix:** the tests are not given back out of play, only once in play again, where the closings
+  end. The owner's run: the difficulty screen, the story's page, the new game, a level change.
+- **QA checklist:** a hero retired at Goldenrod by the pad (a copy of a save): the descendant's
+  creation, its difficulty screen, a level change in its game.
+
+## One sword, two references, after the transmuter (fixed)
+
+- **What happened:** the owner (2026-10-25, GOG, the pad): the equipped sword put into the
+  transmuter with X, the transmuter closed and opened again: two swords, one of them unusable.
+- **Found (a diagnosis build logging the items' and references' addresses):** one item, two
+  references: before X one reference at slot 0 (equipped); X logs it placed at slot 15 (the
+  transmuter's first place, a slot of the hero's own inventory); at the next opening the same
+  reference object is at slot 0 again and a new one at slot 23 (PC's closing put slot 15's item in
+  the bag). PC's `removeEquipment` (GOG `0x4e9ca0`) does take the reference out of the list (and
+  calls the item's unequip, its virtual `+0x17c`). The 360 moves the item into the transmuter's own
+  inventory (`sub_8236BA20`: `sub_822E3218` then `sub_822E29F8`); PC's transmuter places are the
+  hero's slots 15 to 18.
+- **Tried, not the fix:** the item taken off first as A does (`pickupEquipment` into the bag), then
+  moved from the bag: the same two references (the owner's run).
+- **Cause:** PC's transmuter closing (CCombineMenu's setOpen, GOG `0x569220`) gives each item in its
+  places back where the map it made as it opened says it came from (`0x568fe0`, the map by
+  `0x567090`): the sword, mapped to slot 0 when it opened, goes back there by `0x4ea200`, and that
+  success falls into the path for items not in the map, which picks it up again into the bag
+  (`0x569085` to `0x5690de`, `pickupEquipment` at `0x5690f1`): two references. Its own drag keeps
+  that map; the pad's X did not.
+- **Fix:** the items X put there are given back by the mod before PC's closing, as PC does
+  (`removeEquipment`, then `0x4ea200` to the slot X took it from, else `pickupEquipment`; the pet's
+  to the pet's bag); PC finds the places empty. Whoever closes it: its setOpen (the vtable's
+  `+0x1c`) is replaced by one that does this first. An ingredient a recipe leaves keeps its origin. The owner's run: one sword, back in the hand. The enchanter and the gem goblins
+  take their item out of slot 14 themselves after the act, so PC's closing finds nothing there.
+- **QA checklist:** an equipped item into the transmuter by X, the transmuter closed and opened
+  again: one item, back where it was.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
+- a town NPC without a portrait after one with it: no portrait shown;
 - a quest offer with reward items: the left stick's left and right go through them, each one's card shown, and back to none;
 - a waypoint's portals screen: a destination chosen with the d-pad and A, B cancels;
 - the hero's death: PC's resurrection screen's buttons chosen with the d-pad and A;

@@ -1501,8 +1501,10 @@ class BuildTargetTest(unittest.TestCase):
             src = ("#define GOG_MODAL 0x0054cad0   /* GOG 0x54cad0, 0x525579 */\n"
                    "f((void *)0x547ca0u); g(\"0x525579\"); h(0x2cc);\n")
             out, missing = build_proxy.substitute(src, t)
-            self.assertEqual(out, "#define GOG_MODAL 0x005482f0   /* GOG 0x54cad0, 0x525579 */\n"
-                                  "f((void *)0x00543660u); g(\"0x525579\"); h(0x2cc);\n")
+            # Each address plus x360_reloc (Steam's executable moved by Windows' ASLR), a suffix
+            # dropped inside the sum.
+            self.assertEqual(out, "#define GOG_MODAL (0x005482f0 + x360_reloc)   /* GOG 0x54cad0, 0x525579 */\n"
+                                  "f((void *)(0x00543660 + x360_reloc)); g(\"0x525579\"); h(0x2cc);\n")
             self.assertEqual(missing, set())
             _, missing = build_proxy.substitute("x(0x00525579); y(0x410000);", t)
             self.assertEqual(missing, {0x525579, 0x410000})
