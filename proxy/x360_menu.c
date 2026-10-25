@@ -5887,7 +5887,8 @@ void x360_cinematic_skip(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
     /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
      * other layout of PC's has a window ending in Skip. */
-    if (qd_shown) return;   /* a talk: Start does nothing there (dialog_tick) */
+    int x360_overlay_open(void);
+    if (qd_shown || x360_overlay_open()) return;   /* a talk, a modal, fishing, a tip: Start does nothing there, and no Escape reaches PC's screen under them (the release review) */
     if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
     if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) { press_pc(cin_prefix, "Skip"); return; }
     /* In play no Skip is shown: PC's Escape skips it, as the 360's Start (the owner, 2026-10-24),

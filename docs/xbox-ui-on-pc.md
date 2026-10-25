@@ -3762,7 +3762,10 @@ twelve Starts logged `PC's Skip not shown` and nothing was skipped. So PC's in-p
 are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of its own, its
 CCinematicMenu's input) is not read. **[seen]** The owner: PC's Escape does there what the 360's
 Start does. `x360_cinematic_skip` now posts Escape (key down and up, as `pad.c`'s `post_key`) to the game's window when
-no Skip is attached; `keys_proc` lets it through while the cinematic holds.
+no Skip is attached; `keys_proc` lets it through while the cinematic holds. Not while a talk or another
+of the 360's overlays (a modal, fishing, a tip) is up: PC's test holds there too, and an Escape
+would reach PC's screen under it (the release review). The owner played the skip with Start in
+an in-play cinematic (2026-10-24).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
