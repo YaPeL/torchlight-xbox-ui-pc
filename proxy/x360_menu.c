@@ -5702,8 +5702,13 @@ static void target_tick(void) {
         int x360_overlay_open(void);
         if (x360_pad_buttons() & (0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000)) unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
         if (!unit) unit = (unsigned char *)x360_pad_unit_target();
-        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open()) unit = 0;
         if ((!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;
+        /* Under a screen nothing (the owner: the bar over PC's pause menu); the 360's pause
+         * covers its HUD. */
+    }
+    {
+        int x360_overlay_open(void);
+        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
     }
     if (unit && hidden_mimic(unit)) unit = 0;
     show(x, unit != 0);
