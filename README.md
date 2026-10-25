@@ -162,6 +162,13 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - **The bag.** With PC's bag (the default) the main section holds 21 items; the 360's bag is an
   install option, with its notes on saves (above). A check of the saves in the installer, before
   changing the bag, is still to come.
+- **Screens still PC's** (with the pad, but PC's look): the main menu and the pause menu; the
+  death screens, normal and hardcore; the waypoint portals; the screen that turns the story's
+  pages in story mode.
+- **Not as on the 360 yet:**
+  - the black bars shown with the zoom do not look like the 360's;
+  - the name shown on entering a town or a dungeon does not fade out as on the 360;
+  - the loading screens are PC's, not the 360's.
 - Windows-only binaries; on Linux the game runs under Proton or Wine.
 
 ## Tools
