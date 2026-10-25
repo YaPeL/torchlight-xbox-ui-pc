@@ -2714,6 +2714,7 @@ static void retire(void) {
     void *bag = owner_bag(hero), *from = inventory();
     int slot;
     if (!m || !bag || !from || !list_count) return;
+    if (!m[ENCHANT_OPEN] || hero[0x9c4]) { x360_log("x360 retire: A: the menu closed or the hero already retired: nothing\r\n"); return; }   /* never a second heirloom */
     item = (unsigned char *)list[selected[filter]];
     slot = list_slot[selected[filter]];
     if (!can_retire(item)) { x360_log("x360 retire: A: not a weapon, an armour or a trinket: nothing\r\n"); return; }
