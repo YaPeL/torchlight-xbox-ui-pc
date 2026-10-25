@@ -1162,7 +1162,7 @@ static void *live_unit(void *unit) {
     return unit && lv && in_list(lv, GOG_LEVEL_UNITS, unit) ? unit : 0;
 }
 void *x360_pad_candidate(void) { return item_candidate ? item_candidate : any_candidate; }
-/* The unit A would interact with (talk, a stash, Goldenrod): the candidate when it is not an enemy. */
+/* The unit A would interact with (talk, a stash, the retirement NPC): the candidate when it is not an enemy. */
 void *x360_pad_interact_unit(void) { return candidate_friendly ? live_unit(any_candidate) : 0; }
 /* The unit the pad targets (an enemy or anyone near), not an item: the 360 HUD's +72. */
 void *x360_pad_unit_target(void) { return live_unit(any_candidate); }
