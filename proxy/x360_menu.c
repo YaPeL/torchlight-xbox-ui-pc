@@ -5938,6 +5938,8 @@ static int world_to_screen(const float *p, float sw, float sh, float *x, float *
  * not the pet, with no 360 screen, dialog or modal open. Placed as the 360's: the unit's position
  * 1.0 up and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
  * top left there, kept between 0 and the screen less 26 pixels (of 720; +68, +1608). */
+static int pc_pause_open(void);
+int x360_pause_open(void);
 static void interact_prompt(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -5955,7 +5957,8 @@ static void interact_prompt(void) {
     if (!w) return;
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
-    if (!u || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || !rect_of || !gp ||
+    if (!u || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() ||
+        pc_pause_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up || !rect_of || !gp ||
         !(par = gp(w, 0)) || !hw || !GetClientRect(hw, &r) || r.right <= r.left) { show(w, 0); return; }
     sw = (float)(r.right - r.left);
     sh = (float)(r.bottom - r.top);
