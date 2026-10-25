@@ -3830,6 +3830,11 @@ an ImGui child window, and the pad's navigation stayed inside it: every body now
 In the bag's screen A chooses a bag and the d-pad reaches Next (or Start goes on): an A that also
 went on was dropped, a Selectable reporting one A at its press and its release on a slow frame
 (CI). Not run with a pad yet.
+The screens' default items were focused by SetKeyboardFocusHere, asked before the item: inside a
+NavFlattened child it was never resolved, the focus left on the last screen's footer button of the
+same id (the wizard's tests: the bag's first option never focused, A took Next, the summary passed).
+The focus is now given right after the item (ImGui's SetFocusID), and a request no item took is
+dropped at the next frame. The installer's tests pass (local and CI).
 
 ## 40. Steam's executable moved by Windows (ASLR, 2026-10-25)
 

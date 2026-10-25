@@ -209,8 +209,6 @@ struct Screens::State {
     wrapped(text);
     ImGui::PopStyleColor();
   }
-  // The screen's default item: focused, with the pad's cursor shown (ImGui ignores a first A
-  // while its cursor is hidden).
   // The screen's default item: the next item submitted after the request gets the focus, with the
   // pad's cursor shown (ImGui ignores a first A while its cursor is hidden). Given after the item
   // (ImGui's SetFocusID): SetKeyboardFocusHere asked before it is not resolved inside a
@@ -780,6 +778,7 @@ Screens::~Screens() { finish(); }
 
 bool Screens::frame() {
   State& s = *s_;
+  s.want_focus = false;   // a request no item took never reaches a later screen (the review)
   s.poll_pick();
   const ImGuiIO& io = ImGui::GetIO();
   ImGui::SetNextWindowPos(ImVec2(0, 0));
