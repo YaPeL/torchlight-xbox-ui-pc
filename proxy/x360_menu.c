@@ -5978,10 +5978,7 @@ static void quest_marker(int hide) {
     }
 }
 
-static int qd_skipping;           /* Start's skip of the talk under way (dialog_tick) */
-static unsigned qd_skip_last;
 static void qd_show(int on) {
-    if (!on) qd_skipping = 0;
     if (on == qd_shown) return;
     quest_marker(on);
     qd_shown = on;
@@ -6127,18 +6124,10 @@ static void dialog_tick(void) {
     /* The frame's time, faster with X held. */
     if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
     qd_last = now;
-    /* Start skips the talk (the owner's look at the 360, 2026-10-24: it goes through the pages and
-     * accepts the quest they end with; the 360's handler not read): Ok on each page, every 200 ms
-     * (the proxy's own pace), until Accept is pressed, a page has neither, a tip comes over it or
-     * the talk closes (qd_show). Only a button shown is pressed. */
-    if (x360_tip_open()) qd_skipping = 0;
-    if (pressed & 0x0010) { qd_skipping = 1; qd_skip_last = 0; x360_log("x360 dialog: Start, the talk skipped\r\n"); }
-    if (qd_skipping && now - qd_skip_last >= 200) {
-        int accept = pc_shown("Accept"), ok = pc_shown("Ok");
-        qd_skip_last = now;
-        if (accept || ok) qd_press(accept ? "Accept" : "Ok");
-        if (accept || !ok) qd_skipping = 0;
-    }
+    /* Start and Back do nothing in a talk (the owner's look at the 360, 2026-10-24: so in a quest's
+     * talk; a common talk is closed by them there, but its first pages look the same as a quest's,
+     * Ok only, and the port has no sign of which it is yet). proxy/pad.c keeps them from the pause
+     * and the inventory. */
     if (pressed & 0x1000) qd_press(pc_shown("Accept") ? "Accept" : "Ok");    /* A */
     if ((pressed & 0x2000) && pc_shown("Decline")) qd_press("Decline");       /* B */
     /* The rising text. */
