@@ -5804,6 +5804,21 @@ static void hud_tick(void) {
         int j;
         for (j = 0; texts[j]; j++) prop(win_of(HUD_PREFIX, texts[j]), "Text", "");
     }
+    hud_stage = "plus";
+    /* The bag's "+" (AvailableSkillsIcon, its glow AvailableSkillsGlowIcon over it): the 360's HUD
+     * update (sub_821A83C8, 0x821A9C90-0x821A9D50) shows the plus while the player has skill points
+     * (+968, GOG's +0x3e0) or stat points (+964, GOG's +0x3dc) unspent, and hides both otherwise;
+     * meanwhile a timer (HUD +6260) counts the frame's time down from 1.0 s (0x820AA300) and at 0
+     * flips a flag (+6264) that hides or shows the glow, so it blinks once a second. */
+    {
+        static unsigned blink_at;
+        static int flag;
+        int points = find_world() && hero && (*(int *)(hero + GOG_SKILL_POINTS) > 0 || *(int *)(hero + GOG_STAT_POINTS) > 0);
+        show(win_of(HUD_PREFIX, "AvailableSkillsIcon"), points);
+        if (!points) blink_at = 0;
+        else if (!blink_at || now - blink_at >= 1000) { blink_at = now; flag = !flag; }
+        show(win_of(HUD_PREFIX, "AvailableSkillsGlowIcon"), points && !flag);
+    }
     hud_stage = "pet";
     /* The pet's: the 360's pethud.layout, PC's made transparent, its bars and text as PC's. */
     {
