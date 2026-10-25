@@ -587,6 +587,7 @@ static int hidden_count;
 static int is_ours(void *w);
 static void *pc_tip_layout_root;   /* PC's tip window's root (x360_pc_layout_loaded, below) */
 
+static unsigned pc_ui_back_at;   /* PC's sheets shown again then (a shop's close: hide_pc_ui's caller, pc_menus_guard) */
 static void hide_pc_ui(int hide) {
     static is_visible_fn is_visible;
     static int logged;
@@ -3220,7 +3221,11 @@ void x360_inventory_toggle(void) {
     chr_show(page < 2 && !shop);
     page_titles();
     if (inventory_open) move_to_front(master_root, 0);
-    hide_pc_ui(inventory_open);
+    /* At a shop's close PC's sheets come back 600 ms later: PC's merchant and inventory menus close
+     * for about 330 ms (diag-shop-close), and shown at once they were seen sliding away at the
+     * sides (the owner's runs of 2026-10-24). */
+    if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
+    else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
     if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
@@ -6836,6 +6841,7 @@ static void pc_menus_guard(void) {
     int closed = 0;
     if (!ui) return;
     if (inventory_open) hide_pc_ui(1);
+    else if (pc_ui_back_at && (int)(GetTickCount() - pc_ui_back_at) >= 0) { pc_ui_back_at = 0; hide_pc_ui(0); }
     if (shop) return;
     /* A shop's menu opens PC's inventory with it (the merchant, enchanter, transmuter, stash): left
      * to the shop's code (QA run 1: closing it closed the shop before the port saw it). */
