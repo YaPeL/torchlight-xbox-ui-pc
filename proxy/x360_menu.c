@@ -5936,7 +5936,7 @@ static int world_to_screen(const float *p, float sw, float sh, float *x, float *
  * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
  * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
  * not the pet, with no 360 screen, dialog or modal open. Placed as the 360's: the unit's position
- * lifted (below) and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
+ * 1.0 up and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
  * top left there, kept between 0 and the screen less 26 pixels (of 720; +68, +1608). */
 static int pc_pause_open(void);
 int x360_pause_open(void);
@@ -5982,10 +5982,7 @@ static void interact_prompt(void) {
         }
         if (!ok || dx * dx + dz * dz > reach * reach) { show(w, 0); return; }
     }
-    /* The 360 lifts it by 1.0 less the unit's +348 (copied from its template, sub_822C8998; PC's
-     * field not found): 1.45 matches the owner's two captures at the same stash, the 360's and
-     * this port's (2026-10-25: 1.0 left it about 40 pixels lower at 1080). */
-    pos[0] += 0.4f; pos[1] += 1.45f; pos[2] += 0.4f;
+    pos[0] += 0.4f; pos[1] += 1.0f; pos[2] += 0.4f;
     if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
     m = 26.0f * k;
     if (x < 0) x = 0;
