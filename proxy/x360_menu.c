@@ -6074,7 +6074,8 @@ static void hud_tick(void) {
         static int tried;
         void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
         if (!tried && sheet) { tried = 1; if (one_pixel_borders(sheet, "x360pb_", lines)) x360_log("x360 hud: the 1-pixel borders over the 3D view added\r\n"); }
-        if (lines[0]) { show(lines[0], 1); show(lines[1], 1); }
+        (void)lines;
+        { void *l = win_of("x360pb_", "LeftLine"), *t = win_of("x360pb_", "TopLine"); if (l) show(l, 1); if (t) show(t, 1); }   /* by name each time (the review) */
     }
     if (!hud_root) {
         HWND w = active_window();
