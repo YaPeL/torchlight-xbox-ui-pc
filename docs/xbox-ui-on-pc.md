@@ -3762,3 +3762,14 @@ are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of
 CCinematicMenu's input) is not read. **[seen]** The owner: PC's Escape does there what the 360's
 Start does. `x360_cinematic_skip` now posts Escape (key down and up, as `pad.c`'s `post_key`) to the game's window when
 no Skip is attached; `keys_proc` lets it through while the cinematic holds.
+
+## 36. PC's waypoint portals with the pad (2026-10-24)
+
+The owner, on a strong test character past the first boss: PC's waypoint portals screen
+(`waypointmenu.layout`: `Frame` holding `Title`, `Button1`-`10` with their `Choice1`-`10` texts,
+and `Cancel`) could not be moved in with the pad. The owner's decision: PC's screen for now, with
+the pad, as the resurrection's (section 34). Its prefix is found by `Choice10` (with `Button10` and
+`Cancel` under it); while its `Cancel` is attached and shown in play, with no screen of the 360's
+over it, its `Frame`'s visible buttons are the pad's (the d-pad or the stick, A), B clicks its
+`Cancel`, and the play pad gets nothing (`x360_pc_menu_up`). The log names them as `PC's buttons
+for the pad N (waypoints)`. Not ported: the 360's own waypoint screen.
