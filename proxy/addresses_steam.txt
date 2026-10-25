@@ -110,6 +110,7 @@
 0x004e9a30 0x004e73a0 verified   code    window, body, callers x6
 0x004e9ca0 0x004e7610 verified   code    window, body, callers x6
 0x004e9fe0 0x004e7950 verified   code    body, callers x5 (one other match outvoted)
+0x004ea200 0x004e7b70 verified   code    body +0x40,+0x50,+0x68, callers 0x48559d, 0x569080 (port_addresses)
 0x004ea6b0 0x004e8020 verified   code    window, body, callers x5
 0x004ea910 0x004e8280 verified   comment window, body, callers x3
 0x004ee7c0 0x004ec0e0 verified   code    window, body, callers x3
@@ -209,6 +210,9 @@
 0x00563478 0x0055e812 verified   comment window, near x2
 0x005636a9 0x0055ea43 verified   comment window, near x2
 0x005656a0 0x005609b0 verified   comment vtable, strings
+0x00567090 0x00470c50 verified   comment window 16, body +0x8,+0x18, callers x4
+0x00568fe0 0x005642d0 verified   comment window 16, body +0x8,+0x18,+0x28, callers 0x569441, 0x569534
+0x00569220 0x00564510 verified   comment vtable .?AVCCombineMenu@@+0x1c, body +0x38,+0x50,+0x78
 0x00569550 0x00564830 verified   code    window, body, callers
 0x00569663 0x00564930 verified   comment window, local
 0x0056a197 0x0056542b verified   comment window, local

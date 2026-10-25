@@ -762,6 +762,7 @@ static int sock_open;                        /* the gem's item select is open */
 static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
 static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x19/0x1a gems) */
 static int tm_slot[4], tm_known;
+static int tm_from[4] = {-1, -1, -1, -1};   /* where X took the item in each place from, or -1 */
 static unsigned char *tm_shop;               /* the transmuter unit while it is open */
 static int is_tm_slot(int slot) {
     int j;
@@ -2657,6 +2658,7 @@ static void transmute_swap(void) {
     item = (unsigned char *)list[selected[filter]];
     if (panels[active_panel].is_shop) {           /* back from the transmuter */
         unsigned char *pet = the_pet();
+        for (j = 0; j < 4; j++) if (tm_slot[j] == list_slot[selected[filter]]) tm_from[j] = -1;
         move_out(bag, item, list_slot[selected[filter]]);
         if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1) ||
             (pet && ((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(pet), 0, item, 1))) {
@@ -2674,6 +2676,7 @@ static void transmute_swap(void) {
     if (j == 4) { shop_sound(24); x360_log("x360 transmuter: X: its places are full\r\n"); return; }
     move_out(inventory(), item, list_slot[selected[filter]]);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, tm_slot[j], 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) == item) tm_from[j] = list_slot[selected[filter]];
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) != item) {
         /* Its place taken (or refused): the item back where it was, whatever is now there. */
         x360_log("x360 transmuter: X: not placed, back\r\n");
@@ -2740,6 +2743,7 @@ static void transmute(void) {
     ((void_fn)GOG_TRANSMUTE)(m, 0);
     for (j = 0; j < 4; j++) if ((bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0) != was[j]) same = 0;
     if (same && bag && tm_known) { shop_sound(24); x360_log("x360 transmuter: Y: no recipe (the sound 24)\r\n"); return; }
+    for (j = 0; j < 4; j++) tm_from[j] = -1;   /* its places hold the result now, PC's own */
     x360_log("x360 transmuter: Y: transmuted\r\n");
 }
 
@@ -4961,9 +4965,41 @@ static void pc_inventory_close(void) {
     }
 }
 
+/* PC's transmuter, as it closes (CCombineMenu's setOpen, GOG 0x569220), gives each item in its
+ * places back where its own map says it came from (0x568fe0: the map made as it opened, 0x567090;
+ * the slot if it is free and at most 18, by 0x4ea200, else the bag by pickupEquipment). The items
+ * the pad's X put there are not in that map as PC's drag puts them: an equipped sword was mapped
+ * to its slot 0 when the transmuter opened, and closing left the hero two references to it, one
+ * in slot 0 and one in the bag (the owner, 2026-10-25; the references logged around the close).
+ * So those items are given back first, the same way PC does (removeEquipment, then 0x4ea200 to
+ * the slot X took it from, else pickupEquipment), and PC finds the places empty. */
+#define GOG_PUT_BACK_AT 0x004ea200          /* CInventory: the item into a slot (item, slot), as PC's transmuter gives it back */
+static void transmuter_give_back(void) {
+    typedef unsigned char (__fastcall *put_back_fn)(void *inv, void *edx, void *item, int slot);
+    void *bag = owner_bag(hero);
+    int j;
+    if (!bag || !tm_known) return;
+    for (j = 0; j < 4; j++) {
+        unsigned char *item;
+        int from = tm_from[j];
+        tm_from[j] = -1;
+        if (from < 0 || !(item = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]))) continue;
+        move_out(bag, item, tm_slot[j]);
+        if (from <= 18 && !((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, from) && ((put_back_fn)GOG_PUT_BACK_AT)(bag, 0, item, from)) {
+            x360_log("x360 transmuter: closing: an item given back to its slot "); x360_log_num(from); x360_log("\r\n");
+        } else if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1)) {
+            x360_log("x360 transmuter: closing: an item given back to the bag\r\n");
+        } else {
+            to_ground(item);
+            x360_log("x360 transmuter: closing: an item given back to the ground (the bag full)\r\n");
+        }
+        move_done();
+    }
+}
 static void shop_close(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + (at_enchant ? GOG_ENCHANT_MENU : at_transmute ? GOG_COMBINE_MENU : at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
     int open = m && (at_enchant ? m[ENCHANT_OPEN] : at_transmute ? m[COMBINE_OPEN] : m[MENU_OPEN]);
+    if (at_transmute) __try { transmuter_give_back(); } __except (1) { move_cut_short(); }
     shop_closing = 1;
     if (inventory_open) x360_inventory_toggle();
     shop_closing = 0;
