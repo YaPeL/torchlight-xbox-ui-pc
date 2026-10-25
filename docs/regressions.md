@@ -226,8 +226,11 @@ here. Games' texts are named by role, never quoted.
 - **Then (the owner's next run):** no board, but the world narrowed with blue strips after the
   merchant, as before QA run 10's fix: PC's side-panel tests were given back as the shop closed,
   while PC's merchant was still closing, and its boards no longer covered the strips. PC's
-  side-panel tests now answer closed always (PC's side panels never show under the 360's
-  screens).
+  side-panel tests now answer closed while the shop frame is open and 2 s after it closes. Not
+  always: PC's client update (`0x41ba36`, `0x41ba42`) holds its game-state changes (a level
+  change, closing its menus and saving) while one of those tests is true, which must stay PC's
+  rule (the review). QA: after each shop, no blue strip; a level change and Exit to Title after a
+  shop behave as before.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist
