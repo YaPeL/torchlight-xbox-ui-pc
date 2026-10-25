@@ -3738,9 +3738,11 @@ the menu at `+932`, `COptionsMenu`). During a cinematic Start does nothing.
 **[seen]** The owner on the 360 (2026-10-24): during a cinematic Start skips it and Back opens
 nothing; at an NPC's screen (a merchant, a stash) Start and Back both close it. The skip is not in
 the frame update read above (its handler is not traced; the cinematic menu's own pad is likely).
+Back there: the 360's `+705` toggles CGameUI's `+1000` after the cinematic's first test, not
+traced further.
 
 `proxy/pad.c` opened the 360's pause on Start during a cinematic. Now, while PC's `0x541db0` holds
 and no pause or inventory is open, Start clicks PC's cinematic menu's `Skip`
-(`x360_cinematic_skip`: cinematicmenu.layout's `Skip`, found by its `DialogTextFrame`, as the pad's
-A does out of play) and Back is dropped. In the 360's inventory at a shop, Start closes the shop as
+(`x360_cinematic_skip`: cinematicmenu.layout's `Skip`, found by its `DialogTextFrame`, a left
+click at its centre) and Back is dropped; not while a tip is up (it keeps every button). In the 360's inventory at a shop, Start closes the shop as
 Back and B do (`x360_inventory_pad`); elsewhere in the inventory it keeps the pet's commands.

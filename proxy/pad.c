@@ -1583,7 +1583,7 @@ static void order(void) {
     int x360_tip_open(void);
     void x360_cinematic_skip(void);
     void *ui_for_start = *(void **)(client + 0x3c);
-    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && ui_for_start &&
+    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && !x360_tip_open() && ui_for_start &&
         ((bool_fn)GOG_UI_HOLDS_PLAY)(ui_for_start, 0)) {
         if (pressed & 0x0010) x360_cinematic_skip();
         pressed &= ~(0x0010u | BUTTON_BACK);
