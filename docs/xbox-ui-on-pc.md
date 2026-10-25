@@ -3809,3 +3809,13 @@ PC's slots. The log names each step (`x360 dialog: reward item N`). Played by th
 **Differs:** the card's width, about 446 px against the 360's 786 at 1920x1080: PC lays its card
 out at its own width (`fill_card`, the inventory's), so the text wraps into more lines and the
 card is taller. Matching it needs PC's card laid out wider (to do).
+
+## 38. The bag changed without the 360's package (2026-10-25)
+
+The owner: the wizard's "Change to the 360's bag" asked for the 360's package again. The converted
+interface does not depend on the bag (only `x360_ui.ini`'s `bag=` differs, read by the proxy at
+start), so both installers now have `set-bag --bag pc|360` for an installed game: for the 360's
+bag the saves are backed up first (as install does, the same questions when none is found), then
+the ini is written over the converted folder already in place; nothing is converted again. The
+wizard's "Change to the 360's bag" goes to the bag's screen and the summary, without the package.
+A test runs both installers' `set-bag` both ways (the ini, one backup, the converted files the same).

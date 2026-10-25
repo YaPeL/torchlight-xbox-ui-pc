@@ -397,11 +397,11 @@ struct Screens::State {
       } else {
         goal = Goal::To360Bag;
         bag = "360";
-        go(Screen::Package);
+        go(Screen::Bag);   // no package: only the bag (set-bag), its warning and backup
       }
     }
     ImGui::SameLine();
-    muted(game.bag == "360" ? "Only the setting: then load and save each character." : "The 360's interface is converted again.");
+    muted(game.bag == "360" ? "Only the setting: then load and save each character." : "Only the setting; your saves are backed up first.");
     if (ImGui::Button("Uninstall", ImVec2(w, 0))) go(Screen::Uninstall);
     ImGui::SameLine();
     muted("Put the game back as it was.");
@@ -513,8 +513,11 @@ struct Screens::State {
 
   std::vector<std::string> command() const {
     std::vector<std::string> a;
-    const bool install = goal == Goal::Install || goal == Goal::Reinstall || goal == Goal::To360Bag;
-    if (install) {
+    const bool install = goal == Goal::Install || goal == Goal::Reinstall;
+    if (goal == Goal::To360Bag) {
+      a = {"set-bag", "--game", game.path, "--bag", bag, "--yes", "--console"};
+      if (bag == "360" && saves.empty() && no_backup_ok) a.push_back("--no-backup-ok");
+    } else if (install) {
       a = {"install", "--game", game.path, "--package", package, "--bag", bag, "--yes", "--console"};
       if (bag == "360" && saves.empty() && no_backup_ok) a.push_back("--no-backup-ok");
       if (!options.dll.empty()) a.insert(a.end(), {"--dll", options.dll});
@@ -528,7 +531,7 @@ struct Screens::State {
     switch (goal) {
       case Goal::Install: return "Install the mod";
       case Goal::Reinstall: return "Install the mod again";
-      case Goal::To360Bag: return bag == "360" ? "Install the mod again with the 360's bag" : "Install the mod again";
+      case Goal::To360Bag: return bag == "360" ? "Switch to the 360's bag (nothing is converted again)" : "Keep PC's bag";
       case Goal::ToPcBag: case Goal::UninstallStep1: return "Switch to PC's bag (nothing is uninstalled)";
       case Goal::Uninstall: case Goal::UninstallAnyway: return "Uninstall the mod";
     }
@@ -537,7 +540,8 @@ struct Screens::State {
   void summary_screen() {
     heading("Ready", "1  Game   >   2  Package   >   3  Bag   >   4  Summary");
     ImGui::BeginChild("body", ImVec2(0, body_height()));
-    const bool install = goal == Goal::Install || goal == Goal::Reinstall || goal == Goal::To360Bag;
+    const bool install = goal == Goal::Install || goal == Goal::Reinstall;
+    const bool to360 = goal == Goal::To360Bag;
     if (ImGui::BeginTable("summary", 2)) {
       ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFontSize() * 6);
       ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch);
@@ -554,11 +558,9 @@ struct Screens::State {
       };
       row("What", goal_label());
       row("Game", store_label(game.store) + ":  " + game.path);
-      if (install) {
-        row("Package", package);
-        row("Bag", bag == "360" ? "The 360's (50 slots)" : "PC's (3 x 21 slots)");
-      }
-      const bool backs_up = (install && bag == "360") || goal == Goal::UninstallAnyway;
+      if (install) row("Package", package);
+      if (install || to360) row("Bag", bag == "360" ? "The 360's (50 slots)" : "PC's (3 x 21 slots)");
+      const bool backs_up = ((install || to360) && bag == "360") || goal == Goal::UninstallAnyway;
       if (backs_up) {
         std::string b = saves.empty() ? "No save folder was found: none is backed up." : "Your saves, beside them:";
         for (const auto& f : saves) b += "\n" + f;
@@ -568,7 +570,7 @@ struct Screens::State {
       ImGui::EndTable();
     }
     ImGui::EndChild();
-    const char* label = install ? "Install" : (goal == Goal::ToPcBag || goal == Goal::UninstallStep1) ? "Switch bag" : "Uninstall";
+    const char* label = install ? "Install" : (goal == Goal::ToPcBag || goal == Goal::UninstallStep1 || to360) ? "Switch bag" : "Uninstall";
     if (footer(label, true, true, true)) start();
   }
 
@@ -664,9 +666,10 @@ struct Screens::State {
   }
   void result_screen() {
     const bool ok = code == 0;
-    const bool installed = goal == Goal::Install || goal == Goal::Reinstall || goal == Goal::To360Bag;
+    const bool installed = goal == Goal::Install || goal == Goal::Reinstall || (goal == Goal::To360Bag && bag == "360");
     const bool switched = goal == Goal::ToPcBag || goal == Goal::UninstallStep1;
-    heading(!ok ? "It did not work" : installed ? "Installed" : switched ? "PC's bag installed" : "Uninstalled", "Done");
+    heading(!ok ? "It did not work" : goal == Goal::To360Bag ? (bag == "360" ? "The 360's bag installed" : "PC's bag kept")
+                                    : installed ? "Installed" : switched ? "PC's bag installed" : "Uninstalled", "Done");
     ImGui::BeginChild("body", ImVec2(0, body_height()));
     if (!ok) {
       error_text(result_text.empty() ? "The installer stopped (status " + std::to_string(code) + ")." : result_text);
