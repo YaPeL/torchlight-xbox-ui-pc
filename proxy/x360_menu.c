@@ -5645,8 +5645,8 @@ static int hidden_mimic(void *unit) {
     return on;
 }
 
-/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, "Undead - Fast";
- * none for an NPC), as UTF-8; "" if it has none. */
+/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, a monster's kind,
+ * an NPC's role), as UTF-8; "" if it has none. */
 static void unit_description(void *unit, char *out, unsigned size) {
     static const unsigned short empty[] = {0};
     wstr_ctor_fn ctor;
@@ -5689,9 +5689,28 @@ static void target_tick(void) {
     unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
     if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) x360_hud_attacked(unit);
     if (attacked.unit && (int)(now - attacked_until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&attacked, 0, 0);
-    /* The 360's order: the unit under the cursor, else the one attacked. */
+    /* The 360's choice (sub_821A83C8, 0x821A9124-0x821A9678, the recomp agent's reading): while
+     * an attack or skill button is held, the unit the player acts on (its +644, GOG's hero
+     * target); else the pad's target (its HUD's +72, an NPC near too); none under a menu or a
+     * modal; then, unless that is an NPC (type 104), the player's combat target when it has one
+     * (its virtual +460; here the unit attacked, kept 3 s as before). PC's unit under the mouse
+     * first, for the mouse. */
     unit = ui ? *(unsigned char **)(ui + GOG_UI_MOUSE_OVER) : 0;
-    if (!unit) unit = (unsigned char *)attacked.unit;
+    if (!unit) {
+        void *x360_pad_unit_target(void);
+        unsigned x360_pad_buttons(void);
+        int x360_overlay_open(void);
+        if (x360_pad_buttons() & (0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000)) unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
+        if (!unit) unit = (unsigned char *)x360_pad_unit_target();
+        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
+        else if ((!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;
+        /* Under a screen nothing (the owner: the bar over PC's pause menu); the 360's pause
+         * covers its HUD. */
+    }
+    {
+        int x360_overlay_open(void);
+        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
+    }
     if (unit && hidden_mimic(unit)) unit = 0;
     show(x, unit != 0);
     if (!unit) return;
@@ -5895,6 +5914,132 @@ void x360_hud_tick(void) {
     }
 }
 
+/* The "A Interact" prompt (the 360's HUD update sub_821A83C8, 0x821AB364-0x821AB518, the recomp
+ * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
+ * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
+ * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
+ * not the pet, with no 360 screen, dialog or modal open. The 360 places it at the unit's position
+ * 1.0 up and 0.4 aside, projected and kept 26 pixels inside the screen (pool 0x820AA2C0 +64, +140,
+ * +1608); the anchor below (interact_prompt). */
+/* A world point on the screen, in the window's pixels, by Ogre's camera (the client's +0x10, its
+ * +8, as proxy/pad.c reads it): its projection and view matrices; 0 behind the camera. */
+static int world_to_screen(const float *p, float sw, float sh, float *x, float *y) {
+    typedef const float *(__fastcall *mat_fn)(const void *self, void *edx);
+    static mat_fn view, proj;
+    static int looked;
+    unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+    void *cam = ctl ? *(void **)(ctl + 8) : 0;
+    const float *v, *q;
+    float e[4], c[4];
+    int i;
+    if (!looked) {
+        void *ogre = GetModuleHandleA("OgreMain.dll");
+        looked = 1;
+        view = ogre ? (mat_fn)GetProcAddress(ogre, "?getViewMatrix@Camera@Ogre@@UBEABVMatrix4@2@XZ") : 0;
+        proj = ogre ? (mat_fn)GetProcAddress(ogre, "?getProjectionMatrix@Frustum@Ogre@@UBEABVMatrix4@2@XZ") : 0;
+    }
+    if (!cam || !view || !proj) return 0;
+    v = view(cam, 0);
+    q = proj(cam, 0);
+    for (i = 0; i < 4; i++) e[i] = v[i * 4] * p[0] + v[i * 4 + 1] * p[1] + v[i * 4 + 2] * p[2] + v[i * 4 + 3];   /* row-major, as Ogre's */
+    for (i = 0; i < 4; i++) c[i] = q[i * 4] * e[0] + q[i * 4 + 1] * e[1] + q[i * 4 + 2] * e[2] + q[i * 4 + 3] * e[3];
+    if (c[3] <= 1e-4f) return 0;
+    *x = (c[0] / c[3] + 1.0f) * 0.5f * sw;
+    *y = (1.0f - c[1] / c[3]) * 0.5f * sh;
+    return 1;
+}
+/* The "A Interact" prompt (the 360's HUD update sub_821A83C8, 0x821AB364-0x821AB518, the recomp
+ * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
+ * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
+ * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
+ * not the pet, with no 360 screen, dialog or modal open. Placed as the 360's: the unit's position
+ * 1.0 up and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
+ * top left there, kept between 0 and the screen less 26 pixels (of 720; +68, +1608). */
+static int pc_pause_open(void);
+int x360_pause_open(void);
+static void interact_prompt(void) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    void *x360_pad_interact_unit(void);
+    int x360_overlay_open(void);
+    static pixel_rect_fn6 rect_of;
+    static parent_fn gp;
+    void *w = win_of(HUD_PREFIX, "TargetInteractHover"), *par;
+    unsigned char *u = (unsigned char *)x360_pad_interact_unit();
+    rect6 pr;
+    float pos[3], x, y, sw, sh, m;
+    HWND hw = active_window();
+    RECT r;
+    if (!w) return;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    if (!u || !hero || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() ||
+        pc_pause_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up || !rect_of || !gp ||
+        !(par = gp(w, 0)) || !hw || !GetClientRect(hw, &r) || r.right <= r.left) { show(w, 0); return; }
+    sw = (float)(r.right - r.left);
+    sh = (float)(r.bottom - r.top);
+    ((get_position_fn)GOG_GET_POSITION)(u, 0, pos, 1);
+    {
+        /* sub_821B8D70(player, unit): within 2.0 on the ground (2.75 while the player stands:
+         * its +508 0; here the stick at rest), and an interactive unit: the 360's registry
+         * (sub_821E3C48, not ported) or one of the types 130 ENCHANTER, 175 RETIREMENTCHARACTER,
+         * 132 and 133 the gem goblins, 134 COMBINER, 41 MERCHANT, 128 STASH, 170 SHAREDSTASH, 104 NPC. */
+        static const int types[] = {130, 175, 132, 133, 134, 41, 128, 170, 104};
+        int x360_pad_lx(void), x360_pad_ly(void);
+        float hp[3], dx, dz, reach;
+        int t, ok = 0;
+        for (t = 0; t < 9 && !ok; t++) ok = isa(u, types[t]);
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, hp, 1);
+        dx = pos[0] - hp[0];
+        dz = pos[2] - hp[2];
+        {
+            int sx = x360_pad_lx(), sy = x360_pad_ly();   /* raw (of 1000): at rest under the 360's dead zone, about 240 */
+            reach = sx * sx + sy * sy < 240 * 240 ? 2.75f : 2.0f;
+        }
+        if (!ok || dx * dx + dz * dz > reach * reach) { show(w, 0); return; }
+    }
+    {
+        /* The 360's anchor (sub_821AB3F0.., the projection sub_8233E1C0 with its offset, the recomp
+         * agent's reading): pos + (0.4, 1.0 - unit+348, 0.4) + the camera's up axis (its orientation's
+         * Y, unit length). The 360's +348 measured on the recomp (2026-10-25): 0.8 for the units that
+         * stand (merchants, stashes, Goldenrod), 0.3 for the ones that walk (Syl, Trill-Bot, Alma);
+         * PC's unit has it at the same +348 (logged on GOG: the same 0.8 and 0.3). The owner's capture
+         * at the stash: the prompt within some 30 pixels of the 360's at 1080 (its camera not quite
+         * the same). */
+        typedef float *(__fastcall *vec_fn)(const void *self, void *edx, float *out);
+        static vec_fn derived_up;
+        static int looked;
+        unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+        void *cam = ctl ? *(void **)(ctl + 8) : 0;
+        float up[3] = {0, 1, 0};
+        if (!looked) {
+            void *ogre = GetModuleHandleA("OgreMain.dll");
+            looked = 1;
+            derived_up = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedUp@Camera@Ogre@@QBE?AVVector3@2@XZ") : 0;
+        }
+        if (derived_up && cam) derived_up(cam, 0, up);
+        pos[0] += 0.4f + up[0];
+        pos[1] += 1.0f - *(float *)(u + 348) + up[1];
+        pos[2] += 0.4f + up[2];
+    }
+    if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
+    m = 26.0f * k;
+    if (x < 0) x = 0;
+    if (x > sw - m) x = sw - m;
+    if (y < 0) y = 0;
+    if (y > sh - m) y = sh - m;
+    rect_of(par, 0, &pr);
+    {   /* the window's own size, its layout's: kept, only moved */
+        rect6 wr;
+        rect_of(w, 0, &wr);
+        set_size(w, x - pr.left, y - pr.top, wr.right - wr.left, wr.bottom - wr.top);
+    }
+    show(w, 1);
+}
+
 static void hud_tick(void) {
     static unsigned last;
     static int failed;
@@ -5945,9 +6090,10 @@ static void hud_tick(void) {
      * are those PC writes on those slots (SkillText1, SkillText2). */
     copy_text("POTIONCOUNT", "SkillText1");
     copy_text("MANACOUNT", "SkillText2");
-    /* Not done yet: the interact prompt and the skills on the pad's buttons (the layout's
+    /* Not done yet: the skills on the pad's buttons (the layout's
      * samples hidden). */
-    show(win_of(HUD_PREFIX, "TargetInteractHover"), 0);
+    hud_stage = "interact";
+    interact_prompt();
     /* The icons on the pad's buttons, from the hotbar keys proxy/pad.c presses for them: LB 1,
      * RB 2, B 3, Y 4, LT 5, RT 6. The 360's first set (SkillSet1: Y SkillSlot4, B 5, LT 6, RT 7);
      * its second set (SkillSet2, the same places) hidden. */
