@@ -265,6 +265,7 @@ here. Games' texts are named by role, never quoted.
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
 
+- a quest offer with reward items: the left stick's left and right go through them, each one's card shown, and back to none;
 - a waypoint's portals screen: a destination chosen with the d-pad and A, B cancels;
 - the hero's death: PC's resurrection screen's buttons chosen with the d-pad and A;
 - after a merchant, a stash and the enchanter are closed: none of PC's 3D boards is seen, and the 360's inventory still shows the hero's doll;

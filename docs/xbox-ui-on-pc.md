@@ -3752,3 +3752,20 @@ the pad, as the resurrection's (section 34). Its prefix is found by `Choice10` (
 over it, its `Frame`'s visible buttons are the pad's (the d-pad or the stick, A), B clicks its
 `Cancel`, and the play pad gets nothing (`x360_pc_menu_up`). The log names them as `PC's buttons
 for the pad N (waypoints)`. Not ported: the 360's own waypoint screen.
+
+## 37. The quest offer's reward items with the left stick (2026-10-24)
+
+The owner: offering a quest, the 360 lets the left stick go through the reward items and shows
+each one's card (its stats); the port did nothing. **[read]** The 360's quest dialog pad
+(`sub_82357ED0`, its table at `0x82357F10` by code - 5): A (5) sends the menu's command 9 or 10,
+B (6) 8 unless its `+450`, X (7) turns its `+452`, the left stick's left (19) and right (20) take
+one from or add one to its `+464`, then `sub_82358058`; the other codes (the d-pad, Start, Back)
+do nothing. `sub_82358058` wraps `+464` from -1 (none) to the last reward and back; with one, it
+shows `ItemHighlight` (`+440`) at that slot (the slots' windows at `+408`) and puts the item in the
+item tooltip at the slot; with none, it hides both.
+
+`dialog_tick` now does that: the stick's left and right (past half, one step per push) move the
+selection over the shown reward slots, wrapping through none; the 360's `ItemHighlight` takes the
+selected `ItemBkgN`'s rect, and the cursor (hidden) goes to PC's `ItemSlotN`, where PC shows the
+item's card as on a hover; with none the cursor goes off the slots. The log names each step
+(`x360 dialog: reward item N`). Not run yet.

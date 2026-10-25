@@ -5994,8 +5994,10 @@ static void quest_marker(int hide) {
     }
 }
 
+static int qd_reward;   /* the reward item the stick selected (the 360's +464), -1 none */
 static void qd_show(int on) {
     if (on == qd_shown) return;
+    qd_reward = -1;
     quest_marker(on);
     qd_shown = on;
     if (!on) overlay_closed_at = GetTickCount();
@@ -6128,7 +6130,42 @@ static void dialog_tick(void) {
                 }
             }
         }
-        show(win_of(QD_PREFIX, "ItemHighlight"), 0);
+        /* The left stick's left and right select a reward item (the 360's pad, sub_82357ED0: codes
+         * 19 and 20 move +464 by one; sub_82358058 wraps it from -1, none, to the last and back,
+         * puts ItemHighlight (+440) on the slot (+408) and the item in the item tooltip there;
+         * the d-pad does nothing). Here the highlight on the 360's slot, and the cursor (hidden)
+         * on PC's slot, where PC shows that item's card as its hover does (the owner, 2026-10-24:
+         * the stick did nothing). */
+        {
+            int x360_pad_lx(void);
+            void nav_point_qd(float x, float y);
+            static int held;
+            int lx = x360_tip_open() ? 0 : x360_pad_lx(), dir = lx < -500 ? -1 : lx > 500 ? 1 : 0;
+            if (dir && !held && items > 0) {
+                qd_reward += dir;
+                if (qd_reward < -1) qd_reward = items - 1;
+                if (qd_reward >= items) qd_reward = -1;
+                if (qd_reward >= 0) {
+                    typedef struct { float top, bottom, left, right; } rect6;
+                    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+                    static pixel_rect_fn6 rect_of;
+                    char slot[16], r[128];
+                    rect6 pr;
+                    void *pc_slot;
+                    copy(slot, sizeof slot, "ItemBkg", 0); slot[7] = (char)('1' + qd_reward); slot[8] = 0;
+                    read_prop(win_of(QD_PREFIX, slot), "UnifiedAreaRect", r, sizeof r);
+                    prop(win_of(QD_PREFIX, "ItemHighlight"), "UnifiedAreaRect", r);
+                    copy(slot, sizeof slot, "ItemSlot", 0); slot[8] = (char)('1' + qd_reward); slot[9] = 0;
+                    pc_slot = win_of(pc_qd_prefix, slot);
+                    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+                    if (pc_slot && rect_of) { rect_of(pc_slot, 0, &pr); nav_point_qd((pr.left + pr.right) * 0.5f, (pr.top + pr.bottom) * 0.5f); }
+                } else nav_point_qd(1.0f, 1.0f);   /* none: off the slots, PC's card goes */
+                x360_log("x360 dialog: reward item "); x360_log_num(qd_reward); x360_log("\r\n");
+            }
+            held = dir != 0;
+            if (qd_reward >= items) qd_reward = -1;
+        }
+        show(win_of(QD_PREFIX, "ItemHighlight"), qd_reward >= 0);
         /* "Rewards" with the stick's prompt when there are items (town/04; not town/13). */
         show(win_of(QD_PREFIX, "RewardsTooltip"), items > 0);
     }
@@ -8240,6 +8277,8 @@ int x360_pad_lx(void);
  * injects it into CEGUI, then a 1 px move (0x4016c0) for the hover: a position injected alone lasts
  * one frame (QA run 12). So Windows' cursor is put on (x, y), the window's client pixels, and PC
  * hovers the button there itself; CEGUI is told the same at once for a click in this frame. */
+static void nav_point(float x, float y);
+void nav_point_qd(float x, float y) { nav_point(x, y); }   /* the dialog's reward items (dialog_tick) */
 static void nav_point(float x, float y) {
     void x360_inject_left(int down, float x, float y);
     HWND w = GetActiveWindow();
