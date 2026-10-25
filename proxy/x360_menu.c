@@ -5590,7 +5590,9 @@ static void target_tick(void) {
  * and 70 from the bottom (the constants at 0x820aa388 and 0x820aa570). PC's (CAutomap::setVisible
  * *(OT)*, GOG 0x4ea6b0, called on toggling it) puts it top right; the level keeps it at +0x160
  * (GOG 0x4fc062), its viewport at +0x28, shown +0x3c, fullscreen +0x65. Here the corner's viewport
- * is placed again as the 360's, every tick (PC sizes it only when it is toggled). */
+ * is placed again as the 360's at once after the pad toggles it (R3) and every frame from the frame
+ * listener, before the frame is drawn (PC sizes it only when it is toggled; placed from the HUD's
+ * tick alone, every 50 ms, it showed top right for an instant after R3: the owner, 2026-10-25). */
 #define GOG_LEVEL_AUTOMAP 0x160
 #define AUTOMAP_VIEWPORT 0x28
 #define AUTOMAP_SHOWN 0x3c
@@ -7155,6 +7157,7 @@ void x360_automap_cycle(void) {
     if (!holder || ui[0x173d]) return;
     __try { ((self_fn)0x004ee7c0)(holder, 0); x360_log("x360: R3, the map's next state\r\n"); }
     __except (1) { x360_log("x360: R3, the map's toggle threw\r\n"); }
+    minimap_tick();   /* placed at once: PC's toggle puts it top right, drawn there for a frame (the owner) */
 }
 
 /* The 360's pause menu's Options and Exit to Title, done by PC's own pause menu: opened by its
@@ -7399,6 +7402,7 @@ static void modal_minimap(int hide) {
     } else if (hidden) {
         __try { if (am == hidden) ((show_fn)0x004ea6b0)(am, 0, 1); } __except (1) { }
         hidden = 0;
+        minimap_tick();   /* shown again top right by PC: placed at once */
     }
 }
 
@@ -8811,6 +8815,7 @@ void x360_frame_tick(void) {
     }
     __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
     if (!find_world()) return;
+    minimap_tick();   /* the corner minimap where the 360 draws it, before this frame is drawn */
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the
      * in-game sheet), not at the first Back (run B2: the user asked for no wait there). */
     if (!preloaded && hud_root) {
