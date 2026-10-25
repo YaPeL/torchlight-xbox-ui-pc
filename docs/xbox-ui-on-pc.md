@@ -3435,6 +3435,28 @@ the frame. PC's client input (`0x415125`) has the same branch: it clears its inp
 `0x486390`) calls its virtual `+0x174` with 2, then returns. PC runs it every frame by itself, so
 the pad has only to give no orders while it holds.
 
+## 27. The pad against the 360, function by function (an audit, 2026-10-24)
+
+The owner asked for the pad's play to be checked against the 360's code as a whole, not piece by
+piece as it was written. The 360's frame update (`sub_821EBA48`) read in order, against
+`proxy/pad.c`:
+
+| What | The 360 | The pad | |
+|---|---|---|---|
+| A cinematic | `sub_821ED810` on the client's `+60`: input cleared, a hero in a skill set idle, the frame left | no orders (PC's own `0x415125` does the rest) | same (section 26) |
+| Zoom | RS, `-0.35` a frame, from 14 to 28.5 times the level's factor | the same rule, by the clock | same |
+| Facing | toward the stick's point every frame; with no stick and the flag, the facing kept (`sub_8221C838`) | `setTargetDirection` every frame with the stick | same |
+| Walking | `setDestination` 2 units ahead every 0.1 s | the same; `stopPathing` on release | same (the release measured, section 9) |
+| A skill's lock | `sub_821DC600` (the skill at `+708`) | `skill_locks_movement` (GOG `+0xc`) | same |
+| X | `sub_8221BC80(-1)`: no walking, the attack where the hero stands | PC's attack in range, else in place toward the target | same (section 9) |
+| A dying or dead hero | no target, no moves, no buttons (`0x821EC0E8` skips to `0x821EC9F4`, which drops the candidates' marks at the client's `+444`, `+452`) when its AI state (`+632`, GOG `+0x284`) is 5 or 6 (*(OT)* `AISTATE_DYING`, `AISTATE_DEAD`) or it is not alive | **was:** the search and the highlight went on | fixed on the branch `audit-dead-hero` |
+| The target's choice | `sub_821EB598` every frame (alive, not 5 or 6) | every 15 ms | same rule |
+| B, Y, LT, RT | `sub_8221BC80(skill)`, aimed by `sub_8221C838` | PC's hotbar keys 3 to 6, the virtual cursor 2 units ahead | to compare: the aim and the target a skill takes |
+| LB, RB | not read yet | PC's hotbar keys 1 and 2 | to read |
+| Walking, read again | `sub_82199E08(client, 0)`, every frame while the hero is not aiming (`hero[510]` 0) and its AI state is not 34: past the stick's 0.1 dead zone, a destination **5.0** units ahead (the stick turned by the camera) **every frame**, and `hero+1500 = min(len² + 0.2, 1.0)` first (an analog speed?); at rest, `+1500` back to 1.0 and, within 2.0 of its goal, the hero faced 2.4 units along the stick (`sub_82199360`). `sub_8221B8E8` (2.0 units on a 0.1 s timer, section 9) runs only after an action held (`sub_8221BC80` returning 0) | 2.0 units every 0.1 s, a fixed speed, `stopPathing` on release | **different, not changed yet**: `+1500` is read by `sub_821D5410` and `sub_822E3A30`, not yet read; PC's `+0x5e8` (`+1500 + 0xc`) is written by its path code (`0x48cd51`), so likely another field. To read before any change (it may be the "remolino" of section 9) |
+| Start and Back in a cinematic | not traced | handled before the cinematic's test | to trace |
+| Paths and collisions | the engine (A*, `passableBetween`) | PC's engine | to confirm with OpenTorchlight |
+
 ## 28. PC's menu keys swallowed in play (2026-10-24)
 
 The owner's first Windows run: the space bar (PC's KEYMAP_CLOSEALL) made PC's menus move behind

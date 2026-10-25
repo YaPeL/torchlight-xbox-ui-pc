@@ -207,6 +207,7 @@ here. Games' texts are named by role, never quoted.
   (`x360 tip: another window was modal`); the window that got the click is logged (`x360 tip: the
   click went to`). QA checklist: a new game with a test option on: the welcome tip closes with
   B, then the notice shows and closes with A.
+
 ## PC's menus' boards seen again after a merchant (fixed on the branch shop-boards-restore)
 
 - **What happened:** in the owner's GOG run of 2026-10-24 (evening), after leaving a merchant,
