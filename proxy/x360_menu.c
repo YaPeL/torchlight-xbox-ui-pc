@@ -5122,6 +5122,9 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         else x360_inventory_toggle();
         return;
     }
+    /* Start at an NPC's screen closes it, as Back (the owner's look at the 360, 2026-10-24; the
+     * 360's frame update closes the open menus on Start, sub_8233E998). */
+    if ((pressed & 0x0010) && shop) { shop_close(); return; }
     /* LT and RT: the page before and after (sub_82377990, sub_82377928); a merchant's frame has
      * one page. */
     if ((pressed & (0x10000 | 0x20000)) && !shop) {
@@ -5870,6 +5873,17 @@ static void press_pc(const char *prefix, const char *name) {
 }
 
 static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
+
+/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
+ * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), clicked as the pad's A does out of
+ * play (proxy/pad.c). */
+void x360_cinematic_skip(void) {
+    static char cin_prefix[64];
+    static const char *const needs[] = {"DialogTextFrame", 0};
+    if (!cin_prefix[0] || !win_of(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
+    if (cin_prefix[0] && pc_shown_in(cin_prefix, "Skip")) press_pc(cin_prefix, "Skip");
+    else x360_log("x360 menu: Start in a cinematic, PC's Skip not shown\r\n");
+}
 
 /* The first non-empty Image of w or a window under it. */
 static void first_image_under(void *w, char *out, unsigned size) {
