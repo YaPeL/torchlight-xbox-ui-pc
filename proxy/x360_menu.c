@@ -719,7 +719,7 @@ typedef void (__fastcall *request_tip_fn)(void *ui, void *edx, int index);
 typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
 typedef void (__fastcall *play_sound_at_fn)(void *sounds, void *edx, int id, void *node, float a, float b, int flag);
 
-static unsigned char *hero, *level, *ui;
+static unsigned char *hero, *level, *ui, *the_client;
 
 static int find_world(void) {
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
@@ -728,6 +728,7 @@ static int find_world(void) {
     level = client ? *(unsigned char **)(client + 0x38) : 0;
     /* CGameUI: the client's +0x3c (its hover code, GOG 0x41b56b, calls CGameUI's methods on it);
      * its hero is at +0x1c (useItem reads it there). Checked before use. */
+    the_client = client;
     ui = client ? *(unsigned char **)(client + 0x3c) : 0;
     if (ui && *(unsigned char **)(ui + 0x1c) != hero) ui = 0;
     return hero && level;
@@ -3156,6 +3157,20 @@ static void frame_load(void) {
 
 static void shop_close(void);
 static void set_page(int p);
+/* The world frozen while the 360's inventory is open, as on the 360 (the owner, 2026-10-25: it
+ * stops as with Start; the port's kept going). The client's own pause byte (+0x1017, written only
+ * by its constructor, GOG 0x40fcba) is read first by its getIsPaused *(OT)* (GOG 0x40de90), which
+ * its update asks before moving the world; set here while the inventory is open, cleared after
+ * only if set here. Not CGameUI's +0x173d (PC's pause menu's togglePause *(OT)*): with it the
+ * camera kept turning behind the inventory (the owner's run), PC's pause showing its world so. */
+#define GOG_CLIENT_PAUSED 0x1017
+static int inventory_paused;
+static void inventory_pause(int on) {
+    if (!the_client) return;
+    if (on && !the_client[GOG_CLIENT_PAUSED]) { the_client[GOG_CLIENT_PAUSED] = 1; inventory_paused = 1; x360_log("x360 menu: the world paused under the inventory\r\n"); }
+    else if (!on && inventory_paused) { the_client[GOG_CLIENT_PAUSED] = 0; inventory_paused = 0; }
+}
+
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
     if (inventory_open && shop && !shop_closing) { shop_close(); return; }
@@ -3168,6 +3183,9 @@ void x360_inventory_toggle(void) {
     frame_load();
     if (!inventory_root) return;
     inventory_open = !inventory_open;
+    /* Not at a shop: the enchanter's and gem goblins' results come after PC's 3D sign has dropped,
+     * which a paused world may not animate (the review); the 360's own inventory, the one paused. */
+    __try { inventory_pause(inventory_open && !shop); } __except (1) { inventory_paused = 0; }
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
         /* At the transmuter the bag is focused (town/05). */
@@ -5354,8 +5372,9 @@ static void mirror_bar(const char *bar, const char *sub, int horizontal, float f
     mirror_bar_of(HUD_PREFIX, bar, sub, horizontal, full);
 }
 
-/* A window of the 360's HUD shown as PC's of the same name, with its text. */
-static void mirror_text_of(const char *prefix, const char *name) {
+/* A window of the 360's HUD shown as PC's of the same name, with its text; with own_only, as PC's
+ * window itself is, its sheet's hiding not counted (the 360's inventory hides PC's sheets). */
+static void mirror_text_shown(const char *prefix, const char *name, int own_only) {
     void *p = pc_window(name), *x = win_of(prefix, name);
     char value[256];
     static is_visible_fn vis;
@@ -5364,8 +5383,9 @@ static void mirror_text_of(const char *prefix, const char *name) {
     if (!p || !vis) { show(x, 0); return; }
     read_prop(p, "Text", value, sizeof value);
     prop(x, "Text", value);
-    show(x, vis(p, 0, 0));
+    show(x, vis(p, 0, own_only ? 1 : 0));
 }
+static void mirror_text_of(const char *prefix, const char *name) { mirror_text_shown(prefix, name, 0); }
 
 static void mirror_text(const char *name) { mirror_text_of(HUD_PREFIX, name); }
 
@@ -5761,7 +5781,8 @@ static void hud_tick(void) {
             }
         }
     }
-    mirror_text("LevelName");
+    /* The place's name stays with the 360's inventory open, as on the 360 (the owner, 2026-10-25). */
+    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open);   /* PC's own hiding counted otherwise */
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
     hud_stage = "target";

@@ -3835,3 +3835,25 @@ globals, vtables, the import table); no patch writes an absolute address, and th
 checks that hold one (the exception handlers' `push imm32`) compare it relocated; a mismatch
 leaves that hook off. GOG's build is unchanged (no substitution; `x360_reloc` 0, its base still
 required). Sections 16a, 16d and 16e's notes on the base are superseded by this one.
+
+## 41. The world frozen under the 360's inventory, and the place's name kept (2026-10-25)
+
+**[seen]** The owner on the 360: opening the inventory freezes the world (the NPCs stop, as with
+Start); the port's world kept going. And the place's name at the top right stays shown with the
+inventory open; the port's went. **[read, GOG]** CGame's update (around `0x40a281`) sets its
+"paused" (CGame `+0x81`) when both of PC's side panels cover the screen (`0x401200` → `0x549b70`,
+which the port answers no for, section 16b's side tests), a modal is open (`0x401220` →
+`0x540e80`), or CGameUI's `+0x173d` is set (the pause's own flag, `CGameUI::togglePause` *(OT)*;
+`CGameClient::getIsPaused` *(OT)* reads the same). A first try set `+0x173d` while the 360's
+inventory was open: the world stopped, but the camera kept turning behind it (PC's pause shows its
+world so; the owner's run). Now the client's own pause byte, `+0x1017` (written only by its
+constructor, GOG `0x40fcba`; read first by its `getIsPaused` *(OT)*, GOG `0x40de90`, which the
+client's update asks), is set while the inventory is open and cleared after only if set here;
+not at a shop (the enchanter's and gem goblins' results come after PC's 3D sign has dropped,
+which a paused world may not animate; the review). The place's name follows PC's window's own
+visibility only while the 360's inventory is open (PC's own hiding of its parent counted otherwise). The 360's own way
+was not found (its housing's setOpen writes CGameUI `+6162`, read by a unit's update, not the
+world's pause; stopped after two tries). The place's name (`x360hud_LevelName`) mirrored PC's
+`LevelName` only while that was seen on screen, and the 360's inventory hides PC's sheets: it now
+follows PC's window's own visibility. Played by the owner (2026-10-25): the world and the camera
+still under the inventory, the place's name kept.
