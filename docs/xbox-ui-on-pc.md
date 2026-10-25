@@ -3766,6 +3766,12 @@ item tooltip at the slot; with none, it hides both.
 
 `dialog_tick` now does that: the stick's left and right (past half, one step per push) move the
 selection over the shown reward slots, wrapping through none; the 360's `ItemHighlight` takes the
-selected `ItemBkgN`'s position (its own size kept, as the 360), PC's card is kept in front, and the cursor (hidden) goes to PC's `ItemSlotN`, where PC shows the
-item's card as on a hover; with none the cursor goes off the slots. The log names each step
-(`x360 dialog: reward item N`). Not run yet.
+selected `ItemBkgN`'s position (its own size kept, as the 360). The item itself is PC's, found as
+PC's own mouse-over finds it (GOG `0x59be40`, `CQuestDialogMenu::handle_MouseOver` *(OT)*): CGameUI's
+`+0x2fc` (vtable `0xab7ff0`), its dialog at `+0x98`, the dialog's quest at `+8`, the quest's
+rewards at `+0x150`, their items' list from `0x5f4760` (`getRewardItems` *(OT)*: data, count `+4`,
+capacity `+8`); PC's mouse-over keeps the item at the menu's `+0x118`. Its card is the 360's
+(`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge on the
+slot's left part, its middle at the slot's; hidden with none and when the talk closes. The first
+try (the hidden cursor on PC's slot, PC's own hover card) drew PC's card, with its golden frame,
+its description beside it: dropped. The log names each step (`x360 dialog: reward item N`).
