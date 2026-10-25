@@ -3852,4 +3852,5 @@ client's update asks), is set while the inventory is open and cleared after only
 was not found (its housing's setOpen writes CGameUI `+6162`, read by a unit's update, not the
 world's pause; stopped after two tries). The place's name (`x360hud_LevelName`) mirrored PC's
 `LevelName` only while that was seen on screen, and the 360's inventory hides PC's sheets: it now
-follows PC's window's own visibility. Not run yet.
+follows PC's window's own visibility. Played by the owner (2026-10-25): the world and the camera
+still under the inventory, the place's name kept.
