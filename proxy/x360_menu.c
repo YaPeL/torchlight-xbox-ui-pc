@@ -6907,6 +6907,25 @@ static void tip_tick(void) {
             logged = id;
             x360_log("x360 tip: "); x360_log(id ? id : "PC's text not among PC's tips"); x360_log("\r\n");
         }
+        /* Goldenrod: PC opens its enchant menu for the retirement (mode 0x1b) and its tip with it;
+         * the 360 shows none there (no tip call in CEnchantMenuXenon nor in the interaction 27's
+         * code, sub_821A83C8; the recomp agent's reading): closed at once, never shown. */
+        if (id && ui) {
+            static const char want[] = "TIP_ENCHANT";
+            unsigned c = 0;
+            while (want[c] && id[c] == want[c]) c++;
+            if (want[c] || id[c]) goto not_goldenrod;
+        }
+        if (id && ui) {
+            unsigned char *en = *(unsigned char **)(ui + GOG_ENCHANT_MENU);
+            if (en && en[ENCHANT_OPEN] && *(int *)(en + ENCHANT_MODE) == 0x1b) {
+                set_visible(tip_root, 0, 0);
+                press_tip("Ok");
+                x360_log("x360 tip: TIP_ENCHANT at Goldenrod, closed (the 360 shows none)\r\n");
+                return;
+            }
+        }
+    not_goldenrod:;
     }
     text(win_of(TIP_PREFIX, "Dialog"), v);
     buttons = x360_pad_buttons();
