@@ -57,6 +57,7 @@ const char* const kKeepMark = "x360ui-keep.txt";
 
 const char* const kUsage =
     "x360ui-install [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]\n"
+    "x360ui-install set-bag --bag pc|360 [--game DIR] [--yes] [--console]   (an installed game's bag, no package)\n"
     "               [--dll FILE]\n"
     "x360ui-install uninstall [--game DIR] [--yes] [--console] [--anyway]\n"
     "x360ui-install list\n"
@@ -689,7 +690,7 @@ struct Args {
 Args parse(const std::vector<std::string>& argv) {
   Args a;
   size_t i = 0;
-  if (!argv.empty() && (argv[0] == "install" || argv[0] == "uninstall" || argv[0] == "list" || argv[0] == "notices"))
+  if (!argv.empty() && (argv[0] == "install" || argv[0] == "uninstall" || argv[0] == "set-bag" || argv[0] == "list" || argv[0] == "notices"))
     a.command = argv[i++];
   for (; i < argv.size(); i++) {
     const std::string& s = argv[i];
@@ -883,6 +884,55 @@ int do_install(const Args& args) {
   return 0;
 }
 
+// The bag changed on an installed game, without the 360's package: the interface converted is the
+// same for both bags (only x360_ui.ini's bag= differs), so only the ini is written; for the 360's
+// bag the saves are backed up first, as install does (the owner, 2026-10-25: changing the bag asked
+// for the package again).
+int do_set_bag(const Args& args) {
+  Ask ask(args.console, args.yes);
+  auto [game, build] = pick_game(args.game, ask, args.yes, true);
+  (void)build;
+  if (args.bag != "pc" && args.bag != "360") throw Exit("set-bag needs --bag pc or --bag 360.");
+  const std::string bag = args.bag;
+  std::vector<fs::path> folders;
+  bool no_backup_ok = false;
+  if (bag == "360") {
+    if (args.saves_known) for (const auto& f : args.saves) folders.push_back(P(f));
+    else folders = save_folders(game);
+    no_backup_ok = folders.empty() && (args.no_backup_ok || ask.yes_no("No save folder of this game was found to back up (a Steam install's saves are in "
+                                       "Steam's prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves "
+                                       "yourself first.\n\nUse the 360's bag without a backup?", false));
+    if (folders.empty() && !no_backup_ok) throw Exit("PC's bag kept: no save folder to back up was found.");
+  }
+  std::vector<std::string> again = {"set-bag", "--game", S(game), "--bag", bag, "--yes", "--console", "--elevated", "--saves-known"};
+  for (const auto& f : folders) again.insert(again.end(), {"--save-folder", S(f)});
+  if (no_backup_ok) again.push_back("--no-backup-ok");
+  if (!args.elevated) {
+    const int code = with_permission(ask, game, again);
+    if (code >= 0) return code;
+  } else if (!can_write(game)) {
+    throw Exit("Cannot write into " + S(game) + "; nothing was changed.");
+  }
+  std::vector<fs::path> backups;
+  if (bag == "360") {
+    progress(0.3, "Backing up the saves");
+    backups = back_up_saves(folders);
+    for (const auto& b : backups) std::cout << "saves backed up: " << S(b) << "\n";
+  }
+  Change ch(game);
+  ch.write(game / "x360_ui.ini", ini_text(game, converted_folders(game)[0], bag));
+  ch.commit();
+  progress(1.0, bag == "360" ? "The 360's bag installed" : "PC's bag installed");
+  std::string done = bag == "360" ? "The 360's bag installed. Start Torchlight with a pad connected."
+                                  : "PC's bag installed. Load and save each character before uninstalling.";
+  if (!backups.empty()) {
+    done += "\n\nYour saves were backed up:";
+    for (const auto& b : backups) done += "\n" + S(b);
+  }
+  finish(ask, done);
+  return 0;
+}
+
 int do_uninstall(const Args& args) {
   Ask ask(args.console, args.yes);
   auto [game, build] = pick_game(args.game, ask, args.yes, true);
@@ -1064,7 +1114,7 @@ void set_shared_console(bool shared) { g_shared_console = shared; }
 int installer_main(const std::vector<std::string>& argv) {
   try {
     const Args a = parse(argv);
-    if (g_shared_console && !a.yes && (a.command == "install" || a.command == "uninstall"))
+    if (g_shared_console && !a.yes && (a.command == "install" || a.command == "uninstall" || a.command == "set-bag"))
       throw Exit("Its questions would be asked in the terminal, whose input the shell reads too: give --yes with the "
                  "options (--game, --package or --x360-dir, --bag), or run it without arguments for its window.");
     g_result_file = a.result_file;
@@ -1072,6 +1122,7 @@ int installer_main(const std::vector<std::string>& argv) {
     if (a.command == "list") return do_list();
     if (a.command == "notices") return do_notices();
     if (a.command == "uninstall") return do_uninstall(a);
+    if (a.command == "set-bag") return do_set_bag(a);
     return do_install(a);
   } catch (const Exit& e) {
     report_error(e.what() + (g_notes.empty() ? "" : "\n\nNot all could be undone:" + g_notes), argv);

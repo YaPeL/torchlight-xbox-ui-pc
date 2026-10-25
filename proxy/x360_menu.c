@@ -719,7 +719,7 @@ typedef void (__fastcall *request_tip_fn)(void *ui, void *edx, int index);
 typedef void (__fastcall *play_sound_fn)(void *emitter, void *edx, int id, float a, float b);
 typedef void (__fastcall *play_sound_at_fn)(void *sounds, void *edx, int id, void *node, float a, float b, int flag);
 
-static unsigned char *hero, *level, *ui;
+static unsigned char *hero, *level, *ui, *the_client;
 
 static int find_world(void) {
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
@@ -728,6 +728,7 @@ static int find_world(void) {
     level = client ? *(unsigned char **)(client + 0x38) : 0;
     /* CGameUI: the client's +0x3c (its hover code, GOG 0x41b56b, calls CGameUI's methods on it);
      * its hero is at +0x1c (useItem reads it there). Checked before use. */
+    the_client = client;
     ui = client ? *(unsigned char **)(client + 0x3c) : 0;
     if (ui && *(unsigned char **)(ui + 0x1c) != hero) ui = 0;
     return hero && level;
@@ -761,6 +762,8 @@ static int sock_open;                        /* the gem's item select is open */
 static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
 static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x19/0x1a gems) */
 static int tm_slot[4], tm_known;
+static int tm_from[4] = {-1, -1, -1, -1};   /* where X took the item in each place from, or -1 */
+static void *tm_from_inv[4];                /* and from which bag (the hero's, the pet's) */
 static unsigned char *tm_shop;               /* the transmuter unit while it is open */
 static int is_tm_slot(int slot) {
     int j;
@@ -794,6 +797,7 @@ static int max_enchants(void) {
 }
 /* Identified, a weapon, armour or trinket of the four kinds (ISA 8, 13, 17, 24), under the
  * maximum of enchantments (sub_822B5688). */
+static int can_retire(unsigned char *item);
 static int can_enchant(unsigned char *item) {
     if (!item || !item[GOG_IDENTIFIED]) return 0;
     if (!(isa(item, 8) || isa(item, 13) || isa(item, 17) || isa(item, 24))) return 0;
@@ -1490,7 +1494,8 @@ static void refresh(void) {
             } else if (at_enchant) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
-                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
+                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant")
+                    : at_enchant == 0x1b && can_retire(item) && !panels[active_panel].is_pet ? x360_text("act.retire") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
             } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
                  * transmuter's own prompt under its rows. */
@@ -2073,6 +2078,17 @@ static void ench_fill(unsigned char *item) {
      * interaction 0x19) has the page the 360 titles "Destroy Gems" (getsocket, town/02), the one of
      * type 133 (0x1a) "Recover Gems" (destroysocket, town/03; the 360's sub_82376D48 by its +304:
      * 132 -> 10, 133 -> 9). Their A prompt shows for an item with gems (sub_8236B1C8). */
+    /* The retirement (the 360's CEnchantMenuXenon mode 4, opened for the interaction 27 as PC's
+     * 0x1b: sub_82360CD0 shows its panel 14, the layout's "retire": its title, the paragraph on the
+     * heirloom, the warning and the Retire prompt, all the layout's own). */
+    if (at_enchant == 0x1b) {
+        show(win_of(ENCH_PREFIX, "enchant"), 0);
+        show(win_of(ENCH_PREFIX, "getsocket"), 0);
+        show(win_of(ENCH_PREFIX, "destroysocket"), 0);
+        show(win_of(ENCH_PREFIX, "enchantshrine"), 0);
+        show(win_of(ENCH_PREFIX, "retire"), 1);
+        return;
+    }
     if (at_enchant == 0x19 || at_enchant == 0x1a) {
         int get = at_enchant == 0x19;
         show(win_of(ENCH_PREFIX, "enchant"), 0);
@@ -2656,6 +2672,7 @@ static void transmute_swap(void) {
     item = (unsigned char *)list[selected[filter]];
     if (panels[active_panel].is_shop) {           /* back from the transmuter */
         unsigned char *pet = the_pet();
+        for (j = 0; j < 4; j++) if (tm_slot[j] == list_slot[selected[filter]]) tm_from[j] = -1;
         move_out(bag, item, list_slot[selected[filter]]);
         if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1) ||
             (pet && ((pickup_fn)GOG_PICKUP_EQUIPMENT)(owner_bag(pet), 0, item, 1))) {
@@ -2673,6 +2690,7 @@ static void transmute_swap(void) {
     if (j == 4) { shop_sound(24); x360_log("x360 transmuter: X: its places are full\r\n"); return; }
     move_out(inventory(), item, list_slot[selected[filter]]);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, tm_slot[j], 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) == item) { tm_from[j] = list_slot[selected[filter]]; tm_from_inv[j] = inventory(); }
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) != item) {
         /* Its place taken (or refused): the item back where it was, whatever is now there. */
         x360_log("x360 transmuter: X: not placed, back\r\n");
@@ -2683,6 +2701,80 @@ static void transmute_swap(void) {
     move_done();
     shop_sound(18);
     x360_log("x360 transmuter: X: placed\r\n");
+}
+
+/* The retirement's items (the 360's sub_8236B498: unit types 8 WEAPON, 13 ARMOR, 39 TRINKET, by
+ * sub_821D7CE0; any other, nothing at all). */
+static int can_retire(unsigned char *item) { return item && (isa(item, 8) || isa(item, 13) || isa(item, 39)); }
+/* A at the retirement NPC: the 360 retires at once, no confirmation (sub_8236B498 -> sub_82361B00, mode 4:
+ * the item out of the hero's bag, renamed after the hero the first time, its heirloom count up
+ * and its bonuses, handed to the descendant, the hero marked retired, the menu closed and the game
+ * left). PC's act does the same work on the item in the hero's slot 14 (CEnchantMenu's 0x57a800,
+ * mode 0x1b at 0x57c42f: removeEquipment, the rename while +0x22c is 0, 0x4c0090, +0x2478 and
+ * +0x247c, the hero's +0x9c4 set): the item is put there and the act called. RETIRING ENDS THE
+ * CHARACTER: tested on copies only. */
+#define X360_RETIRE_MSG 0x8036            /* WM_APP + 0x36: the retirement's act, run by keys_proc */
+static unsigned char *retire_item;        /* the item put in slot 14 for the act */
+static int retire_slot;
+void x360_retire_act(void);
+static void retire(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item;
+    void *bag = owner_bag(hero), *from = inventory();
+    int slot;
+    if (!m || !bag || !from || !list_count) return;
+    if (!m[ENCHANT_OPEN] || hero[0x9c4]) { x360_log("x360 retire: A: the menu closed or the hero already retired: nothing\r\n"); return; }   /* never a second heirloom */
+    item = (unsigned char *)list[selected[filter]];
+    slot = list_slot[selected[filter]];
+    if (!can_retire(item)) { x360_log("x360 retire: A: not a weapon, an armour or a trinket: nothing\r\n"); return; }
+    if (from != bag) { x360_log("x360 retire: A: not the hero's bag: nothing\r\n"); return; }
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 retire: A: slot 14 is taken\r\n"); return; }
+    move_out(bag, item, slot);
+    ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        if (!give_back(bag, slot, item)) move_lost(item);
+        move_done();
+        x360_log("x360 retire: A: not placed\r\n");
+        return;
+    }
+    move_done();
+    retire_item = item;
+    retire_slot = slot;
+    /* PC's Retire button runs its act from the window's messages, before the frame's update; run
+     * from the frame listener, the act left PC between the descendant's creation and its
+     * difficulty screen, which never came (the owner's runs: with pad=0, PC's own button, it came).
+     * So the act is posted to the game's window and run from there (keys_proc), as the button's. */
+    {
+        __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+        extern HWND x360_keys_window(void);
+        HWND w = x360_keys_window();
+        if (w && PostMessageW(w, X360_RETIRE_MSG, 0, 0)) { x360_log("x360 retire: A: the act posted to the game's window\r\n"); return; }
+    }
+    x360_retire_act();
+}
+/* The retirement's act (from keys_proc as the window's messages are pumped; directly when there is
+ * no window to post to): the item still in slot 14, the menu open, the hero not retired yet. */
+void x360_retire_act(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item = retire_item;
+    void *bag = hero ? owner_bag(hero) : 0;
+    retire_item = 0;
+    if (!item || !m || !bag || !m[ENCHANT_OPEN] || hero[0x9c4] || ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        x360_log("x360 retire: the act not run (the menu, the hero or slot 14 changed)\r\n");
+        if (item && bag && ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
+            move_out(bag, item, ENCHANT_SLOT);
+            if (!give_back(bag, retire_slot, item)) move_lost(item);
+            move_done();
+        }
+        return;
+    }
+    x360_log("x360 retire: the hero retired with "); log_item_name(item); x360_log("\r\n");
+    ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    /* PC's act takes the item out of slot 14 itself; one left there is put back. */
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
+        move_out(bag, item, ENCHANT_SLOT);
+        if (!give_back(bag, retire_slot, item)) move_lost(item);
+        move_done();
+        x360_log("x360 retire: PC's act left the item: put back, not retired\r\n");
+    }
 }
 
 /* A at the enchanter: the selected item into the hero's slot 14, PC's own enchanting there
@@ -2739,6 +2831,8 @@ static void transmute(void) {
     ((void_fn)GOG_TRANSMUTE)(m, 0);
     for (j = 0; j < 4; j++) if ((bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0) != was[j]) same = 0;
     if (same && bag && tm_known) { shop_sound(24); x360_log("x360 transmuter: Y: no recipe (the sound 24)\r\n"); return; }
+    for (j = 0; j < 4; j++)   /* a changed place holds the result now, PC's own; an ingredient left keeps its origin */
+        if ((bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0) != was[j]) tm_from[j] = -1;
     x360_log("x360 transmuter: Y: transmuted\r\n");
 }
 
@@ -3031,7 +3125,7 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant == 0x1b ? "title.retire" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
                                                : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
@@ -3156,6 +3250,20 @@ static void frame_load(void) {
 
 static void shop_close(void);
 static void set_page(int p);
+/* The world frozen while the 360's inventory is open, as on the 360 (the owner, 2026-10-25: it
+ * stops as with Start; the port's kept going). The client's own pause byte (+0x1017, written only
+ * by its constructor, GOG 0x40fcba) is read first by its getIsPaused *(OT)* (GOG 0x40de90), which
+ * its update asks before moving the world; set here while the inventory is open, cleared after
+ * only if set here. Not CGameUI's +0x173d (PC's pause menu's togglePause *(OT)*): with it the
+ * camera kept turning behind the inventory (the owner's run), PC's pause showing its world so. */
+#define GOG_CLIENT_PAUSED 0x1017
+static int inventory_paused;
+static void inventory_pause(int on) {
+    if (!the_client) return;
+    if (on && !the_client[GOG_CLIENT_PAUSED]) { the_client[GOG_CLIENT_PAUSED] = 1; inventory_paused = 1; x360_log("x360 menu: the world paused under the inventory\r\n"); }
+    else if (!on && inventory_paused) { the_client[GOG_CLIENT_PAUSED] = 0; inventory_paused = 0; }
+}
+
 void x360_inventory_toggle(void) {
     if (!find_world()) return;
     if (inventory_open && shop && !shop_closing) { shop_close(); return; }
@@ -3168,6 +3276,9 @@ void x360_inventory_toggle(void) {
     frame_load();
     if (!inventory_root) return;
     inventory_open = !inventory_open;
+    /* Not at a shop: the enchanter's and gem goblins' results come after PC's 3D sign has dropped,
+     * which a paused world may not animate (the review); the 360's own inventory, the one paused. */
+    __try { inventory_pause(inventory_open && !shop); } __except (1) { inventory_paused = 0; }
     if (inventory_open) {
         /* At a merchant: its page, the merchant's column focused (town/01-20). */
         /* At the transmuter the bag is focused (town/05). */
@@ -3264,10 +3375,15 @@ void x360_inventory_toggle(void) {
 typedef int (__fastcall *int_arg3_fn)(void *self, void *edx, int a, int b, int c);
 typedef int (__fastcall *int_arg1_fn)(void *self, void *edx, int a);
 typedef void (__fastcall *unit_void_fn)(void *self, void *edx);
-static const unsigned stat_get[4] = {0x487ec0, 0x487e60, 0x487d70, 0x487d00};
+/* The hero's stat functions (0 get, 1 add a point, 2 take one back), by stat: computed, not a
+ * static table, so that Steam's build can move them with the executable (x360_reloc). */
+static unsigned stat_fn(int kind, int i) {
+    const unsigned get[4] = {0x487ec0, 0x487e60, 0x487d70, 0x487d00};
+    const unsigned inc[4] = {0x488450, 0x488470, 0x4884b0, 0x488490};
+    const unsigned dec[4] = {0x4884d0, 0x4884f0, 0x488530, 0x488510};
+    return kind == 0 ? get[i] : kind == 1 ? inc[i] : dec[i];
+}
 static const unsigned stat_base[4] = {0x3ac, 0x3a8, 0x3b4, 0x3b0};
-static const unsigned stat_inc[4] = {0x488450, 0x488470, 0x4884b0, 0x488490};
-static const unsigned stat_dec[4] = {0x4884d0, 0x4884f0, 0x488530, 0x488510};
 static const char *const stat_window[4] = {"strength", "dexterity", "magic", "defense"};
 static const char *const stat_pts[4] = {"strPts", "dexPts", "magicPts", "defPts"};
 static const char *const stat_added_window[4] = {"strPtsAdded", "dexPtsAdded", "magicPtsAdded", "defPtsAdded"};
@@ -3297,9 +3413,9 @@ static void stats_fill(void) {
     int i, n, remaining, can_add, can_remove, a, b, low, high, base_high;
     char buf[16], *p;
     if (!hero || !stats_root) return;
-    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_inc[i])(hero, 0);
+    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_fn(1, i))(hero, 0);
     for (i = 0; i < 4; i++) {
-        int v = ((int_get_fn)stat_get[i])(hero, 0);
+        int v = ((int_get_fn)stat_fn(0, i))(hero, 0);
         stat_text(stat_pts[i], v, v - *(int *)(hero + stat_base[i]));
     }
     for (i = 0; i < 2; i++) {
@@ -3338,7 +3454,7 @@ static void stats_fill(void) {
     prop(win_of(STATS_PREFIX, "removePoint"), "Alpha", can_remove ? "1" : "0.25");
     show(win_of(STATS_PREFIX, "spendPoints"), can_add || can_remove);
     for (i = 0; i < 4; i++) show(win_of(STATS_PREFIX, stat_help[i]), i == stat_sel && (can_add || can_remove));
-    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_dec[i])(hero, 0);
+    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_fn(2, i))(hero, 0);
 }
 
 /* ---- the journal (the Stats page's third column) ----
@@ -3448,7 +3564,7 @@ static void stats_commit(void) {
     int i, n;
     if (!hero) return;
     for (i = 0; i < 4; i++) {
-        for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_inc[i])(hero, 0);
+        for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_fn(1, i))(hero, 0);
         stat_added[i] = 0;
     }
 }
@@ -4357,7 +4473,7 @@ static void quest_fill(void) {
     }
     if (n) {
         void *q = quests[quest_sel];
-        static const unsigned reward_fn[3] = {0x5e8750, 0x5e8730, 0x5e8770};
+        const unsigned reward_fn[3] = {0x5e8750, 0x5e8730, 0x5e8770};
         static const char *const reward_box[3] = {"RewardXPBox", "RewardGoldBox", "RewardFameBox"};
         static const char *const reward_text[3] = {"RewardXP", "RewardGold", "RewardFame"};
         static const char *const reward_label[3] = {"reward.xp", "reward.gp", "reward.fame"};   /* x360_text keys */
@@ -4938,6 +5054,60 @@ static void pc_inventory_close(void) {
     }
 }
 
+/* PC's transmuter, as it closes (CCombineMenu's setOpen, GOG 0x569220), gives each item in its
+ * places back where its own map says it came from (0x568fe0: the map made as it opened;
+ * the slot if it is free and at most 18, by 0x4ea200, else the bag by pickupEquipment). The items
+ * the pad's X put there are not in that map as PC's drag puts them: an equipped sword was mapped
+ * to its slot 0 when the transmuter opened, and closing left the hero two references to it, one
+ * in slot 0 and one in the bag (the owner, 2026-10-25; the references logged around the close).
+ * So those items are given back first, the same way PC does (removeEquipment, then 0x4ea200 to
+ * the slot X took it from, else pickupEquipment), and PC finds the places empty. */
+#define GOG_PUT_BACK_AT 0x004ea200          /* CInventory: the item into a slot (item, slot), as PC's transmuter gives it back */
+static void transmuter_give_back(void) {
+    typedef unsigned char (__fastcall *put_back_fn)(void *inv, void *edx, void *item, int slot);
+    void *bag = owner_bag(hero);
+    int j;
+    if (!bag || !tm_known) return;
+    for (j = 0; j < 4; j++) {
+        unsigned char *item;
+        int from = tm_from[j];
+        tm_from[j] = -1;
+        if (from < 0 || !(item = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]))) continue;
+        move_out(bag, item, tm_slot[j]);
+        if (tm_from_inv[j] && tm_from_inv[j] != bag) {   /* the pet's: back to its bag, its slot if free */
+            if (give_back(tm_from_inv[j], from, item)) { x360_log("x360 transmuter: closing: an item given back to the pet's bag\r\n"); move_done(); continue; }
+        }
+        if (tm_from_inv[j] == bag && from <= 18 && !((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, from) && ((put_back_fn)GOG_PUT_BACK_AT)(bag, 0, item, from)) {
+            x360_log("x360 transmuter: closing: an item given back to its slot "); x360_log_num(from); x360_log("\r\n");
+        } else if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1)) {
+            x360_log("x360 transmuter: closing: an item given back to the bag\r\n");
+        } else {
+            to_ground(item);
+            x360_log("x360 transmuter: closing: an item given back to the ground (the bag full)\r\n");
+        }
+        move_done();
+    }
+}
+/* Whoever closes PC's transmuter (the pad's B or Start through shop_close, a key, the game's
+ * closing of every menu), the items are given back first: its setOpen (CCombineMenu's vtable
+ * +0x1c, GOG 0x569220) is replaced in the vtable by this one, which gives them back on a close and
+ * calls PC's. */
+static set_bool_fn combine_set_open;
+static void __fastcall combine_set_open_hook(void *self, void *edx, int on) {
+    if (!on && ((unsigned char *)self)[COMBINE_OPEN]) __try { transmuter_give_back(); } __except (1) { move_cut_short(); }
+    combine_set_open(self, edx, on);
+}
+static void combine_hook_install(void) {
+    void **slot = (void **)0x00ab2c4c + MENU_SET_OPEN;   /* CCombineMenu's vtable */
+    unsigned long old;
+    if (combine_set_open) return;
+    if (*slot != (void *)0x00569220) { x360_log("x360 transmuter: its setOpen not as read: the give-back on closing left out\r\n"); combine_set_open = (set_bool_fn)1; return; }
+    if (!VirtualProtect(slot, 4, 0x04 /* PAGE_READWRITE */, &old)) return;
+    combine_set_open = (set_bool_fn)*slot;
+    *slot = (void *)combine_set_open_hook;
+    VirtualProtect(slot, 4, old, &old);
+    x360_log("x360 transmuter: its setOpen hooked (the pad's items given back on closing)\r\n");
+}
 static void shop_close(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + (at_enchant ? GOG_ENCHANT_MENU : at_transmute ? GOG_COMBINE_MENU : at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
     int open = m && (at_enchant ? m[ENCHANT_OPEN] : at_transmute ? m[COMBINE_OPEN] : m[MENU_OPEN]);
@@ -5011,12 +5181,13 @@ void x360_shop_tick(void) {
     if (!shop && en && en[ENCHANT_OPEN] && *(unsigned char **)(en + ENCHANT_OWNER)) {
         static int logged_mode;
         int mode = *(int *)(en + ENCHANT_MODE);
-        if (mode == 0x15 || mode == 0x19 || mode == 0x1a) {
+        if (mode == 0x15 || mode == 0x19 || mode == 0x1a || mode == 0x1b) {
             if (inventory_open) x360_inventory_toggle();
             shop = *(unsigned char **)(en + ENCHANT_OWNER);
             at_enchant = mode;
             ench_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
+                     : mode == 0x1b ? "x360 shop: PC's enchant menu opened (the retirement NPC)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
         } else if (mode != logged_mode) {
@@ -5028,8 +5199,9 @@ void x360_shop_tick(void) {
     } else if (!shop && tm && tm[COMBINE_OPEN] && *(unsigned char **)(tm + COMBINE_OWNER)) {
         int j;
         if (inventory_open) x360_inventory_toggle();
-        for (j = 0; j < 4; j++) tm_slot[j] = ((int *)(tm + COMBINE_SLOTS))[j];
+        for (j = 0; j < 4; j++) { tm_slot[j] = ((int *)(tm + COMBINE_SLOTS))[j]; tm_from[j] = -1; tm_from_inv[j] = 0; }
         tm_known = 1;
+        combine_hook_install();
         shop = tm_shop = *(unsigned char **)(tm + COMBINE_OWNER);
         at_transmute = 1;
         left_column_for(2);
@@ -5200,7 +5372,8 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
     /* At the transmuter (mode 5) A shows nothing and is not done here; Y transmutes. */
-    if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
+    if ((pressed & 0x1000) && at_enchant == 0x1b) { retire(); refresh_all(); }               /* A at the retirement NPC */
+    else if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
     else if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
     if ((pressed & 0x8000) && at_transmute) { transmute(); refresh_all(); }               /* Y */
     else if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }       /* Y (a stash: mode 7/8) */
@@ -5349,8 +5522,9 @@ static void mirror_bar(const char *bar, const char *sub, int horizontal, float f
     mirror_bar_of(HUD_PREFIX, bar, sub, horizontal, full);
 }
 
-/* A window of the 360's HUD shown as PC's of the same name, with its text. */
-static void mirror_text_of(const char *prefix, const char *name) {
+/* A window of the 360's HUD shown as PC's of the same name, with its text; with own_only, as PC's
+ * window itself is, its sheet's hiding not counted (the 360's inventory hides PC's sheets). */
+static void mirror_text_shown(const char *prefix, const char *name, int own_only) {
     void *p = pc_window(name), *x = win_of(prefix, name);
     char value[256];
     static is_visible_fn vis;
@@ -5359,8 +5533,9 @@ static void mirror_text_of(const char *prefix, const char *name) {
     if (!p || !vis) { show(x, 0); return; }
     read_prop(p, "Text", value, sizeof value);
     prop(x, "Text", value);
-    show(x, vis(p, 0, 0));
+    show(x, vis(p, 0, own_only ? 1 : 0));
 }
+static void mirror_text_of(const char *prefix, const char *name) { mirror_text_shown(prefix, name, 0); }
 
 static void mirror_text(const char *name) { mirror_text_of(HUD_PREFIX, name); }
 
@@ -5462,8 +5637,8 @@ static int hidden_mimic(void *unit) {
     return on;
 }
 
-/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, "Undead - Fast";
- * none for an NPC), as UTF-8; "" if it has none. */
+/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, a monster's kind,
+ * an NPC's role), as UTF-8; "" if it has none. */
 static void unit_description(void *unit, char *out, unsigned size) {
     static const unsigned short empty[] = {0};
     wstr_ctor_fn ctor;
@@ -5506,9 +5681,28 @@ static void target_tick(void) {
     unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
     if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) x360_hud_attacked(unit);
     if (attacked.unit && (int)(now - attacked_until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&attacked, 0, 0);
-    /* The 360's order: the unit under the cursor, else the one attacked. */
+    /* The 360's choice (sub_821A83C8, 0x821A9124-0x821A9678, the recomp agent's reading): while
+     * an attack or skill button is held, the unit the player acts on (its +644, GOG's hero
+     * target); else the pad's target (its HUD's +72, an NPC near too); none under a menu or a
+     * modal; then, unless that is an NPC (type 104), the player's combat target when it has one
+     * (its virtual +460; here the unit attacked, kept 3 s as before). PC's unit under the mouse
+     * first, for the mouse. */
     unit = ui ? *(unsigned char **)(ui + GOG_UI_MOUSE_OVER) : 0;
-    if (!unit) unit = (unsigned char *)attacked.unit;
+    if (!unit) {
+        void *x360_pad_unit_target(void);
+        unsigned x360_pad_buttons(void);
+        int x360_overlay_open(void);
+        if (x360_pad_buttons() & (0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000)) unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
+        if (!unit) unit = (unsigned char *)x360_pad_unit_target();
+        if (!(inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) &&
+            (!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;   /* no call on the unit under a screen: the check below clears it */
+        /* Under a screen nothing (the owner: the bar over PC's pause menu); the 360's pause
+         * covers its HUD. */
+    }
+    {
+        int x360_overlay_open(void);
+        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
+    }
     if (unit && hidden_mimic(unit)) unit = 0;
     show(x, unit != 0);
     if (!unit) return;
@@ -5565,7 +5759,9 @@ static void target_tick(void) {
  * and 70 from the bottom (the constants at 0x820aa388 and 0x820aa570). PC's (CAutomap::setVisible
  * *(OT)*, GOG 0x4ea6b0, called on toggling it) puts it top right; the level keeps it at +0x160
  * (GOG 0x4fc062), its viewport at +0x28, shown +0x3c, fullscreen +0x65. Here the corner's viewport
- * is placed again as the 360's, every tick (PC sizes it only when it is toggled). */
+ * is placed again as the 360's at once after the pad toggles it (R3) and every frame from the frame
+ * listener, before the frame is drawn (PC sizes it only when it is toggled; placed from the HUD's
+ * tick alone, every 50 ms, it showed top right for an instant after R3: the owner, 2026-10-25). */
 #define GOG_LEVEL_AUTOMAP 0x160
 #define AUTOMAP_VIEWPORT 0x28
 #define AUTOMAP_SHOWN 0x3c
@@ -5619,10 +5815,59 @@ static void add_frame_listener(void);
 /* PC's tip window's root (tipmenu.layout, loaded once at the game's start): made transparent as it
  * loads, so PC's tip is never drawn before the 360's takes its place (the owner saw it for a
  * moment); tip_tick shows it again only when it is not a tip (the settings' confirmations). */
+/* PC's main menu leaves its 3D view's first column and row uncovered at 16:10 (the Steam Deck: a
+ * blue line, PC's own, without the mod too; the owner asked for it gone): two 1-pixel black lines
+ * of PC's own image (GuiLook/BlackLine, its HUD's borders') at its left and top, under its root. */
+/* The two lines, made under root with the windows' prefix; 0 if not made. */
+static int one_pixel_borders(void *root, const char *prefix, void **made);
+static void main_menu_borders(void *root) {
+    if (one_pixel_borders(root, "x360mmb_", 0)) x360_log("x360 menu: the main menu's 1-pixel borders added\r\n");
+}
+static int one_pixel_borders(void *root, const char *prefix, void **made) {
+    typedef void *(__fastcall *create_fn)(void *wm, void *edx, const void *type, const void *name, const void *prefix);
+    static create_fn create;
+    static const char *const names[2] = {"LeftLine", "TopLine"};
+    static const char *const rects[2] = {"{{0,0},{0,0},{0,1},{1,0}}", "{{0,0},{0,0},{1,0},{0,1}}"};
+    void *wm = window_manager();
+    int b;
+    if (!create) create = (create_fn)need("?createWindow@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00@Z");
+    if (!create || !wm || !root) return 0;
+    for (b = 0; b < 2; b++) {
+        object t, nm, pre;
+        void *w;
+        string_ctor(&t, 0, "GuiLook/StaticImage");
+        string_ctor(&nm, 0, names[b]);
+        string_ctor(&pre, 0, prefix);
+        __try { w = create(wm, 0, &t, &nm, &pre); } __except (1) { w = 0; }
+        string_dtor(&pre, 0); string_dtor(&nm, 0); string_dtor(&t, 0);
+        if (!w) { x360_log("x360 menu: a 1-pixel border not made\r\n"); return 0; }
+        prop(w, "UnifiedAreaRect", rects[b]);
+        prop(w, "Image", "set:GuiLook image:BlackLine");
+        prop(w, "FrameEnabled", "False");
+        prop(w, "BackgroundEnabled", "False");
+        prop(w, "MousePassThroughEnabled", "True");
+        prop(w, "AlwaysOnTop", "True");
+        add_child(root, 0, w);
+        if (made) made[b] = w;
+    }
+    return 1;
+}
+
 void x360_pc_layout_loaded(const char *file, void *root) {
     static const char *const hidden[] = {"BOTTOMHUD.LAYOUT", "PETHUD.LAYOUT", "TIPMENU.LAYOUT", 0};
     unsigned n = length(file), i;
     if (!resolve()) return;
+    {
+        static const char mm[] = "MAINMENUFRAME.LAYOUT";
+        unsigned m = sizeof mm - 1, j;
+        int same = n >= m;
+        for (j = 0; same && j < m; j++) {
+            char c = file[n - m + j];
+            if (c >= 'a' && c <= 'z') c = (char)(c - 32);
+            same = c == mm[j];
+        }
+        if (same) __try { main_menu_borders(root); } __except (1) { x360_log("x360 menu: exception adding the main menu's borders\r\n"); }
+    }
     for (i = 0; hidden[i]; i++) {
         unsigned m = length(hidden[i]), j;
         int same = n >= m;
@@ -5640,6 +5885,18 @@ void x360_pc_layout_loaded(const char *file, void *root) {
             pc_tip_layout_root = root;
         } else {
             __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+            if (i == 0) {
+                /* Its four 1-pixel black borders kept: PC's 3D view leaves its first row and column
+                 * uncovered at 16:10 (the Steam Deck's 1280x800: a blue line at the top and the left,
+                 * seen in PC's own main menu too), and these cover it in play; made transparent
+                 * with the rest, the line showed (the owner's Deck). */
+                static const char *const borders[] = {"LeftBorder", "RightBorder", "TopBorder", "BottomBorder"};
+                unsigned b;
+                for (b = 0; b < 4; b++) {
+                    void *w = descendant_ending(root, borders[b]);
+                    __try { prop(w, "InheritsAlpha", "False"); prop(w, "Alpha", "1"); } __except (1) { }
+                }
+            }
         }
         x360_log("x360 hud: PC's "); x360_log(hidden[i]); x360_log(" transparent as it loads\r\n");
     }
@@ -5655,6 +5912,132 @@ void x360_hud_tick(void) {
     }
 }
 
+/* The "A Interact" prompt (the 360's HUD update sub_821A83C8, 0x821AB364-0x821AB518, the recomp
+ * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
+ * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
+ * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, the retirement NPC; not an enemy),
+ * not the pet, with no 360 screen, dialog or modal open. The 360 places it at the unit's position
+ * 1.0 up and 0.4 aside, projected and kept 26 pixels inside the screen (pool 0x820AA2C0 +64, +140,
+ * +1608); the anchor below (interact_prompt). */
+/* A world point on the screen, in the window's pixels, by Ogre's camera (the client's +0x10, its
+ * +8, as proxy/pad.c reads it): its projection and view matrices; 0 behind the camera. */
+static int world_to_screen(const float *p, float sw, float sh, float *x, float *y) {
+    typedef const float *(__fastcall *mat_fn)(const void *self, void *edx);
+    static mat_fn view, proj;
+    static int looked;
+    unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+    void *cam = ctl ? *(void **)(ctl + 8) : 0;
+    const float *v, *q;
+    float e[4], c[4];
+    int i;
+    if (!looked) {
+        void *ogre = GetModuleHandleA("OgreMain.dll");
+        looked = 1;
+        view = ogre ? (mat_fn)GetProcAddress(ogre, "?getViewMatrix@Camera@Ogre@@UBEABVMatrix4@2@XZ") : 0;
+        proj = ogre ? (mat_fn)GetProcAddress(ogre, "?getProjectionMatrix@Frustum@Ogre@@UBEABVMatrix4@2@XZ") : 0;
+    }
+    if (!cam || !view || !proj) return 0;
+    v = view(cam, 0);
+    q = proj(cam, 0);
+    for (i = 0; i < 4; i++) e[i] = v[i * 4] * p[0] + v[i * 4 + 1] * p[1] + v[i * 4 + 2] * p[2] + v[i * 4 + 3];   /* row-major, as Ogre's */
+    for (i = 0; i < 4; i++) c[i] = q[i * 4] * e[0] + q[i * 4 + 1] * e[1] + q[i * 4 + 2] * e[2] + q[i * 4 + 3] * e[3];
+    if (c[3] <= 1e-4f) return 0;
+    *x = (c[0] / c[3] + 1.0f) * 0.5f * sw;
+    *y = (1.0f - c[1] / c[3]) * 0.5f * sh;
+    return 1;
+}
+/* The "A Interact" prompt (the 360's HUD update sub_821A83C8, 0x821AB364-0x821AB518, the recomp
+ * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
+ * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
+ * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, the retirement NPC; not an enemy),
+ * not the pet, with no 360 screen, dialog or modal open. Placed as the 360's: the unit's position
+ * 1.0 up and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
+ * top left there, kept between 0 and the screen less 26 pixels (of 720; +68, +1608). */
+static int pc_pause_open(void);
+int x360_pause_open(void);
+static void interact_prompt(void) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    void *x360_pad_interact_unit(void);
+    int x360_overlay_open(void);
+    static pixel_rect_fn6 rect_of;
+    static parent_fn gp;
+    void *w = win_of(HUD_PREFIX, "TargetInteractHover"), *par;
+    unsigned char *u = (unsigned char *)x360_pad_interact_unit();
+    rect6 pr;
+    float pos[3], x, y, sw, sh, m;
+    HWND hw = active_window();
+    RECT r;
+    if (!w) return;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    if (!u || !hero || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() ||
+        pc_pause_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up || !rect_of || !gp ||
+        !(par = gp(w, 0)) || !hw || !GetClientRect(hw, &r) || r.right <= r.left) { show(w, 0); return; }
+    sw = (float)(r.right - r.left);
+    sh = (float)(r.bottom - r.top);
+    ((get_position_fn)GOG_GET_POSITION)(u, 0, pos, 1);
+    {
+        /* sub_821B8D70(player, unit): within 2.0 on the ground (2.75 while the player stands:
+         * its +508 0; here the stick at rest), and an interactive unit: the 360's registry
+         * (sub_821E3C48, not ported) or one of the types 130 ENCHANTER, 175 RETIREMENTCHARACTER,
+         * 132 and 133 the gem goblins, 134 COMBINER, 41 MERCHANT, 128 STASH, 170 SHAREDSTASH, 104 NPC. */
+        static const int types[] = {130, 175, 132, 133, 134, 41, 128, 170, 104};
+        int x360_pad_lx(void), x360_pad_ly(void);
+        float hp[3], dx, dz, reach;
+        int t, ok = 0;
+        for (t = 0; t < 9 && !ok; t++) ok = isa(u, types[t]);
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, hp, 1);
+        dx = pos[0] - hp[0];
+        dz = pos[2] - hp[2];
+        {
+            int sx = x360_pad_lx(), sy = x360_pad_ly();   /* raw (of 1000): at rest under the 360's dead zone, about 240 */
+            reach = sx * sx + sy * sy < 240 * 240 ? 2.75f : 2.0f;
+        }
+        if (!ok || dx * dx + dz * dz > reach * reach) { show(w, 0); return; }
+    }
+    {
+        /* The 360's anchor (sub_821AB3F0.., the projection sub_8233E1C0 with its offset, the recomp
+         * agent's reading): pos + (0.4, 1.0 - unit+348, 0.4) + the camera's up axis (its orientation's
+         * Y, unit length). The 360's +348 measured on the recomp (2026-10-25): 0.8 for the units that
+         * stand (merchants, stashes, the retirement NPC), 0.3 for the ones that walk;
+         * PC's unit has it at the same +348 (logged on GOG: the same 0.8 and 0.3). The owner's capture
+         * at the stash: the prompt within some 30 pixels of the 360's at 1080 (its camera not quite
+         * the same). */
+        typedef float *(__fastcall *vec_fn)(const void *self, void *edx, float *out);
+        static vec_fn derived_up;
+        static int looked;
+        unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+        void *cam = ctl ? *(void **)(ctl + 8) : 0;
+        float up[3] = {0, 1, 0};
+        if (!looked) {
+            void *ogre = GetModuleHandleA("OgreMain.dll");
+            looked = 1;
+            derived_up = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedUp@Camera@Ogre@@QBE?AVVector3@2@XZ") : 0;
+        }
+        if (derived_up && cam) derived_up(cam, 0, up);
+        pos[0] += 0.4f + up[0];
+        pos[1] += 1.0f - *(float *)(u + 348) + up[1];
+        pos[2] += 0.4f + up[2];
+    }
+    if (!world_to_screen(pos, sw, sh, &x, &y)) { show(w, 0); return; }
+    m = 26.0f * k;
+    if (x < 0) x = 0;
+    if (x > sw - m) x = sw - m;
+    if (y < 0) y = 0;
+    if (y > sh - m) y = sh - m;
+    rect_of(par, 0, &pr);
+    {   /* the window's own size, its layout's: kept, only moved */
+        rect6 wr;
+        rect_of(w, 0, &wr);
+        set_size(w, x - pr.left, y - pr.top, wr.right - wr.left, wr.bottom - wr.top);
+    }
+    show(w, 1);
+}
+
 static void hud_tick(void) {
     static unsigned last;
     static int failed;
@@ -5667,12 +6050,25 @@ static void hud_tick(void) {
      * windows are searched again on the way back, as PC may have made new ones. */
     hud_stage = "resolve";
     if (!resolve() || !pc_window("PlayerHealthRoot")) {
+        { void *l = win_of("x360pb_", "LeftLine"), *t = win_of("x360pb_", "TopLine"); if (l) show(l, 0); if (t) show(t, 0); }
         if (hud_root) show(hud_root, 0);
         if (pet_hud_root) show(pet_hud_root, 0);
         hud_in_play = 0;
         return;
     }
     hud_in_play = 1;
+    {
+        /* PC's 3D view leaves its first row and column uncovered at 16:10 (the Deck); PC's bottom
+         * HUD's borders cover them in play (section 42), but PC hides that HUD in a cinematic and
+         * the blue line showed there (the owner's Deck): the same two 1-pixel lines on the GUI
+         * sheet, shown while in play. */
+        static void *lines[2];
+        static int tried;
+        void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
+        if (!tried && sheet) { tried = 1; if (one_pixel_borders(sheet, "x360pb_", lines)) x360_log("x360 hud: the 1-pixel borders over the 3D view added\r\n"); }
+        (void)lines;
+        { void *l = win_of("x360pb_", "LeftLine"), *t = win_of("x360pb_", "TopLine"); if (l) show(l, 1); if (t) show(t, 1); }   /* by name each time (the review) */
+    }
     if (!hud_root) {
         HWND w = active_window();
         RECT r;
@@ -5705,9 +6101,10 @@ static void hud_tick(void) {
      * are those PC writes on those slots (SkillText1, SkillText2). */
     copy_text("POTIONCOUNT", "SkillText1");
     copy_text("MANACOUNT", "SkillText2");
-    /* Not done yet: the interact prompt and the skills on the pad's buttons (the layout's
+    /* Not done yet: the skills on the pad's buttons (the layout's
      * samples hidden). */
-    show(win_of(HUD_PREFIX, "TargetInteractHover"), 0);
+    hud_stage = "interact";
+    interact_prompt();
     /* The icons on the pad's buttons, from the hotbar keys proxy/pad.c presses for them: LB 1,
      * RB 2, B 3, Y 4, LT 5, RT 6. The 360's first set (SkillSet1: Y SkillSlot4, B 5, LT 6, RT 7);
      * its second set (SkillSet2, the same places) hidden. */
@@ -5723,6 +6120,21 @@ static void hud_tick(void) {
                                             "SkillText8", "SkillText9", "SkillText10", 0};
         int j;
         for (j = 0; texts[j]; j++) prop(win_of(HUD_PREFIX, texts[j]), "Text", "");
+    }
+    hud_stage = "plus";
+    /* The bag's "+" (AvailableSkillsIcon, its glow AvailableSkillsGlowIcon over it): the 360's HUD
+     * update (sub_821A83C8, 0x821A9C90-0x821A9D50) shows the plus while the player has skill points
+     * (+968, GOG's +0x3e0) or stat points (+964, GOG's +0x3dc) unspent, and hides both otherwise;
+     * meanwhile a timer (HUD +6260) counts the frame's time down from 1.0 s (0x820AA300) and at 0
+     * flips a flag (+6264) that hides or shows the glow, so it blinks once a second. */
+    {
+        static unsigned blink_at;
+        static int flag;
+        int points = find_world() && hero && (*(int *)(hero + GOG_SKILL_POINTS) > 0 || *(int *)(hero + GOG_STAT_POINTS) > 0);
+        show(win_of(HUD_PREFIX, "AvailableSkillsIcon"), points);
+        if (!points) blink_at = 0;
+        else if (!blink_at || now - blink_at >= 1000) { blink_at = now; flag = !flag; }
+        show(win_of(HUD_PREFIX, "AvailableSkillsGlowIcon"), points && !flag);
     }
     hud_stage = "pet";
     /* The pet's: the 360's pethud.layout, PC's made transparent, its bars and text as PC's. */
@@ -5756,7 +6168,11 @@ static void hud_tick(void) {
             }
         }
     }
-    mirror_text("LevelName");
+    /* The place's name stays with the 360's inventory open, as on the 360 (the owner, 2026-10-25). */
+    /* PC's own hiding counted otherwise; while the port hides PC's sheets (a 360 screen, and the
+     * 600 ms after a shop until they come back) only the window's own (the owner: the name went
+     * off and on again as an NPC's menu closed). */
+    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open || pc_ui_back_at || hidden_count);
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
     hud_stage = "target";
@@ -5969,7 +6385,7 @@ static void *marker_hidden_on;
 static void quest_marker(int hide) {
     typedef void (__fastcall *unit_str_fn)(void *unit, void *edx, const void *name);
     typedef void (__fastcall *update_fn)(void *manager, void *edx, void *unit);
-    static const unsigned names[] = {0x00abad3c, 0x00abad18, 0x00abacfc, 0x00abace0};
+    const unsigned names[] = {0x00abad3c, 0x00abad18, 0x00abacfc, 0x00abace0};
     wstr_ctor_fn wctor;
     wstr_dtor_fn wdtor;
     unsigned char ws[32];
@@ -6103,8 +6519,15 @@ static void dialog_tick(void) {
     }
     qd_show(1);
     /* The windows, as PC's. */
+    /* The NPC's portrait as PC's, and none where PC shows none (the owner, 2026-10-25: town NPCs
+     * without one, on the 360 too, showed the last one's, an empty Image not replacing it; PC's
+     * plain dialogmenu has no Portrait at all). */
     read_prop(win_of(pc_qd_prefix, "Portrait"), "Image", v, sizeof v);
-    prop(win_of(QD_PREFIX, "Portrait"), "Image", v);
+    {
+        int has = v[0] && pc_shown("Portrait");
+        if (has) prop(win_of(QD_PREFIX, "Portrait"), "Image", v);
+        show(win_of(QD_PREFIX, "Portrait"), has);
+    }
     read_prop(win_of(pc_qd_prefix, "DialogText"), "Text", v, sizeof v);
     {
         /* A new text (its hash): the rise starts again. */
@@ -6746,6 +7169,44 @@ static void tip_tick(void) {
             logged = id;
             x360_log("x360 tip: "); x360_log(id ? id : "PC's text not among PC's tips"); x360_log("\r\n");
         }
+        /* The tips the 360 never shows: its only tip call, sub_82337A10(client, id), has 16 callers
+         * passing the ids 0-4, 6-9, 11, 16, 19, 20 and 23 (and one from data, sub_8223F5C0); the
+         * ids of the merchant, the sockets, the gambler, the enchanter, the transmuter, the pet's
+         * inventory, the stash, fishing, the shared stash and how to attack are passed by none (the
+         * recomp agent's reading; the names by the 360's table from TIP_INVENTORY at 0x820AC130;
+         * the owner saw none at the stash, the enchanter and the transmuter on the 360). PC's are
+         * closed at once, never shown. */
+        if (id) {
+            static const char *logged_close;
+            static const char *const never[] = {"TIP_MERCHANT", "TIP_SOCKETABLE", "TIP_GAMBLE", "TIP_ENCHANT", "TIP_TRANSMUTE",
+                                                "TIP_PETINVENTORY", "TIP_STASH", "TIP_FISHING", "TIP_SHAREDSTASH",
+                                                "TIP_HOWTOATTACK", 0};
+            int t;
+            /* The inventory's tip is the 360's for its own inventory only (its caller 8236F700, an
+             * inventory menu): PC opens its inventory with a shop's menu and the tip with it (the
+             * owner, 2026-10-25: at a gem goblin; none there on the 360). */
+            int at_a_shop = 0;
+            if (ui) {
+                typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+                static const unsigned menus[] = {0x2d8, 0x2dc, 0x2e0, 0x2e4};
+                int q;
+                for (q = 0; q < 4; q++) {
+                    unsigned char *m = *(unsigned char **)(ui + menus[q]);
+                    if (m && ((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) at_a_shop = 1;
+                }
+            }
+            for (t = at_a_shop ? -1 : 0; t < 0 || never[t]; t++) {
+                const char *n = t < 0 ? "TIP_INVENTORY" : never[t];
+                unsigned c = 0;
+                while (n[c] && id[c] == n[c]) c++;
+                if (n[c] || id[c]) continue;
+                set_visible(tip_root, 0, 0);
+                tip_shown = 0;   /* the next tip PC queues behind it is shown as new (the review) */
+                press_tip("Ok");
+                if (logged_close != id) { logged_close = id; x360_log("x360 tip: closed, the 360 never shows it\r\n"); }
+                return;
+            }
+        }
     }
     text(win_of(TIP_PREFIX, "Dialog"), v);
     buttons = x360_pad_buttons();
@@ -7052,6 +7513,7 @@ void x360_automap_cycle(void) {
     if (!holder || ui[0x173d]) return;
     __try { ((self_fn)0x004ee7c0)(holder, 0); x360_log("x360: R3, the map's next state\r\n"); }
     __except (1) { x360_log("x360: R3, the map's toggle threw\r\n"); }
+    minimap_tick();   /* placed at once: PC's toggle puts it top right, drawn there for a frame (the owner) */
 }
 
 /* The 360's pause menu's Options and Exit to Title, done by PC's own pause menu: opened by its
@@ -7098,7 +7560,7 @@ static void pc_menu_tick(void) {
  * [0xf60c04] at 0x55d2e7, KEYMAP_PET [0xf60c08] at 0x55d318. Each patched only if its two bytes
  * are as read. */
 static void hotkeys_off(void) {
-    static const struct { unsigned at; unsigned char was[2], now[2]; } p[] = {
+    const struct { unsigned at; unsigned char was[2], now[2]; } p[] = {   /* not static: Steam's build moves the addresses (x360_reloc) */
         {0x0055d206, {0x75, 0x08}, {0xeb, 0x16}},
         {0x0055d282, {0x74, 0x07}, {0xeb, 0x07}},
         {0x0055d2a4, {0x74, 0x07}, {0xeb, 0x07}},
@@ -7151,7 +7613,7 @@ static int keys_open;            /* set each frame by keys_off: in play, no PC s
 static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
 static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
 static int keys_console_key;     /* the console's key went down: look for its window at once */
-HWND x360_keys_window(void) { return keys_window; }
+HWND x360_keys_window(void) { return keys_old_proc ? keys_window : 0; }   /* only once subclassed: what is posted to it reaches keys_proc */
 static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
     int i;
@@ -7159,6 +7621,7 @@ static int key_index(unsigned vk) {
     return -1;
 }
 static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    if (msg == X360_RETIRE_MSG) { __try { x360_retire_act(); } __except (1) { x360_log("x360 retire: exception in the act\r\n"); } return 0; }
     int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
     int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
     if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
@@ -7296,6 +7759,7 @@ static void modal_minimap(int hide) {
     } else if (hidden) {
         __try { if (am == hidden) ((show_fn)0x004ea6b0)(am, 0, 1); } __except (1) { }
         hidden = 0;
+        minimap_tick();   /* shown again top right by PC: placed at once */
     }
 }
 
@@ -7303,7 +7767,7 @@ static void boards_tick(void) {
     /* Each shop screen's board, where its update (its vtable's slot 9) animates it: CInventoryMenu
      * 0x580f80 its +0x7b20, CMerchantMenu 0x58ac50 +0x48, CEnchantMenu 0x5752d0 +0x50,
      * CCombineMenu 0x5656a0 +0x6c, CStashMenu 0x5aadb0 +0x48; the menu's vtable checked first. */
-    static const struct { unsigned at, vtable, board; } shops[] = {
+    const struct { unsigned at, vtable, board; } shops[] = {   /* not static: Steam's vtables move with the executable */
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
@@ -8121,7 +8585,7 @@ static void side_panels_test(int off) {
     /* Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
      * (the other's, +8); 0x549b70, both, calls them (QA run 10: with only the first patched the world
      * stayed narrowed, its strips the background's blue once the boards were hidden). */
-    static const unsigned tests[2] = {0x00541090, 0x00541130};
+    const unsigned tests[2] = {0x00541090, 0x00541130};
     static const unsigned char no[3] = {0x32, 0xc0, 0xc3};
     static unsigned char saved[2][3];
     static int patched;
@@ -8354,13 +8818,62 @@ int x360_pad_lx(void);
  * injects it into CEGUI, then a 1 px move (0x4016c0) for the hover: a position injected alone lasts
  * one frame (QA run 12). So Windows' cursor is put on (x, y), the window's client pixels, and PC
  * hovers the button there itself; CEGUI is told the same at once for a click in this frame. */
+/* CEGUI's tooltip (System's default__auto_tooltip__, shown over PC's character slots and classes):
+ * the mouse leaves a window over the screen's background, which takes the tooltip off (its
+ * target none, fading with its text); the pad's cursor jumps from window to window, so the tooltip
+ * went with it onto one without a text (Back) and its empty frame showed while it faded (the
+ * owner, 2026-10-25). Before the cursor moves, a shown tooltip is made inactive at once (hidden,
+ * no target): the next window's own shows after the hover time, as with the mouse. */
+static void nav_tooltip_off(void) {
+    typedef void *(__fastcall *tip_fn)(const void *self, void *edx);
+    typedef void (__fastcall *target_fn)(void *self, void *edx, void *w);
+    typedef void (__fastcall *self_fn)(void *self, void *edx);
+    typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    static tip_fn get_tip;
+    static target_fn set_target;
+    static self_fn inactive;
+    static vis_fn vis;
+    void *sys = system_ptr(), *tip;
+    if (!get_tip) {
+        get_tip = (tip_fn)need("?getDefaultTooltip@System@CEGUI@@QBEPAVTooltip@2@XZ");
+        set_target = (target_fn)need("?setTargetWindow@Tooltip@CEGUI@@QAEXPAVWindow@2@@Z");
+        inactive = (self_fn)need("?switchToInactiveState@Tooltip@CEGUI@@IAEXXZ");
+        vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    }
+    if (!sys || !get_tip || !set_target || !inactive || !vis) return;
+    tip = get_tip(sys, 0);
+    if (!tip || !vis(tip, 0, 1)) return;
+    set_target(tip, 0, 0);
+    inactive(tip, 0);
+}
 static void nav_point(float x, float y) {
     void x360_inject_left(int down, float x, float y);
     HWND w = GetActiveWindow();
     long pt[2];
+    __try { nav_tooltip_off(); } __except (1) { x360_log("x360 menu: exception taking CEGUI's tooltip off\r\n"); }
     pt[0] = (long)x; pt[1] = (long)y;
     if (w && ClientToScreen(w, pt)) SetCursorPos((int)pt[0], (int)pt[1]);
     x360_inject_left(-1, x, y);
+}
+/* A click on PC's window at (x, y): as the mouse's, a WM_LBUTTONDOWN and WM_LBUTTONUP to the game's
+ * window, whose handler (CGameUI's, GOG 0x53ff90: injectMouseButtonDown and Up, the game's only
+ * calls of them) injects it into CEGUI as the messages are pumped, before the frame's update.
+ * Injected from the frame listener instead, PC's main menu closed (CMainMenu's onClick, its
+ * setOpen(false) taking its root off at once *(OT)*) and the frame was drawn before the next
+ * screen opened: its title and bottom bar gone for an instant (the owner, 2026-10-25). Injected
+ * here only when the game's window is not the active one or the press cannot be posted. */
+static void nav_click(float x, float y) {
+    __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+    void x360_inject_left(int down, float x, float y);
+    HWND w = GetActiveWindow();
+    long lp = ((long)y & 0xffff) << 16 | ((long)x & 0xffff);
+    nav_point(x, y);
+    if (w && PostMessageW(w, 0x0201 /* WM_LBUTTONDOWN */, 1 /* MK_LBUTTON */, lp)) {
+        if (!PostMessageW(w, 0x0202 /* WM_LBUTTONUP */, 0, lp)) PostMessageW(w, 0x0202, 0, lp);   /* never a press left held */
+        return;
+    }
+    x360_inject_left(1, x, y);
+    x360_inject_left(0, x, y);
 }
 /* Windows' cursor, PC's own (CEGUI's is not the one shown): PC's 0x547ca0 (thiscall) sets it, as
  * the mouse moves, to its resource cursors 0x6a-0x6d (SetCursor(LoadCursorW(GetModuleHandleW(0),
@@ -8611,7 +9124,7 @@ static void pc_menus_nav_tick(void) {
             nav_point(x, y);
             /* A character slot is selected as the focus comes (its highlight, PC's own, shows it; as
              * the 360's list, where moving selects). */
-            if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
+            if (nav_kind(nav_list[pick]) == NAV_SLOT) nav_click(x, y);
         }
     }
     if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings && !wp)) {
@@ -8633,17 +9146,13 @@ static void pc_menus_nav_tick(void) {
             }
         if (hit >= 0) {
             float x = (r[hit].left + r[hit].right) * 0.5f, y = (r[hit].top + r[hit].bottom) * 0.5f;
-            nav_point(x, y);
-            x360_inject_left(1, x, y);
-            x360_inject_left(0, x, y);
+            nav_click(x, y);
             x360_log("x360 menu: B on PC's "); x360_log(c_str(gn(nav_list[hit], 0), 0)); x360_log("\r\n");
         }
     }
     if ((pressed & 0x1000) && nav_kind(nav_list[nav_focus]) != NAV_SLIDER && nav_kind(nav_list[nav_focus]) != NAV_COMBO) {
         float x = (r[nav_focus].left + r[nav_focus].right) * 0.5f, y = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
-        nav_point(x, y);
-        x360_inject_left(1, x, y);
-        x360_inject_left(0, x, y);
+        nav_click(x, y);
         last_collect = 0;   /* the next screen's buttons */
         x360_log("x360 menu: A on PC's button\r\n");
     }
@@ -8663,6 +9172,7 @@ void x360_frame_tick(void) {
     }
     __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
     if (!find_world()) return;
+    minimap_tick();   /* the corner minimap where the 360 draws it, before this frame is drawn */
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the
      * in-game sheet), not at the first Back (run B2: the user asked for no wait there). */
     if (!preloaded && hud_root) {
@@ -8696,6 +9206,12 @@ void x360_frame_tick(void) {
         else if (last_at_shop && GetTickCount() - last_at_shop > 2000) last_at_shop = 0;
         /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
          * once as a shop closed, the world's width moved, two blue columns). */
+        /* Not given back out of play: there PC's menus are not updated and a closing one (the
+         * enchant menu and the inventory after the retirement, which leaves play at once)
+         * never ends, so the tests held PC's next state, the descendant's difficulty screen,
+         * forever (the owner's runs; the panels logged not closed: CInventoryMenu, CEnchantMenu).
+         * Given back once in play again, where their closing ends. */
+        if (hud_in_play || last_at_shop)
         __try { side_panels_test(last_at_shop != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }

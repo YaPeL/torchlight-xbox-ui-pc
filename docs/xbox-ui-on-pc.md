@@ -1529,7 +1529,7 @@ recomp's agent, who answers with the differences.
 **The target's bar** (`in-game/01` to `03`): the 360's HUD update (`sub_821A83C8`) fills, for the
 unit it shows: the name (its `+0x404`) in `TargetName`, white, or, for a champion (its `+0x63A`),
 in the colour of its constants (the catalog: `FFFFE03D`); "Level" and the level in `TargetLevel`;
-the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; "Undead - Fast", none for
+the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; a monster's kind, none for
 an NPC) in `TargetDescription`; and it shows nothing for a mimic still in its `MIMICIDLE`
 animation (type `0xA7`). PC's update (GOG `0x558750`) has the same pieces: the champion flag at
 `+0x64E` with the colour (1, 0.88, 0.24) (the floats at `0xab2150`, `0xab2154`: `E0`, `3D`, the
@@ -3809,3 +3809,133 @@ PC's slots. The log names each step (`x360 dialog: reward item N`). Played by th
 **Differs:** the card's width, about 446 px against the 360's 786 at 1920x1080: PC lays its card
 out at its own width (`fill_card`, the inventory's), so the text wraps into more lines and the
 card is taller. Matching it needs PC's card laid out wider (to do).
+
+## 38. The bag changed without the 360's package (2026-10-25)
+
+The owner: the wizard's "Change to the 360's bag" asked for the 360's package again. The converted
+interface does not depend on the bag (only `x360_ui.ini`'s `bag=` differs, read by the proxy at
+start), so both installers now have `set-bag --bag pc|360` for an installed game: for the 360's
+bag the saves are backed up first (as install does, the same questions when none is found), then
+the ini is written over the converted folder already in place; nothing is converted again. The
+wizard's "Change to the 360's bag" goes to the bag's screen and the summary, without the package.
+A test runs both installers' `set-bag` both ways (the ini, one backup, the converted files the same).
+
+## 39. The wizard with a pad: the buttons under a screen's body (2026-10-25)
+
+The owner, with a pad: in the bag's screen A on a bag seemed to do nothing; in the file browser A
+took only a file (the folder's "Use this folder" not reached); on the result, with "Details" open,
+the buttons below (open the game, start again, close) could not be reached. Each screen's body is
+an ImGui child window, and the pad's navigation stayed inside it: every body now has
+`ImGuiChildFlags_NavFlattened` (Dear ImGui 1.92.5), so the d-pad goes on to the footer's buttons.
+In the bag's screen A chooses a bag and the d-pad reaches Next (or Start goes on): an A that also
+went on was dropped, a Selectable reporting one A at its press and its release on a slow frame
+(CI). Played by the owner with a pad on the Steam Deck (2026-10-25): every button reached.
+The screens' default items were focused by SetKeyboardFocusHere, asked before the item: inside a
+NavFlattened child it was never resolved, the focus left on the last screen's footer button of the
+same id (the wizard's tests: the bag's first option never focused, A took Next, the summary passed).
+The focus is now given right after the item (ImGui's SetFocusID), and a request no item took is
+dropped at the next frame. The installer's tests pass (local and CI).
+
+## 40. Steam's executable moved by Windows (ASLR, 2026-10-25)
+
+The owner's Windows log with Steam's build: `Torchlight.exe is not Steam's build 17685 at its
+preferred base (… base 0x00b30000)`, so the mod stayed off there; on Linux (Proton) it worked.
+Steam's `Torchlight.exe` has `DYNAMIC_BASE` and a `.reloc` section; GOG's and Epic's have
+neither. Wine loads it at its base (0x400000), Windows anywhere. The Steam build now adds
+`x360_reloc` (the executable's base minus 0x400000, set first in DllMain) to every address it
+substitutes (`tools/build_proxy.py`: `(STEAM + x360_reloc)`, a literal's suffix inside), and
+accepts Steam's timestamp at any base (`Torchlight.exe loaded at base …: its addresses moved by
+that` in the log); the tables of addresses that were `static const` are automatic or computed, as
+a static initializer cannot hold the run-time value. The whole image moves by one delta (code,
+globals, vtables, the import table); no patch writes an absolute address, and the hooks' byte
+checks that hold one (the exception handlers' `push imm32`) compare it relocated; a mismatch
+leaves that hook off. GOG's build is unchanged (no substitution; `x360_reloc` 0, its base still
+required). Sections 16a, 16d and 16e's notes on the base are superseded by this one. Played by
+the owner on Windows with Steam's build after this change (2026-10-25): the mod on, the game played.
+
+## 41. The world frozen under the 360's inventory, and the place's name kept (2026-10-25)
+
+**[seen]** The owner on the 360: opening the inventory freezes the world (the NPCs stop, as with
+Start); the port's world kept going. And the place's name at the top right stays shown with the
+inventory open; the port's went. **[read, GOG]** CGame's update (around `0x40a281`) sets its
+"paused" (CGame `+0x81`) when both of PC's side panels cover the screen (`0x401200` → `0x549b70`,
+which the port answers no for, section 16b's side tests), a modal is open (`0x401220` →
+`0x540e80`), or CGameUI's `+0x173d` is set (the pause's own flag, `CGameUI::togglePause` *(OT)*;
+`CGameClient::getIsPaused` *(OT)* reads the same). A first try set `+0x173d` while the 360's
+inventory was open: the world stopped, but the camera kept turning behind it (PC's pause shows its
+world so; the owner's run). Now the client's own pause byte, `+0x1017` (written only by its
+constructor, GOG `0x40fcba`; read first by its `getIsPaused` *(OT)*, GOG `0x40de90`, which the
+client's update asks), is set while the inventory is open and cleared after only if set here;
+not at a shop (the enchanter's and gem goblins' results come after PC's 3D sign has dropped,
+which a paused world may not animate; the review). The place's name follows PC's window's own
+visibility only while the 360's inventory is open (PC's own hiding of its parent counted otherwise). The 360's own way
+was not found (its housing's setOpen writes CGameUI `+6162`, read by a unit's update, not the
+world's pause; stopped after two tries). The place's name (`x360hud_LevelName`) mirrored PC's
+`LevelName` only while that was seen on screen, and the 360's inventory hides PC's sheets: it now
+follows PC's window's own visibility. Played by the owner (2026-10-25): the world and the camera
+still under the inventory, the place's name kept.
+
+## 42. A blue line at 16:10 (the Steam Deck, 2026-10-25)
+
+The owner's Deck (1280x800): a 1-pixel blue line at the top and the left of the 3D view, with
+the mod only, in play (PC's own main menu shows it at the left without the mod too). PC's 3D view
+leaves its first row and column uncovered at 16:10, and PC's bottom HUD (`BOTTOMHUD.LAYOUT`) has
+four 1-pixel black borders (`LeftBorder`, `RightBorder`, `TopBorder`, `BottomBorder`, the image
+`GuiLook/BlackLine`) that cover them in play. The port makes that HUD transparent as it loads
+(section 23): the four borders now keep their own alpha (`InheritsAlpha False`, `Alpha 1`).
+Reproduced and checked on GOG at 1280x800 under Proton; the owner saw it gone in play.
+PC's own main menu shows the same line at the left of its 3D view, without the mod too: at the
+owner's request two 1-pixel black lines of the same image are added under its root
+(`MAINMENUFRAME.LAYOUT`) at its left and top (`main_menu_borders`); the owner saw it gone. In a cinematic
+PC hides its bottom HUD, the four borders with it, and the line showed again (the owner's Deck):
+the same two lines are added on the GUI sheet as play starts (`one_pixel_borders`, prefix
+`x360pb_`), shown while in play; the owner saw none at 1280x800 in a cinematic.
+
+## 43. The retirement NPC (2026-10-25)
+
+**[seen]** Talking to the retirement NPC (the RetirementCharacter unit, in town after the game is won) opened
+PC's own window under the 360's HUD; the 360 shows its enchanter frame (the owner's capture): the
+first column a retirement page (a title, a paragraph on the heirloom, a red warning, the Retire
+prompt), then the hero's bag with its tabs, A labelled on the item, and the item's card over the
+pet's bag. **[read, 360; the recomp agent's reading, checked]** The interaction 27
+(`sub_821A83C8` at `0x821A8930`), below the settings' retirement age a message and no menu;
+otherwise CEnchantMenuXenon in mode 4 (`sub_82360CD0` shows its panel 14, the layout's `retire`).
+A (`sub_8236B498`) on the focused item, only a weapon, an armour or a trinket (unit types 8, 13,
+39), retires at once, no confirmation (`sub_82361B00`: the item out of the hero's bag, renamed
+after the hero the first time, its heirloom count up and its bonuses, handed to the descendant,
+the hero marked retired, the menu closed and the game left). The frame's title and the A label are
+the string at `0x820CB084` (`sub_82376D48` id 11; `sub_8236C8D0`'s mode-4 label). **[read, GOG]**
+PC opens CEnchantMenu in mode `0x1b` for it, and its act (`0x57a800`, the mode's branch at
+`0x57c42f`) does the same on the item in the hero's slot 14 (`removeEquipment`, the rename while
+`+0x22c` is 0, `0x4c0090`, `+0x2478`/`+0x247c`, the hero's `+0x9c4`). The port opens its enchanter
+frame for `0x1b` with the `retire` panel, A on a weapon, armour or trinket of the hero's bag puts
+it in slot 14 and calls PC's act (the pet's bag: nothing), posted to the game's window and run
+from its messages as PC's Retire button's. PC's enchant tip there is closed, as the 360 shows none
+(the tips the 360 never shows, the branch of PC's tips). Leaving play at once, the retirement left
+PC's menus mid-closing; the side-panel tests are kept patched out of play (regressions.md). **Retiring
+ends the character: tested only on a copy of a save.** Played by the owner (2026-10-25, the recomp
+agent's save): the screen as the 360's, the hero retired, the descendant created, its difficulty
+screen and its game.
+
+## 44. The target bar and the "A Interact" prompt with the pad (2026-10-25)
+
+**[seen]** The owner's 360 captures: walking up to an NPC or a stash, the 360 shows the target bar
+(level, name, health, and the unit's description in gold: the retirement NPC's role) and an "A Interact"
+prompt over the unit; the port showed neither with the pad (its bar took the unit under the mouse
+or the one attacked; the prompt was hidden). **[read, 360; the recomp agent's reading and probes]**
+Both in the HUD update `sub_821A83C8`. The bar (`0x821A9124`-`0x821A9678`): while an attack or
+skill button is held the unit the player acts on (`+644`), else the hover target (HUD `+72`, the
+pad's target), none under a menu or a modal, then the player's combat target unless the unit is an
+NPC (type 104); a hidden mimic shows nothing; the description is the template's `DESCRIPTION` for
+any unit. The prompt (`0x821AB364`-`0x821AB518`): over the hover target when `sub_821B8D70` accepts
+it (within 2.0 on the ground, 2.75 standing; the types 130, 175, 132, 133, 134, 41, 128, 170, 104 or
+the 360's registry), no menu or modal, not dead, not the player's own; anchored at the unit's
+position plus (0.4, 1.0 − unit `+348`, 0.4) plus the camera's up axis, projected in the HUD's
+1280×720 space, kept 26 pixels inside. `+348` measured on the recomp: 0.8 for the units that stand,
+0.3 for the walkers; PC's unit has the same field at `+348` (logged on GOG, the same values).
+**[port]** The bar takes the pad's unit target (PC's unit under the mouse first) in that order; the
+prompt takes the pad's candidate from its second pass (any alignment), the same types and reach, the
+anchor projected with Ogre's camera (its view and projection matrices, `getDerivedUp`). Neither
+under PC's pause, death, waypoint or settings screens (the owner saw both over PC's pause menu).
+Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within
+about 30 pixels of the 360's capture at 1080 (the cameras not quite the same).

@@ -15,6 +15,8 @@
     {"title.enchanting", 0x820D17E4},
     {"title.destroygems", 0x820D1044},
     {"title.recovergems", 0x820D1028},
+    {"title.retire", 0x820CB084},      /* the retirement NPC's frame (sub_82376D48 id 11) */
+    {"act.retire", 0x820CB084},        /* its A on the item (sub_8236C8D0, mode 4) */
     {"act.enchant", 0x820CF118},
     {"ench.chance", 0x820CF164},
     {"ench.max", 0x820CF128},
