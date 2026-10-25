@@ -2764,16 +2764,6 @@ void x360_retire_act(void) {
     }
     x360_log("x360 retire: the hero retired with "); log_item_name(item); x360_log("\r\n");
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
-    /* PC's side-panel tests (0x541090, 0x541130: each menu's virtual +0xc, CEnchantMenu's 0x575930:
-     * open, or its closed flag +0x39 still 0) hold PC's game-state changes back while one is not
-     * closed (its client update, 0x41ba36). The act closes the menu, but its closing (the board's,
-     * hidden for good by the port) never ended once play was left: PC never reached the descendant's
-     * difficulty screen (the owner's runs: with the tests left patched, it came). Its closing taken
-     * as ended, as PC's own would end. */
-    if (!m[ENCHANT_OPEN] && !m[ENCHANT_OPEN + 1]) {
-        m[ENCHANT_OPEN + 1] = 1;
-        x360_log("x360 retire: the enchant menu's closing taken as ended\r\n");
-    }
     {   /* PC's side panels still not closed, logged (CGameUI's list at +0x16b8, the virtual +0xc) */
         typedef unsigned char (__fastcall *test_fn)(void *self, void *edx);
         void **b = *(void ***)(ui + 0x16b8), **e = *(void ***)(ui + 0x16bc);
@@ -8957,6 +8947,12 @@ void x360_frame_tick(void) {
         else if (last_at_shop && GetTickCount() - last_at_shop > 2000) last_at_shop = 0;
         /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
          * once as a shop closed, the world's width moved, two blue columns). */
+        /* Not given back out of play: there PC's menus are not updated and a closing one (the
+         * enchant menu and the inventory after Goldenrod's retirement, which leaves play at once)
+         * never ends, so the tests held PC's next state, the descendant's difficulty screen,
+         * forever (the owner's runs; the panels logged not closed: CInventoryMenu, CEnchantMenu).
+         * Given back once in play again, where their closing ends. */
+        if (hud_in_play || last_at_shop)
         __try { side_panels_test(last_at_shop != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
