@@ -3723,6 +3723,7 @@ buttons).
   Back). The log names them as `PC's buttons for the pad 4 (resurrection)`.
 - Not ported: the 360's own resurrection screen (its look and its pad, which a port would read in
   the 360's code first).
+
 ## 35. Start during a cinematic (2026-10-24)
 
 The owner saw the pause misbehave during a cinematic. **[read]** The 360's frame update
