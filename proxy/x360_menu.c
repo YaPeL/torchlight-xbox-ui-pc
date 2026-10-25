@@ -2709,6 +2709,10 @@ static int can_retire(unsigned char *item) { return item && (isa(item, 8) || isa
  * mode 0x1b at 0x57c42f: removeEquipment, the rename while +0x22c is 0, 0x4c0090, +0x2478 and
  * +0x247c, the hero's +0x9c4 set): the item is put there and the act called. RETIRING ENDS THE
  * CHARACTER: tested on copies only. */
+#define X360_RETIRE_MSG 0x8036            /* WM_APP + 0x36: the retirement's act, run by keys_proc */
+static unsigned char *retire_item;        /* the item put in slot 14 for the act */
+static int retire_slot;
+void x360_retire_act(void);
 static void retire(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item;
     void *bag = owner_bag(hero), *from = inventory();
@@ -2729,14 +2733,43 @@ static void retire(void) {
         return;
     }
     move_done();
-    x360_log("x360 retire: A: the hero retired with "); log_item_name(item); x360_log("\r\n");
+    retire_item = item;
+    retire_slot = slot;
+    /* PC's Retire button runs its act from the window's messages, before the frame's update; run
+     * from the frame listener, the act left PC between the descendant's creation and its
+     * difficulty screen, which never came (the owner's runs: with pad=0, PC's own button, it came).
+     * So the act is posted to the game's window and run from there (keys_proc), as the button's. */
+    {
+        __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+        extern HWND x360_keys_window(void);
+        HWND w = x360_keys_window();
+        if (w && PostMessageW(w, X360_RETIRE_MSG, 0, 0)) { x360_log("x360 retire: A: the act posted to the game's window\r\n"); return; }
+    }
+    x360_retire_act();
+}
+/* The retirement's act (from keys_proc as the window's messages are pumped; directly when there is
+ * no window to post to): the item still in slot 14, the menu open, the hero not retired yet. */
+void x360_retire_act(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item = retire_item;
+    void *bag = hero ? owner_bag(hero) : 0;
+    retire_item = 0;
+    if (!item || !m || !bag || !m[ENCHANT_OPEN] || hero[0x9c4] || ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        x360_log("x360 retire: the act not run (the menu, the hero or slot 14 changed)\r\n");
+        if (item && bag && ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
+            move_out(bag, item, ENCHANT_SLOT);
+            if (!give_back(bag, retire_slot, item)) move_lost(item);
+            move_done();
+        }
+        return;
+    }
+    x360_log("x360 retire: the hero retired with "); log_item_name(item); x360_log("\r\n");
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
     /* PC's act takes the item out of slot 14 itself; one left there is put back. */
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
         move_out(bag, item, ENCHANT_SLOT);
-        if (!give_back(bag, slot, item)) move_lost(item);
+        if (!give_back(bag, retire_slot, item)) move_lost(item);
         move_done();
-        x360_log("x360 retire: A: PC's act left the item: put back, not retired\r\n");
+        x360_log("x360 retire: PC's act left the item: put back, not retired\r\n");
     }
 }
 
@@ -7321,6 +7354,7 @@ static int key_index(unsigned vk) {
     return -1;
 }
 static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    if (msg == X360_RETIRE_MSG) { __try { x360_retire_act(); } __except (1) { x360_log("x360 retire: exception in the act\r\n"); } return 0; }
     int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
     int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
     if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
