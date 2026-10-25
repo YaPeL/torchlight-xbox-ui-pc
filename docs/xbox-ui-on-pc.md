@@ -3706,3 +3706,8 @@ and no pause or inventory is open, Start clicks PC's cinematic menu's `Skip`
 (`x360_cinematic_skip`: cinematicmenu.layout's `Skip`, found by its `DialogTextFrame`, a left
 click at its centre) and Back is dropped; not while a tip is up (it keeps every button). In the 360's inventory at a shop, Start closes the shop as
 Back and B do (`x360_inventory_pad`); elsewhere in the inventory it keeps the pet's commands.
+
+**[seen]** In an NPC's talk (PC's dialog counts as a cinematic for `0x541db0`) Start on the 360 goes
+through the pages and accepts the quest they end with. `dialog_tick` now does that on Start: Ok on
+each page every 200 ms (Accept when shown, which ends it), until no page has come for 1 s;
+`x360_cinematic_skip` leaves a talk to it.
