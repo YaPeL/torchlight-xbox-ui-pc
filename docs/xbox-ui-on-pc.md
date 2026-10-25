@@ -3885,7 +3885,10 @@ four 1-pixel black borders (`LeftBorder`, `RightBorder`, `TopBorder`, `BottomBor
 Reproduced and checked on GOG at 1280x800 under Proton; the owner saw it gone in play.
 PC's own main menu shows the same line at the left of its 3D view, without the mod too: at the
 owner's request two 1-pixel black lines of the same image are added under its root
-(`MAINMENUFRAME.LAYOUT`) at its left and top (`main_menu_borders`); the owner saw it gone.
+(`MAINMENUFRAME.LAYOUT`) at its left and top (`main_menu_borders`); the owner saw it gone. In a cinematic
+PC hides its bottom HUD, the four borders with it, and the line showed again (the owner's Deck):
+the same two lines are added on the GUI sheet as play starts (`one_pixel_borders`, prefix
+`x360pb_`), shown while in play; the owner saw none at 1280x800 in a cinematic.
 
 ## 43. Goldenrod's retirement (2026-10-25)
 
