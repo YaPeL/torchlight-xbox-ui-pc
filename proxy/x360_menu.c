@@ -6912,6 +6912,44 @@ static void tip_tick(void) {
             logged = id;
             x360_log("x360 tip: "); x360_log(id ? id : "PC's text not among PC's tips"); x360_log("\r\n");
         }
+        /* The tips the 360 never shows: its only tip call, sub_82337A10(client, id), has 16 callers
+         * passing the ids 0-4, 6-9, 11, 16, 19, 20 and 23 (and one from data, sub_8223F5C0); the
+         * ids of the merchant, the sockets, the gambler, the enchanter, the transmuter, the pet's
+         * inventory, the stash, fishing, the shared stash and how to attack are passed by none (the
+         * recomp agent's reading; the names by the 360's table from TIP_INVENTORY at 0x820AC130;
+         * the owner saw none at the stash, the enchanter and the transmuter on the 360). PC's are
+         * closed at once, never shown. */
+        if (id) {
+            static const char *logged_close;
+            static const char *const never[] = {"TIP_MERCHANT", "TIP_SOCKETABLE", "TIP_GAMBLE", "TIP_ENCHANT", "TIP_TRANSMUTE",
+                                                "TIP_PETINVENTORY", "TIP_STASH", "TIP_FISHING", "TIP_SHAREDSTASH",
+                                                "TIP_HOWTOATTACK", 0};
+            int t;
+            /* The inventory's tip is the 360's for its own inventory only (its caller 8236F700, an
+             * inventory menu): PC opens its inventory with a shop's menu and the tip with it (the
+             * owner, 2026-10-25: at a gem goblin; none there on the 360). */
+            int at_a_shop = 0;
+            if (ui) {
+                typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+                static const unsigned menus[] = {0x2d8, 0x2dc, 0x2e0, 0x2e4};
+                int q;
+                for (q = 0; q < 4; q++) {
+                    unsigned char *m = *(unsigned char **)(ui + menus[q]);
+                    if (m && ((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) at_a_shop = 1;
+                }
+            }
+            for (t = at_a_shop ? -1 : 0; t < 0 || never[t]; t++) {
+                const char *n = t < 0 ? "TIP_INVENTORY" : never[t];
+                unsigned c = 0;
+                while (n[c] && id[c] == n[c]) c++;
+                if (n[c] || id[c]) continue;
+                set_visible(tip_root, 0, 0);
+                tip_shown = 0;   /* the next tip PC queues behind it is shown as new (the review) */
+                press_tip("Ok");
+                if (logged_close != id) { logged_close = id; x360_log("x360 tip: closed, the 360 never shows it\r\n"); }
+                return;
+            }
+        }
     }
     text(win_of(TIP_PREFIX, "Dialog"), v);
     buttons = x360_pad_buttons();
