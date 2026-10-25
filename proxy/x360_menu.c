@@ -795,6 +795,7 @@ static int max_enchants(void) {
 }
 /* Identified, a weapon, armour or trinket of the four kinds (ISA 8, 13, 17, 24), under the
  * maximum of enchantments (sub_822B5688). */
+static int can_retire(unsigned char *item);
 static int can_enchant(unsigned char *item) {
     if (!item || !item[GOG_IDENTIFIED]) return 0;
     if (!(isa(item, 8) || isa(item, 13) || isa(item, 17) || isa(item, 24))) return 0;
@@ -1491,7 +1492,8 @@ static void refresh(void) {
             } else if (at_enchant) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
-                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
+                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant")
+                    : at_enchant == 0x1b && can_retire(item) ? x360_text("act.retire") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
             } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
                  * transmuter's own prompt under its rows. */
@@ -2074,6 +2076,17 @@ static void ench_fill(unsigned char *item) {
      * interaction 0x19) has the page the 360 titles "Destroy Gems" (getsocket, town/02), the one of
      * type 133 (0x1a) "Recover Gems" (destroysocket, town/03; the 360's sub_82376D48 by its +304:
      * 132 -> 10, 133 -> 9). Their A prompt shows for an item with gems (sub_8236B1C8). */
+    /* The retirement (the 360's CEnchantMenuXenon mode 4, opened for the interaction 27 as PC's
+     * 0x1b: sub_82360CD0 shows its panel 14, the layout's "retire": its title, the paragraph on the
+     * heirloom, the warning and the Retire prompt, all the layout's own). */
+    if (at_enchant == 0x1b) {
+        show(win_of(ENCH_PREFIX, "enchant"), 0);
+        show(win_of(ENCH_PREFIX, "getsocket"), 0);
+        show(win_of(ENCH_PREFIX, "destroysocket"), 0);
+        show(win_of(ENCH_PREFIX, "enchantshrine"), 0);
+        show(win_of(ENCH_PREFIX, "retire"), 1);
+        return;
+    }
     if (at_enchant == 0x19 || at_enchant == 0x1a) {
         int get = at_enchant == 0x19;
         show(win_of(ENCH_PREFIX, "enchant"), 0);
@@ -2686,6 +2699,46 @@ static void transmute_swap(void) {
     x360_log("x360 transmuter: X: placed\r\n");
 }
 
+/* The retirement's items (the 360's sub_8236B498: unit types 8 WEAPON, 13 ARMOR, 39 TRINKET, by
+ * sub_821D7CE0; any other, nothing at all). */
+static int can_retire(unsigned char *item) { return item && (isa(item, 8) || isa(item, 13) || isa(item, 39)); }
+/* A at Goldenrod: the 360 retires at once, no confirmation (sub_8236B498 -> sub_82361B00, mode 4:
+ * the item out of the hero's bag, renamed "<hero>'s <item>" the first time, its heirloom count up
+ * and its bonuses, handed to the descendant, the hero marked retired, the menu closed and the game
+ * left). PC's act does the same work on the item in the hero's slot 14 (CEnchantMenu's 0x57a800,
+ * mode 0x1b at 0x57c42f: removeEquipment, the rename while +0x22c is 0, 0x4c0090, +0x2478 and
+ * +0x247c, the hero's +0x9c4 set): the item is put there and the act called. RETIRING ENDS THE
+ * CHARACTER: tested on copies only. */
+static void retire(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item;
+    void *bag = owner_bag(hero), *from = inventory();
+    int slot;
+    if (!m || !bag || !from || !list_count) return;
+    item = (unsigned char *)list[selected[filter]];
+    slot = list_slot[selected[filter]];
+    if (!can_retire(item)) { x360_log("x360 retire: A: not a weapon, an armour or a trinket: nothing\r\n"); return; }
+    if (from != bag) { x360_log("x360 retire: A: not the hero's bag: nothing\r\n"); return; }
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 retire: A: slot 14 is taken\r\n"); return; }
+    move_out(bag, item, slot);
+    ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        if (!give_back(bag, slot, item)) move_lost(item);
+        move_done();
+        x360_log("x360 retire: A: not placed\r\n");
+        return;
+    }
+    move_done();
+    x360_log("x360 retire: A: the hero retired with "); log_item_name(item); x360_log("\r\n");
+    ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    /* PC's act takes the item out of slot 14 itself; one left there is put back. */
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
+        move_out(bag, item, ENCHANT_SLOT);
+        if (!give_back(bag, slot, item)) move_lost(item);
+        move_done();
+        x360_log("x360 retire: A: PC's act left the item: put back, not retired\r\n");
+    }
+}
+
 /* A at the enchanter: the selected item into the hero's slot 14, PC's own enchanting there
  * (CEnchantMenu's command 9), and back to its place (a bag's slot, an equipped one, the pet's). */
 static void enchant(void) {
@@ -3032,7 +3085,7 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant == 0x1b ? "title.retire" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
                                                : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
@@ -5034,12 +5087,13 @@ void x360_shop_tick(void) {
     if (!shop && en && en[ENCHANT_OPEN] && *(unsigned char **)(en + ENCHANT_OWNER)) {
         static int logged_mode;
         int mode = *(int *)(en + ENCHANT_MODE);
-        if (mode == 0x15 || mode == 0x19 || mode == 0x1a) {
+        if (mode == 0x15 || mode == 0x19 || mode == 0x1a || mode == 0x1b) {
             if (inventory_open) x360_inventory_toggle();
             shop = *(unsigned char **)(en + ENCHANT_OWNER);
             at_enchant = mode;
             ench_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
+                     : mode == 0x1b ? "x360 shop: PC's enchant menu opened (Goldenrod, the retirement)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
         } else if (mode != logged_mode) {
@@ -5223,7 +5277,8 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
     /* At the transmuter (mode 5) A shows nothing and is not done here; Y transmutes. */
-    if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
+    if ((pressed & 0x1000) && at_enchant == 0x1b) { retire(); refresh_all(); }               /* A at Goldenrod */
+    else if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
     else if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
     if ((pressed & 0x8000) && at_transmute) { transmute(); refresh_all(); }               /* Y */
     else if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }       /* Y (a stash: mode 7/8) */
