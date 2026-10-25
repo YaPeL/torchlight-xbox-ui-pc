@@ -6859,6 +6859,7 @@ static void tip_tick(void) {
          * the owner saw none at the stash, the enchanter and the transmuter on the 360). PC's are
          * closed at once, never shown. */
         if (id) {
+            static const char *logged_close;
             static const char *const never[] = {"TIP_MERCHANT", "TIP_SOCKETABLE", "TIP_GAMBLE", "TIP_ENCHANT", "TIP_TRANSMUTE",
                                                 "TIP_PETINVENTORY", "TIP_STASH", "TIP_FISHING", "TIP_SHAREDSTASH",
                                                 "TIP_HOWTOATTACK", 0};
@@ -6882,8 +6883,9 @@ static void tip_tick(void) {
                 while (n[c] && id[c] == n[c]) c++;
                 if (n[c] || id[c]) continue;
                 set_visible(tip_root, 0, 0);
+                tip_shown = 0;   /* the next tip PC queues behind it is shown as new (the review) */
                 press_tip("Ok");
-                x360_log("x360 tip: closed, the 360 never shows it\r\n");
+                if (logged_close != id) { logged_close = id; x360_log("x360 tip: closed, the 360 never shows it\r\n"); }
                 return;
             }
         }
