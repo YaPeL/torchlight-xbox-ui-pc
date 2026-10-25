@@ -1529,7 +1529,7 @@ recomp's agent, who answers with the differences.
 **The target's bar** (`in-game/01` to `03`): the 360's HUD update (`sub_821A83C8`) fills, for the
 unit it shows: the name (its `+0x404`) in `TargetName`, white, or, for a champion (its `+0x63A`),
 in the colour of its constants (the catalog: `FFFFE03D`); "Level" and the level in `TargetLevel`;
-the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; "Undead - Fast", none for
+the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; a monster's kind, none for
 an NPC) in `TargetDescription`; and it shows nothing for a mimic still in its `MIMICIDLE`
 animation (type `0xA7`). PC's update (GOG `0x558750`) has the same pieces: the champion flag at
 `+0x64E` with the colour (1, 0.88, 0.24) (the floats at `0xab2150`, `0xab2154`: `E0`, `3D`, the
@@ -3914,7 +3914,7 @@ position plus (0.4, 1.0 − unit `+348`, 0.4) plus the camera's up axis, project
 1280×720 space, kept 26 pixels inside. `+348` measured on the recomp: 0.8 for the units that stand,
 0.3 for the walkers; PC's unit has the same field at `+348` (logged on GOG, the same values).
 **[port]** The bar takes the pad's unit target (PC's unit under the mouse first) in that order; the
-prompt takes the pad's candidate from its second pass (not an enemy), the same types and reach, the
+prompt takes the pad's candidate from its second pass (any alignment), the same types and reach, the
 anchor projected with Ogre's camera (its view and projection matrices, `getDerivedUp`). Neither
 under PC's pause, death, waypoint or settings screens (the owner saw both over PC's pause menu).
 Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within

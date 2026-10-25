@@ -1153,11 +1153,19 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     any_candidate = a;
     item_candidate = it;
 }
+/* A candidate still a unit of the current level (the review: after a level change or while the
+ * search is held by a screen, the pointers may be freed units). */
+static void *live_unit(void *unit) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL, *client, *lv;
+    client = app ? *(unsigned char **)(app + 0x64) : 0;
+    lv = client ? *(unsigned char **)(client + 0x38) : 0;
+    return unit && lv && in_list(lv, GOG_LEVEL_UNITS, unit) ? unit : 0;
+}
 void *x360_pad_candidate(void) { return item_candidate ? item_candidate : any_candidate; }
 /* The unit A would interact with (talk, a stash, Goldenrod): the candidate when it is not an enemy. */
-void *x360_pad_interact_unit(void) { return candidate_friendly ? any_candidate : 0; }
+void *x360_pad_interact_unit(void) { return candidate_friendly ? live_unit(any_candidate) : 0; }
 /* The unit the pad targets (an enemy or anyone near), not an item: the 360 HUD's +72. */
-void *x360_pad_unit_target(void) { return any_candidate; }
+void *x360_pad_unit_target(void) { return live_unit(any_candidate); }
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
 static unsigned char *attack_level;

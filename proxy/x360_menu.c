@@ -5645,8 +5645,8 @@ static int hidden_mimic(void *unit) {
     return on;
 }
 
-/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, "Undead - Fast";
- * an NPC's its role, "Retires characters and improves Heirlooms"), as UTF-8; "" if it has none. */
+/* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, a monster's kind,
+ * an NPC's role), as UTF-8; "" if it has none. */
 static void unit_description(void *unit, char *out, unsigned size) {
     static const unsigned short empty[] = {0};
     wstr_ctor_fn ctor;
@@ -5702,7 +5702,8 @@ static void target_tick(void) {
         int x360_overlay_open(void);
         if (x360_pad_buttons() & (0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000)) unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
         if (!unit) unit = (unsigned char *)x360_pad_unit_target();
-        if ((!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;
+        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
+        else if ((!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;
         /* Under a screen nothing (the owner: the bar over PC's pause menu); the 360's pause
          * covers its HUD. */
     }
@@ -5920,7 +5921,7 @@ void x360_hud_tick(void) {
  * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
  * not the pet, with no 360 screen, dialog or modal open. The 360 places it at the unit's position
  * 1.0 up and 0.4 aside, projected and kept 26 pixels inside the screen (pool 0x820AA2C0 +64, +140,
- * +1608); here under the unit's own label, which PC places over the unit's head (its +0x198). */
+ * +1608); the anchor below (interact_prompt). */
 /* A world point on the screen, in the window's pixels, by Ogre's camera (the client's +0x10, its
  * +8, as proxy/pad.c reads it): its projection and view matrices; 0 behind the camera. */
 static int world_to_screen(const float *p, float sw, float sh, float *x, float *y) {
@@ -5975,7 +5976,7 @@ static void interact_prompt(void) {
     if (!w) return;
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
-    if (!u || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() ||
+    if (!u || !hero || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() ||
         pc_pause_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up || !rect_of || !gp ||
         !(par = gp(w, 0)) || !hw || !GetClientRect(hw, &r) || r.right <= r.left) { show(w, 0); return; }
     sw = (float)(r.right - r.left);
@@ -6089,7 +6090,7 @@ static void hud_tick(void) {
      * are those PC writes on those slots (SkillText1, SkillText2). */
     copy_text("POTIONCOUNT", "SkillText1");
     copy_text("MANACOUNT", "SkillText2");
-    /* Not done yet: the interact prompt and the skills on the pad's buttons (the layout's
+    /* Not done yet: the skills on the pad's buttons (the layout's
      * samples hidden). */
     hud_stage = "interact";
     interact_prompt();
