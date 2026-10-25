@@ -270,9 +270,11 @@ here. Games' texts are named by role, never quoted.
 - **Found:** not without the mod; not with the mod and `pad=0` (the mouse used): so something run
   only with the pad's ticks. Not the shops' and the modal's 3D boards (hidden in play only: still
   seen), not PC's interactive bars (`pc_bars_off`, transparent in play only: still seen). Stopped
-  after those two tries. Still to try, one at a time: `pc_menu_tick`'s cursor moves (`nav_point`,
-  the first button's on a new screen) and its Windows cursor (`cursor_hook`, `SetCursor(0)`);
-  `hotkeys_off`; `keys_off`; the HUD's tick out of play.
+  after those two tries; at the owner's suggestion a third: not the cursor's hiding either (an
+  experiment with Windows' and CEGUI's cursors always shown: still seen). Next, by a diagnosis
+  build with each of the pad's out-of-play ticks switched off by an ini key, one run each:
+  `pc_menu_tick`'s cursor moves (`nav_point` on a new screen's first button), `hotkeys_off`,
+  `keys_off`, the HUD's tick, the frame listener's other ticks.
 
 ## QA checklist
 
