@@ -3264,10 +3264,15 @@ void x360_inventory_toggle(void) {
 typedef int (__fastcall *int_arg3_fn)(void *self, void *edx, int a, int b, int c);
 typedef int (__fastcall *int_arg1_fn)(void *self, void *edx, int a);
 typedef void (__fastcall *unit_void_fn)(void *self, void *edx);
-static const unsigned stat_get[4] = {0x487ec0, 0x487e60, 0x487d70, 0x487d00};
+/* The hero's stat functions (0 get, 1 add a point, 2 take one back), by stat: computed, not a
+ * static table, so that Steam's build can move them with the executable (x360_reloc). */
+static unsigned stat_fn(int kind, int i) {
+    const unsigned get[4] = {0x487ec0, 0x487e60, 0x487d70, 0x487d00};
+    const unsigned inc[4] = {0x488450, 0x488470, 0x4884b0, 0x488490};
+    const unsigned dec[4] = {0x4884d0, 0x4884f0, 0x488530, 0x488510};
+    return kind == 0 ? get[i] : kind == 1 ? inc[i] : dec[i];
+}
 static const unsigned stat_base[4] = {0x3ac, 0x3a8, 0x3b4, 0x3b0};
-static const unsigned stat_inc[4] = {0x488450, 0x488470, 0x4884b0, 0x488490};
-static const unsigned stat_dec[4] = {0x4884d0, 0x4884f0, 0x488530, 0x488510};
 static const char *const stat_window[4] = {"strength", "dexterity", "magic", "defense"};
 static const char *const stat_pts[4] = {"strPts", "dexPts", "magicPts", "defPts"};
 static const char *const stat_added_window[4] = {"strPtsAdded", "dexPtsAdded", "magicPtsAdded", "defPtsAdded"};
@@ -3297,9 +3302,9 @@ static void stats_fill(void) {
     int i, n, remaining, can_add, can_remove, a, b, low, high, base_high;
     char buf[16], *p;
     if (!hero || !stats_root) return;
-    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_inc[i])(hero, 0);
+    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_fn(1, i))(hero, 0);
     for (i = 0; i < 4; i++) {
-        int v = ((int_get_fn)stat_get[i])(hero, 0);
+        int v = ((int_get_fn)stat_fn(0, i))(hero, 0);
         stat_text(stat_pts[i], v, v - *(int *)(hero + stat_base[i]));
     }
     for (i = 0; i < 2; i++) {
@@ -3338,7 +3343,7 @@ static void stats_fill(void) {
     prop(win_of(STATS_PREFIX, "removePoint"), "Alpha", can_remove ? "1" : "0.25");
     show(win_of(STATS_PREFIX, "spendPoints"), can_add || can_remove);
     for (i = 0; i < 4; i++) show(win_of(STATS_PREFIX, stat_help[i]), i == stat_sel && (can_add || can_remove));
-    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_dec[i])(hero, 0);
+    for (i = 0; i < 4; i++) for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_fn(2, i))(hero, 0);
 }
 
 /* ---- the journal (the Stats page's third column) ----
@@ -3448,7 +3453,7 @@ static void stats_commit(void) {
     int i, n;
     if (!hero) return;
     for (i = 0; i < 4; i++) {
-        for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_inc[i])(hero, 0);
+        for (n = 0; n < stat_added[i]; n++) ((unit_void_fn)stat_fn(1, i))(hero, 0);
         stat_added[i] = 0;
     }
 }
@@ -4357,7 +4362,7 @@ static void quest_fill(void) {
     }
     if (n) {
         void *q = quests[quest_sel];
-        static const unsigned reward_fn[3] = {0x5e8750, 0x5e8730, 0x5e8770};
+        const unsigned reward_fn[3] = {0x5e8750, 0x5e8730, 0x5e8770};
         static const char *const reward_box[3] = {"RewardXPBox", "RewardGoldBox", "RewardFameBox"};
         static const char *const reward_text[3] = {"RewardXP", "RewardGold", "RewardFame"};
         static const char *const reward_label[3] = {"reward.xp", "reward.gp", "reward.fame"};   /* x360_text keys */
@@ -5969,7 +5974,7 @@ static void *marker_hidden_on;
 static void quest_marker(int hide) {
     typedef void (__fastcall *unit_str_fn)(void *unit, void *edx, const void *name);
     typedef void (__fastcall *update_fn)(void *manager, void *edx, void *unit);
-    static const unsigned names[] = {0x00abad3c, 0x00abad18, 0x00abacfc, 0x00abace0};
+    const unsigned names[] = {0x00abad3c, 0x00abad18, 0x00abacfc, 0x00abace0};
     wstr_ctor_fn wctor;
     wstr_dtor_fn wdtor;
     unsigned char ws[32];
@@ -7098,7 +7103,7 @@ static void pc_menu_tick(void) {
  * [0xf60c04] at 0x55d2e7, KEYMAP_PET [0xf60c08] at 0x55d318. Each patched only if its two bytes
  * are as read. */
 static void hotkeys_off(void) {
-    static const struct { unsigned at; unsigned char was[2], now[2]; } p[] = {
+    const struct { unsigned at; unsigned char was[2], now[2]; } p[] = {   /* not static: Steam's build moves the addresses (x360_reloc) */
         {0x0055d206, {0x75, 0x08}, {0xeb, 0x16}},
         {0x0055d282, {0x74, 0x07}, {0xeb, 0x07}},
         {0x0055d2a4, {0x74, 0x07}, {0xeb, 0x07}},
@@ -7303,7 +7308,7 @@ static void boards_tick(void) {
     /* Each shop screen's board, where its update (its vtable's slot 9) animates it: CInventoryMenu
      * 0x580f80 its +0x7b20, CMerchantMenu 0x58ac50 +0x48, CEnchantMenu 0x5752d0 +0x50,
      * CCombineMenu 0x5656a0 +0x6c, CStashMenu 0x5aadb0 +0x48; the menu's vtable checked first. */
-    static const struct { unsigned at, vtable, board; } shops[] = {
+    const struct { unsigned at, vtable, board; } shops[] = {   /* not static: Steam's vtables move with the executable */
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
@@ -8121,7 +8126,7 @@ static void side_panels_test(int off) {
     /* Both of CGameUI's side tests: 0x541090 (one side's panels, their virtual +0xc) and 0x541130
      * (the other's, +8); 0x549b70, both, calls them (QA run 10: with only the first patched the world
      * stayed narrowed, its strips the background's blue once the boards were hidden). */
-    static const unsigned tests[2] = {0x00541090, 0x00541130};
+    const unsigned tests[2] = {0x00541090, 0x00541130};
     static const unsigned char no[3] = {0x32, 0xc0, 0xc3};
     static unsigned char saved[2][3];
     static int patched;
