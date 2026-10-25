@@ -875,6 +875,7 @@ static void hero_matrix(unsigned char *hero, float *m) {
 }
 
 static void *any_candidate;                 /* anyone near, for A: talk, use */
+static int candidate_friendly;               /* the candidate came from the second pass (any alignment), not an enemy */
 static void *highlighted;                   /* the unit we highlighted, as the 360 marks its candidate */
 
 static int in_list(unsigned char *level, int list, void *unit) {
@@ -1117,6 +1118,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         long long t0, t1, t2;
         QueryPerformanceCounter(&t0);
         c = unit_in_view(hero, level, m, ALIGN_ENEMY, TARGET_RANGE);
+        candidate_friendly = 0;
         if (!c) {
             /* The second pass searches from 1.5 behind the hero (the 360 moves the matrix's origin
              * by -1.5 times the hero's facing, its virtual +0x94, GOG's +0xa0: the third column),
@@ -1128,6 +1130,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
             b[7] -= BEHIND * m[6];
             b[11] -= BEHIND * m[10];
             c = unit_in_view(hero, level, b, ALIGN_ANY, TARGET_RANGE_ANY);
+            candidate_friendly = c != 0;
         }
         QueryPerformanceCounter(&t1);
         it = item_in_view(hero, level, m, 0);
@@ -1150,7 +1153,19 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     any_candidate = a;
     item_candidate = it;
 }
+/* A candidate still a unit of the current level (the review: after a level change or while the
+ * search is held by a screen, the pointers may be freed units). */
+static void *live_unit(void *unit) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL, *client, *lv;
+    client = app ? *(unsigned char **)(app + 0x64) : 0;
+    lv = client ? *(unsigned char **)(client + 0x38) : 0;
+    return unit && lv && in_list(lv, GOG_LEVEL_UNITS, unit) ? unit : 0;
+}
 void *x360_pad_candidate(void) { return item_candidate ? item_candidate : any_candidate; }
+/* The unit A would interact with (talk, a stash, Goldenrod): the candidate when it is not an enemy. */
+void *x360_pad_interact_unit(void) { return candidate_friendly ? live_unit(any_candidate) : 0; }
+/* The unit the pad targets (an enemy or anyone near), not an item: the 360 HUD's +72. */
+void *x360_pad_unit_target(void) { return live_unit(any_candidate); }
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
 static unsigned char *attack_level;

@@ -1529,7 +1529,7 @@ recomp's agent, who answers with the differences.
 **The target's bar** (`in-game/01` to `03`): the 360's HUD update (`sub_821A83C8`) fills, for the
 unit it shows: the name (its `+0x404`) in `TargetName`, white, or, for a champion (its `+0x63A`),
 in the colour of its constants (the catalog: `FFFFE03D`); "Level" and the level in `TargetLevel`;
-the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; "Undead - Fast", none for
+the unit's data's `DESCRIPTION` (its `+0x178`, the key at `0x820bcce0`; a monster's kind, none for
 an NPC) in `TargetDescription`; and it shows nothing for a mimic still in its `MIMICIDLE`
 animation (type `0xA7`). PC's update (GOG `0x558750`) has the same pieces: the champion flag at
 `+0x64E` with the colour (1, 0.88, 0.24) (the floats at `0xab2150`, `0xab2154`: `E0`, `3D`, the
@@ -3907,3 +3907,26 @@ PC's menus mid-closing; the side-panel tests are kept patched out of play (regre
 ends the character: tested only on a copy of a save.** Played by the owner (2026-10-25, the recomp
 agent's save): the screen as the 360's, the hero retired, the descendant created, its difficulty
 screen and its game.
+
+## 44. The target bar and the "A Interact" prompt with the pad (2026-10-25)
+
+**[seen]** The owner's 360 captures: walking up to an NPC or a stash, the 360 shows the target bar
+(level, name, health, and the unit's description in gold: Goldenrod's role) and an "A Interact"
+prompt over the unit; the port showed neither with the pad (its bar took the unit under the mouse
+or the one attacked; the prompt was hidden). **[read, 360; the recomp agent's reading and probes]**
+Both in the HUD update `sub_821A83C8`. The bar (`0x821A9124`-`0x821A9678`): while an attack or
+skill button is held the unit the player acts on (`+644`), else the hover target (HUD `+72`, the
+pad's target), none under a menu or a modal, then the player's combat target unless the unit is an
+NPC (type 104); a hidden mimic shows nothing; the description is the template's `DESCRIPTION` for
+any unit. The prompt (`0x821AB364`-`0x821AB518`): over the hover target when `sub_821B8D70` accepts
+it (within 2.0 on the ground, 2.75 standing; the types 130, 175, 132, 133, 134, 41, 128, 170, 104 or
+the 360's registry), no menu or modal, not dead, not the player's own; anchored at the unit's
+position plus (0.4, 1.0 − unit `+348`, 0.4) plus the camera's up axis, projected in the HUD's
+1280×720 space, kept 26 pixels inside. `+348` measured on the recomp: 0.8 for the units that stand,
+0.3 for the walkers; PC's unit has the same field at `+348` (logged on GOG, the same values).
+**[port]** The bar takes the pad's unit target (PC's unit under the mouse first) in that order; the
+prompt takes the pad's candidate from its second pass (any alignment), the same types and reach, the
+anchor projected with Ogre's camera (its view and projection matrices, `getDerivedUp`). Neither
+under PC's pause, death, waypoint or settings screens (the owner saw both over PC's pause menu).
+Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within
+about 30 pixels of the 360's capture at 1080 (the cameras not quite the same).
