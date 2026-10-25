@@ -797,6 +797,7 @@ static int max_enchants(void) {
 }
 /* Identified, a weapon, armour or trinket of the four kinds (ISA 8, 13, 17, 24), under the
  * maximum of enchantments (sub_822B5688). */
+static int can_retire(unsigned char *item);
 static int can_enchant(unsigned char *item) {
     if (!item || !item[GOG_IDENTIFIED]) return 0;
     if (!(isa(item, 8) || isa(item, 13) || isa(item, 17) || isa(item, 24))) return 0;
@@ -1493,7 +1494,8 @@ static void refresh(void) {
             } else if (at_enchant) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
-                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
+                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant")
+                    : at_enchant == 0x1b && can_retire(item) && !panels[active_panel].is_pet ? x360_text("act.retire") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
             } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
                  * transmuter's own prompt under its rows. */
@@ -2076,6 +2078,17 @@ static void ench_fill(unsigned char *item) {
      * interaction 0x19) has the page the 360 titles "Destroy Gems" (getsocket, town/02), the one of
      * type 133 (0x1a) "Recover Gems" (destroysocket, town/03; the 360's sub_82376D48 by its +304:
      * 132 -> 10, 133 -> 9). Their A prompt shows for an item with gems (sub_8236B1C8). */
+    /* The retirement (the 360's CEnchantMenuXenon mode 4, opened for the interaction 27 as PC's
+     * 0x1b: sub_82360CD0 shows its panel 14, the layout's "retire": its title, the paragraph on the
+     * heirloom, the warning and the Retire prompt, all the layout's own). */
+    if (at_enchant == 0x1b) {
+        show(win_of(ENCH_PREFIX, "enchant"), 0);
+        show(win_of(ENCH_PREFIX, "getsocket"), 0);
+        show(win_of(ENCH_PREFIX, "destroysocket"), 0);
+        show(win_of(ENCH_PREFIX, "enchantshrine"), 0);
+        show(win_of(ENCH_PREFIX, "retire"), 1);
+        return;
+    }
     if (at_enchant == 0x19 || at_enchant == 0x1a) {
         int get = at_enchant == 0x19;
         show(win_of(ENCH_PREFIX, "enchant"), 0);
@@ -2690,6 +2703,88 @@ static void transmute_swap(void) {
     x360_log("x360 transmuter: X: placed\r\n");
 }
 
+/* The retirement's items (the 360's sub_8236B498: unit types 8 WEAPON, 13 ARMOR, 39 TRINKET, by
+ * sub_821D7CE0; any other, nothing at all). */
+static int can_retire(unsigned char *item) { return item && (isa(item, 8) || isa(item, 13) || isa(item, 39)); }
+/* A at Goldenrod: the 360 retires at once, no confirmation (sub_8236B498 -> sub_82361B00, mode 4:
+ * the item out of the hero's bag, renamed "<hero>'s <item>" the first time, its heirloom count up
+ * and its bonuses, handed to the descendant, the hero marked retired, the menu closed and the game
+ * left). PC's act does the same work on the item in the hero's slot 14 (CEnchantMenu's 0x57a800,
+ * mode 0x1b at 0x57c42f: removeEquipment, the rename while +0x22c is 0, 0x4c0090, +0x2478 and
+ * +0x247c, the hero's +0x9c4 set): the item is put there and the act called. RETIRING ENDS THE
+ * CHARACTER: tested on copies only. */
+#define X360_RETIRE_MSG 0x8036            /* WM_APP + 0x36: the retirement's act, run by keys_proc */
+static unsigned char *retire_item;        /* the item put in slot 14 for the act */
+static int retire_slot;
+void x360_retire_act(void);
+static void retire(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item;
+    void *bag = owner_bag(hero), *from = inventory();
+    int slot;
+    if (!m || !bag || !from || !list_count) return;
+    if (!m[ENCHANT_OPEN] || hero[0x9c4]) { x360_log("x360 retire: A: the menu closed or the hero already retired: nothing\r\n"); return; }   /* never a second heirloom */
+    item = (unsigned char *)list[selected[filter]];
+    slot = list_slot[selected[filter]];
+    if (!can_retire(item)) { x360_log("x360 retire: A: not a weapon, an armour or a trinket: nothing\r\n"); return; }
+    if (from != bag) { x360_log("x360 retire: A: not the hero's bag: nothing\r\n"); return; }
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 retire: A: slot 14 is taken\r\n"); return; }
+    move_out(bag, item, slot);
+    ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        if (!give_back(bag, slot, item)) move_lost(item);
+        move_done();
+        x360_log("x360 retire: A: not placed\r\n");
+        return;
+    }
+    move_done();
+    retire_item = item;
+    retire_slot = slot;
+    /* PC's Retire button runs its act from the window's messages, before the frame's update; run
+     * from the frame listener, the act left PC between the descendant's creation and its
+     * difficulty screen, which never came (the owner's runs: with pad=0, PC's own button, it came).
+     * So the act is posted to the game's window and run from there (keys_proc), as the button's. */
+    {
+        __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+        extern HWND x360_keys_window(void);
+        HWND w = x360_keys_window();
+        if (w && PostMessageW(w, X360_RETIRE_MSG, 0, 0)) { x360_log("x360 retire: A: the act posted to the game's window\r\n"); return; }
+    }
+    x360_retire_act();
+}
+/* The retirement's act (from keys_proc as the window's messages are pumped; directly when there is
+ * no window to post to): the item still in slot 14, the menu open, the hero not retired yet. */
+void x360_retire_act(void) {
+    unsigned char *m = ui ? *(unsigned char **)(ui + GOG_ENCHANT_MENU) : 0, *item = retire_item;
+    void *bag = hero ? owner_bag(hero) : 0;
+    retire_item = 0;
+    if (!item || !m || !bag || !m[ENCHANT_OPEN] || hero[0x9c4] || ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) != item) {
+        x360_log("x360 retire: the act not run (the menu, the hero or slot 14 changed)\r\n");
+        if (item && bag && ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
+            move_out(bag, item, ENCHANT_SLOT);
+            if (!give_back(bag, retire_slot, item)) move_lost(item);
+            move_done();
+        }
+        return;
+    }
+    x360_log("x360 retire: the hero retired with "); log_item_name(item); x360_log("\r\n");
+    ((void_fn)GOG_ENCHANT_ACT)(m, 0);
+    {   /* PC's side panels still not closed, logged (CGameUI's list at +0x16b8, the virtual +0xc) */
+        typedef unsigned char (__fastcall *test_fn)(void *self, void *edx);
+        void **b = *(void ***)(ui + 0x16b8), **e = *(void ***)(ui + 0x16bc);
+        for (; b && b < e; b++)
+            if (*b && ((test_fn)(*(void ***)*b)[3])(*b, 0)) {
+                x360_log("x360 retire: a side panel of PC's not closed, vtable "); x360_log_num((long)*(void **)*b); x360_log("\r\n");
+            }
+    }
+    /* PC's act takes the item out of slot 14 itself; one left there is put back. */
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
+        move_out(bag, item, ENCHANT_SLOT);
+        if (!give_back(bag, retire_slot, item)) move_lost(item);
+        move_done();
+        x360_log("x360 retire: PC's act left the item: put back, not retired\r\n");
+    }
+}
+
 /* A at the enchanter: the selected item into the hero's slot 14, PC's own enchanting there
  * (CEnchantMenu's command 9), and back to its place (a bag's slot, an equipped one, the pet's). */
 static void enchant(void) {
@@ -3038,7 +3133,7 @@ static const char *const page_name[4] = {"page.inventory", "page.stats", "page.s
 static int page;
 
 static void page_titles(void) {
-    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
+    text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant == 0x1b ? "title.retire" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
                                                : isa(shop, 170) ? "title.sharedstash" : "title.stash"));
     text(win_of(MASTER, "MenuLeft"), x360_text(page_name[(page + 3) % 4]));
     text(win_of(MASTER, "MenuRight"), x360_text(page_name[(page + 1) % 4]));
@@ -5094,12 +5189,13 @@ void x360_shop_tick(void) {
     if (!shop && en && en[ENCHANT_OPEN] && *(unsigned char **)(en + ENCHANT_OWNER)) {
         static int logged_mode;
         int mode = *(int *)(en + ENCHANT_MODE);
-        if (mode == 0x15 || mode == 0x19 || mode == 0x1a) {
+        if (mode == 0x15 || mode == 0x19 || mode == 0x1a || mode == 0x1b) {
             if (inventory_open) x360_inventory_toggle();
             shop = *(unsigned char **)(en + ENCHANT_OWNER);
             at_enchant = mode;
             ench_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
+                     : mode == 0x1b ? "x360 shop: PC's enchant menu opened (Goldenrod, the retirement)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
         } else if (mode != logged_mode) {
@@ -5284,7 +5380,8 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
     /* At the transmuter (mode 5) A shows nothing and is not done here; Y transmutes. */
-    if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
+    if ((pressed & 0x1000) && at_enchant == 0x1b) { retire(); refresh_all(); }               /* A at Goldenrod */
+    else if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
     else if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
     if ((pressed & 0x8000) && at_transmute) { transmute(); refresh_all(); }               /* Y */
     else if ((pressed & 0x8000) && (!shop || at_stash)) { drop(); refresh_all(); }       /* Y (a stash: mode 7/8) */
@@ -5962,7 +6059,10 @@ static void hud_tick(void) {
         }
     }
     /* The place's name stays with the 360's inventory open, as on the 360 (the owner, 2026-10-25). */
-    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open);   /* PC's own hiding counted otherwise */
+    /* PC's own hiding counted otherwise; while the port hides PC's sheets (a 360 screen, and the
+     * 600 ms after a shop until they come back) only the window's own (the owner: the name went
+     * off and on again as an NPC's menu closed). */
+    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open || pc_ui_back_at || hidden_count);
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
     hud_stage = "target";
@@ -6959,6 +7059,44 @@ static void tip_tick(void) {
             logged = id;
             x360_log("x360 tip: "); x360_log(id ? id : "PC's text not among PC's tips"); x360_log("\r\n");
         }
+        /* The tips the 360 never shows: its only tip call, sub_82337A10(client, id), has 16 callers
+         * passing the ids 0-4, 6-9, 11, 16, 19, 20 and 23 (and one from data, sub_8223F5C0); the
+         * ids of the merchant, the sockets, the gambler, the enchanter, the transmuter, the pet's
+         * inventory, the stash, fishing, the shared stash and how to attack are passed by none (the
+         * recomp agent's reading; the names by the 360's table from TIP_INVENTORY at 0x820AC130;
+         * the owner saw none at the stash, the enchanter and the transmuter on the 360). PC's are
+         * closed at once, never shown. */
+        if (id) {
+            static const char *logged_close;
+            static const char *const never[] = {"TIP_MERCHANT", "TIP_SOCKETABLE", "TIP_GAMBLE", "TIP_ENCHANT", "TIP_TRANSMUTE",
+                                                "TIP_PETINVENTORY", "TIP_STASH", "TIP_FISHING", "TIP_SHAREDSTASH",
+                                                "TIP_HOWTOATTACK", 0};
+            int t;
+            /* The inventory's tip is the 360's for its own inventory only (its caller 8236F700, an
+             * inventory menu): PC opens its inventory with a shop's menu and the tip with it (the
+             * owner, 2026-10-25: at a gem goblin; none there on the 360). */
+            int at_a_shop = 0;
+            if (ui) {
+                typedef unsigned char (__fastcall *is_open_fn)(void *self, void *edx);
+                static const unsigned menus[] = {0x2d8, 0x2dc, 0x2e0, 0x2e4};
+                int q;
+                for (q = 0; q < 4; q++) {
+                    unsigned char *m = *(unsigned char **)(ui + menus[q]);
+                    if (m && ((is_open_fn)(*(void ***)m)[MENU_IS_OPEN])(m, 0)) at_a_shop = 1;
+                }
+            }
+            for (t = at_a_shop ? -1 : 0; t < 0 || never[t]; t++) {
+                const char *n = t < 0 ? "TIP_INVENTORY" : never[t];
+                unsigned c = 0;
+                while (n[c] && id[c] == n[c]) c++;
+                if (n[c] || id[c]) continue;
+                set_visible(tip_root, 0, 0);
+                tip_shown = 0;   /* the next tip PC queues behind it is shown as new (the review) */
+                press_tip("Ok");
+                if (logged_close != id) { logged_close = id; x360_log("x360 tip: closed, the 360 never shows it\r\n"); }
+                return;
+            }
+        }
     }
     text(win_of(TIP_PREFIX, "Dialog"), v);
     buttons = x360_pad_buttons();
@@ -7365,7 +7503,7 @@ static int keys_open;            /* set each frame by keys_off: in play, no PC s
 static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
 static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
 static int keys_console_key;     /* the console's key went down: look for its window at once */
-HWND x360_keys_window(void) { return keys_window; }
+HWND x360_keys_window(void) { return keys_old_proc ? keys_window : 0; }   /* only once subclassed: what is posted to it reaches keys_proc */
 static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
     int i;
@@ -7373,6 +7511,7 @@ static int key_index(unsigned vk) {
     return -1;
 }
 static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    if (msg == X360_RETIRE_MSG) { __try { x360_retire_act(); } __except (1) { x360_log("x360 retire: exception in the act\r\n"); } return 0; }
     int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
     int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
     if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
@@ -8957,6 +9096,12 @@ void x360_frame_tick(void) {
         else if (last_at_shop && GetTickCount() - last_at_shop > 2000) last_at_shop = 0;
         /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
          * once as a shop closed, the world's width moved, two blue columns). */
+        /* Not given back out of play: there PC's menus are not updated and a closing one (the
+         * enchant menu and the inventory after Goldenrod's retirement, which leaves play at once)
+         * never ends, so the tests held PC's next state, the descendant's difficulty screen,
+         * forever (the owner's runs; the panels logged not closed: CInventoryMenu, CEnchantMenu).
+         * Given back once in play again, where their closing ends. */
+        if (hud_in_play || last_at_shop)
         __try { side_panels_test(last_at_shop != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
     }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }

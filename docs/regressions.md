@@ -297,6 +297,34 @@ here. Games' texts are named by role, never quoted.
   shown after the hover time.
 - **QA checklist:** the load and creation screens left by B: no box; a slot's tooltip still shows.
 
+## After Goldenrod's retirement, no difficulty screen (fixed)
+
+- **What happened:** the owner (2026-10-25, GOG, the pad, the recomp agent's 5-ordrak save): a
+  hero retired by the port's Goldenrod screen, the descendant created (PC's creation, the pad's A
+  on CreatePlayer): PC's frame and menus gone, the 3D scene alone, nothing more. Without the mod
+  (the mouse, PC's own windows) PC shows its difficulty screen there.
+- **Found:** a UI dump in that state: PC's GUI sheet holds no menu at all (the console and the
+  tooltip only): the difficulty screen is not hidden, it was never attached. PC's log shows the
+  descendant saved (`save.tmp`) with and without the mod. PC's Retire button is command 9 of its
+  enchant menu, which calls the act `0x57a800` the port calls.
+- **Ruled out:** PC's sheets left hidden after the shop (shown again out of play: no change, none
+  was hidden); the 360's bag (`bag=pc`: the same); the pad's click (CreatePlayer clicked with the
+  mouse: the same). Stopped. Left: what the port does between the retirement and the creation
+  (its shop's closing, the side panels' test patch, the boards, the load hook armed by a menu
+  giving way), to be switched off one by one in a diagnosis build.
+- **Cause (a diagnosis build switching the out-of-play ticks off, one run each):** PC's side-panel
+  tests (`0x541090`, `0x541130`: each menu's virtual `+0xc`) hold PC's game-state changes back while
+  a panel has not finished closing (its client update, `0x41ba36`). The retirement leaves play as
+  the enchant menu and the inventory close; out of play PC does not update its menus, so their
+  closing never ends (both logged not closed: `CEnchantMenu`'s `0x575930` reads its closed flag
+  `+0x39`). The port gave the tests back (they are patched at a shop and 2 s after) out of play:
+  PC held the difficulty screen forever. Without the mod the tests are never patched and the
+  closings end before play is left.
+- **Fix:** the tests are not given back out of play, only once in play again, where the closings
+  end. The owner's run: the difficulty screen, the story's page, the new game, a level change.
+- **QA checklist:** a hero retired at Goldenrod by the pad (a copy of a save): the descendant's
+  creation, its difficulty screen, a level change in its game.
+
 ## One sword, two references, after the transmuter (fixed)
 
 - **What happened:** the owner (2026-10-25, GOG, the pad): the equipped sword put into the
