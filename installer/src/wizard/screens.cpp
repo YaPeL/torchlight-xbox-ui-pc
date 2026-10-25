@@ -3,6 +3,8 @@
 // system's pickers, and the wizard's own browser where there is none (the Steam Deck's Game Mode).
 #include "wizard_screens.h"
 
+#include "imgui_internal.h"
+
 #include <algorithm>
 #include <atomic>
 #include <filesystem>
@@ -176,6 +178,7 @@ struct Screens::State {
       if (!next_enabled) ImGui::BeginDisabled();
       if (focus_next && entered && next_enabled) focus();
       chosen_next = ImGui::Button(next_label, ImVec2(w, 0));
+      took();
       if (!next_enabled) ImGui::EndDisabled();
       // Start: the next step from anywhere on the screen.
       if (next_enabled && !entered && ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false)) chosen_next = true;
@@ -208,12 +211,22 @@ struct Screens::State {
   }
   // The screen's default item: focused, with the pad's cursor shown (ImGui ignores a first A
   // while its cursor is hidden).
-  static void focus(int offset = 0) {
-    ImGui::SetKeyboardFocusHere(offset);
-    ImGui::SetNavCursorVisible(true);
-  }
+  // The screen's default item: the next item submitted after the request gets the focus, with the
+  // pad's cursor shown (ImGui ignores a first A while its cursor is hidden). Given after the item
+  // (ImGui's SetFocusID): SetKeyboardFocusHere asked before it is not resolved inside a
+  // NavFlattened child, the focus left on the last screen's footer button of the same id (the
+  // wizard's tests: the bag's first option never focused, A took Next).
+  bool want_focus = false;
+  void focus() { want_focus = true; }
   void focus_here_once() {
     if (entered) focus();
+  }
+  void took() {
+    if (!want_focus) return;
+    want_focus = false;
+    ImGui::SetFocusID(ImGui::GetItemID(), ImGui::GetCurrentWindow());
+    ImGui::SetNavCursorVisible(true);
+    ImGui::ScrollToItem();
   }
 
   // ---- the system's pickers, else the wizard's browser ----
@@ -341,6 +354,7 @@ struct Screens::State {
       }
       const float h = ImGui::GetTextLineHeightWithSpacing() * 2 + ImGui::GetStyle().FramePadding.y;
       const bool pressed = ImGui::Selectable("##game", chosen == int(i), 0, ImVec2(0, h));
+      took();
       if (pressed) chosen = int(i);
       // A double click, or A or Enter on it: chosen and on to the next screen.
       if ((pressed && !ImGui::IsMouseReleased(0)) || (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))) next_from_games();
@@ -359,6 +373,7 @@ struct Screens::State {
     ImGui::Spacing();
     if (entered && chosen < 0) focus_here_once();   // no game to choose
     if (ImGui::Button("Look for another folder...")) pick(true, true);
+    took();
     ImGui::SameLine();
     if (ImGui::Button("Browse with the pad...")) open_browser(true);
     if (!game_problem.empty()) error_text(game_problem);
@@ -387,6 +402,7 @@ struct Screens::State {
     const float w = ImGui::GetFontSize() * 16;
     focus_here_once();
     if (ImGui::Button("Reinstall", ImVec2(w, 0))) { goal = Goal::Reinstall; go(Screen::Package); }
+    took();
     ImGui::SameLine();
     muted("Convert the 360's interface again, with the bag you choose.");
     if (ImGui::Button(game.bag == "360" ? "Change to PC's bag" : "Change to the 360's bag", ImVec2(w, 0))) {
@@ -425,6 +441,7 @@ struct Screens::State {
       ImGui::Spacing();
       focus_here_once();
       if (ImGui::Button("Step 1: switch to PC's bag", ImVec2(w, 0))) { goal = Goal::UninstallStep1; go(Screen::Summary); }
+      took();
       ImGui::Spacing();
       ImGui::Checkbox("I understand: uninstall now, and lose the items that do not fit PC's bag", &anyway_ok);
       if (!anyway_ok) ImGui::BeginDisabled();
@@ -435,6 +452,7 @@ struct Screens::State {
       ImGui::Spacing();
       focus_here_once();
       ImGui::Checkbox("I have loaded and saved each character with PC's bag", &loaded_each);
+      took();
       if (!loaded_each) ImGui::BeginDisabled();
       if (ImGui::Button("Uninstall", ImVec2(w, 0))) { goal = Goal::UninstallAnyway; go(Screen::Summary); }
       if (!loaded_each) ImGui::EndDisabled();
@@ -443,6 +461,7 @@ struct Screens::State {
       ImGui::Spacing();
       focus_here_once();
       if (ImGui::Button("Uninstall", ImVec2(w, 0))) { goal = Goal::Uninstall; go(Screen::Summary); }
+      took();
     }
     ImGui::EndChild();
     footer(nullptr, false);
@@ -456,6 +475,7 @@ struct Screens::State {
     ImGui::Spacing();
     focus_here_once();
     if (ImGui::Button("Choose the package...")) pick(false, false);
+    took();
     ImGui::SameLine();
     if (ImGui::Button("Choose a folder extracted from it...")) pick(false, true);
     // The wizard's own browser, played with the pad (where the system's picker does not show).
@@ -475,10 +495,9 @@ struct Screens::State {
     heading("Which bag?", "1  Game   >   2  Package   >   3  Bag   >   4  Summary");
     ImGui::BeginChild("body", ImVec2(0, body_height()), ImGuiChildFlags_NavFlattened);
     const float h = ImGui::GetTextLineHeightWithSpacing() * 2 + ImGui::GetStyle().FramePadding.y;
-    if (entered) {
-      focus(bag == "pc" ? 0 : 1);
-    }
+    if (entered && bag == "pc") focus();
     if (ImGui::Selectable("##pc", bag == "pc", 0, ImVec2(0, h))) bag = "pc";
+    took();
     ImGui::SameLine(ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginGroup();
     ImGui::PushFont(fonts.bold, 0.0f);
@@ -486,7 +505,9 @@ struct Screens::State {
     ImGui::PopFont();
     muted("Three sections of 21 slots: any item, spells, fish. The game stays as it is without the mod.");
     ImGui::EndGroup();
+    if (entered && bag == "360") focus();
     if (ImGui::Selectable("##360", bag == "360", 0, ImVec2(0, h))) bag = "360";
+    took();
     ImGui::SameLine(ImGui::GetStyle().FramePadding.x * 2);
     ImGui::BeginGroup();
     ImGui::PushFont(fonts.bold, 0.0f);
@@ -694,10 +715,13 @@ struct Screens::State {
     focus_here_once();
     if (ok && (installed || switched) && can_open_game()) {
       if (ImGui::Button("Open the game")) open_game();
+      took();
       ImGui::SameLine();
     }
     // Start: start again (A takes the focused button, Open the game where there is one).
-    if (ImGui::Button("Start again") || (!entered && ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false))) restart();
+    const bool again = ImGui::Button("Start again");
+    took();
+    if (again || (!entered && ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false))) restart();
     ImGui::SameLine();
     if (ImGui::Button("Close")) closed = true;
     hint_line(true);
@@ -712,7 +736,9 @@ struct Screens::State {
     int i = 0;
     if (!browse_drives) {
       if (entered) focus();
-      if (ImGui::Selectable("..  (the folder above)")) {
+      const bool up_pressed = ImGui::Selectable("..  (the folder above)");
+      took();
+      if (up_pressed) {
         const fs::path up = browse_dir.parent_path();
 #ifdef _WIN32
         if (up == browse_dir) list_drives();
@@ -726,7 +752,9 @@ struct Screens::State {
     for (const Entry& e : shown) {
       ImGui::PushID(i++);
       if (browse_drives && entered && i == 1) focus();
-      if (ImGui::Selectable(((e.folder ? "[folder]  " : "            ") + e.name).c_str())) {
+      const bool entry_pressed = ImGui::Selectable(((e.folder ? "[folder]  " : "            ") + e.name).c_str());
+      took();
+      if (entry_pressed) {
         if (e.folder) {
           browse_drives = false;
           list(e.path);
