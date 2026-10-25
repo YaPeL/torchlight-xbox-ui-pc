@@ -5826,7 +5826,12 @@ static void add_frame_listener(void);
 /* PC's main menu leaves its 3D view's first column and row uncovered at 16:10 (the Steam Deck: a
  * blue line, PC's own, without the mod too; the owner asked for it gone): two 1-pixel black lines
  * of PC's own image (GuiLook/BlackLine, its HUD's borders') at its left and top, under its root. */
+/* The two lines, made under root with the windows' prefix; 0 if not made. */
+static int one_pixel_borders(void *root, const char *prefix, void **made);
 static void main_menu_borders(void *root) {
+    if (one_pixel_borders(root, "x360mmb_", 0)) x360_log("x360 menu: the main menu's 1-pixel borders added\r\n");
+}
+static int one_pixel_borders(void *root, const char *prefix, void **made) {
     typedef void *(__fastcall *create_fn)(void *wm, void *edx, const void *type, const void *name, const void *prefix);
     static create_fn create;
     static const char *const names[2] = {"LeftLine", "TopLine"};
@@ -5834,16 +5839,16 @@ static void main_menu_borders(void *root) {
     void *wm = window_manager();
     int b;
     if (!create) create = (create_fn)need("?createWindow@WindowManager@CEGUI@@QAEPAVWindow@2@ABVString@2@00@Z");
-    if (!create || !wm || !root) return;
+    if (!create || !wm || !root) return 0;
     for (b = 0; b < 2; b++) {
         object t, nm, pre;
         void *w;
         string_ctor(&t, 0, "GuiLook/StaticImage");
         string_ctor(&nm, 0, names[b]);
-        string_ctor(&pre, 0, "x360mmb_");
+        string_ctor(&pre, 0, prefix);
         __try { w = create(wm, 0, &t, &nm, &pre); } __except (1) { w = 0; }
         string_dtor(&pre, 0); string_dtor(&nm, 0); string_dtor(&t, 0);
-        if (!w) { x360_log("x360 menu: the main menu's border not made\r\n"); return; }
+        if (!w) { x360_log("x360 menu: a 1-pixel border not made\r\n"); return 0; }
         prop(w, "UnifiedAreaRect", rects[b]);
         prop(w, "Image", "set:GuiLook image:BlackLine");
         prop(w, "FrameEnabled", "False");
@@ -5851,8 +5856,9 @@ static void main_menu_borders(void *root) {
         prop(w, "MousePassThroughEnabled", "True");
         prop(w, "AlwaysOnTop", "True");
         add_child(root, 0, w);
+        if (made) made[b] = w;
     }
-    x360_log("x360 menu: the main menu's 1-pixel borders added\r\n");
+    return 1;
 }
 
 void x360_pc_layout_loaded(const char *file, void *root) {
@@ -6052,12 +6058,24 @@ static void hud_tick(void) {
      * windows are searched again on the way back, as PC may have made new ones. */
     hud_stage = "resolve";
     if (!resolve() || !pc_window("PlayerHealthRoot")) {
+        { void *l = win_of("x360pb_", "LeftLine"), *t = win_of("x360pb_", "TopLine"); if (l) show(l, 0); if (t) show(t, 0); }
         if (hud_root) show(hud_root, 0);
         if (pet_hud_root) show(pet_hud_root, 0);
         hud_in_play = 0;
         return;
     }
     hud_in_play = 1;
+    {
+        /* PC's 3D view leaves its first row and column uncovered at 16:10 (the Deck); PC's bottom
+         * HUD's borders cover them in play (section 42), but PC hides that HUD in a cinematic and
+         * the blue line showed there (the owner's Deck): the same two 1-pixel lines on the GUI
+         * sheet, shown while in play. */
+        static void *lines[2];
+        static int tried;
+        void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
+        if (!tried && sheet) { tried = 1; if (one_pixel_borders(sheet, "x360pb_", lines)) x360_log("x360 hud: the 1-pixel borders over the 3D view added\r\n"); }
+        if (lines[0]) { show(lines[0], 1); show(lines[1], 1); }
+    }
     if (!hud_root) {
         HWND w = active_window();
         RECT r;
