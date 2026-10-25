@@ -1588,8 +1588,10 @@ static void order(void) {
         if (pressed & 0x0010) x360_cinematic_skip();
         pressed &= ~(0x0010u | BUTTON_BACK);
     }
-    /* A talk or another of the 360's overlays keeps Start (its skip): not the pause too. */
-    if ((pressed & 0x0010) && !x360_pause_open() && x360_overlay_open()) pressed &= ~0x0010u;
+    /* A talk or another of the 360's overlays keeps Start and Back (the talk's own rule, x360_menu.c):
+     * not the pause or the inventory too. */
+    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && x360_overlay_open())
+        pressed &= ~(0x0010u | BUTTON_BACK);
     if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
         x360_pause_pad(pressed, menu_ly);   /* the proxy's menus: the raw stick */
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
