@@ -2,6 +2,7 @@
 """Installs the Xbox 360 interface into the user's PC Torchlight, from the user's own 360 package.
 
     install.py [install] [--package FILE | --x360-dir DIR] [--game DIR] [--bag pc|360] [--yes] [--console]
+    install.py set-bag --bag pc|360 [--game DIR] [--yes] [--console]   (an installed game's bag, no package)
     install.py uninstall [--game DIR] [--yes] [--console] [--anyway]
     install.py list
 
@@ -575,6 +576,33 @@ def do_install(args):
     return 0
 
 
+def do_set_bag(args):
+    """The bag changed on an installed game without the 360's package: the converted interface is
+    the same for both bags (only x360_ui.ini's bag= differs); for the 360's the saves are backed up
+    first, as install does."""
+    ask = Ask(args.get("console"), args.get("yes"))
+    game, _ = pick_game(args.get("game"), ask, installed_only=True)
+    bag = args.get("bag")
+    if bag not in ("pc", "360"):
+        raise SystemExit("set-bag needs --bag pc or --bag 360.")
+    backups = []
+    if bag == "360":
+        folders = save_folders(game)
+        if not folders and not ask.yes_no(
+                "No save folder of this game was found to back up (a Steam install's saves are in "
+                "Steam's prefix, left alone; Heroic's prefix may be elsewhere). Back up your saves "
+                "yourself first.\n\nUse the 360's bag without a backup?", default=False):
+            raise SystemExit("PC's bag kept: no save folder to back up was found.")
+        backups = back_up_saves(folders)
+        for b in backups:
+            print(f"saves backed up: {b}")
+    write_ini(game, converted_folders(game)[0], bag)
+    ask.info(("The 360's bag installed. Start Torchlight with a pad connected." if bag == "360"
+              else "PC's bag installed. Load and save each character before uninstalling.")
+             + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
+    return 0
+
+
 def do_uninstall(args):
     ask = Ask(args.get("console"), args.get("yes"))
     game, _ = pick_game(args.get("game"), ask, installed_only=True)
@@ -650,7 +678,7 @@ def do_list(args):
 
 def parse(argv):
     args, i = {"command": "install"}, 0
-    if argv and argv[0] in ("install", "uninstall", "list"):
+    if argv and argv[0] in ("install", "uninstall", "set-bag", "list"):
         args["command"], argv = argv[0], argv[1:]
     flags = {"--yes": "yes", "--console": "console", "--experimental": "experimental", "--anyway": "anyway"}
     values = {"--game": "game", "--package": "package", "--x360-dir": "x360_dir", "--bag": "bag", "--dll": "dll"}
@@ -671,7 +699,7 @@ def parse(argv):
 
 def main(argv=None):
     args = parse(sys.argv[1:] if argv is None else argv)
-    return {"install": do_install, "uninstall": do_uninstall, "list": do_list}[args["command"]](args)
+    return {"install": do_install, "uninstall": do_uninstall, "set-bag": do_set_bag, "list": do_list}[args["command"]](args)
 
 
 if __name__ == "__main__":

@@ -6108,8 +6108,15 @@ static void dialog_tick(void) {
     }
     qd_show(1);
     /* The windows, as PC's. */
+    /* The NPC's portrait as PC's, and none where PC shows none (the owner, 2026-10-25: town NPCs
+     * without one, on the 360 too, showed the last one's, an empty Image not replacing it; PC's
+     * plain dialogmenu has no Portrait at all). */
     read_prop(win_of(pc_qd_prefix, "Portrait"), "Image", v, sizeof v);
-    prop(win_of(QD_PREFIX, "Portrait"), "Image", v);
+    {
+        int has = v[0] && pc_shown("Portrait");
+        if (has) prop(win_of(QD_PREFIX, "Portrait"), "Image", v);
+        show(win_of(QD_PREFIX, "Portrait"), has);
+    }
     read_prop(win_of(pc_qd_prefix, "DialogText"), "Text", v, sizeof v);
     {
         /* A new text (its hash): the rise starts again. */
