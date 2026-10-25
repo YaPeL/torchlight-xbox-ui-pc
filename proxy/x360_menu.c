@@ -8442,10 +8442,39 @@ int x360_pad_lx(void);
  * injects it into CEGUI, then a 1 px move (0x4016c0) for the hover: a position injected alone lasts
  * one frame (QA run 12). So Windows' cursor is put on (x, y), the window's client pixels, and PC
  * hovers the button there itself; CEGUI is told the same at once for a click in this frame. */
+/* CEGUI's tooltip (System's default__auto_tooltip__, shown over PC's character slots and classes):
+ * the mouse leaves a window over the screen's background, which takes the tooltip off (its
+ * target none, fading with its text); the pad's cursor jumps from window to window, so the tooltip
+ * went with it onto one without a text (Back) and its empty frame showed while it faded (the
+ * owner, 2026-10-25). Before the cursor moves, a shown tooltip is made inactive at once (hidden,
+ * no target): the next window's own shows after the hover time, as with the mouse. */
+static void nav_tooltip_off(void) {
+    typedef void *(__fastcall *tip_fn)(const void *self, void *edx);
+    typedef void (__fastcall *target_fn)(void *self, void *edx, void *w);
+    typedef void (__fastcall *self_fn)(void *self, void *edx);
+    typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    static tip_fn get_tip;
+    static target_fn set_target;
+    static self_fn inactive;
+    static vis_fn vis;
+    void *sys = system_ptr(), *tip;
+    if (!get_tip) {
+        get_tip = (tip_fn)need("?getDefaultTooltip@System@CEGUI@@QBEPAVTooltip@2@XZ");
+        set_target = (target_fn)need("?setTargetWindow@Tooltip@CEGUI@@QAEXPAVWindow@2@@Z");
+        inactive = (self_fn)need("?switchToInactiveState@Tooltip@CEGUI@@IAEXXZ");
+        vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    }
+    if (!sys || !get_tip || !set_target || !inactive || !vis) return;
+    tip = get_tip(sys, 0);
+    if (!tip || !vis(tip, 0, 1)) return;
+    set_target(tip, 0, 0);
+    inactive(tip, 0);
+}
 static void nav_point(float x, float y) {
     void x360_inject_left(int down, float x, float y);
     HWND w = GetActiveWindow();
     long pt[2];
+    __try { nav_tooltip_off(); } __except (1) { x360_log("x360 menu: exception taking CEGUI's tooltip off\r\n"); }
     pt[0] = (long)x; pt[1] = (long)y;
     if (w && ClientToScreen(w, pt)) SetCursorPos((int)pt[0], (int)pt[1]);
     x360_inject_left(-1, x, y);
