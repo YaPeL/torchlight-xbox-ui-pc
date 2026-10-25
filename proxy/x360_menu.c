@@ -5798,6 +5798,52 @@ void x360_hud_tick(void) {
     }
 }
 
+/* The "A Interact" prompt (the 360's HUD update sub_821A83C8, 0x821AB364-0x821AB518, the recomp
+ * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
+ * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
+ * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
+ * not the pet, with no 360 screen, dialog or modal open. The 360 places it at the unit's position
+ * 1.0 up and 0.4 aside, projected and kept 26 pixels inside the screen (pool 0x820AA2C0 +64, +140,
+ * +1608); here under the unit's own label, which PC places over the unit's head (its +0x198). */
+static void interact_prompt(void) {
+    typedef struct { float top, bottom, left, right; } rect6;
+    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    void *x360_pad_interact_unit(void);
+    int x360_overlay_open(void);
+    static pixel_rect_fn6 rect_of;
+    static parent_fn gp;
+    void *w = win_of(HUD_PREFIX, "TargetInteractHover"), *lw, *par;
+    unsigned char *u = (unsigned char *)x360_pad_interact_unit();
+    rect6 lr, pr;
+    float W, H;
+    if (!w) return;
+    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    if (!u || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || !rect_of || !gp ||
+        !(lw = *(void **)(u + 0x198)) || !(par = gp(w, 0))) { show(w, 0); return; }
+    rect_of(lw, 0, &lr);
+    rect_of(par, 0, &pr);
+    W = 110.0f * k;
+    H = 27.0f * k;
+    if (lr.right <= lr.left) { show(w, 0); return; }
+    {
+        float x = (lr.left + lr.right) * 0.5f - W * 0.5f, y = lr.bottom;
+        HWND hw = active_window();
+        RECT r;
+        if (hw && GetClientRect(hw, &r)) {   /* kept inside the screen, as the 360's 26 pixels (of 720) */
+            float m = 26.0f * k, sw = (float)(r.right - r.left), sh = (float)(r.bottom - r.top);
+            if (x < m) x = m;
+            if (x > sw - m - W) x = sw - m - W;
+            if (y < m) y = m;
+            if (y > sh - m - H) y = sh - m - H;
+        }
+        set_size(w, x - pr.left, y - pr.top, W, H);
+    }
+    show(w, 1);
+}
+
 static void hud_tick(void) {
     static unsigned last;
     static int failed;
@@ -5850,7 +5896,8 @@ static void hud_tick(void) {
     copy_text("MANACOUNT", "SkillText2");
     /* Not done yet: the interact prompt and the skills on the pad's buttons (the layout's
      * samples hidden). */
-    show(win_of(HUD_PREFIX, "TargetInteractHover"), 0);
+    hud_stage = "interact";
+    interact_prompt();
     /* The icons on the pad's buttons, from the hotbar keys proxy/pad.c presses for them: LB 1,
      * RB 2, B 3, Y 4, LT 5, RT 6. The 360's first set (SkillSet1: Y SkillSlot4, B 5, LT 6, RT 7);
      * its second set (SkillSet2, the same places) hidden. */
