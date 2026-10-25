@@ -1156,6 +1156,8 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
 void *x360_pad_candidate(void) { return item_candidate ? item_candidate : any_candidate; }
 /* The unit A would interact with (talk, a stash, Goldenrod): the candidate when it is not an enemy. */
 void *x360_pad_interact_unit(void) { return candidate_friendly ? any_candidate : 0; }
+/* The unit the pad targets (an enemy or anyone near), not an item: the 360 HUD's +72. */
+void *x360_pad_unit_target(void) { return any_candidate; }
 
 /* X on the candidate: what PC's CGameClient::clickLeft (GOG 0x4142a0) does on an enemy. */
 static unsigned char *attack_level;

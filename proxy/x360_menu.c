@@ -5646,7 +5646,7 @@ static int hidden_mimic(void *unit) {
 }
 
 /* The unit's description (the 360's TargetDescription: its data's DESCRIPTION, "Undead - Fast";
- * none for an NPC), as UTF-8; "" if it has none. */
+ * an NPC's its role, "Retires characters and improves Heirlooms"), as UTF-8; "" if it has none. */
 static void unit_description(void *unit, char *out, unsigned size) {
     static const unsigned short empty[] = {0};
     wstr_ctor_fn ctor;
@@ -5689,9 +5689,27 @@ static void target_tick(void) {
     unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
     if (unit && (((performing_fn)GOG_PERFORMING_ATTACK_LOOSE)(hero, 0) & 0xff)) x360_hud_attacked(unit);
     if (attacked.unit && (int)(now - attacked_until) >= 0) ((safe_assign_fn)GOG_SAFE_ASSIGN)(&attacked, 0, 0);
-    /* The 360's order: the unit under the cursor, else the one attacked. */
+    /* The 360's choice (sub_821A83C8, 0x821A9124-0x821A9678, the recomp agent's reading): while
+     * an attack or skill button is held, the unit the player acts on (its +644, GOG's hero
+     * target); else the pad's target (its HUD's +72, an NPC near too); none under a menu or a
+     * modal; then, unless that is an NPC (type 104), the player's combat target when it has one
+     * (its virtual +460; here the unit attacked, kept 3 s as before). PC's unit under the mouse
+     * first, for the mouse. */
     unit = ui ? *(unsigned char **)(ui + GOG_UI_MOUSE_OVER) : 0;
-    if (!unit) unit = (unsigned char *)attacked.unit;
+    if (!unit) {
+        void *x360_pad_unit_target(void);
+        unsigned x360_pad_buttons(void);
+        int x360_overlay_open(void);
+        if (x360_pad_buttons() & (0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000)) unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
+        if (!unit) unit = (unsigned char *)x360_pad_unit_target();
+        if ((!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;
+        /* Under a screen nothing (the owner: the bar over PC's pause menu); the 360's pause
+         * covers its HUD. */
+    }
+    {
+        int x360_overlay_open(void);
+        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
+    }
     if (unit && hidden_mimic(unit)) unit = 0;
     show(x, unit != 0);
     if (!unit) return;
