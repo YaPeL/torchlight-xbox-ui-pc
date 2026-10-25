@@ -8254,7 +8254,9 @@ static void pc_menus_nav_tick(void) {
     static const char *const create_needs[] = {"Vanquisher", 0};
     static char die_prefix[64];
     static const char *const die_needs[] = {"Resurrect2", 0};
-    int create = 0, die = 0;
+    static char wp_prefix[64];
+    static const char *const wp_needs[] = {"Button10", "Cancel", 0};
+    int create = 0, die = 0, wp = 0;
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
@@ -8271,11 +8273,12 @@ static void pc_menus_nav_tick(void) {
     /* PC's settings screen: its Apply and Cancel shown. */
     /* The searches walk PC's whole GUI: every 250 ms at most (the review); the checks each frame. */
     if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer") ||
-                                    !die_prefix[0] || !win_of(die_prefix, "Resurrect1"))) {
+                                    !die_prefix[0] || !win_of(die_prefix, "Resurrect1") || !wp_prefix[0] || !win_of(wp_prefix, "Choice10"))) {
         last_search = now;
         if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
         if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
         if (!die_prefix[0] || !win_of(die_prefix, "Resurrect1")) find_pc_by_suffix("Resurrect1", die_needs, die_prefix, sizeof die_prefix);
+        if (!wp_prefix[0] || !win_of(wp_prefix, "Choice10")) find_pc_by_suffix("Choice10", wp_needs, wp_prefix, sizeof wp_prefix);
     }
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
@@ -8289,7 +8292,11 @@ static void pc_menus_nav_tick(void) {
      * offers; not while a screen of the 360's is over it. The play pad gets nothing meanwhile
      * (x360_pc_menu_up: no move, skill, pause or inventory). */
     die = in_play && die_prefix[0] && pc_attached(die_prefix, "ExitGame") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
-    x360_pc_die_up = die;
+    /* PC's waypoint portals (waypointmenu.layout: Frame, Button1-10 with Choice1-10, Cancel), opened
+     * at a waypoint once the first boss is dead: PC's screen with the pad, as the resurrection's
+     * (the owner, 2026-10-24: kept PC's for now; the pad could not move in it). B its Cancel. */
+    wp = !die && in_play && wp_prefix[0] && pc_attached(wp_prefix, "Cancel") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    x360_pc_die_up = die || wp;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     cursor_hook_install();
@@ -8306,7 +8313,7 @@ static void pc_menus_nav_tick(void) {
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
         }
     }
-    if (in_play && !pc_pause_open() && !settings && !die) { nav_count = 0; return; }
+    if (in_play && !pc_pause_open() && !settings && !die && !wp) { nav_count = 0; return; }
     /* Collected every frame: no pointer kept from one frame to the next (the review: a window
      * destroyed meanwhile, as a load ends, was used). */
     (void)last_collect;
@@ -8335,8 +8342,8 @@ static void pc_menus_nav_tick(void) {
                 top = up;
             }
             if (top) nav_collect(top, 0, 1);
-        } else if (die) {
-            nav_collect(win_of(die_prefix, "Frame"), 0, 1);   /* its own windows only: PC's HUD buttons are on its sheet */
+        } else if (die || wp) {
+            nav_collect(win_of(die ? die_prefix : wp_prefix, "Frame"), 0, 1);   /* its own windows only: PC's HUD buttons are on its sheet */
         } else if (in_play) {
             static unsigned char *logged_pm;
             unsigned char *pm = pc_pause_menu();
@@ -8380,7 +8387,7 @@ static void pc_menus_nav_tick(void) {
             static str_fn gn;
             if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
             x360_log("x360 menu: PC's buttons for the pad "); x360_log_num(nav_count);
-            x360_log(die ? " (resurrection):" : in_play ? " (pause):" : ":");
+            x360_log(die ? " (resurrection):" : wp ? " (waypoints):" : in_play ? " (pause):" : ":");
             for (i = 0; i < nav_count && gn; i++) { x360_log(" "); x360_log(c_str(gn(nav_list[i], 0), 0)); }
             x360_log("\r\n");
         }
@@ -8447,7 +8454,7 @@ static void pc_menus_nav_tick(void) {
             if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
         }
     }
-    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings)) {
+    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings && !wp)) {
         /* B: the screen's way back, its Cancel (settings, the delete popup) or Back (creation,
          * difficulty, load), clicked (the user, QA run 19). In play PC's pause menu is closed by
          * x360_pause_pad. */
