@@ -297,6 +297,20 @@ here. Games' texts are named by role, never quoted.
   shown after the hover time.
 - **QA checklist:** the load and creation screens left by B: no box; a slot's tooltip still shows.
 
+## After Goldenrod's retirement, no difficulty screen (open)
+
+- **What happened:** the owner (2026-10-25, GOG, the pad, the recomp agent's 5-ordrak save): a
+  hero retired by the port's Goldenrod screen, the descendant created (PC's creation, the pad's A
+  on CreatePlayer): PC's frame and menus gone, the 3D scene alone, nothing more. Without the mod
+  (the mouse, PC's own windows) PC shows its difficulty screen there.
+- **Found:** a UI dump in that state: PC's GUI sheet holds no menu at all (the console and the
+  tooltip only): the difficulty screen is not hidden, it was never attached. PC's log shows the
+  descendant saved (`save.tmp`) with and without the mod. PC's Retire button is command 9 of its
+  enchant menu, which calls the act `0x57a800` the port calls.
+- **Ruled out:** PC's sheets left hidden after the shop (shown again out of play: no change, none
+  was hidden); the 360's bag (`bag=pc`: the same). Stopped after two tries. Next: the creation's
+  CreatePlayer clicked with the mouse instead of the pad's A, to tell the pad's click from the rest.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
