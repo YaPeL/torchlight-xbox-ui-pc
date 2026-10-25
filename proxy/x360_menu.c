@@ -5996,6 +5996,8 @@ static void quest_marker(int hide) {
 
 static int qd_reward;   /* the reward item the stick selected (the 360's +464), -1 none */
 static int qd_card;     /* the 360's item card shown for a reward (fill_card's card 0) */
+static void *qd_card_item;   /* its item */
+static void nav_point(float x, float y);   /* below: the hidden cursor moved */
 /* The reward item i of the quest PC's dialog offers, 0 if none: PC's own mouse-over (GOG 0x59be40,
  * CQuestDialogMenu::handle_MouseOver *(OT)*) takes CGameUI's +0x2fc, its dialog at +0x98, that
  * dialog's quest at +8, the quest's rewards at +0x150 and their items' list from 0x5f4760
@@ -6182,17 +6184,24 @@ static void dialog_tick(void) {
                      * left part, its middle at the slot's. */
                     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
                     h = item ? fill_card(0, item, 0, 0) : 0;
+                    if (h > 0) { qd_card = 1; qd_card_item = item; }   /* shown by fill_card: tracked whatever follows */
                     if (h > 0 && bkg && rect_of) {
+                        fresh_rects(bkg);
                         rect_of(bkg, 0, &br);
                         place_card(0, br.left + 0.17f * (br.right - br.left) - card_width(0), 0, (br.top + br.bottom) * 0.5f - h * 0.5f);
-                        qd_card = 1;
                     }
+                    nav_point(1.0f, 1.0f);   /* the hidden cursor off PC's slots: no hover card of PC's too */
                     if (!item) x360_log("x360 dialog: no item for that reward\r\n");
                 }
                 x360_log("x360 dialog: reward item "); x360_log_num(qd_reward); x360_log("\r\n");
             }
             held = dir != 0;
-            if (qd_reward >= items) qd_reward = -1;
+            /* The selection dropped when the slots or their item change under it (the talk's next
+             * page or quest): no card left on an item no longer offered. */
+            if (qd_reward >= items || (qd_card && qd_reward_item(qd_reward) != qd_card_item)) {
+                qd_reward = -1;
+                if (qd_card) { hide_card(0); qd_card = 0; }
+            }
         }
         show(win_of(QD_PREFIX, "ItemHighlight"), qd_reward >= 0);
         if (qd_card && card_root(0)) move_to_front(card_root(0), 0);   /* the card over the 360's dialog */

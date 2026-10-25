@@ -3774,4 +3774,5 @@ capacity `+8`); PC's mouse-over keeps the item at the menu's `+0x118`. Its card 
 (`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge on the
 slot's left part, its middle at the slot's; hidden with none and when the talk closes. The first
 try (the hidden cursor on PC's slot, PC's own hover card) drew PC's card, with its golden frame,
-its description beside it: dropped. The log names each step (`x360 dialog: reward item N`).
+its description beside it: dropped. The selection is dropped when the slots or their item change; the hidden cursor is moved off
+PC's slots. The log names each step (`x360 dialog: reward item N`). Not run yet.
