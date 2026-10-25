@@ -1577,8 +1577,21 @@ static void order(void) {
     }
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
-    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
+    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. During
+     * a cinematic Start skips it and Back does nothing (the owner's look at the 360, 2026-10-24;
+     * its frame update, sub_821EBA48, does not toggle the pause while sub_821ED810 is true). */
     int x360_tip_open(void);
+    void x360_cinematic_skip(void);
+    void *ui_for_start = *(void **)(client + 0x3c);
+    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && !x360_tip_open() && ui_for_start &&
+        ((bool_fn)GOG_UI_HOLDS_PLAY)(ui_for_start, 0)) {
+        if (pressed & 0x0010) x360_cinematic_skip();
+        pressed &= ~(0x0010u | BUTTON_BACK);
+    }
+    /* A talk or another of the 360's overlays keeps Start and Back (the talk's own rule, x360_menu.c):
+     * not the pause or the inventory too. */
+    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && x360_overlay_open())
+        pressed &= ~(0x0010u | BUTTON_BACK);
     if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
         x360_pause_pad(pressed, menu_ly);   /* the proxy's menus: the raw stick */
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }

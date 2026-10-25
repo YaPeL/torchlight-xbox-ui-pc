@@ -268,6 +268,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a waypoint's portals screen: a destination chosen with the d-pad and A, B cancels;
 - the hero's death: PC's resurrection screen's buttons chosen with the d-pad and A;
 - after a merchant, a stash and the enchanter are closed: none of PC's 3D boards is seen, and the 360's inventory still shows the hero's doll;
+- Start during a cinematic: it is skipped, no pause opens; Back there opens nothing; at a merchant or a stash, Start closes it as Back; in a talk Start and Back do nothing (no pause, no inventory);
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;

@@ -3702,6 +3702,46 @@ buttons).
 - Not ported: the 360's own resurrection screen (its look and its pad, which a port would read in
   the 360's code first).
 
+## 35. Start during a cinematic (2026-10-24)
+
+The owner saw the pause misbehave during a cinematic. **[read]** The 360's frame update
+(`sub_821EBA48`, `r31` the client, CGameUI at its `+60`) handles Start (the client's `+612` set
+to 1: Start by its behaviour, its writer not traced **[inferred]**) only when CGameUI's menu at
+`+968` is not visible, the level is up (the client's `+44`, its virtual `+32`) and `sub_821ED810`
+(the cinematic: "The hero not played during a cinematic", above) is false. Then, on CGameUI: with
+its `+6161` set, `sub_8233EEF8` clears it and closes the menus; else, unless a dialog at `+5312`
+holds it, any open menu is closed (`sub_821E4B78`, then `sub_8233E998`); else, unless the menu at
+`+956` is visible, the menus are closed (`sub_8233E998`) and the pause toggled (`sub_8233D440`,
+the menu at `+932`, `COptionsMenu`). During a cinematic Start does nothing.
+
+**[seen]** The owner on the 360 (2026-10-24): during a cinematic Start skips it and Back opens
+nothing; at an NPC's screen (a merchant, a stash) Start and Back both close it. The skip is not in
+the frame update read above (its handler is not traced; the cinematic menu's own pad is likely).
+Back there: the 360's `+705` toggles CGameUI's `+1000` after the cinematic's first test, not
+traced further.
+
+`proxy/pad.c` opened the 360's pause on Start during a cinematic. Now, while PC's `0x541db0` holds
+and no pause or inventory is open, Start clicks PC's cinematic menu's `Skip`
+(`x360_cinematic_skip`: cinematicmenu.layout's `Skip`, found by its `DialogTextFrame`, a left
+click at its centre) and Back is dropped; not while a tip is up (it keeps every button). In the 360's inventory at a shop, Start closes the shop as
+Back and B do (`x360_inventory_pad`); elsewhere in the inventory it keeps the pet's commands.
+
+**[seen]** The owner on the 360: in a quest's talk Start and Back do nothing; a common talk is
+closed by them; a merchant's too; an in-play cinematic is skipped by Start, which also accepts
+its quest. Now Start and Back do nothing in any talk (`proxy/pad.c` keeps them from the pause and
+the inventory while a talk or another of the 360's overlays is up): right for a quest's talk; a
+common talk is not closed by them, because its pages look the same as a quest's first ones (Ok
+only) and the port has no sign yet of which it is (the quest marker is taken off without reading
+which it was).
+
+**Not working (the owner's run of 2026-10-24, late; stopped after two failed tries):** in play,
+after entering the mine, `0x541db0` held for a while with no talk shown and no Skip attached:
+twelve Starts logged `PC's Skip not shown` and nothing was skipped. So PC's in-play cinematics
+are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of its own, its
+CCinematicMenu's input) is not read. **[seen]** The owner: PC's Escape does there what the 360's
+Start does. `x360_cinematic_skip` now posts Escape (key down and up, as `pad.c`'s `post_key`) to the game's window when
+no Skip is attached; `keys_proc` lets it through while the cinematic holds.
+
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
 The owner, on a strong test character past the first boss: PC's waypoint portals screen

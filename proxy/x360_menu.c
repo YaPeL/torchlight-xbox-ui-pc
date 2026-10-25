@@ -5127,6 +5127,9 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         else x360_inventory_toggle();
         return;
     }
+    /* Start at an NPC's screen closes it, as Back (the owner's look at the 360, 2026-10-24; the
+     * 360's frame update closes the open menus on Start, sub_8233E998). */
+    if ((pressed & 0x0010) && shop) { shop_close(); return; }
     /* LT and RT: the page before and after (sub_82377990, sub_82377928); a merchant's frame has
      * one page. */
     if ((pressed & (0x10000 | 0x20000)) && !shop) {
@@ -5876,6 +5879,31 @@ static void press_pc(const char *prefix, const char *name) {
 
 static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
 
+/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
+ * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), a left click at its centre
+ * (press_pc). */
+void x360_cinematic_skip(void) {
+    static char cin_prefix[64];
+    static const char *const needs[] = {"DialogTextFrame", 0};
+    /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
+     * other layout of PC's has a window ending in Skip. */
+    if (qd_shown) return;   /* a talk: Start does nothing there (dialog_tick) */
+    if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
+    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) { press_pc(cin_prefix, "Skip"); return; }
+    /* In play no Skip is shown: PC's Escape skips it, as the 360's Start (the owner, 2026-10-24),
+     * posted to the game's window (keys_proc lets it through while the cinematic holds). */
+    {
+        __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+        extern HWND x360_keys_window(void);
+        HWND w = x360_keys_window();
+        if (w) {
+            PostMessageW(w, 0x100, 0x1b, 0x00010001);           /* WM_KEYDOWN Esc (scan code 1) */
+            PostMessageW(w, 0x101, 0x1b, (long)0xc0010001);     /* WM_KEYUP */
+            x360_log("x360 menu: Start in a cinematic, Escape posted\r\n");
+        } else x360_log("x360 menu: Start in a cinematic, no Skip and no game window\r\n");
+    }
+}
+
 /* The first non-empty Image of w or a window under it. */
 static void first_image_under(void *w, char *out, unsigned size) {
     void *stack[64];
@@ -6112,6 +6140,10 @@ static void dialog_tick(void) {
     /* The frame's time, faster with X held. */
     if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
     qd_last = now;
+    /* Start and Back do nothing in a talk (the owner's look at the 360, 2026-10-24: so in a quest's
+     * talk; a common talk is closed by them there, but its first pages look the same as a quest's,
+     * Ok only, and the port has no sign of which it is yet). proxy/pad.c keeps them from the pause
+     * and the inventory. */
     if (pressed & 0x1000) qd_press(pc_shown("Accept") ? "Accept" : "Ok");    /* A */
     if ((pressed & 0x2000) && pc_shown("Decline")) qd_press("Decline");       /* B */
     /* The rising text. */
@@ -6999,11 +7031,13 @@ __declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
 __declspec(dllimport) long __stdcall GetWindowLongA(HWND w, int index);
 __declspec(dllimport) int __stdcall GetWindowTextA(HWND w, char *text, int size);
 static long keys_old_proc;       /* the game window's own procedure: subclassed once, never again */
+static HWND keys_window;         /* the game's window (keys_off) */
 static int keys_unicode;
 static int keys_open;            /* set each frame by keys_off: in play, no PC settings, console or cinematic */
 static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
 static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
 static int keys_console_key;     /* the console's key went down: look for its window at once */
+HWND x360_keys_window(void) { return keys_window; }
 static int key_index(unsigned vk) {
     static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
     int i;
@@ -7043,6 +7077,7 @@ static void keys_off(void) {
             long old = 0;
             tried = 1;
             keys_unicode = IsWindowUnicode(w);
+            keys_window = w;
             if ((keys_unicode ? GetWindowLongW(w, -4) : GetWindowLongA(w, -4)) != (long)keys_proc)   /* never onto itself */
                 old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
             keys_old_proc = old;
