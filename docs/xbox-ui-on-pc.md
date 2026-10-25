@@ -3867,3 +3867,6 @@ four 1-pixel black borders (`LeftBorder`, `RightBorder`, `TopBorder`, `BottomBor
 `GuiLook/BlackLine`) that cover them in play. The port makes that HUD transparent as it loads
 (section 23): the four borders now keep their own alpha (`InheritsAlpha False`, `Alpha 1`).
 Reproduced and checked on GOG at 1280x800 under Proton; the owner saw it gone in play.
+PC's own main menu shows the same line at the left of its 3D view, without the mod too: at the
+owner's request two 1-pixel black lines of the same image are added under its root
+(`MAINMENUFRAME.LAYOUT`) at its left and top (`main_menu_borders`); the owner saw it gone.
