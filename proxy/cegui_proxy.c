@@ -756,10 +756,12 @@ void x360_inject_left(int down, float x, float y) {
 
 /* The build of Torchlight.exe this proxy was compiled for (tools/build_proxy.py --target): the
  * addresses in the sources are GOG's build 17870; for Steam's build 17685 the build substitutes
- * them from proxy/addresses_steam.txt and defines X360_TARGET_STEAM. In any other executable, or
- * in this one loaded away from its preferred base (Steam's has relocations), every part that
- * touches the executable's code or data (the pad, the 360's screens, the bag patch) stays off:
- * the converted scheme and layouts load through CEGUI and Ogre by name only. */
+ * them from proxy/addresses_steam.txt plus x360_reloc (Steam's executable has relocations and
+ * Windows may load it elsewhere) and defines X360_TARGET_STEAM. In any other executable, or GOG's
+ * away from its base (it has no relocations), every part that touches the executable's code or
+ * data (the pad, the 360's screens, the bag patch) stays off: the converted scheme and layouts
+ * load through CEGUI and Ogre by name only. Steam's is told by its timestamp alone; each patch
+ * still checks its bytes before it is made. */
 #ifdef X360_TARGET_STEAM
 #define X360_EXE_TIMESTAMP 0x4b5f7519UL
 #define X360_TARGET "Steam's build 17685"
@@ -768,15 +770,30 @@ void x360_inject_left(int down, float x, float y) {
 #define X360_TARGET "GOG's build 17870"
 #endif
 #define X360_EXE_BASE (4UL << 20)   /* the image base both builds are linked for */
+#ifdef X360_TARGET_STEAM
+#define X360_BASE_NOTE ""
+#else
+#define X360_BASE_NOTE " at its preferred base"
+#endif
 
-/* 1 if the process's executable is the build this proxy was made for, at its preferred base. */
+/* How far the executable was loaded from X360_EXE_BASE: Steam's build has relocations and Windows
+ * loads it elsewhere (the owner's Windows log, 2026-10-25: base 0x00b30000); the Steam build adds
+ * it to every address of the executable (tools/build_proxy.py); GOG's build has none, so 0. */
+unsigned long x360_reloc;
+
+/* 1 if the process's executable is the build this proxy was made for: GOG's at its base (it has no
+ * relocations), Steam's at any base, x360_reloc then being where it is. */
 int x360_exe_is_target(void) {
     unsigned char *base = (unsigned char *)GetModuleHandleA(0);
     unsigned char *nt;
     if (!base || base[0] != 'M' || base[1] != 'Z') return 0;
     nt = base + *(DWORD *)(base + 0x3c);
     if (nt[0] != 'P' || nt[1] != 'E' || nt[2] || nt[3]) return 0;
+#ifdef X360_TARGET_STEAM
+    return *(DWORD *)(nt + 8) == X360_EXE_TIMESTAMP;
+#else
     return *(DWORD *)(nt + 8) == X360_EXE_TIMESTAMP && (DWORD)base == X360_EXE_BASE;
+#endif
 }
 
 static unsigned short save_root_w[260];
@@ -843,9 +860,13 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
         open_log();
         read_config();
         put("built for " X360_TARGET "\r\n");
+        x360_reloc = (unsigned long)GetModuleHandleA(0) - X360_EXE_BASE;
+#ifdef X360_TARGET_STEAM
+        if (x360_reloc) { put("Torchlight.exe loaded at base "); put_hex((unsigned long)GetModuleHandleA(0)); put(": its addresses moved by that\r\n"); }
+#endif
         if (!x360_exe_is_target()) {
             unsigned char *base = (unsigned char *)GetModuleHandleA(0);
-            put("Torchlight.exe is not " X360_TARGET " at its preferred base (its timestamp ");
+            put("Torchlight.exe is not " X360_TARGET X360_BASE_NOTE " (its timestamp ");
             put_hex(base ? *(DWORD *)(base + *(DWORD *)(base + 0x3c) + 8) : 0);
             put(", base "); put_hex((unsigned long)base);
             put("): the pad, the 360's screens and the bag patch stay off\r\n");

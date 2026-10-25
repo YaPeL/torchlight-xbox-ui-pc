@@ -3819,3 +3819,19 @@ bag the saves are backed up first (as install does, the same questions when none
 the ini is written over the converted folder already in place; nothing is converted again. The
 wizard's "Change to the 360's bag" goes to the bag's screen and the summary, without the package.
 A test runs both installers' `set-bag` both ways (the ini, one backup, the converted files the same).
+
+## 40. Steam's executable moved by Windows (ASLR, 2026-10-25)
+
+The owner's Windows log with Steam's build: `Torchlight.exe is not Steam's build 17685 at its
+preferred base (… base 0x00b30000)`, so the mod stayed off there; on Linux (Proton) it worked.
+Steam's `Torchlight.exe` has `DYNAMIC_BASE` and a `.reloc` section; GOG's and Epic's have
+neither. Wine loads it at its base (0x400000), Windows anywhere. The Steam build now adds
+`x360_reloc` (the executable's base minus 0x400000, set first in DllMain) to every address it
+substitutes (`tools/build_proxy.py`: `(STEAM + x360_reloc)`, a literal's suffix inside), and
+accepts Steam's timestamp at any base (`Torchlight.exe loaded at base …: its addresses moved by
+that` in the log); the tables of addresses that were `static const` are automatic or computed, as
+a static initializer cannot hold the run-time value. The whole image moves by one delta (code,
+globals, vtables, the import table); no patch writes an absolute address, and the hooks' byte
+checks that hold one (the exception handlers' `push imm32`) compare it relocated; a mismatch
+leaves that hook off. GOG's build is unchanged (no substitution; `x360_reloc` 0, its base still
+required). Sections 16a, 16d and 16e's notes on the base are superseded by this one.
