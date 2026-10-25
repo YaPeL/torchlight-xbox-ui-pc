@@ -5882,6 +5882,7 @@ void x360_cinematic_skip(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
     /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
      * other layout of PC's has a window ending in Skip. */
+    if (qd_shown) return;   /* a talk: its own Start skips it (dialog_tick) */
     if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
     if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) press_pc(cin_prefix, "Skip");
     else x360_log("x360 menu: Start in a cinematic, PC's Skip not shown\r\n");
@@ -6123,6 +6124,20 @@ static void dialog_tick(void) {
     /* The frame's time, faster with X held. */
     if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
     qd_last = now;
+    /* Start skips the talk (the owner's look at the 360, 2026-10-24: it goes through the pages and
+     * accepts the quest they end with): Ok on each page, every 200 ms, until an Accept is pressed
+     * or no page has come for 1 s (the next page can be a new dialog). */
+    {
+        static unsigned skip_until, skip_last;
+        if (pressed & 0x0010) { skip_until = now + 1000; skip_last = 0; x360_log("x360 dialog: Start, the talk skipped\r\n"); }
+        if (skip_until && (int)(now - skip_until) < 0 && now - skip_last >= 200) {
+            int accept = pc_shown("Accept");
+            skip_last = now;
+            skip_until = now + 1000;
+            qd_press(accept ? "Accept" : "Ok");
+            if (accept) skip_until = 0;
+        } else if (skip_until && (int)(now - skip_until) >= 0) skip_until = 0;
+    }
     if (pressed & 0x1000) qd_press(pc_shown("Accept") ? "Accept" : "Ok");    /* A */
     if ((pressed & 0x2000) && pc_shown("Decline")) qd_press("Decline");       /* B */
     /* The rising text. */
@@ -7194,13 +7209,25 @@ static void boards_tick(void) {
         unsigned char *m = *(unsigned char **)(ui + shops[i].at);
         if (!m || *(unsigned *)m != shops[i].vtable) continue;
         if (i == 0) {
-            if (want_shop || inv_hidden) board_visible(m, shops[i].board, !want_shop);
+            /* Hidden for its closing too: shown again as the shop closed, PC's inventory's board was
+             * seen sliding away at the side (the owner's run of 2026-10-24; its panel answers open
+             * for about 330 ms after, logged by diag-shop-close). Shown again 1.5 s after. */
+            static unsigned inv_until;
+            unsigned t = GetTickCount();
+            if (want_shop) { board_visible(m, shops[i].board, 0); inv_until = 0; }
+            else if (inv_hidden) {
+                if (!inv_until) inv_until = (t + 1500) | 1;
+                if ((int)(t - inv_until) >= 0) { board_visible(m, shops[i].board, 1); inv_until = 0; inv_hidden = 0; }
+            }
             continue;
         }
         board_visible(m, shops[i].board, 0);
         if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
     }
-    inv_hidden = want_shop;
+    {
+        /* PC's inventory's board: hidden while a shop is open, and until 1.5 s after (above). */
+        if (want_shop) inv_hidden = 1;
+    }
 }
 
 /* PC's own bars (its CInteractiveMenu, CGameUI's +0x318, interactivemenu.layout: Root, TopBar,
