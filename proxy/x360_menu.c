@@ -8450,6 +8450,26 @@ static void nav_point(float x, float y) {
     if (w && ClientToScreen(w, pt)) SetCursorPos((int)pt[0], (int)pt[1]);
     x360_inject_left(-1, x, y);
 }
+/* A click on PC's window at (x, y): as the mouse's, a WM_LBUTTONDOWN and WM_LBUTTONUP to the game's
+ * window, whose handler (CGameUI's, GOG 0x53ff90: injectMouseButtonDown and Up, the game's only
+ * calls of them) injects it into CEGUI as the messages are pumped, before the frame's update.
+ * Injected from the frame listener instead, PC's main menu closed (CMainMenu's onClick, its
+ * setOpen(false) taking its root off at once *(OT)*) and the frame was drawn before the next
+ * screen opened: its title and bottom bar gone for an instant (the owner, 2026-10-25). Injected
+ * here only when the game's window is not the active one or the press cannot be posted. */
+static void nav_click(float x, float y) {
+    __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+    void x360_inject_left(int down, float x, float y);
+    HWND w = GetActiveWindow();
+    long lp = ((long)y & 0xffff) << 16 | ((long)x & 0xffff);
+    nav_point(x, y);
+    if (w && PostMessageW(w, 0x0201 /* WM_LBUTTONDOWN */, 1 /* MK_LBUTTON */, lp)) {
+        if (!PostMessageW(w, 0x0202 /* WM_LBUTTONUP */, 0, lp)) PostMessageW(w, 0x0202, 0, lp);   /* never a press left held */
+        return;
+    }
+    x360_inject_left(1, x, y);
+    x360_inject_left(0, x, y);
+}
 /* Windows' cursor, PC's own (CEGUI's is not the one shown): PC's 0x547ca0 (thiscall) sets it, as
  * the mouse moves, to its resource cursors 0x6a-0x6d (SetCursor(LoadCursorW(GetModuleHandleW(0),
  * id)) by its +0x106c), or none when its +0x60 is set. Hooked: none either while nav_cursor_off
@@ -8699,7 +8719,7 @@ static void pc_menus_nav_tick(void) {
             nav_point(x, y);
             /* A character slot is selected as the focus comes (its highlight, PC's own, shows it; as
              * the 360's list, where moving selects). */
-            if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
+            if (nav_kind(nav_list[pick]) == NAV_SLOT) nav_click(x, y);
         }
     }
     if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings && !wp)) {
@@ -8721,17 +8741,13 @@ static void pc_menus_nav_tick(void) {
             }
         if (hit >= 0) {
             float x = (r[hit].left + r[hit].right) * 0.5f, y = (r[hit].top + r[hit].bottom) * 0.5f;
-            nav_point(x, y);
-            x360_inject_left(1, x, y);
-            x360_inject_left(0, x, y);
+            nav_click(x, y);
             x360_log("x360 menu: B on PC's "); x360_log(c_str(gn(nav_list[hit], 0), 0)); x360_log("\r\n");
         }
     }
     if ((pressed & 0x1000) && nav_kind(nav_list[nav_focus]) != NAV_SLIDER && nav_kind(nav_list[nav_focus]) != NAV_COMBO) {
         float x = (r[nav_focus].left + r[nav_focus].right) * 0.5f, y = (r[nav_focus].top + r[nav_focus].bottom) * 0.5f;
-        nav_point(x, y);
-        x360_inject_left(1, x, y);
-        x360_inject_left(0, x, y);
+        nav_click(x, y);
         last_collect = 0;   /* the next screen's buttons */
         x360_log("x360 menu: A on PC's button\r\n");
     }

@@ -262,7 +262,7 @@ here. Games' texts are named by role, never quoted.
   once missed it. Now the tests stay patched until 2 s after the last frame at the shop.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
-## PC's main menu frame flickering away at a screen change (open)
+## PC's main menu frame flickering away at a screen change (fixed)
 
 - **What happened:** the owner (2026-10-25, every store): going from PC's main menu to the load
   or the creation screen and back, PC's frame (its title at the top, the bottom bar with the
@@ -271,10 +271,17 @@ here. Games' texts are named by role, never quoted.
   only with the pad's ticks. Not the shops' and the modal's 3D boards (hidden in play only: still
   seen), not PC's interactive bars (`pc_bars_off`, transparent in play only: still seen). Stopped
   after those two tries; at the owner's suggestion a third: not the cursor's hiding either (an
-  experiment with Windows' and CEGUI's cursors always shown: still seen). Next, by a diagnosis
-  build with each of the pad's out-of-play ticks switched off by an ini key, one run each:
-  `pc_menu_tick`'s cursor moves (`nav_point` on a new screen's first button), `hotkeys_off`,
-  `keys_off`, the HUD's tick, the frame listener's other ticks.
+  experiment with Windows' and CEGUI's cursors always shown: still seen).
+- **Cause:** the pad's clicks. PC injects a mouse click into CEGUI from its window's message handler
+  (CGameUI's, GOG `0x53ff90`, the game's only calls of `injectMouseButtonDown` and `Up`), as the
+  messages are pumped, before the frame's update; the pad injected its own from the frame listener,
+  after it. PC's main menu closes in its click handler, taking its root off at once *(OT)*, so the
+  frame was drawn before the next screen opened.
+- **Fix:** the pad's clicks on PC's menus (`nav_click`) are posted to the game's window as
+  `WM_LBUTTONDOWN` and `WM_LBUTTONUP`, PC's own path. The owner's run (2026-10-25): the frame no
+  longer vanishes.
+- **QA checklist:** the main menu to the load screen and to the creation screen and back, by the
+  pad: PC's frame never vanishes.
 
 ## QA checklist
 
