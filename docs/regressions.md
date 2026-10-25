@@ -187,6 +187,27 @@ here. Games' texts are named by role, never quoted.
   the frame it shows they already leave it the pad. QA
   checklist: a tip over the test-options notice (or over a dialog): A and B act on the tip only.
 
+## The test-options notice opened over a tip, neither closed (fixed on the branch notice-after-tip)
+
+- **What happened:** in the owner's GOG run of 2026-10-24 (evening, the branch audit-dead-hero) a
+  new game's welcome tip showed, and the mod's test-options notice (PC's modal) opened while the
+  tip was still up. The tip kept the pad (the entry above), and B and Y pressed the tip's Ok (a
+  click at its centre, logged), but nothing closed; the game could not be played.
+- **Why (not settled; the next run's log tells):** either PC's modal, opened last, is in front of
+  the tip and catches the click at the tip's Ok (its frame is moved away, not its root), or it
+  holds CEGUI's modal target. The second is less likely: PC's executable imports none of CEGUI's
+  modal-state calls (only CEGUIBase.dll exports them). Either way the entry above (a tip over the
+  notice) may have the same hole: it was never played after its fix.
+- **Should have been caught by:** the entry above, which covered a tip over the notice but not
+  the notice over a tip, nor where the tip's clicks go.
+- **Caught by:** the owner's run.
+- **Covered now:** the notice and the stop's modal wait while a tip is up (seen by the tip's tick
+  or PC's window shown; the stop's own time limit still holds); a press on the tip brings the tip's
+  sheet in front for the click and lets go of another window's modal target, if any, for it
+  (`x360 tip: another window was modal`); the window that got the click is logged (`x360 tip: the
+  click went to`). QA checklist: a new game with a test option on: the welcome tip closes with
+  B, then the notice shows and closes with A.
+
 ## QA checklist
 
 What a QA run checks by hand, from the entries above, besides the change it is for:
@@ -195,6 +216,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;
 - a tip over the test-options notice or a dialog: A and B act on the tip only;
+- a new game with a test option on: the welcome tip closes with B, then the notice shows and closes with A;
 - a new character's first inventory: its tip in front of it, B closing the tip only;
 - a cinematic with the stick held and the buttons pressed: the hero does nothing until it ends;
 - with no 360 screen open and no tip, nothing of the 360's tip shown (PC's Top UI Sheet hidden by PC
