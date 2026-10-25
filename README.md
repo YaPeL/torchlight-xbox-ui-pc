@@ -8,7 +8,7 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Alpha:** played with GOG's build under Proton on Linux, with Epic's and Steam's builds on
-> Windows, and on the Steam Deck (the installer and the game). Report problems in
+> Windows, and with Steam's on the Steam Deck (the installer and the game). Report problems in
 > [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
@@ -43,7 +43,8 @@ You need:
 
 - Torchlight for PC, from **Steam**, **GOG** or the **Epic Games Store**. All three have been
   played with the mod: GOG's under Proton on Linux, Epic's (its `Torchlight.exe` is GOG's, byte
-  for byte) and Steam's (an older build the mod is ported to) on Windows, and the Steam Deck.
+  for byte) and Steam's (an older build the mod is ported to) on Windows, Steam's also on the
+  Steam Deck.
 - Your Torchlight Xbox LIVE Arcade package (title 58410A7E, version 1.0.140.0), the file from your
   Xbox 360's storage, or a folder extracted from it.
 
