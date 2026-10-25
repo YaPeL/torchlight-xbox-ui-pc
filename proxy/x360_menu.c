@@ -2706,8 +2706,8 @@ static void transmute_swap(void) {
 /* The retirement's items (the 360's sub_8236B498: unit types 8 WEAPON, 13 ARMOR, 39 TRINKET, by
  * sub_821D7CE0; any other, nothing at all). */
 static int can_retire(unsigned char *item) { return item && (isa(item, 8) || isa(item, 13) || isa(item, 39)); }
-/* A at Goldenrod: the 360 retires at once, no confirmation (sub_8236B498 -> sub_82361B00, mode 4:
- * the item out of the hero's bag, renamed "<hero>'s <item>" the first time, its heirloom count up
+/* A at the retirement NPC: the 360 retires at once, no confirmation (sub_8236B498 -> sub_82361B00, mode 4:
+ * the item out of the hero's bag, renamed after the hero the first time, its heirloom count up
  * and its bonuses, handed to the descendant, the hero marked retired, the menu closed and the game
  * left). PC's act does the same work on the item in the hero's slot 14 (CEnchantMenu's 0x57a800,
  * mode 0x1b at 0x57c42f: removeEquipment, the rename while +0x22c is 0, 0x4c0090, +0x2478 and
@@ -2768,14 +2768,6 @@ void x360_retire_act(void) {
     }
     x360_log("x360 retire: the hero retired with "); log_item_name(item); x360_log("\r\n");
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
-    {   /* PC's side panels still not closed, logged (CGameUI's list at +0x16b8, the virtual +0xc) */
-        typedef unsigned char (__fastcall *test_fn)(void *self, void *edx);
-        void **b = *(void ***)(ui + 0x16b8), **e = *(void ***)(ui + 0x16bc);
-        for (; b && b < e; b++)
-            if (*b && ((test_fn)(*(void ***)*b)[3])(*b, 0)) {
-                x360_log("x360 retire: a side panel of PC's not closed, vtable "); x360_log_num((long)*(void **)*b); x360_log("\r\n");
-            }
-    }
     /* PC's act takes the item out of slot 14 itself; one left there is put back. */
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT) == item) {
         move_out(bag, item, ENCHANT_SLOT);
@@ -5195,7 +5187,7 @@ void x360_shop_tick(void) {
             at_enchant = mode;
             ench_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
-                     : mode == 0x1b ? "x360 shop: PC's enchant menu opened (Goldenrod, the retirement)\r\n"
+                     : mode == 0x1b ? "x360 shop: PC's enchant menu opened (the retirement NPC)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
         } else if (mode != logged_mode) {
@@ -5380,7 +5372,7 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     /* A does nothing in the merchant's column (sub_8236AA48, ISA 41); Y nothing at a merchant
      * (sub_8236A810, the merchant's menu: mode 4); X buys or sells there (sub_8236AD18). */
     /* At the transmuter (mode 5) A shows nothing and is not done here; Y transmutes. */
-    if ((pressed & 0x1000) && at_enchant == 0x1b) { retire(); refresh_all(); }               /* A at Goldenrod */
+    if ((pressed & 0x1000) && at_enchant == 0x1b) { retire(); refresh_all(); }               /* A at the retirement NPC */
     else if ((pressed & 0x1000) && at_enchant) { enchant(); refresh_all(); }                  /* A at the enchanter */
     else if ((pressed & 0x1000) && !panels[active_panel].is_shop && !at_transmute) { act(); refresh_all(); }    /* A */
     if ((pressed & 0x8000) && at_transmute) { transmute(); refresh_all(); }               /* Y */
@@ -5702,8 +5694,8 @@ static void target_tick(void) {
         int x360_overlay_open(void);
         if (x360_pad_buttons() & (0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000)) unit = *(unsigned char **)(hero + GOG_HERO_TARGET);
         if (!unit) unit = (unsigned char *)x360_pad_unit_target();
-        if (inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) unit = 0;
-        else if ((!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;
+        if (!(inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || x360_pause_open() || x360_pc_die_up || x360_pc_settings_up) &&
+            (!unit || !isa(unit, 104)) && attacked.unit) unit = (unsigned char *)attacked.unit;   /* no call on the unit under a screen: the check below clears it */
         /* Under a screen nothing (the owner: the bar over PC's pause menu); the 360's pause
          * covers its HUD. */
     }
@@ -5924,7 +5916,7 @@ void x360_hud_tick(void) {
  * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
  * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
  * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
- * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, the retirement NPC; not an enemy),
  * not the pet, with no 360 screen, dialog or modal open. The 360 places it at the unit's position
  * 1.0 up and 0.4 aside, projected and kept 26 pixels inside the screen (pool 0x820AA2C0 +64, +140,
  * +1608); the anchor below (interact_prompt). */
@@ -5959,7 +5951,7 @@ static int world_to_screen(const float *p, float sw, float sh, float *x, float *
  * agent's reading): hidden each frame, then shown over the unit that is the pad's current target
  * (the HUD's +72) when the player can interact with it (sub_821B8D70), no menu or modal is up, the
  * unit is not dead and not the player's own (its pet); its text is the layout's own. Here: the
- * pad's candidate from its second pass (any alignment: an NPC, a stash, Goldenrod; not an enemy),
+ * pad's candidate from its second pass (any alignment: an NPC, a stash, the retirement NPC; not an enemy),
  * not the pet, with no 360 screen, dialog or modal open. Placed as the 360's: the unit's position
  * 1.0 up and 0.4 aside on x and z (pool 0x820AA2C0 +64, +140), projected (sub_8233E1C0), its
  * top left there, kept between 0 and the screen less 26 pixels (of 720; +68, +1608). */
@@ -6011,7 +6003,7 @@ static void interact_prompt(void) {
         /* The 360's anchor (sub_821AB3F0.., the projection sub_8233E1C0 with its offset, the recomp
          * agent's reading): pos + (0.4, 1.0 - unit+348, 0.4) + the camera's up axis (its orientation's
          * Y, unit length). The 360's +348 measured on the recomp (2026-10-25): 0.8 for the units that
-         * stand (merchants, stashes, Goldenrod), 0.3 for the ones that walk (Syl, Trill-Bot, Alma);
+         * stand (merchants, stashes, the retirement NPC), 0.3 for the ones that walk;
          * PC's unit has it at the same +348 (logged on GOG: the same 0.8 and 0.3). The owner's capture
          * at the stash: the prompt within some 30 pixels of the 360's at 1080 (its camera not quite
          * the same). */
@@ -9215,7 +9207,7 @@ void x360_frame_tick(void) {
         /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
          * once as a shop closed, the world's width moved, two blue columns). */
         /* Not given back out of play: there PC's menus are not updated and a closing one (the
-         * enchant menu and the inventory after Goldenrod's retirement, which leaves play at once)
+         * enchant menu and the inventory after the retirement, which leaves play at once)
          * never ends, so the tests held PC's next state, the descendant's difficulty screen,
          * forever (the owner's runs; the panels logged not closed: CInventoryMenu, CEnchantMenu).
          * Given back once in play again, where their closing ends. */

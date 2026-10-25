@@ -3829,7 +3829,7 @@ an ImGui child window, and the pad's navigation stayed inside it: every body now
 `ImGuiChildFlags_NavFlattened` (Dear ImGui 1.92.5), so the d-pad goes on to the footer's buttons.
 In the bag's screen A chooses a bag and the d-pad reaches Next (or Start goes on): an A that also
 went on was dropped, a Selectable reporting one A at its press and its release on a slow frame
-(CI). Not run with a pad yet.
+(CI). Played by the owner with a pad on the Steam Deck (2026-10-25): every button reached.
 The screens' default items were focused by SetKeyboardFocusHere, asked before the item: inside a
 NavFlattened child it was never resolved, the focus left on the last screen's footer button of the
 same id (the wizard's tests: the bag's first option never focused, A took Next, the summary passed).
@@ -3850,7 +3850,8 @@ a static initializer cannot hold the run-time value. The whole image moves by on
 globals, vtables, the import table); no patch writes an absolute address, and the hooks' byte
 checks that hold one (the exception handlers' `push imm32`) compare it relocated; a mismatch
 leaves that hook off. GOG's build is unchanged (no substitution; `x360_reloc` 0, its base still
-required). Sections 16a, 16d and 16e's notes on the base are superseded by this one.
+required). Sections 16a, 16d and 16e's notes on the base are superseded by this one. Played by
+the owner on Windows with Steam's build after this change (2026-10-25): the mod on, the game played.
 
 ## 41. The world frozen under the 360's inventory, and the place's name kept (2026-10-25)
 
@@ -3890,18 +3891,18 @@ PC hides its bottom HUD, the four borders with it, and the line showed again (th
 the same two lines are added on the GUI sheet as play starts (`one_pixel_borders`, prefix
 `x360pb_`), shown while in play; the owner saw none at 1280x800 in a cinematic.
 
-## 43. Goldenrod's retirement (2026-10-25)
+## 43. The retirement NPC (2026-10-25)
 
-**[seen]** Talking to Goldenrod (the RetirementCharacter, in town after the game is won) opened
+**[seen]** Talking to the retirement NPC (the RetirementCharacter unit, in town after the game is won) opened
 PC's own window under the 360's HUD; the 360 shows its enchanter frame (the owner's capture): the
 first column a retirement page (a title, a paragraph on the heirloom, a red warning, the Retire
-prompt), then the hero's bag with its tabs, A "Retire" on the item, and the item's card over the
+prompt), then the hero's bag with its tabs, A labelled on the item, and the item's card over the
 pet's bag. **[read, 360; the recomp agent's reading, checked]** The interaction 27
 (`sub_821A83C8` at `0x821A8930`), below the settings' retirement age a message and no menu;
 otherwise CEnchantMenuXenon in mode 4 (`sub_82360CD0` shows its panel 14, the layout's `retire`).
 A (`sub_8236B498`) on the focused item, only a weapon, an armour or a trinket (unit types 8, 13,
 39), retires at once, no confirmation (`sub_82361B00`: the item out of the hero's bag, renamed
-"<hero>'s <item>" the first time, its heirloom count up and its bonuses, handed to the descendant,
+after the hero the first time, its heirloom count up and its bonuses, handed to the descendant,
 the hero marked retired, the menu closed and the game left). The frame's title and the A label are
 the string at `0x820CB084` (`sub_82376D48` id 11; `sub_8236C8D0`'s mode-4 label). **[read, GOG]**
 PC opens CEnchantMenu in mode `0x1b` for it, and its act (`0x57a800`, the mode's branch at
@@ -3919,7 +3920,7 @@ screen and its game.
 ## 44. The target bar and the "A Interact" prompt with the pad (2026-10-25)
 
 **[seen]** The owner's 360 captures: walking up to an NPC or a stash, the 360 shows the target bar
-(level, name, health, and the unit's description in gold: Goldenrod's role) and an "A Interact"
+(level, name, health, and the unit's description in gold: the retirement NPC's role) and an "A Interact"
 prompt over the unit; the port showed neither with the pad (its bar took the unit under the mouse
 or the one attacked; the prompt was hidden). **[read, 360; the recomp agent's reading and probes]**
 Both in the HUD update `sub_821A83C8`. The bar (`0x821A9124`-`0x821A9678`): while an attack or
