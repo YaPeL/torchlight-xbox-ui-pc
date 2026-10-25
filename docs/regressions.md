@@ -207,6 +207,59 @@ here. Games' texts are named by role, never quoted.
   (`x360 tip: another window was modal`); the window that got the click is logged (`x360 tip: the
   click went to`). QA checklist: a new game with a test option on: the welcome tip closes with
   B, then the notice shows and closes with A.
+## PC's menus' boards seen again after a merchant (fixed on the branch shop-boards-restore)
+
+- **What happened:** in the owner's GOG run of 2026-10-24 (evening), after leaving a merchant,
+  PC's menus were seen again; the 3D boards (the parchment PC draws behind its menus) are the
+  likely part.
+- **Why (a hypothesis):** the proxy hid the shops' boards while the 360's shop frame was open
+  and, as it closed, made every one of them visible again, PC's merchant's own among them.
+- **Should have been caught by:** QA runs 8-10 looked at the boards while the shop was open, not
+  after it closed.
+- **Caught by:** the owner's run.
+- **Covered now:** the merchant's, enchanter's, transmuter's and stash's boards are kept hidden
+  always, as the modal's (`x360 shop: a shop's board hidden for good`, once per menu): the 360's
+  screens show every one of them. PC's inventory's board stays hidden only while a shop is open,
+  as before: the 360's inventory draws its doll through that menu's scene, which the board's node
+  might hold (the review).
+- **Then (the owner's next run):** no board, but the world narrowed with blue strips after the
+  merchant, as before QA run 10's fix: PC's side-panel tests were given back as the shop closed,
+  while PC's merchant was still closing, and its boards no longer covered the strips. PC's
+  side-panel tests now answer closed while the shop frame is open and 2 s after it closes. Not
+  always: PC's client update (`0x41ba36`, `0x41ba42`) holds its game-state changes (a level
+  change, closing its menus and saving) while one of those tests is true, which must stay PC's
+  rule (the review). QA: after each shop, no blue strip; a level change and Exit to Title after a
+  shop behave as before.
+- **Still open (the owner's run of 2026-10-24, late; stopped after two failed hypotheses):** the
+  blue strips stay after a merchant although the side-panel tests are given back 2 s after the
+  shop closes (logged). So the world is narrowed by PC's own state after the 360's shop frame
+  closes, not by a closing animation: likely one of PC's side menus (its merchant menu, its
+  inventory) still counted open by PC after `shop_close`. Before this branch PC's boards, shown
+  again, covered those strips (the "menus seen again"). Next: dump which of CGameUI's side
+  panels (`+0x16b8`, their virtuals `+8` / `+0xc`) answer open after a shop, before choosing a
+  fix.
+- **Found (diag-shop-close, the owner's run):** after the shop frame closes PC's merchant's and
+  inventory's panels answer open for about 330 ms (their closing), then none. The owner: what
+  shows is the side panels sliding away, as they used to slide in. The one board the proxy shows
+  again at the close is PC's inventory's (kept for the 360's doll): it is now kept hidden until
+  1.5 s after the shop closes.
+- **Not fixed (the owner's next run):** the side panels still slide away at the close with PC's
+  inventory's board held hidden 1.5 s. Stopped (three tries on this point). Not yet tried: the
+  inventory's board hidden for good, checking the 360's doll; or finding what else PC draws for
+  its side menus' closing (the panel at `0xab8730` also answered open at the close).
+- **The owner's decision:** PC's inventory's board hidden for good too, as the other four; QA
+  checks that the 360's inventory still shows the hero's doll.
+- **Then (the owner's run):** still seen with all five boards hidden from the start: so not the
+  boards. Likely PC's 2D windows of its merchant and inventory menus, still closing (about 330 ms)
+  when the proxy showed PC's sheets again (`hide_pc_ui(0)`) at once as the 360's shop frame
+  closed. Now at a shop's close PC's sheets come back 600 ms later (`pc_ui_back_at`, checked in
+  `pc_menus_guard`).
+- **Then (the owner's run):** the panels' content no longer seen, but two blue columns still
+  moved at the close: the world's viewport narrowing (PC's `0x402603`..`0x4027f1` size it from
+  the side tests and the panels' widths, `0x541290`, `0x5411d0`). The log showed the tests given
+  back at once at a close, not 2 s after: the grace keyed on a change of the shop's state seen
+  once missed it. Now the tests stay patched until 2 s after the last frame at the shop.
+  QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist
 
@@ -214,6 +267,7 @@ What a QA run checks by hand, from the entries above, besides the change it is f
 
 - a waypoint's portals screen: a destination chosen with the d-pad and A, B cancels;
 - the hero's death: PC's resurrection screen's buttons chosen with the d-pad and A;
+- after a merchant, a stash and the enchanter are closed: none of PC's 3D boards is seen, and the 360's inventory still shows the hero's doll;
 - a level change and a load watched frame by frame: PC's HUDs and PC's modal's board never seen;
 - a new game's welcome tip watched frame by frame: PC's tip window never seen;
 - on Windows, the same: the 360's tip, and its `x360 tip:` line in the log;

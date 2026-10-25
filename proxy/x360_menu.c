@@ -587,6 +587,7 @@ static int hidden_count;
 static int is_ours(void *w);
 static void *pc_tip_layout_root;   /* PC's tip window's root (x360_pc_layout_loaded, below) */
 
+static unsigned pc_ui_back_at;   /* PC's sheets shown again then (a shop's close: hide_pc_ui's caller, pc_menus_guard) */
 static void hide_pc_ui(int hide) {
     static is_visible_fn is_visible;
     static int logged;
@@ -3220,7 +3221,11 @@ void x360_inventory_toggle(void) {
     chr_show(page < 2 && !shop);
     page_titles();
     if (inventory_open) move_to_front(master_root, 0);
-    hide_pc_ui(inventory_open);
+    /* At a shop's close PC's sheets come back 600 ms later: PC's merchant and inventory menus close
+     * for about 330 ms (diag-shop-close), and shown at once they were seen sliding away at the
+     * sides (the owner's runs of 2026-10-24). */
+    if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
+    else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
     if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
@@ -6865,7 +6870,8 @@ static void pc_menus_guard(void) {
     unsigned i;
     int closed = 0;
     if (!ui) return;
-    if (inventory_open) hide_pc_ui(1);
+    if (inventory_open || pc_ui_back_at) hide_pc_ui(1);   /* during the delay too: what PC shows again stays hidden */
+    if (!inventory_open && pc_ui_back_at && (int)(GetTickCount() - pc_ui_back_at) >= 0) { pc_ui_back_at = 0; hide_pc_ui(0); }
     if (shop) return;
     /* A shop's menu opens PC's inventory with it (the merchant, enchanter, transmuter, stash): left
      * to the shop's code (QA run 1: closing it closed the shop before the port saw it). */
@@ -7074,8 +7080,9 @@ static void keys_off(void) {
  * its modal frame moved away). A CMenu keeps its board at +0x38 (the modal, CGameUI's +0x304;
  * CMenu's update 0x574477 animates the entity at the board's +0x5c with Entity::_updateAnimation),
  * a shop's screen elsewhere (boards_tick's table, each read in its update). The entity is made invisible
- * (Ogre's MovableObject::setVisible, exported) while the 360's modal or shop frame covers them,
- * and visible again after. */
+ * (Ogre's MovableObject::setVisible, exported): the modal's and the shops' for good (the 360's
+ * screens show every one of them; the owner's run of 2026-10-24: made visible again as the shop
+ * closed, PC's boards were seen after a merchant). */
 static void board_visible(unsigned char *menu, unsigned at, int visible) {
     /* QA run 8: the entity alone made invisible left the boards seen. Now its scene node, with all
      * it carries (SceneNode::setVisible with cascade), never the scene's root (a node with no
@@ -7151,9 +7158,10 @@ static void boards_tick(void) {
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
-    static int modal_hidden, shop_hidden;
+    static int modal_hidden;
+    static unsigned char *shop_logged[sizeof shops / sizeof shops[0]];
     unsigned i;
-    int want_modal = modal_shown, want_shop = inventory_open && shop;   /* want_modal: the minimap's */
+    int want_modal = modal_shown;   /* the minimap's */
     if (!ui) return;
     modal_minimap(want_modal);
     {
@@ -7167,13 +7175,16 @@ static void boards_tick(void) {
             modal_hidden = 1;
         }
     }
-    if (want_shop || shop_hidden) {
-        for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
-            unsigned char *m = *(unsigned char **)(ui + shops[i].at);
-            if (m && *(unsigned *)m == shops[i].vtable) board_visible(m, shops[i].board, !want_shop);
-        }
-        if (shop_hidden != want_shop) x360_log(want_shop ? "x360 shop: PC's boards hidden\r\n" : "x360 shop: PC's boards shown again\r\n");
-        shop_hidden = want_shop;
+    /* The shops' boards kept hidden always, as the modal's: the 360's shop frame shows every one
+     * of PC's shop menus, and shown again as it closed they stayed seen after it (the owner's run
+     * of 2026-10-24, a merchant). Each menu's logged once. CInventoryMenu's too (the owner's
+     * decision, 2026-10-24: shown again after a shop, it was seen sliding away), though the 360's
+     * inventory draws its doll through that menu's scene (show_doll_of): QA checks the doll. */
+    for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
+        unsigned char *m = *(unsigned char **)(ui + shops[i].at);
+        if (!m || *(unsigned *)m != shops[i].vtable) continue;
+        board_visible(m, shops[i].board, 0);
+        if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
     }
 }
 
@@ -8525,7 +8536,19 @@ void x360_frame_tick(void) {
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
     __try { pc_bars_off(); } __except (1) { x360_log("x360 bars: exception hiding PC's\r\n"); }
-    __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
+    {
+        /* While the 360's shop frame is open, and 2 s after it closes: PC's merchant still closing
+         * narrowed the world, its strips blue with the boards hidden for good (the owner's run of
+         * 2026-10-24). Not always: the same tests hold PC's game-state changes back while a side
+         * panel is open (its client update, 0x41ba36), which must keep PC's rule (the review). */
+        static unsigned last_at_shop;   /* the last frame with the shop frame open (0: none yet) */
+        int at_shop = inventory_open && shop;
+        if (at_shop) last_at_shop = GetTickCount() | 1;
+        else if (last_at_shop && GetTickCount() - last_at_shop > 2000) last_at_shop = 0;
+        /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
+         * once as a shop closed, the world's width moved, two blue columns). */
+        __try { side_panels_test(last_at_shop != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
+    }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
     /* The tip first: on the frame it shows, the screens under it already leave it the pad. */
