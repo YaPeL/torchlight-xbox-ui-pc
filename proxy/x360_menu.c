@@ -5665,6 +5665,18 @@ void x360_pc_layout_loaded(const char *file, void *root) {
             pc_tip_layout_root = root;
         } else {
             __try { prop(root, "Alpha", "0"); pass_mouse(root); } __except (1) { return; }
+            if (i == 0) {
+                /* Its four 1-pixel black borders kept: PC's 3D view leaves its first row and column
+                 * uncovered at 16:10 (the Steam Deck's 1280x800: a blue line at the top and the left,
+                 * seen in PC's own main menu too), and these cover it in play; made transparent
+                 * with the rest, the line showed (the owner's Deck). */
+                static const char *const borders[] = {"LeftBorder", "RightBorder", "TopBorder", "BottomBorder"};
+                unsigned b;
+                for (b = 0; b < 4; b++) {
+                    void *w = descendant_ending(root, borders[b]);
+                    __try { prop(w, "InheritsAlpha", "False"); prop(w, "Alpha", "1"); } __except (1) { }
+                }
+            }
         }
         x360_log("x360 hud: PC's "); x360_log(hidden[i]); x360_log(" transparent as it loads\r\n");
     }
