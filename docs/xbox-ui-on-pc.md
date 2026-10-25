@@ -3713,3 +3713,10 @@ does that on Start: Ok on each page every 200 ms (the proxy's pace, not the 360'
 shown, which ends it; it stops too on a page with neither, under a tip, or when the talk closes.
 Only a shown button is pressed. `x360_cinematic_skip` leaves a talk to it, and `proxy/pad.c` does
 not open the pause on that Start.
+
+**Not working (the owner's run of 2026-10-24, late; stopped after two failed tries):** in play,
+after entering the mine, `0x541db0` held for a while with no talk shown and no Skip attached:
+twelve Starts logged `PC's Skip not shown` and nothing was skipped. So PC's in-play cinematics
+are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of its own, its
+CCinematicMenu's input) is not read. And a quest's talk comes as separate dialogs (shown, hidden,
+shown): the skip stops at the first hide, so it does not go through to the quest as the 360's.
