@@ -223,6 +223,10 @@ here. Games' texts are named by role, never quoted.
   shows is the side panels sliding away, as they used to slide in. The one board the proxy shows
   again at the close is PC's inventory's (kept for the 360's doll): it is now kept hidden until
   1.5 s after the shop closes.
+- **Not fixed (the owner's next run):** the side panels still slide away at the close with PC's
+  inventory's board held hidden 1.5 s. Stopped (three tries on this point). Not yet tried: the
+  inventory's board hidden for good, checking the 360's doll; or finding what else PC draws for
+  its side menus' closing (the panel at `0xab8730` also answered open at the close).
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist
