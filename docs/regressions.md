@@ -231,6 +231,19 @@ here. Games' texts are named by role, never quoted.
   change, closing its menus and saving) while one of those tests is true, which must stay PC's
   rule (the review). QA: after each shop, no blue strip; a level change and Exit to Title after a
   shop behave as before.
+- **Still open (the owner's run of 2026-10-24, late; stopped after two failed hypotheses):** the
+  blue strips stay after a merchant although the side-panel tests are given back 2 s after the
+  shop closes (logged). So the world is narrowed by PC's own state after the 360's shop frame
+  closes, not by a closing animation: likely one of PC's side menus (its merchant menu, its
+  inventory) still counted open by PC after `shop_close`. Before this branch PC's boards, shown
+  again, covered those strips (the "menus seen again"). Next: dump which of CGameUI's side
+  panels (`+0x16b8`, their virtuals `+8` / `+0xc`) answer open after a shop, before choosing a
+  fix.
+- **Found (diag-shop-close, the owner's run):** after the shop frame closes PC's merchant's and
+  inventory's panels answer open for about 330 ms (their closing), then none. The owner: what
+  shows is the side panels sliding away, as they used to slide in. The one board the proxy shows
+  again at the close is PC's inventory's (kept for the 360's doll): it is now kept hidden until
+  1.5 s after the shop closes.
   QA checklist: after a merchant, a stash and the enchanter, none of PC's boards is seen.
 
 ## QA checklist

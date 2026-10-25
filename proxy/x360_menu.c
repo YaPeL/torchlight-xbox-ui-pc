@@ -7209,13 +7209,25 @@ static void boards_tick(void) {
         unsigned char *m = *(unsigned char **)(ui + shops[i].at);
         if (!m || *(unsigned *)m != shops[i].vtable) continue;
         if (i == 0) {
-            if (want_shop || inv_hidden) board_visible(m, shops[i].board, !want_shop);
+            /* Hidden for its closing too: shown again as the shop closed, PC's inventory's board was
+             * seen sliding away at the side (the owner's run of 2026-10-24; its panel answers open
+             * for about 330 ms after, logged by diag-shop-close). Shown again 1.5 s after. */
+            static unsigned inv_until;
+            unsigned t = GetTickCount();
+            if (want_shop) { board_visible(m, shops[i].board, 0); inv_until = 0; }
+            else if (inv_hidden) {
+                if (!inv_until) inv_until = (t + 1500) | 1;
+                if ((int)(t - inv_until) >= 0) { board_visible(m, shops[i].board, 1); inv_until = 0; inv_hidden = 0; }
+            }
             continue;
         }
         board_visible(m, shops[i].board, 0);
         if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
     }
-    inv_hidden = want_shop;
+    {
+        /* PC's inventory's board: hidden while a shop is open, and until 1.5 s after (above). */
+        if (want_shop) inv_hidden = 1;
+    }
 }
 
 /* PC's own bars (its CInteractiveMenu, CGameUI's +0x318, interactivemenu.layout: Root, TopBar,
