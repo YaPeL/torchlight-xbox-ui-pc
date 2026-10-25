@@ -763,6 +763,7 @@ static int at_transmute;                     /* PC's transmuter menu is open (sh
 static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x19/0x1a gems) */
 static int tm_slot[4], tm_known;
 static int tm_from[4] = {-1, -1, -1, -1};   /* where X took the item in each place from, or -1 */
+static void *tm_from_inv[4];                /* and from which bag (the hero's, the pet's) */
 static unsigned char *tm_shop;               /* the transmuter unit while it is open */
 static int is_tm_slot(int slot) {
     int j;
@@ -2676,7 +2677,7 @@ static void transmute_swap(void) {
     if (j == 4) { shop_sound(24); x360_log("x360 transmuter: X: its places are full\r\n"); return; }
     move_out(inventory(), item, list_slot[selected[filter]]);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, tm_slot[j], 1);
-    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) == item) tm_from[j] = list_slot[selected[filter]];
+    if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) == item) { tm_from[j] = list_slot[selected[filter]]; tm_from_inv[j] = inventory(); }
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) != item) {
         /* Its place taken (or refused): the item back where it was, whatever is now there. */
         x360_log("x360 transmuter: X: not placed, back\r\n");
@@ -2743,7 +2744,8 @@ static void transmute(void) {
     ((void_fn)GOG_TRANSMUTE)(m, 0);
     for (j = 0; j < 4; j++) if ((bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0) != was[j]) same = 0;
     if (same && bag && tm_known) { shop_sound(24); x360_log("x360 transmuter: Y: no recipe (the sound 24)\r\n"); return; }
-    for (j = 0; j < 4; j++) tm_from[j] = -1;   /* its places hold the result now, PC's own */
+    for (j = 0; j < 4; j++)   /* a changed place holds the result now, PC's own; an ingredient left keeps its origin */
+        if ((bag && tm_known ? ((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]) : 0) != was[j]) tm_from[j] = -1;
     x360_log("x360 transmuter: Y: transmuted\r\n");
 }
 
@@ -4966,7 +4968,7 @@ static void pc_inventory_close(void) {
 }
 
 /* PC's transmuter, as it closes (CCombineMenu's setOpen, GOG 0x569220), gives each item in its
- * places back where its own map says it came from (0x568fe0: the map made as it opened, 0x567090;
+ * places back where its own map says it came from (0x568fe0: the map made as it opened;
  * the slot if it is free and at most 18, by 0x4ea200, else the bag by pickupEquipment). The items
  * the pad's X put there are not in that map as PC's drag puts them: an equipped sword was mapped
  * to its slot 0 when the transmuter opened, and closing left the hero two references to it, one
@@ -4985,7 +4987,10 @@ static void transmuter_give_back(void) {
         tm_from[j] = -1;
         if (from < 0 || !(item = (unsigned char *)((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, tm_slot[j]))) continue;
         move_out(bag, item, tm_slot[j]);
-        if (from <= 18 && !((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, from) && ((put_back_fn)GOG_PUT_BACK_AT)(bag, 0, item, from)) {
+        if (tm_from_inv[j] && tm_from_inv[j] != bag) {   /* the pet's: back to its bag, its slot if free */
+            if (give_back(tm_from_inv[j], from, item)) { x360_log("x360 transmuter: closing: an item given back to the pet's bag\r\n"); move_done(); continue; }
+        }
+        if (tm_from_inv[j] == bag && from <= 18 && !((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, from) && ((put_back_fn)GOG_PUT_BACK_AT)(bag, 0, item, from)) {
             x360_log("x360 transmuter: closing: an item given back to its slot "); x360_log_num(from); x360_log("\r\n");
         } else if (((pickup_fn)GOG_PICKUP_EQUIPMENT)(bag, 0, item, 1)) {
             x360_log("x360 transmuter: closing: an item given back to the bag\r\n");
@@ -4996,10 +5001,29 @@ static void transmuter_give_back(void) {
         move_done();
     }
 }
+/* Whoever closes PC's transmuter (the pad's B or Start through shop_close, a key, the game's
+ * closing of every menu), the items are given back first: its setOpen (CCombineMenu's vtable
+ * +0x1c, GOG 0x569220) is replaced in the vtable by this one, which gives them back on a close and
+ * calls PC's. */
+static set_bool_fn combine_set_open;
+static void __fastcall combine_set_open_hook(void *self, void *edx, int on) {
+    if (!on && ((unsigned char *)self)[COMBINE_OPEN]) __try { transmuter_give_back(); } __except (1) { move_cut_short(); }
+    combine_set_open(self, edx, on);
+}
+static void combine_hook_install(void) {
+    void **slot = (void **)0x00ab2c4c + MENU_SET_OPEN;   /* CCombineMenu's vtable */
+    unsigned long old;
+    if (combine_set_open) return;
+    if (*slot != (void *)0x00569220) { x360_log("x360 transmuter: its setOpen not as read: the give-back on closing left out\r\n"); combine_set_open = (set_bool_fn)1; return; }
+    if (!VirtualProtect(slot, 4, 0x04 /* PAGE_READWRITE */, &old)) return;
+    combine_set_open = (set_bool_fn)*slot;
+    *slot = (void *)combine_set_open_hook;
+    VirtualProtect(slot, 4, old, &old);
+    x360_log("x360 transmuter: its setOpen hooked (the pad's items given back on closing)\r\n");
+}
 static void shop_close(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + (at_enchant ? GOG_ENCHANT_MENU : at_transmute ? GOG_COMBINE_MENU : at_stash ? GOG_STASH_MENU : GOG_MERCHANT_MENU)) : 0;
     int open = m && (at_enchant ? m[ENCHANT_OPEN] : at_transmute ? m[COMBINE_OPEN] : m[MENU_OPEN]);
-    if (at_transmute) __try { transmuter_give_back(); } __except (1) { move_cut_short(); }
     shop_closing = 1;
     if (inventory_open) x360_inventory_toggle();
     shop_closing = 0;
@@ -5087,8 +5111,9 @@ void x360_shop_tick(void) {
     } else if (!shop && tm && tm[COMBINE_OPEN] && *(unsigned char **)(tm + COMBINE_OWNER)) {
         int j;
         if (inventory_open) x360_inventory_toggle();
-        for (j = 0; j < 4; j++) tm_slot[j] = ((int *)(tm + COMBINE_SLOTS))[j];
+        for (j = 0; j < 4; j++) { tm_slot[j] = ((int *)(tm + COMBINE_SLOTS))[j]; tm_from[j] = -1; tm_from_inv[j] = 0; }
         tm_known = 1;
+        combine_hook_install();
         shop = tm_shop = *(unsigned char **)(tm + COMBINE_OWNER);
         at_transmute = 1;
         left_column_for(2);

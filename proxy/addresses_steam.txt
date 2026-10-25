@@ -210,9 +210,8 @@
 0x00563478 0x0055e812 verified   comment window, near x2
 0x005636a9 0x0055ea43 verified   comment window, near x2
 0x005656a0 0x005609b0 verified   comment vtable, strings
-0x00567090 0x00470c50 verified   comment window 16, body +0x8,+0x18, callers x4
 0x00568fe0 0x005642d0 verified   comment window 16, body +0x8,+0x18,+0x28, callers 0x569441, 0x569534
-0x00569220 0x00564510 verified   comment vtable .?AVCCombineMenu@@+0x1c, body +0x38,+0x50,+0x78
+0x00569220 0x00564510 verified   code    vtable .?AVCCombineMenu@@+0x1c, body +0x38,+0x50,+0x78
 0x00569550 0x00564830 verified   code    window, body, callers
 0x00569663 0x00564930 verified   comment window, local
 0x0056a197 0x0056542b verified   comment window, local
