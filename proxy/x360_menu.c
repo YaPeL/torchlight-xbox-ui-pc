@@ -5854,7 +5854,10 @@ static void hud_tick(void) {
         }
     }
     /* The place's name stays with the 360's inventory open, as on the 360 (the owner, 2026-10-25). */
-    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open);   /* PC's own hiding counted otherwise */
+    /* PC's own hiding counted otherwise; while the port hides PC's sheets (a 360 screen, and the
+     * 600 ms after a shop until they come back) only the window's own (the owner: the name went
+     * off and on again as an NPC's menu closed). */
+    mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open || pc_ui_back_at || hidden_count);
     mirror_text("LargeMessageText");
     mirror_text("SmallMessageText");
     hud_stage = "target";
