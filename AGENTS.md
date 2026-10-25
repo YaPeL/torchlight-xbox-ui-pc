@@ -23,6 +23,8 @@ function and the rule read.
 - Ask before launching the game. When the user plays a run, do not touch the game (no input,
   screenshots or other runs) until `Torchlight.exe` ends.
 - The owner's saves are never touched; a run that could change one uses a backup first.
+  `tools/run_gog.sh` makes it with `tools/save_guard.py` (the folder of the run's own prefix,
+  the copy's hashes checked) and does not start if it fails; never back up a folder typed by hand.
 - Agents that share the machine coordinate before using it: ask before a build or a run while
   another agent may be measuring or running.
 

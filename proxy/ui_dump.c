@@ -25,7 +25,7 @@ FARPROC x360_need(const char *name);
 __declspec(dllimport) HANDLE __stdcall CreateFileA(const char *name, DWORD access, DWORD share, void *security,
                                                    DWORD disposition, DWORD flags, HANDLE templ);
 __declspec(dllimport) int __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD *written, void *ov);
-__declspec(dllimport) int __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *ov);
+DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
 __declspec(dllimport) int __stdcall CloseHandle(HANDLE file);
 __declspec(dllimport) int __stdcall DeleteFileA(const char *name);
 __declspec(dllimport) DWORD __stdcall GetModuleFileNameA(void *module, char *out, DWORD size);
@@ -384,17 +384,15 @@ void x360_ui_dump_poll(void) {
     static unsigned last;
     char path[600], name[80];
     unsigned now = GetTickCount(), i;
-    DWORD got = 0;
     HANDLE f;
     if (now - last < 250 && last) return;
     last = now;
     folder_path(path, sizeof path, "x360_dump.req", 0);
     f = CreateFileA(path, 0x80000000UL, 1, 0, 3, 0, 0);
     if (f == INVALID) return;
-    ReadFile(f, name, sizeof name - 1, &got, 0);
+    x360_read_text(f, name, sizeof name, 0);
     CloseHandle(f);
     DeleteFileA(path);
-    name[got] = 0;
     /* The name: letters, digits, '-' and '_' only, up to the first other character. */
     for (i = 0; name[i] && ((name[i] >= 'a' && name[i] <= 'z') || (name[i] >= 'A' && name[i] <= 'Z') ||
                             (name[i] >= '0' && name[i] <= '9') || name[i] == '-' || name[i] == '_'); i++) {}

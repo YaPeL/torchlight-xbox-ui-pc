@@ -58,6 +58,7 @@
 0x004949d0 0x00492970 verified   code    window, body, callers x6
 0x00494ab0 0x00492a50 verified   code    window, body, callers x6
 0x00494b30 0x00492ad0 verified   code    window, body, callers x5
+0x00494b67 0x00492b07 verified   comment window 16, local 0+16 in 0x494b30->0x492ad0
 0x0049511b 0x004930bb verified   comment window, local
 0x00499e10 0x00497dc0 verified   code    window, body, callers x4
 0x0049a390 0x00498340 verified   code    window, body, callers
@@ -67,6 +68,8 @@
 0x0049f88f 0x0049d6f3 verified   code    window, local
 0x0049f8ee 0x0049d752 verified   code    window, local
 0x004a2220 0x004a0040 verified   code    callers x3
+0x004a6930 0x004a46c0 verified   comment vtable .?AVCCharacter@@+0x150, vtable .?AVCMonster@@+0x150, body +0x58,+0x68,+0x78, callers 0x4dc691
+0x004a8062 0x004a5dd8 verified   code    window 48, local 0+24 in 0x4a6930->0x4a46c0
 0x004acd4b 0x004aaae5 checked    code    the loader loop's call of 0x4e6ce0 (Steam's 0x4e9480) before its push 0x7f test, in 0x4aa580 (0x4ac7c0's twin), read in Steam's disassembly
 0x004b2590 0x004b0230 verified   code    callers x3
 0x004b28f0 0x004b0570 verified   code    callers x5
@@ -235,6 +238,7 @@
 0x00591200 0x0058bd20 checked    code    by hand: vtable slot (COptionsMenu +0x18), strings 7 of 12, the same instructions but the prologue; the body windows chose a copy of it (0x5788b0)
 0x005920c0 0x00578ab3 single     comment window
 0x005980e7 0x00592b4d verified   comment window, local
+0x0059be40 0x00596940 verified   comment window 16, body +0x8,+0x18,+0x30
 0x0059f180 0x00599b40 verified   code    window, callers x6
 0x005a0330 0x0059acb0 verified   comment vtable, body
 0x005a58b0 0x005a0120 verified   comment window, body
@@ -266,6 +270,7 @@
 0x005ea120 0x005e4010 verified   code    callers x5
 0x005efa20 0x005e9750 verified   comment window, callers x6
 0x005f0f50 0x005eaf90 verified   code    callers x2
+0x005f4760 0x005ee7c0 verified   code    window 16, callers 0x59be70, 0x59beca, 0x5a109e, 0x5a111e
 0x005f9e70 0x005f3d10 verified   code    window, body, callers x4
 0x005f9f90 0x005f3e30 verified   code    window, callers x4, callers-global
 0x005fa360 0x005f4360 verified   code    window, body, callers-global, callers x5
@@ -296,7 +301,7 @@
 0x00ab7d04 0x00a8ee54 verified   code    rtti, refs
 0x00ab7d78 0x00a8eec8 verified   code    rtti, refs
 0x00ab7de0 0x00a8ef30 verified   code    rtti, refs x2
-0x00ab7ff0 0x00a8f140 verified   comment rtti, refs
+0x00ab7ff0 0x00a8f140 verified   code    rtti, refs
 0x00ab8730 0x00a8f880 verified   code    rtti, refs x2
 0x00ab87c4 0x00a8f914 verified   code    rtti, refs x2
 0x00aba608 0x00a91758 verified   code    refs x5; content equal (4 bytes)

@@ -24,7 +24,15 @@
  *   pad_edges=message                           the virtual button's edges as window messages
  *   pad_mode=direct                             option b: the proxy calls setDestination (GOG only)
  *   pad_face=0                                  the old movement, setDestination only (to compare)
+ *   pad_walk_factor=0                           no stick factor on the hero's speed (to compare; pad.c)
+ *   pad_walk_yaw=0                              the walk's direction from the screen probe, not the camera's yaw (to compare)
+ *   pad_dead_zone=0                             the sticks without the 360's dead zone, the old 0.24 threshold (to compare)
+ *   pad_walk_dest=0                             the old destination, 2 units every 0.1 s (to compare)
  *   pad_log=1                                   the pad's detailed diagnosis in the log (costly)
+ *   pad_replay=Z:\path\route.txt               a recorded stick instead of XInput (a test; pad.c)
+ *   pad_trace=1                                 the hero's path to x360_trace-<date>.csv (a test; pad.c)
+ *   pad_record=1                                the pad to x360_record-<date>.txt, a replay file, and
+ *                                               pad_trace with it (a test; pad.c)
  *   console=ITEM <item name>,3;MONEY 100        game console commands run once in play (test runs)
  *   dialog_fast_scroll=10                       how many times faster a dialog's text rises with X
  *                                               held (the 360's factor is not measured yet; 4 by default)
@@ -187,29 +195,86 @@ static char out_dir[400];
  * repository holds only the keys; a key not found gives "". */
 static char texts[196608];                   /* the 360 code's texts and both games' tips (--pc-pak) */
 static const char *text_key[1200], *text_value[1200];
-static int texts_count, texts_loaded;
+static int texts_count, texts_loaded, texts_full;
+
+/* text-lf: begin */
+/* Every text file the mod reads goes through here (x360_read_text): its line ends made LF in
+ * place, CRLF and a lone CR alike (Python's universal newlines), then a NUL after it. The
+ * installer writes its files with CRLF on Windows, and three bugs came of readers that did not
+ * expect it (docs/regressions.md, "The mod's texts read with CRLF"). Between the two markers a
+ * test compiles it on the host (tests/test_tools.py, TextLfTest). */
+static unsigned long x360_lf(char *s, unsigned long n) {
+    unsigned long r = 0, w = 0;
+    while (r < n) {
+        char c = s[r++];
+        if (c == '\r') {
+            if (r < n && s[r] == '\n') r++;
+            c = '\n';
+        }
+        s[w++] = c;
+    }
+    s[w] = 0;
+    return w;
+}
+/* text-lf: end */
+
+/* A text file's bytes into buf (size includes the NUL; 0 writes nothing), line ends made LF: the
+ * length then. *full, if given, says whether the file filled buf (it may have been cut). */
+DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full) {
+    DWORD got = 0;
+    if (!size) return 0;
+    if (!ReadFile(f, buf, size - 1, &got, 0)) got = 0;
+    if (full) *full = got == size - 1;
+    return (DWORD)x360_lf(buf, got);
+}
+
+/* texts-parse: begin */
+/* x360_strings.txt's lines, "KEY=VALUE", cut in place: keys[i] and values[i] point into buf. LF or
+ * CRLF (the installer writes the file with CRLF on Windows); a line without '=' is skipped. Between
+ * the two markers a test compiles it on the host (tests/test_tools.py, ProxyTextsTest). */
+static int x360_parse_texts(char *buf, const char **keys, const char **values, int max) {
+    char *line = buf;
+    int count = 0;
+    while (*line && count < max) {
+        char *end = line, *eq = 0;
+        while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
+        /* The line's own CR, before the cut: the check after it looked at the cut itself, so every
+         * text kept a CR on Windows and no tip of PC's matched (the owner's run, 2026-10-24). */
+        if (end > line && end[-1] == '\r') end[-1] = 0;
+        if (*end) *end++ = 0;
+        if (eq) { *eq = 0; keys[count] = line; values[count++] = eq + 1; }
+        line = end;
+    }
+    return count;
+}
+/* texts-parse: end */
+
+static int starts_with(const char *s, const char *prefix) {
+    while (*prefix) if (*s++ != *prefix++) return 0;
+    return 1;
+}
 
 static void load_texts(void) {
     char path[520];
-    DWORD got = 0, i, n = 0;
+    DWORD i, n = 0;
     HANDLE f;
-    char *line;
     texts_loaded = 1;
     if (!out_dir[0]) return;
     for (i = 0; out_dir[i] && n < 480; i++) path[n++] = out_dir[i];
     memcpy(path + n, "\\x360_strings.txt", 18);
     f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     if (f == INVALID_HANDLE) { put("x360: no x360_strings.txt (convert with --image)\r\n"); return; }
-    ReadFile(f, texts, sizeof texts - 1, &got, 0);
+    x360_read_text(f, texts, sizeof texts, &texts_full);
     CloseHandle(f);
-    texts[got] = 0;
-    for (line = texts; *line && texts_count < 1200;) {
-        char *end = line, *eq = 0;
-        while (*end && *end != '\n') { if (*end == '=' && !eq) eq = end; end++; }
-        if (*end) *end++ = 0;
-        if (end > line && end[-1] == '\r') end[-1] = 0;
-        if (eq) { *eq = 0; text_key[texts_count] = line; text_value[texts_count++] = eq + 1; }
-        line = end;
+    texts_count = x360_parse_texts(texts, text_key, text_value, 1200);
+    {
+        int tips = 0;
+        for (i = 0; i < (DWORD)texts_count; i++)
+            if (starts_with(text_key[i], "pctip.")) tips++;
+        put("x360: x360_strings.txt: "); put_dec((unsigned long)texts_count);
+        put(" texts, "); put_dec((unsigned long)tips); put(" of PC's tips");
+        if (texts_full || texts_count == 1200) put(" (the file cut: over the reader's room)");
+        put("\r\n");
     }
 }
 
@@ -260,16 +325,20 @@ void x360_load_hook_install(void);
 
 void x360_test_options_notice(const char *names);
 static void read_config(void) {
-    char path[520], text[1024], *line, test_names[160];
-    DWORD n = GetModuleFileNameA(self_module, path, 500), got = 0;
+    static char text[4096];   /* static: over a page on the stack needs __chkstk, which is in the CRT */
+    char path[520], *line, test_names[160];
+    DWORD n = GetModuleFileNameA(self_module, path, 500);
     HANDLE f;
     while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
     memcpy(path + n, "x360_ui.ini", 12);
     f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     if (f == INVALID_HANDLE) { put("no x360_ui.ini: mode log\r\n"); return; }
-    ReadFile(f, text, sizeof text - 1, &got, 0);
+    {
+        int full;
+        x360_read_text(f, text, sizeof text, &full);
+        if (full) put("x360_ui.ini over 4 KB: the rest is not read\r\n");
+    }
     CloseHandle(f);
-    text[got] = 0;
     test_names[0] = 0;
     for (line = text; *line;) {
         char *end = line;
@@ -277,7 +346,7 @@ static void read_config(void) {
         if (*end) *end++ = 0;
         {
             /* The test options (runs on copies): named in a notice on screen (x360_menu.c). */
-            static const char *const tests[] = {"save_root=", "hold_saves=", "pad_detect=", "console=", "test_", 0};
+            static const char *const tests[] = {"save_root=", "hold_saves=", "pad_detect=", "console=", "test_", "pad_replay=", "pad_trace=", "pad_record=", 0};
             int k;
             for (k = 0; tests[k]; k++)
                 if (starts(line, tests[k])) {
@@ -296,6 +365,19 @@ static void read_config(void) {
         if (starts(line, "pad_mode=direct")) pad_direct = 1;
         if (starts(line, "pad_face=0")) pad_old_face = 1;
         if (starts(line, "pad_log=1")) pad_log = 1;
+        if (starts(line, "pad_walk_factor=0")) { extern int x360_walk_factor_on; x360_walk_factor_on = 0; }
+        if (starts(line, "pad_walk_yaw=0")) { extern int x360_walk_yaw; x360_walk_yaw = 0; }
+        if (starts(line, "pad_dead_zone=0")) { extern int x360_stick_dead_zone; x360_stick_dead_zone = 0; }
+        if (starts(line, "pad_walk_dest=0")) { extern int x360_walk_dest_on; x360_walk_dest_on = 0; }
+        if (starts(line, "pad_trace=1")) { extern int x360_pad_trace; x360_pad_trace = 1; }
+        if (starts(line, "pad_record=1")) {   /* the pad recorded, and the hero traced with it */
+            extern int x360_pad_record, x360_pad_trace;
+            x360_pad_record = x360_pad_trace = 1;
+        }
+        if (starts(line, "pad_replay=")) {
+            extern char x360_pad_replay[400];
+            if (length(line + 11) < 400) memcpy(x360_pad_replay, line + 11, length(line + 11) + 1);
+        }
         if (starts(line, "dialog_pc=1")) { extern int x360_dialog_pc; x360_dialog_pc = 1; }
         if (starts(line, "font_diff=1")) { extern int x360_font_diff; x360_font_diff = 1; }
         if (starts(line, "dump_targets=1")) { extern int x360_dump_targets; x360_dump_targets = 1; }
@@ -751,6 +833,10 @@ static void save_root_install(void) {
 void *x360_self_module(void) { return self_module; }
 
 BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
+    if (reason == 0) {   /* DLL_PROCESS_DETACH: the measurement's files written to their end */
+        void x360_pad_shutdown(void);
+        x360_pad_shutdown();
+    }
     if (reason == 1) {
         self_module = module;
         DisableThreadLibraryCalls(module);

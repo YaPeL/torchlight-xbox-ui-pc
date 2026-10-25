@@ -587,6 +587,7 @@ static int hidden_count;
 static int is_ours(void *w);
 static void *pc_tip_layout_root;   /* PC's tip window's root (x360_pc_layout_loaded, below) */
 
+static unsigned pc_ui_back_at;   /* PC's sheets shown again then (a shop's close: hide_pc_ui's caller, pc_menus_guard) */
 static void hide_pc_ui(int hide) {
     static is_visible_fn is_visible;
     static int logged;
@@ -3008,6 +3009,7 @@ int x360_inventory_open(void) { return inventory_open; }
 
 /* The pad's Back: the 360's inventory on or off. */
 void x360_run_console(void);
+void x360_pad_shutdown(void);   /* pad.c: the measurement's files written before a stop ends the process */
 
 static int petcmd_open;
 static void petcmd_show(int on);
@@ -3219,7 +3221,11 @@ void x360_inventory_toggle(void) {
     chr_show(page < 2 && !shop);
     page_titles();
     if (inventory_open) move_to_front(master_root, 0);
-    hide_pc_ui(inventory_open);
+    /* At a shop's close PC's sheets come back 600 ms later: PC's merchant and inventory menus close
+     * for about 330 ms (diag-shop-close), and shown at once they were seen sliding away at the
+     * sides (the owner's runs of 2026-10-24). */
+    if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
+    else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
     if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
@@ -4834,7 +4840,8 @@ int x360_pause_open(void) { return pause_open || howto_open || pc_pause_open(); 
 
 /* The pad in play: Start opens the pause menu; while it (or How To Play) is open, its keys. */
 static int x360_pc_settings_up;   /* PC's settings shown (pc_menus_nav_tick) */
-int x360_pc_menu_up(void) { return x360_pc_settings_up; }
+static int x360_pc_die_up;        /* PC's resurrection screen has the pad (pc_menu_tick) */
+int x360_pc_menu_up(void) { return x360_pc_settings_up || x360_pc_die_up; }
 unsigned x360_pad_eaten;          /* buttons PC's menus used, kept from the play pad until let go (proxy/pad.c) */
 void x360_pause_pad(unsigned pressed, int ly) {
     static int held;
@@ -4962,30 +4969,35 @@ static void left_column_for(int stash) {
     for (j = 0; j < 6; j++) { panels[2].selected[j] = kept[kind].selected[j]; panels[2].top[j] = kept[kind].top[j]; }
 }
 
-/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window CEGUI
- * has under the mouse (System::getWindowContainingMouse), its name and its parents'. */
-static void log_click_window(void) {
+/* The window CEGUI has under the mouse (System::getWindowContainingMouse), its name and its
+ * parents', logged after label. */
+static void log_under_mouse(const char *label) {
     typedef void *(__fastcall *under_fn)(const void *self, void *edx);
     typedef const void *(__fastcall *name_fn)(const void *self, void *edx);
     typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
     static under_fn under; static name_fn gn; static parent_fn gp;
-    static int was_down;
-    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
     void *sys, *w;
     int depth = 0;
-    if (down == was_down) return;
-    was_down = down;
-    if (!down) return;
     if (!under) under = (under_fn)need("?getWindowContainingMouse@System@CEGUI@@QBEPAVWindow@2@XZ");
     if (!gn) gn = (name_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
     sys = system_ptr();
     if (!under || !gn || !gp || !sys) return;
     w = under(sys, 0);
-    x360_log("x360 click: under the mouse");
+    x360_log(label);
     for (; w && depth < 6; w = gp(w, 0), depth++) { x360_log(depth ? " < " : " "); x360_log(c_str(gn(w, 0), 0)); }
     if (!depth) x360_log(" nothing");
     x360_log("\r\n");
+}
+
+/* A diagnosis (PC's dialogs did not take a click, docs 14): at each left click, the window under
+ * the mouse. */
+static void log_click_window(void) {
+    static int was_down;
+    int down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+    if (down == was_down) return;
+    was_down = down;
+    if (down) log_under_mouse("x360 click: under the mouse");
 }
 
 void x360_shop_tick(void) {
@@ -5115,6 +5127,9 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         else x360_inventory_toggle();
         return;
     }
+    /* Start at an NPC's screen closes it, as Back (the owner's look at the 360, 2026-10-24; the
+     * 360's frame update closes the open menus on Start, sub_8233E998). */
+    if ((pressed & 0x0010) && shop) { shop_close(); return; }
     /* LT and RT: the page before and after (sub_82377990, sub_82377928); a merchant's frame has
      * one page. */
     if ((pressed & (0x10000 | 0x20000)) && !shop) {
@@ -5864,6 +5879,32 @@ static void press_pc(const char *prefix, const char *name) {
 
 static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
 
+/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
+ * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), a left click at its centre
+ * (press_pc). */
+void x360_cinematic_skip(void) {
+    static char cin_prefix[64];
+    static const char *const needs[] = {"DialogTextFrame", 0};
+    /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
+     * other layout of PC's has a window ending in Skip. */
+    int x360_overlay_open(void);
+    if (qd_shown || x360_overlay_open()) return;   /* a talk, a modal, fishing, a tip: Start does nothing there, and no Escape reaches PC's screen under them (the release review) */
+    if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
+    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) { press_pc(cin_prefix, "Skip"); return; }
+    /* In play no Skip is shown: PC's Escape skips it, as the 360's Start (the owner, 2026-10-24),
+     * posted to the game's window (keys_proc lets it through while the cinematic holds). */
+    {
+        __declspec(dllimport) int __stdcall PostMessageW(HWND w, unsigned msg, unsigned wparam, long lparam);
+        extern HWND x360_keys_window(void);
+        HWND w = x360_keys_window();
+        if (w) {
+            PostMessageW(w, 0x100, 0x1b, 0x00010001);           /* WM_KEYDOWN Esc (scan code 1) */
+            PostMessageW(w, 0x101, 0x1b, (long)0xc0010001);     /* WM_KEYUP */
+            x360_log("x360 menu: Start in a cinematic, Escape posted\r\n");
+        } else x360_log("x360 menu: Start in a cinematic, no Skip and no game window\r\n");
+    }
+}
+
 /* The first non-empty Image of w or a window under it. */
 static void first_image_under(void *w, char *out, unsigned size) {
     void *stack[64];
@@ -5954,8 +5995,47 @@ static void quest_marker(int hide) {
     }
 }
 
+static int qd_reward;   /* the reward item the stick selected (the 360's +464), -1 none */
+static int qd_card;     /* the 360's item card shown for a reward (fill_card's card 0) */
+static void *qd_card_item;   /* its item */
+/* The selected slot drawn over the highlight (the 360's capture: the gold frame around, the item's
+ * icon over it; the rollover image's centre is opaque, so the slot comes in front with its own
+ * background image off, given back when the selection goes). */
+static void *qd_lifted;
+static char qd_lifted_image[96];
+static void qd_lift(void *bkg) {
+    if (qd_lifted == bkg) return;
+    if (qd_lifted) prop(qd_lifted, "Image", qd_lifted_image);
+    qd_lifted = bkg;
+    if (!bkg) return;
+    read_prop(bkg, "Image", qd_lifted_image, sizeof qd_lifted_image);
+    prop(bkg, "Image", "");
+    move_to_front(bkg, 0);
+}
+static void nav_point(float x, float y);   /* below: the hidden cursor moved */
+/* The reward item i of the quest PC's dialog offers, 0 if none: PC's own mouse-over (GOG 0x59be40,
+ * CQuestDialogMenu::handle_MouseOver *(OT)*) takes CGameUI's +0x2fc, its dialog at +0x98, that
+ * dialog's quest at +8, the quest's rewards at +0x150 and their items' list from 0x5f4760
+ * (getRewardItems *(OT)*: the data, the count at +4, the capacity at +8). */
+static void *qd_reward_item(int i) {
+    typedef unsigned char *(__fastcall *list_fn)(void *self, void *edx);
+    void *found = 0;
+    __try {
+        unsigned char *menu = ui ? *(unsigned char **)(ui + 0x2fc) : 0;
+        if (menu && *(unsigned *)menu != 0x00ab7ff0) menu = 0;   /* CQuestDialogMenu's vtable */
+        unsigned char *dlg = menu ? *(unsigned char **)(menu + 0x98) : 0;
+        unsigned char *quest = dlg ? *(unsigned char **)(dlg + 8) : 0;
+        unsigned char *rw = quest ? *(unsigned char **)(quest + 0x150) : 0;
+        unsigned char *list = rw ? ((list_fn)0x005f4760)(rw, 0) : 0;
+        if (list && i >= 0 && i < *(int *)(list + 4) && (unsigned)i < *(unsigned *)(list + 8)) found = (*(void ***)list)[i];
+    } __except (1) { found = 0; }
+    return found;
+}
 static void qd_show(int on) {
     if (on == qd_shown) return;
+    qd_reward = -1;
+    if (qd_card) { hide_card(0); qd_card = 0; }
+    qd_lift(0);
     quest_marker(on);
     qd_shown = on;
     if (!on) overlay_closed_at = GetTickCount();
@@ -5972,6 +6052,7 @@ static void qd_show(int on) {
 
 /* The pad's A on an NPC (proxy/pad.c): PC's dialog is looked for at every frame for a while,
  * not every 250 ms (run B: PC's showed for a moment the first time). */
+int x360_tip_open(void);   /* the tip has the pad over the 360's other screens (tip_tick) */
 static unsigned dialog_expected_at;
 void x360_dialog_expect(void) { dialog_expected_at = GetTickCount(); }
 
@@ -6076,6 +6157,24 @@ static void dialog_tick(void) {
             first_image_under(win_of(pc_qd_prefix, slot), v, sizeof v);
             prop(win_of(QD_PREFIX, slot), "Image", v);
             {
+                /* The icon square, as the 360 draws it (the owner's capture: not stretched over the
+                 * slot's 40x65 window): the window made as tall as it is wide, its middle kept. */
+                static unsigned char squared[4];
+                void *sw = win_of(QD_PREFIX, slot);
+                char rr[128];
+                float q[8], wdt, hgt;
+                if (sw && !squared[i]) {
+                    read_prop(sw, "UnifiedAreaRect", rr, sizeof rr);
+                    if (parse_rect(rr, q) && (wdt = q[5] - q[1]) > 0 && (hgt = q[7] - q[3]) > wdt) {
+                        q[3] += (hgt - wdt) * 0.5f;
+                        q[7] = q[3] + wdt;
+                        write_rect(rr, q);
+                        prop(sw, "UnifiedAreaRect", rr);
+                    }
+                    squared[i] = 1;
+                }
+            }
+            {
                 /* Its empty sockets: PC's overlay over the slot (QuestRewardSocketsO, "onesocketglow",
                  * "twosocketglow"); the 360's EmptySocketN_0 and _1 shown for as many. */
                 char e[24];
@@ -6087,7 +6186,63 @@ static void dialog_tick(void) {
                 }
             }
         }
-        show(win_of(QD_PREFIX, "ItemHighlight"), 0);
+        /* The left stick's left and right select a reward item (the 360's pad, sub_82357ED0: codes
+         * 19 and 20 move +464 by one; sub_82358058 wraps it from -1, none, to the last and back,
+         * puts ItemHighlight (+440) on the slot (+408) and the item in the item tooltip there;
+         * the d-pad does nothing). Here the highlight on the 360's slot, and the cursor (hidden)
+         * on PC's slot, where PC shows that item's card as its hover does (the owner, 2026-10-24:
+         * the stick did nothing). */
+        {
+            int x360_pad_lx(void);
+            static int held;
+            int lx = x360_tip_open() ? 0 : x360_pad_lx(), dir = lx < -500 ? -1 : lx > 500 ? 1 : 0;
+            if (dir && !held && items > 0) {
+                qd_reward += dir;
+                if (qd_reward < -1) qd_reward = items - 1;
+                if (qd_reward >= items) qd_reward = -1;
+                if (qd_card) { hide_card(0); qd_card = 0; }
+                if (qd_reward < 0) qd_lift(0);
+                if (qd_reward >= 0) {
+                    typedef struct { float top, bottom, left, right; } rect6;
+                    typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+                    static pixel_rect_fn6 rect_of;
+                    char slot[16], r[128];
+                    void *item = qd_reward_item(qd_reward), *bkg;
+                    float h;
+                    rect6 br;
+                    copy(slot, sizeof slot, "ItemBkg", 0); slot[7] = (char)('1' + qd_reward); slot[8] = 0;
+                    bkg = win_of(QD_PREFIX, slot);
+                    read_prop(bkg, "UnifiedPosition", r, sizeof r);   /* its place only, as the 360 (+248) */
+                    prop(win_of(QD_PREFIX, "ItemHighlight"), "UnifiedPosition", r);
+                    qd_lift(bkg);
+                    /* The item's card, the 360's (the inventory's, fill_card), where the 360 draws
+                     * it (the owner's captures of the 360 and the port, 2026-10-24, 1920x1080): its
+                     * right edge 6 % of the slot's width into the slot, its middle at the slot's;
+                     * its size is its text's (the 360's in Spanish there, wider). */
+                    if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+                    h = item ? fill_card(0, item, 0, 0) : 0;
+                    if (h > 0) { qd_card = 1; qd_card_item = item; }   /* shown by fill_card: tracked whatever follows */
+                    if (h > 0 && bkg && rect_of) {
+                        fresh_rects(bkg);
+                        rect_of(bkg, 0, &br);
+                        place_card(0, br.left + 0.06f * (br.right - br.left) - card_width(0), 0, (br.top + br.bottom) * 0.5f - h * 0.5f);
+                    }
+                    nav_point(1.0f, 1.0f);   /* the hidden cursor off PC's slots: no hover card of PC's too */
+                    if (!item) x360_log("x360 dialog: no item for that reward\r\n");
+                }
+                x360_log("x360 dialog: reward item "); x360_log_num(qd_reward); x360_log("\r\n");
+            }
+            held = dir != 0;
+            /* The selection dropped when the slots or their item change under it (the talk's next
+             * page or quest): no card left on an item no longer offered. */
+            if (qd_reward >= items || (qd_card && qd_reward_item(qd_reward) != qd_card_item)) {
+                qd_reward = -1;
+                if (qd_card) { hide_card(0); qd_card = 0; }
+                qd_lift(0);
+            }
+        }
+        show(win_of(QD_PREFIX, "ItemHighlight"), qd_reward >= 0);
+        if (qd_card && card_root(0)) move_to_front(card_root(0), 0);   /* the card over the 360's dialog */
         /* "Rewards" with the stick's prompt when there are items (town/04; not town/13). */
         show(win_of(QD_PREFIX, "RewardsTooltip"), items > 0);
     }
@@ -6095,9 +6250,14 @@ static void dialog_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~qd_prev_buttons;
     qd_prev_buttons = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     /* The frame's time, faster with X held. */
     if (qd_last) qd_t += (float)(now - qd_last) / 1000.0f * (buttons & 0x4000 ? (float)x360_dialog_fast_scroll : 1.0f);
     qd_last = now;
+    /* Start and Back do nothing in a talk (the owner's look at the 360, 2026-10-24: so in a quest's
+     * talk; a common talk is closed by them there, but its first pages look the same as a quest's,
+     * Ok only, and the port has no sign of which it is yet). proxy/pad.c keeps them from the pause
+     * and the inventory. */
     if (pressed & 0x1000) qd_press(pc_shown("Accept") ? "Accept" : "Ok");    /* A */
     if ((pressed & 0x2000) && pc_shown("Decline")) qd_press("Decline");       /* B */
     /* The rising text. */
@@ -6372,6 +6532,7 @@ static void fishing_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     if (pressed & 0x1000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 0xe); x360_log("x360 fishing: A (PC's command 0xe)\r\n"); }
     if (pressed & 0x2000) { ((cmd_fn)(*(void ***)m)[5])(m, 0, 6); x360_log("x360 fishing: B (PC's command 6)\r\n"); }
 }
@@ -6454,17 +6615,41 @@ static int pc_tip_up(void) {
  * brought in front again. */
 static void press_tip(const char *name) {
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+    typedef void *(__fastcall *get_target_fn)(const void *self, void *edx);
+    typedef void (__fastcall *set_target_fn)(void *self, void *edx, void *w);
     static vis_fn vis;
-    void *top = pc_tip_sheet();
-    int was_hidden;
+    static get_target_fn get_target;
+    static set_target_fn set_target;
+    static parent_of_fn gp;
+    void *top = pc_tip_sheet(), *sys = system_ptr(), *target = 0, *up;
+    int was_hidden, depth = 0;
     if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!get_target) get_target = (get_target_fn)need("?getModalTarget@System@CEGUI@@QBEPAVWindow@2@XZ");
+    if (!set_target) set_target = (set_target_fn)need("?setModalTarget@System@CEGUI@@QAEXPAVWindow@2@@Z");
+    if (!gp) gp = (parent_of_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    /* A window opened over the tip (PC's modal, as the mod's notice: the owner's run of
+     * 2026-10-24, where the tip's clicks closed nothing) must not take the click: the tip's sheet
+     * in front for it, and another window's CEGUI modal target, if any, let go for the click
+     * only. Which window got it is logged (the cause is not settled). */
+    if (sys && get_target && set_target && gp) {
+        target = get_target(sys, 0);
+        for (up = target; up && depth++ < 32; up = gp(up, 0))
+            if (up == top) { target = 0; break; }
+        if (target) { set_target(sys, 0, 0); x360_log("x360 tip: another window was modal, let go for the click\r\n"); }
+    }
     was_hidden = top && vis && !vis(top, 0, 1);
     if (was_hidden) set_visible(top, 0, 1);
-    if (top && inventory_open) move_to_front(top, 0);
+    if (top) move_to_front(top, 0);
     press_pc(pc_tip_prefix, name);
+    log_under_mouse("x360 tip: the click went to");
     if (was_hidden) set_visible(top, 0, 0);
     if (inventory_open && master_root) move_to_front(master_root, 0);
+    if (target && !get_target(sys, 0)) set_target(sys, 0, target);
 }
+
+/* A tip up: the 360's shown, or PC's window shown and not yet seen by tip_tick (which runs after
+ * the notice and the stop). PC's modal is not opened over it: it would take the tip's clicks. */
+static int tip_up_now(void) { return x360_tip_open() || (pc_tip_prefix[0] && pc_tip_up()); }
 
 /* PC's tip window seen (alpha 1) or not (0): its root, made transparent as it loaded, and its Frame. */
 static void pc_tip_alpha(const char *a) {
@@ -6728,6 +6913,7 @@ static void modal_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
+    if (x360_tip_open()) buttons = pressed = 0;   /* a tip shown over it has the pad (drawn in front: the owner's run) */
     if (pressed & 0x1000) { modal_frame_away(0); press_pc(pc_modal_prefix, pc_shown_in(pc_modal_prefix, "Accept") ? "Accept" : "Ok"); }   /* A */
     if ((pressed & 0x2000) && pc_shown_in(pc_modal_prefix, "Decline")) { modal_frame_away(0); press_pc(pc_modal_prefix, "Decline"); }   /* B */
 }
@@ -6830,7 +7016,8 @@ static void pc_menus_guard(void) {
     unsigned i;
     int closed = 0;
     if (!ui) return;
-    if (inventory_open) hide_pc_ui(1);
+    if (inventory_open || pc_ui_back_at) hide_pc_ui(1);   /* during the delay too: what PC shows again stays hidden */
+    if (!inventory_open && pc_ui_back_at && (int)(GetTickCount() - pc_ui_back_at) >= 0) { pc_ui_back_at = 0; hide_pc_ui(0); }
     if (shop) return;
     /* A shop's menu opens PC's inventory with it (the merchant, enchanter, transmuter, stash): left
      * to the shop's code (QA run 1: closing it closed the shop before the port saw it). */
@@ -6935,13 +7122,116 @@ static void hotkeys_off(void) {
     x360_log("x360 menu: PC's screen hotkeys off: "); x360_log_num((long)n); x360_log(" of 6\r\n");
 }
 
+/* PC's menu keys swallowed in play (the owner, 2026-10-24): with the 360's interface the pad opens
+ * the screens (Start, Back, R3), and PC's keys opened or animated PC's own under them (the space
+ * bar's close-all showed PC's menus moving behind the 360's). Their key messages never reach the
+ * game's window procedure (CGame::WndProc *(OT)* feeds CGameUI's and CKeyManager's keyEvent from
+ * WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_SYSKEYDOWN, WM_SYSKEYUP) while in play and PC's settings are
+ * not open (the pad's way to them, where the keyboard keeps working), the console is not shown
+ * (typed into) and no cinematic holds (PC's keys skip it). A press's repeats and release go as
+ * the press went (no key left down in PC's state across the changes); out of play, or when the
+ * frame tick stops saying so, nothing is swallowed. The window is the game's (its title), taken
+ * once. The keys: KEYMAP_INVENTORY I,
+ * PET P, STATS C, SKILLS S, QUESTS Q, JOURNAL J, OPTIONS Esc, PAUSE Enter, CLOSEALL the space bar,
+ * AUTOMAP A (the 360's map is on R3); the six of hotkeys_off are kept off there too. The others
+ * (the hotbar's 1 to 0, F1 to F12, Shift, Alt, Tab, W, the skills' cycle, the zooms, the console)
+ * work as on PC. One address of the executable, the cinematic's test (ported to Steam's). */
+__declspec(dllimport) long __stdcall SetWindowLongW(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall SetWindowLongA(HWND w, int index, long value);
+__declspec(dllimport) long __stdcall CallWindowProcW(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) long __stdcall CallWindowProcA(long proc, HWND w, unsigned msg, unsigned wparam, long lparam);
+__declspec(dllimport) int __stdcall IsWindowUnicode(HWND w);
+__declspec(dllimport) long __stdcall GetWindowLongW(HWND w, int index);
+__declspec(dllimport) long __stdcall GetWindowLongA(HWND w, int index);
+__declspec(dllimport) int __stdcall GetWindowTextA(HWND w, char *text, int size);
+static long keys_old_proc;       /* the game window's own procedure: subclassed once, never again */
+static HWND keys_window;         /* the game's window (keys_off) */
+static int keys_unicode;
+static int keys_open;            /* set each frame by keys_off: in play, no PC settings, console or cinematic */
+static unsigned keys_open_at;    /* when keys_off last said so: a stale state (out of play) opens nothing */
+static unsigned keys_down;       /* the menu keys whose press was swallowed: their repeats and release are too */
+static int keys_console_key;     /* the console's key went down: look for its window at once */
+HWND x360_keys_window(void) { return keys_window; }
+static int key_index(unsigned vk) {
+    static const unsigned char keys[] = {'I', 'P', 'C', 'S', 'Q', 'J', 'A', 0x1b, 0x0d, 0x20};
+    int i;
+    for (i = 0; i < (int)sizeof keys; i++) if (vk == keys[i]) return i;
+    return -1;
+}
+static long __stdcall keys_proc(HWND w, unsigned msg, unsigned wparam, long lparam) {
+    int open = keys_open && GetTickCount() - keys_open_at < 2000;   /* a long frame (a load's) is not stale */
+    int k = (msg == 0x100 || msg == 0x101 || msg == 0x102) ? key_index(wparam) : -1;
+    if (msg == 0x0008) keys_down = 0;   /* WM_KILLFOCUS: no release will come for what is held */
+    if (msg == 0x100 && wparam == 0xc0) keys_console_key = 1;   /* KEYMAP_CONSOLEKEY_PRESS (`) */
+    if (k >= 0 && msg == 0x100) {        /* WM_KEYDOWN: a new press (lParam bit 30 clear) or a repeat */
+        if (!(lparam & 0x40000000) || !(keys_down & (1u << k))) {   /* a press, or a repeat after a focus loss */
+            if (open) keys_down |= 1u << k; else keys_down &= ~(1u << k);
+        }
+        if (keys_down & (1u << k)) return 0;   /* the press and its repeats, as the press went */
+    }
+    if (k >= 0 && msg == 0x101 && (keys_down & (1u << k))) { keys_down &= ~(1u << k); return 0; }   /* WM_KEYUP */
+    if (k >= 7 && msg == 0x102 && (keys_down & (1u << k))) return 0;   /* WM_CHAR of a swallowed Esc, Enter, space */
+    return keys_unicode ? CallWindowProcW(keys_old_proc, w, msg, wparam, lparam)
+                        : CallWindowProcA(keys_old_proc, w, msg, wparam, lparam);
+}
+static void keys_off(void) {
+    static int tried;
+    static void *console;
+    static char console_prefix[48];
+    int console_up = 0, cinematic = 0;
+    if (!tried && hud_in_play) {
+        /* The game's window, once: the active window in play, its title the game's (600 frames'
+         * tries, then given up, said in the log). */
+        static int tries;
+        HWND w = active_window();
+        char title[64];
+        if (++tries > 600) { tried = 1; x360_log("x360 menu: PC's menu keys: no window titled Torchlight, not swallowed\r\n"); }
+        else if (w && GetWindowTextA(w, title, sizeof title) > 0 && title[0] == 'T' && title[1] == 'o' && title[2] == 'r' &&
+                 title[3] == 'c' && title[4] == 'h') {
+            long old = 0;
+            tried = 1;
+            keys_unicode = IsWindowUnicode(w);
+            keys_window = w;
+            if ((keys_unicode ? GetWindowLongW(w, -4) : GetWindowLongA(w, -4)) != (long)keys_proc)   /* never onto itself */
+                old = keys_unicode ? SetWindowLongW(w, -4 /* GWL_WNDPROC */, (long)keys_proc) : SetWindowLongA(w, -4, (long)keys_proc);
+            keys_old_proc = old;
+            x360_log(old ? "x360 menu: PC's menu keys swallowed in play, window " : "x360 menu: PC's menu keys: the window not subclassed, ");
+            x360_log_num((long)w);
+            x360_log(keys_unicode ? " (Unicode)\r\n" : " (ANSI)\r\n");
+        }
+    }
+    if (!keys_old_proc) return;
+    /* The console (Runic's developer console, a CEGUI window): typed into with the keyboard. */
+    {
+        static unsigned last_search;
+        unsigned now = GetTickCount();
+        if (console && !win_of(console_prefix, "WindowsLook/Console")) console = 0;
+        if (!console && (now - last_search >= 1000 || keys_console_key)) {   /* the whole tree: once a second, or at the console's key */
+            last_search = now;
+            keys_console_key = 0;
+            console = find_pc_by_suffix("WindowsLook/Console", 0, console_prefix, sizeof console_prefix);
+        }
+    }
+    if (console) {
+        typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
+        static vis_fn vis;
+        if (!vis) vis = (vis_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+        console_up = vis && vis(console, 0, 0);
+    }
+    /* A cinematic (CGameUI's test, 0x541db0; proxy/pad.c): PC's own keys skip it. */
+    if (ui) cinematic = ((unsigned char (__fastcall *)(void *, void *))0x00541db0)(ui, 0) != 0;
+    keys_open = hud_in_play && !x360_pc_settings_up && !console_up && !cinematic;
+    keys_open_at = GetTickCount();
+}
+
 /* PC's menus' 3D boards (QA runs 5, 6: the parchment with chains behind the 360's modal, the
  * boards at the shops' sides; neither a CEGUI window, they stayed with PC's interface hidden and
  * its modal frame moved away). A CMenu keeps its board at +0x38 (the modal, CGameUI's +0x304;
  * CMenu's update 0x574477 animates the entity at the board's +0x5c with Entity::_updateAnimation),
  * a shop's screen elsewhere (boards_tick's table, each read in its update). The entity is made invisible
- * (Ogre's MovableObject::setVisible, exported) while the 360's modal or shop frame covers them,
- * and visible again after. */
+ * (Ogre's MovableObject::setVisible, exported): the modal's and the shops' for good (the 360's
+ * screens show every one of them; the owner's run of 2026-10-24: made visible again as the shop
+ * closed, PC's boards were seen after a merchant). */
 static void board_visible(unsigned char *menu, unsigned at, int visible) {
     /* QA run 8: the entity alone made invisible left the boards seen. Now its scene node, with all
      * it carries (SceneNode::setVisible with cascade), never the scene's root (a node with no
@@ -7017,9 +7307,10 @@ static void boards_tick(void) {
         {0x2cc, 0x00ab73e0, 0x7b20}, {0x2d8, 0x00ab7b58, 0x48}, {0x2dc, 0x00ab6c0c, 0x50},
         {0x2e0, 0x00ab2c4c, 0x6c}, {0x2e4, 0x00ab8730, 0x48},
     };
-    static int modal_hidden, shop_hidden;
+    static int modal_hidden;
+    static unsigned char *shop_logged[sizeof shops / sizeof shops[0]];
     unsigned i;
-    int want_modal = modal_shown, want_shop = inventory_open && shop;   /* want_modal: the minimap's */
+    int want_modal = modal_shown;   /* the minimap's */
     if (!ui) return;
     modal_minimap(want_modal);
     {
@@ -7033,13 +7324,16 @@ static void boards_tick(void) {
             modal_hidden = 1;
         }
     }
-    if (want_shop || shop_hidden) {
-        for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
-            unsigned char *m = *(unsigned char **)(ui + shops[i].at);
-            if (m && *(unsigned *)m == shops[i].vtable) board_visible(m, shops[i].board, !want_shop);
-        }
-        if (shop_hidden != want_shop) x360_log(want_shop ? "x360 shop: PC's boards hidden\r\n" : "x360 shop: PC's boards shown again\r\n");
-        shop_hidden = want_shop;
+    /* The shops' boards kept hidden always, as the modal's: the 360's shop frame shows every one
+     * of PC's shop menus, and shown again as it closed they stayed seen after it (the owner's run
+     * of 2026-10-24, a merchant). Each menu's logged once. CInventoryMenu's too (the owner's
+     * decision, 2026-10-24: shown again after a shop, it was seen sliding away), though the 360's
+     * inventory draws its doll through that menu's scene (show_doll_of): QA checks the doll. */
+    for (i = 0; i < sizeof shops / sizeof shops[0]; i++) {
+        unsigned char *m = *(unsigned char **)(ui + shops[i].at);
+        if (!m || *(unsigned *)m != shops[i].vtable) continue;
+        board_visible(m, shops[i].board, 0);
+        if (shop_logged[i] != m) { shop_logged[i] = m; x360_log("x360 shop: a shop's board hidden for good\r\n"); }
     }
 }
 
@@ -7175,7 +7469,7 @@ int x360_black_screen_take(unsigned buttons) {   /* pad.c: 1 while it shows (the
     if (edge) bs_act = 1;
     return 1;
 }
-__declspec(dllimport) int __stdcall ReadFile(void *file, void *data, unsigned long size, unsigned long *got, void *overlapped);
+unsigned long x360_read_text(void *f, char *buf, unsigned long size, int *full);   /* cegui_proxy.c: line ends made LF */
 __declspec(dllimport) void *__stdcall GetCurrentProcess(void);
 __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned code);
 static void black_screen_tick(void) {
@@ -7238,7 +7532,7 @@ static void black_screen_tick(void) {
             if (bs_close) {
                 x360_log("x360: the black screen closed: the game ends, unsaved\r\n");
                 black_screen_done();
-                TerminateProcess(GetCurrentProcess(), 1);
+                x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
             }
             set_visible(bs_back, 0, 0);
             bs_state = 3;   /* the pad kept until A is let go */
@@ -7407,7 +7701,7 @@ static int __fastcall load_put_hook(void *inv, void *edx, void *item, int slot, 
                 last_resort_box(w);
             }
         }
-        TerminateProcess(GetCurrentProcess(), 1);
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
         return (int)item;   /* not reached */
     }
     to = empty_slot_of_section((unsigned char *)inv, item);
@@ -7563,7 +7857,9 @@ static void queue_notice(const char *text) {   /* appended to any notice not sho
 }
 static void notice_tick(void) {
     static unsigned short wide[1400];
-    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open()) return;
+    /* Not while a tip is up (the owner's run of 2026-10-24: the new game's welcome tip, then the
+     * notice over it, and neither closed): shown once the tip is closed. */
+    if (!notice_pending || !hud_in_play || !ui || stop_asked || pc_modal_menu_open() || tip_up_now()) return;
     utf8_to_wide(notice_utf8, wide, sizeof wide / sizeof wide[0]);
     if (open_pc_modal("The mod", wide)) { notice_pending = 0; notice_utf8[0] = 0; x360_log("x360: the notice shows\r\n"); }
 }
@@ -7664,7 +7960,7 @@ static void stop_unsaved(const char *why, int count) {
     stop_state = 3;   /* opened by stop_tick once no other modal is open (closing that one must not end the game) */
 }
 static void stop_tick(void) {
-    if (stop_state == 3 && !pc_modal_menu_open()) {
+    if (stop_state == 3 && !pc_modal_menu_open() && !tip_up_now()) {   /* a tip closed first; STOP_WAIT_MS still holds */
         stop_state = x360_test_stop_modal_fails ? 1 : open_pc_modal("The bag", stop_wbody);   /* the test: asked, never shown */
         stop_t0 = GetTickCount();   /* its own 15 s, from now */
         if (!stop_state) x360_log("x360 load: PC's modal could not be opened: saves held back, the text in x360_stop.txt\r\n");
@@ -7684,12 +7980,12 @@ static void stop_tick(void) {
     if (stop_state == 4 && bs_state != 2 && (bs_failed || GetTickCount() - stop_t0 > 5000)) {
         x360_log("x360 load: the black screen did not show: Notepad or a Windows box, then the game ends, unsaved\r\n");
         last_resort_box(stop_wbody);
-        TerminateProcess(GetCurrentProcess(), 1);
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);
     }
     if (stop_state == 2 && !pc_modal_menu_open()) {
         x360_log("x360 load: the stop's modal closed: the game ends, unsaved\r\n");
         stop_seen();
-        TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
+        x360_pad_shutdown(), TerminateProcess(GetCurrentProcess(), 1);   /* no code of the game runs after: no save */
     }
 }
 
@@ -7807,16 +8103,15 @@ void x360_stop_file_check(void) {
     unsigned short path[600];
     create_fn create = (create_fn)kernel32_fn("CreateFileW");
     void *f = (void *)-1;
-    unsigned long n, got = 0;
+    unsigned long n;
     int i;
     for (i = 0; i < 2 && f == (void *)-1; i++)
         if (stop_path(path, 600, i) && create) f = create(path, 0x80000000, 1, 0, 3, 0x80, 0);   /* GENERIC_READ, OPEN_EXISTING */
     if (f == (void *)-1) return;
     copy(textbuf, sizeof textbuf, "The last game was closed by the mod, and this was not shown then:\n\n", 0);
     n = length(textbuf);
-    ReadFile(f, textbuf + n, sizeof textbuf - n - 1, &got, 0);
+    x360_read_text(f, textbuf + n, sizeof textbuf - n, 0);
     CloseHandle(f);
-    textbuf[n + got] = 0;
     { unsigned k; for (k = 0; k < 600 && (stop_file[k] = path[k]) != 0; k++) {} }
     x360_log("x360 load: a stop's text from the last game: shown at the title\r\n");
     black_screen(textbuf, 0, stop_seen);
@@ -8117,7 +8412,11 @@ static void pc_menus_nav_tick(void) {
     static const char *const settings_needs[] = {"Cancel", 0};
     static char create_prefix[64];
     static const char *const create_needs[] = {"Vanquisher", 0};
-    int create = 0;
+    static char die_prefix[64];
+    static const char *const die_needs[] = {"Resurrect2", 0};
+    static char wp_prefix[64];
+    static const char *const wp_needs[] = {"Button10", "Cancel", 0};
+    int create = 0, die = 0, wp = 0;
     unsigned buttons = x360_pad_buttons(), pressed = buttons & ~prev, now = GetTickCount();
     int in_play = x360_in_play(), settings = 0, dir = 0, i, j;
     void *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
@@ -8133,10 +8432,13 @@ static void pc_menus_nav_tick(void) {
     if (!sheet || !rect_of) return;
     /* PC's settings screen: its Apply and Cancel shown. */
     /* The searches walk PC's whole GUI: every 250 ms at most (the review); the checks each frame. */
-    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer"))) {
+    if (now - last_search > 250 && (!settings_prefix[0] || !win_of(settings_prefix, "Apply") || !create_prefix[0] || !win_of(create_prefix, "Destroyer") ||
+                                    !die_prefix[0] || !win_of(die_prefix, "Resurrect1") || !wp_prefix[0] || !win_of(wp_prefix, "Choice10"))) {
         last_search = now;
         if (!settings_prefix[0] || !win_of(settings_prefix, "Apply")) find_pc_by_suffix("Apply", settings_needs, settings_prefix, sizeof settings_prefix);
         if (!create_prefix[0] || !win_of(create_prefix, "Destroyer")) find_pc_by_suffix("Destroyer", create_needs, create_prefix, sizeof create_prefix);
+        if (!die_prefix[0] || !win_of(die_prefix, "Resurrect1")) find_pc_by_suffix("Resurrect1", die_needs, die_prefix, sizeof die_prefix);
+        if (!wp_prefix[0] || !win_of(wp_prefix, "Choice10")) find_pc_by_suffix("Choice10", wp_needs, wp_prefix, sizeof wp_prefix);
     }
     /* Attached to the sheet, not only visible: PC closes it by taking it off (QA run 13: the mouse
      * stayed shown and the pad off after Settings was left). */
@@ -8144,6 +8446,17 @@ static void pc_menus_nav_tick(void) {
     /* And PC's character creation (its name is typed): the mouse shown there too (the user). Told by
      * its Destroyer, always there (its CreatePlayer shows once a name is typed: QA run 16). */
     create = create_prefix[0] && pc_attached(create_prefix, "Destroyer");
+    /* PC's resurrection screen (diemenu.layout: Resurrect1-3, ExitGame), shown when the hero dies:
+     * its buttons for the pad as the pause menu's (the owner's run of 2026-10-24: the pad could not
+     * leave it; the 360's own screen is not ported). Told by ExitGame, shown whatever choices it
+     * offers; not while a screen of the 360's is over it. The play pad gets nothing meanwhile
+     * (x360_pc_menu_up: no move, skill, pause or inventory). */
+    die = in_play && die_prefix[0] && pc_attached(die_prefix, "ExitGame") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    /* PC's waypoint portals (waypointmenu.layout: Frame, Button1-10 with Choice1-10, Cancel), opened
+     * at a waypoint once the first boss is dead: PC's screen with the pad, as the resurrection's
+     * (the owner, 2026-10-24: kept PC's for now; the pad could not move in it). B its Cancel. */
+    wp = !die && in_play && wp_prefix[0] && pc_attached(wp_prefix, "Cancel") && !x360_pause_open() && !inventory_open && !x360_overlay_open();
+    x360_pc_die_up = die || wp;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     cursor_hook_install();
@@ -8160,7 +8473,7 @@ static void pc_menus_nav_tick(void) {
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
         }
     }
-    if (in_play && !pc_pause_open() && !settings) { nav_count = 0; return; }
+    if (in_play && !pc_pause_open() && !settings && !die && !wp) { nav_count = 0; return; }
     /* Collected every frame: no pointer kept from one frame to the next (the review: a window
      * destroyed meanwhile, as a load ends, was used). */
     (void)last_collect;
@@ -8189,6 +8502,8 @@ static void pc_menus_nav_tick(void) {
                 top = up;
             }
             if (top) nav_collect(top, 0, 1);
+        } else if (die || wp) {
+            nav_collect(win_of(die ? die_prefix : wp_prefix, "Frame"), 0, 1);   /* its own windows only: PC's HUD buttons are on its sheet */
         } else if (in_play) {
             static unsigned char *logged_pm;
             unsigned char *pm = pc_pause_menu();
@@ -8232,7 +8547,7 @@ static void pc_menus_nav_tick(void) {
             static str_fn gn;
             if (!gn) gn = (str_fn)need("?getName@Window@CEGUI@@QBEABVString@2@XZ");
             x360_log("x360 menu: PC's buttons for the pad "); x360_log_num(nav_count);
-            x360_log(in_play ? " (pause):" : ":");
+            x360_log(die ? " (resurrection):" : wp ? " (waypoints):" : in_play ? " (pause):" : ":");
             for (i = 0; i < nav_count && gn; i++) { x360_log(" "); x360_log(c_str(gn(nav_list[i], 0), 0)); }
             x360_log("\r\n");
         }
@@ -8299,7 +8614,7 @@ static void pc_menus_nav_tick(void) {
             if (nav_kind(nav_list[pick]) == NAV_SLOT) { x360_inject_left(1, x, y); x360_inject_left(0, x, y); }
         }
     }
-    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings)) {
+    if ((pressed & 0x2000) && !nav_editing && !(in_play && !settings && !wp)) {
         /* B: the screen's way back, its Cancel (settings, the delete popup) or Back (creation,
          * difficulty, load), clicked (the user, QA run 19). In play PC's pause menu is closed by
          * x360_pause_pad. */
@@ -8334,8 +8649,12 @@ static void pc_menus_nav_tick(void) {
     }
 }
 
+unsigned x360_frames;   /* the game's frames, counted by the frame listener (proxy/pad.c: one destination a frame) */
 void x360_frame_tick(void) {
     static int logged, preloaded;
+    void x360_pad_frame(void);
+    x360_frames++;
+    x360_pad_frame();   /* pad_trace: the frame's time (proxy/pad.c) */
     __try { black_screen_tick(); }
     __except (1) {
         bs_state = 0; bs_failed = 1;
@@ -8358,6 +8677,7 @@ void x360_frame_tick(void) {
     }
     x360_ui_dump_poll();                     /* each frame: the HUD's tick, which polls it too, stops under a dialog or without input */
     __try { hotkeys_off(); } __except (1) { x360_log("x360 menu: exception turning PC's hotkeys off\r\n"); }
+    __try { keys_off(); } __except (1) { x360_log("x360 menu: exception swallowing PC's menu keys\r\n"); }
     __try { load_aside_tick(); } __except (1) { x360_log("x360 load: exception placing the items kept aside\r\n"); }
     __try { stop_tick(); } __except (1) { x360_log("x360 load: exception in the stop\r\n"); }
     __try { notice_tick(); } __except (1) { x360_log("x360: exception showing a notice\r\n"); }
@@ -8365,14 +8685,27 @@ void x360_frame_tick(void) {
     __try { pc_menu_tick(); } __except (1) { x360_pc_menu_request = 0; x360_log("x360 menu: exception opening PC's pause menu\r\n"); }
     __try { boards_tick(); } __except (1) { x360_log("x360: exception hiding PC's boards\r\n"); }
     __try { pc_bars_off(); } __except (1) { x360_log("x360 bars: exception hiding PC's\r\n"); }
-    __try { side_panels_test(inventory_open && shop); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
+    {
+        /* While the 360's shop frame is open, and 2 s after it closes: PC's merchant still closing
+         * narrowed the world, its strips blue with the boards hidden for good (the owner's run of
+         * 2026-10-24). Not always: the same tests hold PC's game-state changes back while a side
+         * panel is open (its client update, 0x41ba36), which must keep PC's rule (the review). */
+        static unsigned last_at_shop;   /* the last frame with the shop frame open (0: none yet) */
+        int at_shop = inventory_open && shop;
+        if (at_shop) last_at_shop = GetTickCount() | 1;
+        else if (last_at_shop && GetTickCount() - last_at_shop > 2000) last_at_shop = 0;
+        /* By the last frame at the shop, not by a change seen once (the owner's run: given back at
+         * once as a shop closed, the world's width moved, two blue columns). */
+        __try { side_panels_test(last_at_shop != 0); } __except (1) { x360_log("x360 menu: exception in the side panels' test\r\n"); }
+    }
     __try { pc_menus_guard(); } __except (1) { x360_log("x360 menu: exception in the PC menus' guard\r\n"); }
     __try { labels_tick(); } __except (1) { x360_log("x360 labels: exception\r\n"); }
+    /* The tip first: on the frame it shows, the screens under it already leave it the pad. */
+    __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
     __try { enchant_result_tick(); } __except (1) { ench_pending = 0; x360_log("x360 enchanter: exception taking the result\r\n"); }
     __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
     __try { bars_tick(); } __except (1) { x360_log("x360 bars: exception\r\n"); }
-    __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { dialog_tick(); }
     __except (1) { if (logged < 5) { x360_log("x360 dialog: exception in the frame tick\r\n"); logged++; } }
 }

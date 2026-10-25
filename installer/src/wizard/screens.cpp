@@ -14,6 +14,7 @@
 
 #include "install.h"
 #include "paths.h"
+#include "text_lines.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -603,11 +604,9 @@ struct Screens::State {
     set_progress(nullptr);
     std::cout.rdbuf(cout_buf);
     std::cerr.rdbuf(cerr_buf);
-    std::istringstream lines(out.str());
     // "saves backed up: F" here; an elevated run's result text lists them after its own line.
     bool listed = false;
-    for (std::string l; std::getline(lines, l);) {
-      while (!l.empty() && l.back() == '\r') l.pop_back();
+    for (const std::string& l : text_lines(out.str())) {
       if (l.rfind("saves backed up: ", 0) == 0) {
         backups.push_back(l.substr(17));
       } else if (l == "Your saves were backed up:") {

@@ -11,7 +11,10 @@
  *
  * Input: XInput (xinput1_3.dll, pad 0); or, with pad_file=PATH, a text file "LX LY BUTTONS"
  * (sticks from -1 to 1 as numbers times 1000, buttons as XInput's decimal mask), re-read every
- * 50 ms, so a test can drive it without a hand on the pad.
+ * 50 ms, so a test can drive it without a hand on the pad. With pad_replay=PATH, a recorded stick
+ * (the format below, replay_load) replaces XInput; with pad_trace=1 the hero's path is written to
+ * x360_trace-<date>.csv (trace_tick); with pad_record=1 the pad is written as a replay file
+ * (record_tick): the movement's measurement (doc section 9, "The movement measured").
  */
 
 typedef unsigned long DWORD;
@@ -29,13 +32,21 @@ IMPORT HMODULE __stdcall GetModuleHandleA(const char *name);
 IMPORT HMODULE __stdcall LoadLibraryA(const char *name);
 IMPORT FARPROC __stdcall GetProcAddress(HMODULE module, const char *name);
 IMPORT BOOL __stdcall VirtualProtect(void *addr, DWORD size, DWORD prot, DWORD *old);
+IMPORT void *__stdcall VirtualAlloc(void *addr, unsigned long size, DWORD type, DWORD prot);
 IMPORT DWORD __stdcall GetTickCount(void);
 IMPORT BOOL __stdcall QueryPerformanceCounter(long long *v);
 IMPORT BOOL __stdcall QueryPerformanceFrequency(long long *v);
 IMPORT HANDLE __stdcall CreateFileA(const char *name, DWORD access, DWORD share, void *security,
                                     DWORD disposition, DWORD flags, HANDLE templ);
-IMPORT BOOL __stdcall ReadFile(HANDLE file, void *data, DWORD size, DWORD *read, void *overlapped);
+DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
 IMPORT BOOL __stdcall CloseHandle(HANDLE file);
+IMPORT BOOL __stdcall WriteFile(HANDLE file, const void *data, DWORD size, DWORD *written, void *overlapped);
+IMPORT DWORD __stdcall GetFileSize(HANDLE file, DWORD *high);
+IMPORT HANDLE __stdcall GetProcessHeap(void);
+IMPORT void *__stdcall HeapAlloc(HANDLE heap, DWORD flags, unsigned long bytes);
+IMPORT BOOL __stdcall HeapFree(HANDLE heap, DWORD flags, void *mem);
+typedef struct { WORD year, month, day_of_week, day, hour, minute, second, ms; } SYSTEMTIME_;
+IMPORT void __stdcall GetLocalTime(SYSTEMTIME_ *t);
 IMPORT HWND __stdcall GetActiveWindow(void);
 IMPORT BOOL __stdcall GetClientRect(HWND w, RECT *r);
 IMPORT BOOL __stdcall ClientToScreen(HWND w, POINT *p);
@@ -56,10 +67,14 @@ static get_async_key_state_fn real_get_async_key_state;
 static xinput_get_state_fn xinput_get_state;
 static int xinput_tried;
 static char pad_file[400];
+char x360_pad_replay[400];     /* x360_ui.ini pad_replay=PATH (a test) */
+int x360_pad_trace;            /* x360_ui.ini pad_trace=1 (a test) */
 
 /* The pad, as last read. */
 static int lx, ly;             /* -1000..1000, y up */
 static int ry;                 /* the right stick's y, the same scale: the camera's zoom */
+static int rx;                 /* the right stick's x, for its dead zone only */
+static int menu_lx, menu_ly;   /* the left stick before the 360's dead zone: the proxy's menu navigation */
 static unsigned buttons;       /* XInput mask: A 0x1000, B 0x2000, X 0x4000, Y 0x8000 */
 static unsigned a_pressed_at;  /* GetTickCount of A's last press, for a short synthetic click */
 static unsigned last_poll;
@@ -73,6 +88,7 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
  * Names from OpenTorchlight's symbols of the Linux build (research/original-symbols.txt);
  * the addresses found in GOG's Torchlight.exe by shape, callers and callees. */
 #define GOG_APP_GLOBAL 0x00c1ad64        /* the application object; +0x64 its CGameClient */
+#define GOG_SPEED_JOIN 0x004a8062        /* CCharacter's update (0x4a6930, the 360's sub_821D5410): after +0x660's factor */
 #define GOG_FIND_WORLD_LOCATION 0x00411d60 /* CGameClient::findWorldLocation(Vector3&, bool) */
 #define GOG_GET_POSITION 0x00510eb0      /* CPositionableObject::getPosition(bool) */
 #define GOG_SET_DESTINATION 0x00494b30   /* CCharacter::setDestination(CLevel&, float, float) */
@@ -167,7 +183,11 @@ static void edge(HWND w, int down, long x, long y) {
         x360_inject_left(down, (float)x, (float)y);
 }
 
-#define DEAD_ZONE 240          /* of 1000: XInput's 7849 of 32767 */
+#define GOG_UNIT_ROTATION 0xac  /* the hero's rotation, a 4x4 (hero_matrix) */
+/* Of 1000: the 360's walk threshold, 0.1 (sub_82199E08), on the stick after its dead zone
+ * (dead_zone_360); with pad_dead_zone=0, the old one, XInput's 7849 of 32767 on the raw stick. */
+int x360_stick_dead_zone = 1;
+#define DEAD_ZONE (x360_stick_dead_zone ? 100 : 240)
 #define RADIUS_PERMILLE 140    /* of the window's height: the point ahead of the hero */
 #define CLICK_MS 120
 #define POLL_MS 4              /* below one frame at the game's 200 fps cap */
@@ -181,23 +201,429 @@ static int parse_int(const char **s) {
     return neg ? -v : v;
 }
 
+/* ---- The movement's measurement (doc section 9, "The movement measured"): a recorded stick in, the hero's path out ----
+ *
+ * The replay file, the same for this proxy and for the recompiled 360 build:
+ *   # x360ui pad replay v1
+ *   # start_ms 3000            how long after the first frame in play t=0 comes (default 3000)
+ *   t_ms lx ly lt rt buttons   XInput's raw values (sticks -32767..32767, y up; triggers 0..255;
+ *                              buttons its mask), each held until the next line's t_ms
+ * The last line holds to the end (the routes end with one at rest). The trace, x360_trace-<date>.csv in the mod's folder, integers
+ * only (no CRT here):
+ *   # x360ui pad trace v1 pc
+ *   t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly
+ * t_us since t=0; frame a sample's number (this build has no frame counter of its own: a line is
+ * written when the hero's position, its facing or the stick changed); x, z the hero's position and
+ * fx, fz its rotation's column 2 (m[0][2], m[2][2]), all times 1000; scale and speed GOG's +0x200
+ * and +0x204 (the 360's +500 and +504) times 1000; lx, ly the raw stick. From t=0 to 2 s after
+ * the replay's last line, with a last line then (or, without a replay, from the first frame in
+ * play for at most an hour). The files' names carry the session's date and time
+ * (x360_trace-YYYYMMDD-HHMMSS.csv). A replay running while the pad's input is held by a menu, a tip
+ * or a cinematic is named in the log ("replay disturbed"): that run does not count. */
+struct replay_sample { unsigned t; short lx, ly; unsigned char lt, rt; unsigned short buttons; };
+static struct replay_sample *replay;   /* the file's samples, on the process heap (a recording can be long) */
+static unsigned replay_n, replay_start_ms = 3000;
+static unsigned first_play_at;      /* qms() of the first frame in play: t=0 of a recording */
+int x360_pad_record;                /* x360_ui.ini pad_record=1 (a test): the pad to x360_record-<date>.txt */
+static unsigned replay_t0;          /* qms() at t=0; 0 until the first frame in play */
+static unsigned world_at;           /* qms() of order()'s last frame that reached the world's input */
+static int replay_armed;
+static int raw_lx, raw_ly;          /* the stick as XInput gives it, from the pad or the replay */
+static unsigned char raw_lt, raw_rt;
+static unsigned raw_buttons;
+
+/* Milliseconds by the performance counter: GetTickCount moves by 15.6 ms on Windows, coarser than
+ * the routes' 10 ms samples. In double (no 64-bit division without a CRT). */
+static unsigned qms(void) {
+    static long long f;
+    long long q;
+    if (!f) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&q);
+    return (unsigned)((double)q * 1000.0 / (double)f);
+}
+
+static void replay_load(const char *path) {
+    char *text;
+    const char *p;
+    DWORD size, lines = 1, i;
+    HANDLE f = CreateFileA(path, 0x80000000UL, 1, 0, 3, 0, 0);
+    if (f == (HANDLE)(long)-1) { x360_log("pad: replay file not found\r\n"); return; }
+    size = GetFileSize(f, 0);
+    if (size == 0xffffffffUL || size > 64UL * 1024 * 1024) { CloseHandle(f); x360_log("pad: replay file too big (64 MB at most)\r\n"); return; }
+    text = (char *)HeapAlloc(GetProcessHeap(), 0, size + 1);
+    if (!text) { CloseHandle(f); x360_log("pad: no memory for the replay\r\n"); return; }
+    x360_read_text(f, text, size + 1, 0);
+    CloseHandle(f);
+    for (i = 0; text[i]; i++) if (text[i] == '\n') lines++;
+    replay = (struct replay_sample *)HeapAlloc(GetProcessHeap(), 0, lines * sizeof *replay);
+    if (!replay) { HeapFree(GetProcessHeap(), 0, text); x360_log("pad: no memory for the replay\r\n"); return; }
+    p = text;
+    while (*p) {
+        const char *line = p;
+        while (*p && *p != '\n') p++;
+        if (*line == '#') {
+            const char *k = line + 1;
+            while (*k == ' ') k++;
+            if (k[0] == 's' && k[1] == 't' && k[2] == 'a' && k[3] == 'r' && k[4] == 't' && k[5] == '_' &&
+                k[6] == 'm' && k[7] == 's') {
+                int v;
+                k += 8;
+                v = parse_int(&k);
+                replay_start_ms = v < 0 ? 0 : v > 600000 ? 600000 : (unsigned)v;
+            }
+        } else {
+            const char *q = line;
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q >= '0' && *q <= '9' && replay_n < lines) {
+                int v;
+                replay[replay_n].t = (unsigned)parse_int(&q);
+                v = parse_int(&q); replay[replay_n].lx = (short)(v < -32767 ? -32767 : v > 32767 ? 32767 : v);
+                v = parse_int(&q); replay[replay_n].ly = (short)(v < -32767 ? -32767 : v > 32767 ? 32767 : v);
+                replay[replay_n].lt = (unsigned char)parse_int(&q);
+                replay[replay_n].rt = (unsigned char)parse_int(&q);
+                replay[replay_n].buttons = (unsigned short)parse_int(&q);
+                replay_n++;
+            }
+        }
+        if (*p) p++;
+    }
+    HeapFree(GetProcessHeap(), 0, text);
+    if (replay_n && replay[replay_n - 1].t > 4200000) {   /* 70 min: the trace's microseconds in 32 bits */
+        while (replay_n && replay[replay_n - 1].t > 4200000) replay_n--;
+        x360_log("pad: replay over 70 min: cut there\r\n");
+    }
+    replay_armed = replay_n != 0;
+    x360_log("pad: replay of ");
+    x360_log_num((long)replay_n);
+    x360_log(" samples, t=0 after ");
+    x360_log_num((long)replay_start_ms);
+    x360_log(" ms in play\r\n");
+}
+
+/* The session's date and time, for its files' names: "-YYYYMMDD-HHMMSS" (one stamp per session). */
+static const char *session_stamp(void) {
+    static char st[20];
+    if (!st[0]) {
+        SYSTEMTIME_ t;
+        unsigned v[6], i, n = 0;
+        GetLocalTime(&t);
+        v[0] = t.year; v[1] = t.month; v[2] = t.day; v[3] = t.hour; v[4] = t.minute; v[5] = t.second;
+        st[n++] = '-';
+        for (i = 0; i < 6; i++) {
+            unsigned w = i ? 2 : 4, d;
+            if (i == 3) st[n++] = '-';
+            for (d = w; d; d--) { unsigned q = v[i], k; for (k = 1; k < d; k++) q /= 10; st[n++] = (char)('0' + q % 10); }
+        }
+        st[n] = 0;
+    }
+    return st;
+}
+
+/* ---- pad_record: the pad as the player moved it, a replay file of its own ----
+ * x360_record-<date>.txt in the mod's folder (%LOCALAPPDATA%\x360ui), in the replay's format with
+ * "# start_ms 0": t=0 is the first frame in play, as a replay's is, so pad_replay plays it back by
+ * time on this build or on the recompiled 360's whatever their frame rates. A line when the
+ * stick, a trigger or a button changed (the buttons as the game's input reads them, after the
+ * Nintendo swap); pad_trace on with it. */
+static HANDLE record_file = (HANDLE)(long)-1;
+static char record_buf[8192];
+static unsigned record_len, record_flushed_at;
+static void record_flush(void) {
+    DWORD w;
+    if (record_len && record_file != (HANDLE)(long)-1) WriteFile(record_file, record_buf, record_len, &w, 0);
+    record_len = 0;
+}
+static void record_put(const char *s) {
+    while (*s) {
+        if (record_len == sizeof record_buf) record_flush();
+        record_buf[record_len++] = *s++;
+    }
+}
+static void record_num(long v) {
+    char d[16];
+    int n = 0;
+    unsigned long u = v < 0 ? (unsigned long)-v : (unsigned long)v;
+    if (v < 0) record_put("-");
+    do { d[n++] = (char)('0' + u % 10); u /= 10; } while (u);
+    while (n) { char c[2] = {d[--n], 0}; record_put(c); }
+}
+static void record_tick(unsigned now) {
+    static int open_tried;
+    static long last[5] = {-1, -1, -1, -1, -1};
+    long cur[5];
+    int i, same = 1;
+    HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
+    if (!x360_pad_record || !first_play_at || replay_n) return;
+    if (!open_tried) {
+        char name[48];
+        const char *st = session_stamp();
+        unsigned n = 0, k;
+        static const char a[] = "x360_record", b[] = ".txt";
+        open_tried = 1;
+        for (k = 0; a[k]; k++) name[n++] = a[k];
+        for (k = 0; st[k]; k++) name[n++] = st[k];
+        for (k = 0; b[k]; k++) name[n++] = b[k];
+        name[n] = 0;
+        record_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+        if (record_file == (HANDLE)(long)-1) { x360_log("pad: the recording not written\r\n"); return; }
+        x360_log("pad: recording the pad to "); x360_log(name); x360_log("\r\n");
+        record_put("# x360ui pad replay v1\r\n# start_ms 0\r\n# pad_record: t=0 the first frame in play\r\n");
+    }
+    if (record_file == (HANDLE)(long)-1) return;
+    if (now - record_flushed_at >= 500) { record_flushed_at = now; record_flush(); }   /* also at rest */
+    cur[0] = raw_lx; cur[1] = raw_ly; cur[2] = raw_lt; cur[3] = raw_rt; cur[4] = (long)(buttons & 0xffff);
+    for (i = 0; i < 5; i++) if (cur[i] != last[i]) same = 0;
+    if (same) return;
+    for (i = 0; i < 5; i++) last[i] = cur[i];
+    record_num((long)(now - first_play_at));
+    for (i = 0; i < 5; i++) { record_put(" "); record_num(cur[i]); }
+    record_put("\r\n");
+}
+
+
+/* The replay's sample at now: 1 while it runs (the pad then reads it), 0 before t=0 and after. */
+static int replay_sample(unsigned now) {
+    static unsigned at;
+    unsigned t;
+    if (!replay_t0 || (int)(now - replay_t0) < 0) {
+        raw_lx = raw_ly = 0; raw_lt = raw_rt = 0; raw_buttons = 0;
+        return 0;
+    }
+    t = now - replay_t0;
+    while (at + 1 < replay_n && replay[at + 1].t <= t) at++;
+    if (t > replay[replay_n - 1].t && replay_armed) { replay_armed = 0; x360_log("pad: replay ended\r\n"); }
+    if (t < replay[0].t) { raw_lx = raw_ly = 0; raw_lt = raw_rt = 0; raw_buttons = 0; return 1; }
+    raw_lx = replay[at].lx; raw_ly = replay[at].ly;
+    raw_lt = replay[at].lt; raw_rt = replay[at].rt; raw_buttons = replay[at].buttons;
+    return 1;
+}
+
+static HANDLE trace_file = (HANDLE)(long)-1;
+static char trace_buf[8192];
+static unsigned trace_len, trace_flushed_at, trace_lines;
+static long long trace_qpf, trace_q0;
+
+static void trace_flush(void) {
+    DWORD w;
+    if (trace_len && trace_file != (HANDLE)(long)-1) WriteFile(trace_file, trace_buf, trace_len, &w, 0);
+    trace_len = 0;
+}
+static void trace_put(const char *s) {
+    while (*s) {
+        if (trace_len == sizeof trace_buf) trace_flush();
+        trace_buf[trace_len++] = *s++;
+    }
+}
+static void trace_num(long v) {
+    char d[16];
+    int n = 0;
+    unsigned long u = v < 0 ? (unsigned long)-v : (unsigned long)v;
+    if (v < 0) trace_put("-");
+    do { d[n++] = (char)('0' + u % 10); u /= 10; } while (u);
+    while (n) { char c[2] = {d[--n], 0}; trace_put(c); }
+}
+static long mu(float v) { return (long)(v * 1000.0f + (v < 0 ? -0.5f : 0.5f)); }
+
+/* With pad_trace=1 and a replay, each frame's time and the walk's setDestination time in it
+ * (x360_frames-<date>.csv beside the trace: t_us,frame_us,dest_us,dest_calls), called from the
+ * frame listener (proxy/x360_menu.c): change b's cost against the frame's (doc section 30a). */
+static long long frame_dest_ticks;
+static unsigned frame_dest_calls;
+static HANDLE frames_file = (HANDLE)(long)-1;
+static char frames_buf[16384];
+static unsigned frames_len;
+static void frames_put(const char *s) {
+    DWORD w;
+    while (*s) {
+        if (frames_len == sizeof frames_buf) { WriteFile(frames_file, frames_buf, frames_len, &w, 0); frames_len = 0; }
+        frames_buf[frames_len++] = *s++;
+    }
+}
+static void frames_num(unsigned long u) {
+    char d[16];
+    int n = 0;
+    do { d[n++] = (char)('0' + u % 10); u /= 10; } while (u);
+    while (n) { char c[2] = {d[--n], 0}; frames_put(c); }
+}
+
+/* One line when something moved; called from order() in play, with the hero's position. */
+static void trace_line(const long *cur, unsigned long t_us) {
+    int i;
+    {
+        char d[16];   /* unsigned: an hour's microseconds pass a long's */
+        int n = 0;
+        do { d[n++] = (char)('0' + t_us % 10); t_us /= 10; } while (t_us);
+        while (n) { char c[2] = {d[--n], 0}; trace_put(c); }
+    }
+    trace_put(",");
+    trace_num((long)trace_lines++);
+    for (i = 0; i < 6; i++) { trace_put(","); trace_num(cur[i]); }
+    trace_put(","); trace_num(raw_lx); trace_put(","); trace_num(raw_ly); trace_put("\r\n");
+}
+
+/* One line when something moved; called from order() in play, before the menus' gates. */
+static void trace_tick(unsigned char *hero, unsigned now) {
+    static long last[7];
+    static int open_tried, done, disturbed;
+    long cur[7];
+    long long q;
+    float pos[3];
+    int i, same = 1;
+    unsigned end;
+    HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
+    if (!x360_pad_trace || done) return;
+    if (!replay_t0) return;
+    if ((int)(now - replay_t0) < 0) return;
+    end = replay_n ? replay[replay_n - 1].t + 2000 : 3600000;   /* without a replay: an hour */
+    /* The previous frame that reached the world fell inside the replay and the pad has been held
+     * since: by a menu, a tip, a cinematic, a load (also when play comes back only after the end). */
+    if (replay_n && !disturbed && world_at && (int)(world_at - replay_t0) >= 0 &&
+        world_at - replay_t0 <= replay[replay_n - 1].t && now - world_at > 100) {
+        disturbed = 1;   /* the last frames went to a menu, a tip or a cinematic, not the world */
+        x360_log("pad: replay disturbed (the pad held by a menu, a tip or a cinematic): this run does not count\r\n");
+    }
+    ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    {
+        const float *r = (const float *)(hero + GOG_UNIT_ROTATION);
+        cur[0] = mu(pos[0]); cur[1] = mu(pos[2]); cur[2] = mu(r[2]); cur[3] = mu(r[10]);
+        cur[4] = mu(*(float *)(hero + 0x200)); cur[5] = mu(*(float *)(hero + 0x204));
+        cur[6] = (long)raw_lx * 65536 + raw_ly;
+    }
+    if (!open_tried) {
+        open_tried = 1;
+        {
+            char name[48];
+            const char *st = session_stamp();
+            unsigned n = 0, k;
+            static const char a[] = "x360_trace", b[] = ".csv";
+            for (k = 0; a[k]; k++) name[n++] = a[k];
+            for (k = 0; st[k]; k++) name[n++] = st[k];
+            for (k = 0; b[k]; k++) name[n++] = b[k];
+            name[n] = 0;
+            trace_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+            if (trace_file == (HANDLE)(long)-1) { x360_log("pad: the trace not written\r\n"); done = 1; return; }
+            x360_log("pad: tracing the hero to "); x360_log(name); x360_log("\r\n");
+        }
+        QueryPerformanceFrequency(&trace_qpf);
+        QueryPerformanceCounter(&trace_q0);
+        trace_q0 -= (long long)((double)(now - replay_t0) * (double)trace_qpf / 1000.0);   /* t=0 at replay_t0 */
+        trace_put("# x360ui pad trace v1 pc\r\nt_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly\r\n");
+    }
+    QueryPerformanceCounter(&q);
+    if (now - replay_t0 > end) {
+        done = 1;
+        trace_line(cur, (unsigned long)end * 1000);   /* the last line: where the hero is at the end */
+        trace_flush();
+        CloseHandle(trace_file);
+        trace_file = (HANDLE)(long)-1;
+        x360_log("pad: trace written: ");
+        x360_log_num((long)trace_lines);
+        x360_log(" lines\r\n");
+        return;
+    }
+    for (i = 0; i < 7; i++) if (cur[i] != last[i]) same = 0;
+    if (same && trace_lines) return;
+    for (i = 0; i < 7; i++) last[i] = cur[i];
+    trace_line(cur, (unsigned long)((double)(q - trace_q0) * 1000000.0 / (double)trace_qpf));   /* no 64-bit division without a CRT */
+    if (now - trace_flushed_at >= 500) { trace_flushed_at = now; trace_flush(); }
+}
+
+void x360_pad_frame(void) {
+    static int opened, done;
+    static long long qpf, q0, last;
+    long long q;
+    HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);
+    if (!x360_pad_trace || !replay_n || !replay_t0 || done) return;
+    QueryPerformanceCounter(&q);
+    if (!opened) {
+        char name[48];
+        const char *st = session_stamp();
+        unsigned n = 0, k;
+        static const char a[] = "x360_frames", b[] = ".csv";
+        opened = 1;
+        for (k = 0; a[k]; k++) name[n++] = a[k];
+        for (k = 0; st[k]; k++) name[n++] = st[k];
+        for (k = 0; b[k]; k++) name[n++] = b[k];
+        name[n] = 0;
+        frames_file = x360_data_open(name, 0x40000000UL, 1, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+        if (frames_file == (HANDLE)(long)-1) { done = 1; return; }
+        QueryPerformanceFrequency(&qpf);
+        q0 = q - (long long)((double)(qms() - replay_t0) * (double)qpf / 1000.0);   /* t=0 at replay_t0 */
+        last = q;
+        frames_put("# x360ui frames v1\r\nt_us,frame_us,dest_us,dest_calls\r\n");
+        frame_dest_ticks = 0; frame_dest_calls = 0;
+        return;
+    }
+    frames_num((unsigned long)((double)(q - q0) * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num((unsigned long)((double)(q - last) * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num((unsigned long)((double)frame_dest_ticks * 1e6 / (double)qpf));
+    frames_put(",");
+    frames_num(frame_dest_calls);
+    frames_put("\r\n");
+    last = q;
+    frame_dest_ticks = 0; frame_dest_calls = 0;
+    if (qms() - replay_t0 > replay[replay_n - 1].t + 2000) {
+        DWORD w;
+        if (frames_len) WriteFile(frames_file, frames_buf, frames_len, &w, 0);
+        CloseHandle(frames_file);
+        frames_file = (HANDLE)(long)-1;
+        done = 1;
+        x360_log("pad: frame times written\r\n");
+    }
+}
+
+/* The 360's sub_821FE778 on a stick of -1000..1000 (it works in XInput's shorts; the same up to
+ * rounding): its length less the dead zone dz (of 32767), at least 0, times 32767 / (32767 - dz),
+ * along the stick's direction; clamped to full tilt and truncated, as its fctiwz.
+ * x360_ui.ini pad_dead_zone=0 leaves it out (to compare). */
+static float root(float v);
+static void dead_zone_360(int *x, int *y, int dz) {
+    /* Normalised (full tilt 1): root() converges near 1, not on shorts squared (the review). */
+    float d = (float)dz / 32767.0f, fx = (float)*x / 1000.0f, fy = (float)*y / 1000.0f;
+    float mag = root(fx * fx + fy * fy), m = mag - d, k = 1.0f / (1.0f - d);
+    if (m < 0.0f) m = 0.0f;
+    if (mag > 1e-8f) { fx /= mag; fy /= mag; }
+    fx = fx * k * m;
+    fy = fy * k * m;
+    if (fx > 1.0f) fx = 1.0f;
+    if (fx < -1.0f) fx = -1.0f;
+    if (fy > 1.0f) fy = 1.0f;
+    if (fy < -1.0f) fy = -1.0f;
+    fx = (float)(int)(fx * 32767.0f) * (1000.0f / 32767.0f);   /* the 360's truncation is of the shorts */
+    fy = (float)(int)(fy * 32767.0f) * (1000.0f / 32767.0f);
+    *x = (int)(fx < 0.0f ? fx - 0.5f : fx + 0.5f);   /* to -1000..1000, rounded */
+    *y = (int)(fy < 0.0f ? fy - 0.5f : fy + 0.5f);
+}
+
 static void poll(void) {
     unsigned now = GetTickCount(), old = buttons;
     /* The 360 reads the pad every frame; GetCursorPos comes several times a frame. */
     if (now - last_poll < POLL_MS && last_poll) return;
     last_poll = now;
-    if (pad_file[0]) {
+    if (replay_n && replay_t0) {
+        /* From the first frame in play the replay is the pad; before it (the title, the main
+         * menu's Continue) the hand's pad works (the owner could not press A on Continue). */
+        replay_sample(qms());   /* at rest before t=0; the hand's pad is not read */
+        buttons = raw_buttons;
+        lx = raw_lx * 1000 / 32767;
+        ly = raw_ly * 1000 / 32767;
+        rx = ry = 0;
+        if (raw_lt > 64) buttons |= BUTTON_LT;
+        if (raw_rt > 64) buttons |= BUTTON_RT;
+    } else if (pad_file[0]) {
         char text[64];
-        DWORD got = 0;
         const char *p = text;
         HANDLE f = CreateFileA(pad_file, 0x80000000UL, 7, 0, 3, 0, 0);
         if (f == (HANDLE)(long)-1) return;
-        ReadFile(f, text, sizeof text - 1, &got, 0);
+        x360_read_text(f, text, sizeof text, 0);
         CloseHandle(f);
-        text[got] = 0;
         lx = parse_int(&p);
         ly = parse_int(&p);
         buttons = (unsigned)parse_int(&p);
+        raw_lx = lx * 32767 / 1000;   /* for the trace */
+        raw_ly = ly * 32767 / 1000;
     } else {
         struct { DWORD packet; WORD buttons; unsigned char lt, rt; short lx, ly, rx, ry; } st;
         if (!xinput_tried) {
@@ -217,10 +643,16 @@ static void poll(void) {
                 x360_log("\r\n");
                 last_result = result;
             }
-            if (result != 0) { lx = ly = ry = 0; buttons = 0; return; }
+            if (result != 0) {
+                lx = ly = rx = ry = 0; menu_lx = menu_ly = 0; buttons = 0; raw_lx = raw_ly = 0; raw_lt = raw_rt = 0;
+                record_tick(qms());   /* the pad gone: the recording at rest too */
+                return;
+            }
         }
+        raw_lx = st.lx; raw_ly = st.ly; raw_lt = st.lt; raw_rt = st.rt;
         lx = st.lx * 1000 / 32767;
         ly = st.ly * 1000 / 32767;
+        rx = st.rx * 1000 / 32767;
         ry = st.ry * 1000 / 32767;
         buttons = st.buttons | (st.lt > 64 ? BUTTON_LT : 0) | (st.rt > 64 ? BUTTON_RT : 0);
         {
@@ -228,6 +660,20 @@ static void poll(void) {
             extern int x360_swap_active;
             if (x360_swap_active && ((buttons & 0x1000) != 0) != ((buttons & 0x2000) != 0)) buttons ^= 0x3000;
         }
+        record_tick(qms());   /* pad_record: the pad as the player moves it */
+    }
+    menu_lx = lx;
+    menu_ly = ly;
+    if (x360_stick_dead_zone) {
+        /* The 360's sticks as its game reads them (doc section 32): its per-tick input update
+         * (sub_821FE1D0) rewrites each stick in place with a radial dead zone and rescale
+         * (sub_821FE778; 7849 for the left, 8689 for the right), and it runs twice a tick (the
+         * first call polls, the second finds the table already done): a stick reads as zero up to
+         * about 0.42 and reaches 1 at full tilt. */
+        dead_zone_360(&lx, &ly, 7849);
+        dead_zone_360(&lx, &ly, 7849);
+        dead_zone_360(&rx, &ry, 8689);
+        dead_zone_360(&rx, &ry, 8689);
     }
     {
         /* Transitions only: the buttons' mask, and the stick in or out of its dead zone. */
@@ -252,7 +698,7 @@ static void poll(void) {
     {
         /* The proxy's black screen (x360_menu.c) has the pad while it shows: nothing else gets it. */
         int x360_black_screen_take(unsigned buttons);
-        if (x360_black_screen_take(buttons)) { buttons = 0; lx = ly = ry = 0; }
+        if (x360_black_screen_take(buttons)) { buttons = 0; lx = ly = rx = ry = 0; menu_lx = menu_ly = 0; }
     }
     if ((buttons & 0x1000) && !(old & 0x1000)) a_pressed_at = now;
 }
@@ -260,8 +706,8 @@ static void poll(void) {
 /* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
  * dialogs stop the GetCursorPos polls that drive order()). */
 unsigned x360_pad_buttons(void) { poll(); return buttons; }
-int x360_pad_ly(void) { poll(); return ly; }
-int x360_pad_lx(void) { poll(); return lx; }
+int x360_pad_ly(void) { poll(); return menu_ly; }   /* the proxy's menus: the stick before the 360's dead zone */
+int x360_pad_lx(void) { poll(); return menu_lx; }
 /* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
 void *x360_pad_candidate(void);
 
@@ -401,7 +847,7 @@ static void *patch_import(const char *dll, const char *name, void *replacement) 
  * point (the game's own findWorldLocation, with the virtual cursor only for that call) gives the
  * camera-relative direction; the hero is sent 2 world units that way, as the 360 does. */
 static void note(int what, const char *s) {
-    static int said[4];
+    static int said[5];
     if (!said[what]) { said[what] = 1; x360_log(s); }
 }
 
@@ -417,7 +863,6 @@ static float root(float v) {
  * the hero within 7 units, else anyone within 3.5; an item in a 120-degree cone within 3. */
 /* The hero's own world matrix (Ogre's row-major Matrix4): its rotation is kept at +0xAC in GOG's
  * build (a 4x4 with a zero translation; read in a dump, section 9), its position at +0x70. */
-#define GOG_UNIT_ROTATION 0xac
 static void hero_matrix(unsigned char *hero, float *m) {
     const float *r = (const float *)(hero + GOG_UNIT_ROTATION);
     float pos[3];
@@ -910,6 +1355,70 @@ static int skill_locks_movement(unsigned char *hero) {
     return *(float *)(hero + 0x2c0) > 0.0f && !hero[0x2bd];
 }
 
+/* ---- The stick's speed factor (doc section 29, the movement plan's change a) ----
+ * The 360's plain stick walk (sub_82199E08, called each frame by the frame update while the hero is
+ * not aiming, hero[510], and its AI state is not 34) writes hero+1500 = min(len^2 + 0.2, 1) with the
+ * stick out of its 0.1 dead zone, 1 at rest; the character's update (sub_821D5410, 0x821D6ED0)
+ * multiplies its speed's scale by it unless the AI state (+632) is 7 or 9, or a skill locks the
+ * movement (sub_821DC600) and the skill's byte +64 is set. GOG's same update (0x4a6930) has no such
+ * block: a jump at its join (0x4a8062, the cmp of +0x5b4 after the +0x660 factor, x87 stack empty)
+ * goes to a trampoline that calls walk_scale with the unit and its scale's stack slot, then runs
+ * the cmp it replaced and jumps back. The slot is read from the store just before the join
+ * (fstp [esp+X]: GOG's 0x1c, Steam's 0x18). GOG's fields: the AI state +0x284, the aiming byte
+ * +0x20a (the 360's +0xc); sub_821DC600 inlined in GOG's setDestination (0x494b67): the skill
+ * +0x2d0, its +0xb4 and +0x3c, the hero's +0x20b and +0x2c0; the skill's byte +0x40 (the 360's +64,
+ * the same offset, read there too). pad_walk_factor=0 in x360_ui.ini leaves it out (to compare). */
+float x360_walk_factor = 1.0f;          /* the 360's hero+1500, for the hero only */
+static unsigned char *walk_hero;
+int x360_walk_factor_on = 1;            /* x360_ui.ini pad_walk_factor=0: left out */
+#define walk_factor_on x360_walk_factor_on
+static void __cdecl walk_scale(unsigned char *unit, float *scale) {
+    unsigned char *skill;
+    int state;
+    if (unit != walk_hero || x360_walk_factor >= 1.0f) return;
+    state = *(int *)(unit + 0x284);
+    if (state == 7 || state == 9) return;
+    skill = *(unsigned char **)(unit + 0x2d0);
+    if (skill && (*(int *)(skill + 0xb4) == -1 || skill[0x3c]) &&
+        (unit[0x20b] || *(float *)(unit + 0x2c0) > 0.0f) && skill[0x40]) return;   /* sub_821DC600 and +64 */
+    *scale *= x360_walk_factor;
+}
+static void walk_patch_install(void) {
+    static const unsigned char want[7] = {0x83, 0xbe, 0xb4, 0x05, 0x00, 0x00, 0x00};   /* cmp dword [esi+0x5b4], 0 */
+    unsigned char *at = (unsigned char *)GOG_SPEED_JOIN, *t, slot;
+    DWORD old;
+    int i, n = 0;
+    if (!walk_factor_on) { x360_log("pad: the stick's speed factor off (pad_walk_factor=0)\r\n"); return; }
+    for (i = 0; i < 7; i++)
+        if (at[i] != want[i]) { x360_log("pad: the speed's join not as read: no stick factor\r\n"); return; }
+    if (at[-4] != 0xd9 || at[-3] != 0x5c || at[-2] != 0x24 || at[-1] >= 0x60) {   /* fstp dword [esp+X] */
+        x360_log("pad: the speed's slot not found: no stick factor\r\n");
+        return;
+    }
+    slot = at[-1];
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000 /* MEM_COMMIT | MEM_RESERVE */, 0x40 /* PAGE_EXECUTE_READWRITE */);
+    if (!t) { x360_log("pad: no memory for the speed's trampoline: no stick factor\r\n"); return; }
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = (unsigned char)(slot + 0x20);   /* lea eax, [esp+X+32] */
+    t[n++] = 0x50; t[n++] = 0x56;                                     /* push eax; push esi */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)walk_scale - (t + n + 5)); n += 5;   /* call */
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 7; i++) t[n++] = at[i];                           /* the cmp replaced */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;   /* jmp back */
+    if (!VirtualProtect(at, 7, 0x40, &old)) { x360_log("pad: the speed's join not writable: no stick factor\r\n"); return; }
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
+    VirtualProtect(at, 7, old, &old);
+    x360_log("pad: the stick's speed factor in the character's update (slot ");
+    x360_log_num((long)slot);
+    x360_log(")\r\n");
+}
+
+extern unsigned x360_frames;            /* proxy/x360_menu.c's frame listener */
+int x360_walk_dest_on = 1;              /* x360_ui.ini pad_walk_dest=0: the old destination (to compare) */
+static unsigned dest_frame;
+static unsigned last_probe;             /* GetTickCount of the last probe of the stick's world direction */
+
 static int direction_changed(void) {
     /* More than about 5 degrees between the stick now and at the last probe. */
     long dot = (long)lx * probed_lx + (long)ly * probed_ly;
@@ -920,8 +1429,58 @@ static int direction_changed(void) {
     return c < 0.996f;
 }
 
+/* The stick's world direction as the 360's sub_82199E08 takes it: the stick turned by the
+ * camera's yaw (the atan2 of the camera's forward, client[16]->+8, less 90 degrees). Up walks along
+ * the camera's forward on the ground (fx, fz), right along it turned a quarter (-fz, fx). PC's
+ * camera is the 360's (doc section 31). The screen probe (a point beside the hero on the screen,
+ * cast to the ground) bent the walk by 4 to 18.5 degrees with the direction; it stays as the
+ * fallback when the camera cannot be read, and x360_ui.ini pad_walk_yaw=0 keeps it, to compare. */
+int x360_walk_yaw = 1;
+static int camera_ground(unsigned char *client, float *fx, float *fz) {
+    typedef float *(__fastcall *vec_fn)(void *self, void *edx, float *out);   /* Vector3 by value */
+    static vec_fn dir;
+    static int looked;
+    unsigned char *ctl = client ? *(unsigned char **)(client + 0x10) : 0;
+    void *cam = ctl ? *(void **)(ctl + 8) : 0;
+    float d[3], len;
+    if (!looked) {
+        HMODULE ogre = GetModuleHandleA("OgreMain.dll");
+        looked = 1;
+        dir = ogre ? (vec_fn)GetProcAddress(ogre, "?getDerivedDirection@Camera@Ogre@@QBE?AVVector3@2@XZ") : 0;
+        if (!dir) x360_log("pad: Ogre's Camera::getDerivedDirection not found: the walk takes the screen probe\r\n");
+    }
+    if (!dir || !cam) return 0;
+    dir(cam, 0, d);
+    len = root(d[0] * d[0] + d[2] * d[2]);
+    if (len < 1e-3f) return 0;
+    *fx = d[0] / len;
+    *fz = d[2] / len;
+    return 1;
+}
+
 static int probe(unsigned char *client, unsigned char *hero, const float *pos) {
     float hit[3], dx, dz, len;
+    if (x360_walk_yaw) {
+        float fx, fz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f;
+        if (camera_ground(client, &fx, &fz)) {
+            dx = sx * -fz + sy * fx;
+            dz = sx * fx + sy * fz;
+            len = root(dx * dx + dz * dz);
+            if (len < 1e-3f) return 0;
+            world_x = dx / len;
+            world_z = dz / len;
+            face_x = world_x;
+            face_z = world_z;
+            probed_lx = lx;
+            probed_ly = ly;
+            have_world = 1;
+            return 1;
+        }
+        note(4, "pad: no camera for the walk's yaw: the screen probe\r\n");
+    } else {
+        static int said;
+        if (!said) { said = 1; x360_log("pad: the walk's direction from the screen probe (pad_walk_yaw=0)\r\n"); }
+    }
     in_probe = 1;
     if (!((find_world_fn)GOG_FIND_WORLD_LOCATION)(client, 0, hit, hero[GOG_HOLD_POSITION])) {
         in_probe = 0;
@@ -971,7 +1530,11 @@ static void order(void) {
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
     level = client ? *(unsigned char **)(client + 0x38) : 0;
-    if (!hero || !level) { x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return; }
+    if (!hero || !level) {
+        walk_hero = 0; x360_walk_factor = 1.0f;   /* no hero (the main menu): no stale factor for the next */
+        x360_hud_tick(); note(1, "pad: no client, hero or level\r\n"); return;
+    }
+    if (hero != walk_hero) { walk_hero = hero; x360_walk_factor = 1.0f; }   /* another hero: its own factor */
     diag_level = level;
     attack_level = level;
     {
@@ -1002,16 +1565,35 @@ static void order(void) {
         int x360_in_play(void);
         int x360_pc_menu_up(void);
         if (!x360_in_play()) return;
+        if (!first_play_at) first_play_at = qms();   /* t=0 of a recording */
+        if (!replay_t0 && (replay_n || x360_pad_trace)) {
+            replay_t0 = first_play_at + (replay_n ? replay_start_ms : 0);
+            if (!replay_t0) replay_t0 = 1;
+        }
+        trace_tick(hero, qms());
         /* PC's settings over the game (opened from its pause menu, which closes): the pad is
          * theirs (QA run 20: A and B there also acted in the world). */
         if (x360_pc_menu_up()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
     /* Back opens and closes the 360's inventory (proxy/x360_menu.c); while it is open the pad
      * does not move or act in the world. */
-    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. */
+    /* Start: the 360's pause menu (proxy/x360_menu.c); while it is open the pad is its own. During
+     * a cinematic Start skips it and Back does nothing (the owner's look at the 360, 2026-10-24;
+     * its frame update, sub_821EBA48, does not toggle the pause while sub_821ED810 is true). */
     int x360_tip_open(void);
+    void x360_cinematic_skip(void);
+    void *ui_for_start = *(void **)(client + 0x3c);
+    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && !x360_tip_open() && ui_for_start &&
+        ((bool_fn)GOG_UI_HOLDS_PLAY)(ui_for_start, 0)) {
+        if (pressed & 0x0010) x360_cinematic_skip();
+        pressed &= ~(0x0010u | BUTTON_BACK);
+    }
+    /* A talk or another of the 360's overlays keeps Start and Back (the talk's own rule, x360_menu.c):
+     * not the pause or the inventory too. */
+    if ((pressed & (0x0010 | BUTTON_BACK)) && !x360_pause_open() && !x360_inventory_open() && x360_overlay_open())
+        pressed &= ~(0x0010u | BUTTON_BACK);
     if (!x360_tip_open() && !x360_inventory_open() && ((pressed & 0x0010) || x360_pause_open())) {
-        x360_pause_pad(pressed, ly);
+        x360_pause_pad(pressed, menu_ly);   /* the proxy's menus: the raw stick */
         if (x360_pause_open()) { ((void_fn)GOG_STOP_PATHING)(hero, 0); return; }
     }
     if ((pressed & BUTTON_BACK) && !x360_tip_open()) {   /* a tip keeps every button (the 360's) */
@@ -1019,7 +1601,7 @@ static void order(void) {
         if (x360_inventory_open()) ((void_fn)GOG_STOP_PATHING)(hero, 0);
     }
     if (x360_inventory_open()) {
-        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, lx, ly);   /* a tip over it has the pad */
+        if (!x360_tip_open()) x360_inventory_pad(pressed, buttons, menu_lx, menu_ly);   /* a tip over it has the pad */
         return;
     }
     if (x360_overlay_open()) return;         /* a tip, modal or dialog of the 360's has the pad */
@@ -1034,7 +1616,21 @@ static void order(void) {
         void x360_automap_cycle(void);
         x360_automap_cycle();
     }
+    {
+        /* The 360 moves, chooses and acts on nothing while the hero is dying or dead: its frame
+         * update (sub_821EBA48, at 0x821EC0E8) skips to 0x821EC9F4 when the hero's AI state (+632,
+         * GOG's +0x284) is 5 or 6 (OT's AISTATE_DYING and AISTATE_DEAD) or the hero is not alive
+         * (its virtual +0x20). The candidates and their highlight are dropped. */
+        int state = *(int *)(hero + 0x284);
+        if (state == 5 || state == 6 || !((bool_fn)(*(void ***)hero)[0x20 / 4])(hero, 0)) {
+            candidate = any_candidate = item_candidate = 0;
+            highlight(level, 0);
+            highlight_item(level, 0);
+            return;
+        }
+    }
     ((get_position_fn)GOG_GET_POSITION)(hero, 0, pos, 1);
+    world_at = qms();   /* this frame reached the world's input (trace_tick: a disturbed replay) */
     measure_turn(hero, now);
     if (release_t0 && now - release_t0 >= 1000) {
         /* How far the hero went after the stick was let go. */
@@ -1045,6 +1641,13 @@ static void order(void) {
         release_t0 = 0;
     }
 
+    if (!hero[0x20a] && *(int *)(hero + 0x284) != 34) {
+        /* The 360's sub_82199E08: hero+1500 from the stick while the stick walks the hero, else 1.
+         * Its dead zone is the 360's 0.1 on the stick after the 360's own dead zone (DEAD_ZONE,
+         * dead_zone_360 in poll(): doc section 32). */
+        float l2 = ((float)lx * lx + (float)ly * ly) / 1000000.0f;
+        x360_walk_factor = stick_active() ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
+    }
     if (stick_active()) {
         if (!was_active) {
             /* Moving the stick drops the target, as on the 360. */
@@ -1055,10 +1658,13 @@ static void order(void) {
         if (!(buttons & 0x4000)) {
             int changed = direction_changed();
             if (changed && !change_t0) change_t0 = now;
-            if ((changed && face_each_frame) || now - last_order >= 100) {
+            if ((changed && face_each_frame) || now - last_probe >= 100) {
+                /* Its own timer: the destination goes each frame now, and the direction must still
+                 * be probed again every 0.1 s (a probe on a wall's top or an object, the review). */
                 float old_x = world_x, old_z = world_z;
                 int had = have_world;
                 int ok = probe(client, hero, pos);
+                last_probe = now;
                 if (ok && changed &&
                     (!had || old_x * world_x + old_z * world_z < 0.866f)) {
                     turn_t0 = change_t0 ? change_t0 : now; /* a turn of more than 30 degrees: time it from the stick */
@@ -1069,12 +1675,56 @@ static void order(void) {
             }
             if (have_world && face_each_frame)
                 ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(hero, 0, pos[0] + 2.0f * world_x, pos[2] + 2.0f * world_z);
-            if (have_world && now - last_order >= 100 && !skill_locks_movement(hero)) {
+            /* The 360's walk (sub_82199E08, change b): a destination each frame, 5 times the
+             * stick's length (after the 360's dead zone) along the stick turned by the camera's
+             * yaw (probe()); pad_walk_dest=0 (or no frame count yet) keeps
+             * the old one, 2 units every 0.1 s (sub_8221B8E8's, the 360's walk after a held action).
+             * Left out: the 360's per-frame sub_8219C070(hero, 0) and its +652 handle's release
+             * after the destination (the target's drop is the pad's on the stick's first frame). */
+            if (have_world && !skill_locks_movement(hero) &&
+                ((x360_walk_dest_on && x360_frames && x360_frames != dest_frame) || now - last_order >= 100)) {
+                /* The frame count gates it; the old 0.1 s timer stays as a backstop (a frame
+                 * listener that stopped would else hold the hero: the review). */
+                float ahead = 2.0f;
+                if (x360_walk_dest_on && x360_frames) {
+                    ahead = 5.0f * root(((float)lx * lx + (float)ly * ly) / 1000000.0f);
+                    dest_frame = x360_frames;
+                }
                 last_order = now;
                 aim_lx = lx;
                 aim_ly = ly;
-                ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + 2.0f * world_x,
-                                                          pos[2] + 2.0f * world_z);
+                {
+                    /* Its cost, in the log every 5 s while the stick walks, with pad_log or a
+                     * trace on: a path request each frame on the game's thread (the review). */
+                    static long long sum, worst, qpf;
+                    static unsigned count, since;
+                    long long t0, t1;
+                    QueryPerformanceCounter(&t0);
+                    ((set_destination_fn)GOG_SET_DESTINATION)(hero, 0, level, pos[0] + ahead * world_x,
+                                                              pos[2] + ahead * world_z);
+                    QueryPerformanceCounter(&t1);
+                    sum += t1 - t0;
+                    if (t1 - t0 > worst) worst = t1 - t0;
+                    count++;
+                    frame_dest_ticks += t1 - t0;
+                    frame_dest_calls++;
+                    if ((verbose || x360_pad_trace) && now - since >= 5000) {
+                        if (!qpf) QueryPerformanceFrequency(&qpf);
+                        if (since && count && qpf) {
+                            /* In floating point: 64-bit division needs the CRT's __alldiv. */
+                            x360_log("pad: setDestination us avg ");
+                            x360_log_num((long)((double)sum * 1e6 / (double)qpf / (double)count));
+                            x360_log(" max ");
+                            x360_log_num((long)((double)worst * 1e6 / (double)qpf));
+                            x360_log(" n ");
+                            x360_log_num((long)count);
+                            x360_log("\r\n");
+                        }
+                        since = now;
+                        sum = worst = 0;
+                        count = 0;
+                    }
+                }
                 dest_calls++;
                 note(3, "pad: setDestination called\r\n");
             }
@@ -1170,12 +1820,28 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         while (file[n] && n < sizeof pad_file - 1) { pad_file[n] = file[n]; n++; }
         pad_file[n] = 0;
     }
+    if (x360_pad_replay[0]) replay_load(x360_pad_replay);
     real_get_cursor_pos = (get_cursor_pos_fn)patch_import("user32.dll", "GetCursorPos", (void *)pad_get_cursor_pos);
     real_get_async_key_state =
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
+    if (x360_pad_running) walk_patch_install();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
     x360_log(pad_file[0] ? ", input from " : ", input from XInput\r\n");
     if (pad_file[0]) { x360_log(pad_file); x360_log("\r\n"); }
+}
+
+/* The process ends (DLL_PROCESS_DETACH: the game's own exit, Alt+F4 too; or a stop's
+ * TerminateProcess, x360_menu.c): the recording ends with a line at rest (the stick held at the
+ * exit would else stay held in its replay) and both files are written to their end. */
+void x360_pad_shutdown(void) {
+    if (record_file != (HANDLE)(long)-1 && first_play_at) {
+        record_num((long)(qms() - first_play_at));
+        record_put(" 0 0 0 0 0\r\n");
+    }
+    record_flush();
+    if (record_file != (HANDLE)(long)-1) { CloseHandle(record_file); record_file = (HANDLE)(long)-1; }
+    trace_flush();
+    if (trace_file != (HANDLE)(long)-1) { CloseHandle(trace_file); trace_file = (HANDLE)(long)-1; }
 }

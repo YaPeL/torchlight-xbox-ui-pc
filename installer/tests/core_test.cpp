@@ -10,6 +10,7 @@
 
 #include "lzx.h"
 #include "stfs.h"
+#include "text_lines.h"
 #include "xex.h"
 
 using namespace x360ui;
@@ -178,8 +179,21 @@ static void test_lower() {
   CHECK(lower_latin1("\xC3\x80\xC3\x9E\xC3\x97Z") == "\xC3\xA0\xC3\xBE\xC3\x97z", "Latin-1 names lowered as Python");
 }
 
+static void test_text_lines() {
+  // LF, CRLF and a lone CR give the same lines; a last line without its end is kept; an empty
+  // line in the middle is a line (the rule every reader of the mod's texts keeps).
+  using V = std::vector<std::string>;
+  const V want = {"a=1", "", "b=2"};
+  CHECK(text_lines(std::string("a=1\n\nb=2\n")) == want, "LF");
+  CHECK(text_lines(std::string("a=1\r\n\r\nb=2\r\n")) == want, "CRLF");
+  CHECK(text_lines(std::string("a=1\r\rb=2\r")) == want, "a lone CR");
+  CHECK(text_lines(std::string("a=1\r\n\nb=2")) == want, "mixed, the last line not ended");
+  CHECK(text_lines(std::u32string(U"x\r\ny")) == std::vector<std::u32string>({U"x", U"y"}), "UTF-32");
+}
+
 int main() {
   test_lower();
+  test_text_lines();
   test_aes();
   test_lzx();
   test_xex();

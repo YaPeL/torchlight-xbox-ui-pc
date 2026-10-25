@@ -46,7 +46,10 @@ This repository is the whole of this project; the recomp's repository is only a 
 1. Snapshot Steam:
    `tools/steam_guard.py snapshot ~/torchlight-gog/hashes/steam-guard.json ~/.steam/debian-installation/steamapps/compatdata/41500 ~/.steam/debian-installation/userdata/<steam-id>/41500`.
    If a snapshot was already taken, check that it still holds with `verify` before overwriting it.
-2. Run `tools/run_gog.sh`. It calls `proton run` from Proton Experimental with:
+2. Run `tools/run_gog.sh`. First it backs up the saves the run will use with
+   `tools/save_guard.py backup` (the folder found from the prefix's own `user.reg`, copied to
+   `~/torchlight-gog/save-backups/run-<time>` and checked by hash) and stops if that fails. Then it
+   calls `proton run` from Proton Experimental with:
    - `STEAM_COMPAT_DATA_PATH=~/torchlight-gog/compat`;
    - `STEAM_COMPAT_CLIENT_INSTALL_PATH` set to Steam's folder, only so the script finds it;
    - `SteamGameId=gogtl` and `SteamAppId=0`, both needed: without them the script exits at once
@@ -94,6 +97,8 @@ This repository is the whole of this project; the recomp's repository is only a 
 | `grab_window.py` | A screenshot of the game's window (X11 under Xwayland) |
 | `send_input.py` | Mouse and keyboard input for the game, sent from inside its prefix (`send_input.exe`, built by `build_proxy.py`) |
 | `steam_guard.py` | Hash snapshot and verify of folders that must not change |
+| `save_guard.py` | The save folder a GOG run will use, backed up and checked before the run |
+| `pad_trace.py` | The movement's measurement: the recorded stick routes (`routes`), a trace's numbers (`summary`), and a trace against the recompiled 360's (`compare`, with an SVG plot) |
 | `run_gog.sh` | The GOG run above (shell, no test) |
 | `check_no_game_files.py` | The CI check |
 
@@ -825,6 +830,40 @@ el highlight; a veces me hace el highlight pero le pega a otro").**
   searches themselves take at most tens of microseconds (measured apart: units and items); the
   rest was the diagnosis lines written, through Wine, during the 3 s after each press of X or A.
   That log is now off unless `pad_log=1` is in `x360_ui.ini`.
+
+**The movement measured (2026-10-24).** Two test options of `x360_ui.ini`, named on the screen's
+test notice like the others: `pad_replay=PATH` plays a recorded stick (`tools/pad_trace.py
+routes`) in place of XInput, from 3 s after the first frame in play (the file's `# start_ms`); with
+the option set the hand's pad works until the first frame in play (the title, the main menu's
+Continue) and is not read after it (the menus too get the replay's buttons then, the last line's
+after the end), and the replay's clock is the performance counter (Windows'
+`GetTickCount` moves by 15.6 ms). `pad_trace=1` writes the hero's path to `x360_trace-<date>.csv` in the
+mod's folder: the time, its position, its facing, GOG's `+0x200` and `+0x204` and the raw stick,
+a line whenever one of them changes, until 2 s after the replay's end, with a last line there. If
+the pad's input is held by a menu, a tip or a cinematic while the replay runs, the log says
+"replay disturbed" and that run does not count. The formats are in
+`proxy/pad.c` and `tools/pad_trace.py`; the recompiled 360 build writes the same trace from its
+own dev input script, so `pad_trace.py compare` can set the two side by side. The tolerances
+proposed: the two paths at most 0.5 units apart at the same time (about the hero's width), to the
+later trace's end (the slide after the release counts); and in each 250 ms span where the 360's
+hero moves at a steady speed (not a start or a stop), the speed within 10% of the 360's, allowing
+one 30 fps frame of lag; none moving where it rests.
+
+**The owner's route recorded (2026-10-24).** The routes are the owner's own, played on the pad
+and recorded, not written by a tool: `pad_record=1` (a test option, off by default; it turns
+`pad_trace` on too) writes `x360_record-<date>.txt` in the mod's folder, a replay file
+(`# start_ms 0`, t=0 the first frame in play, a line when the stick, a trigger or a button
+changed, the buttons as the game reads them), and the trace of that session beside it. That trace
+is the baseline. `pad_replay=` plays the recording back by time, so it runs the same on this build
+and on the recompiled 360's whatever their frame rates; each change to the walk is measured by
+playing the same recording and comparing the traces (`pad_trace.py compare`). A replay file is
+loaded on the process heap (64 MB at most), so a long recording fits. The save: a copy of a hero
+saved in town, through `save_root=`, so the session starts at the town's start point, as the
+recompiled build's does from a town save. The recording is written to its end when the game
+exits (`DLL_PROCESS_DETACH`), and when the pad drops out its line at rest is written too; a replay
+is cut at 70 minutes (the trace's microseconds in 32 bits). The tool's own routes
+(`pad_trace.py routes`) start to the left (`--angle`, 180 by default), the open ground at the
+town's start point.
 
 **Doors and barrels (2026-10-15, two regressions the user found).** **[read; the logs]**
 - GOG keeps doors and levers as `CTriggerUnit` and barrels as `CBreakable` in the level's item
@@ -3395,3 +3434,378 @@ the frame. PC's client input (`0x415125`) has the same branch: it clears its inp
 (`0x4e7350` on `+0xf4c`, `+0x54`..`+0x56`), and if the hero performs a skill (`0x486550` or
 `0x486390`) calls its virtual `+0x174` with 2, then returns. PC runs it every frame by itself, so
 the pad has only to give no orders while it holds.
+
+## 27. The pad against the 360, function by function (an audit, 2026-10-24)
+
+The owner asked for the pad's play to be checked against the 360's code as a whole, not piece by
+piece as it was written. The 360's frame update (`sub_821EBA48`) read in order, against
+`proxy/pad.c`:
+
+| What | The 360 | The pad | |
+|---|---|---|---|
+| A cinematic | `sub_821ED810` on the client's `+60`: input cleared, a hero in a skill set idle, the frame left | no orders (PC's own `0x415125` does the rest) | same (section 26) |
+| Zoom | RS, `-0.35` a frame, from 14 to 28.5 times the level's factor | the same rule, by the clock | same |
+| Facing | toward the stick's point every frame; with no stick and the flag, the facing kept (`sub_8221C838`) | `setTargetDirection` every frame with the stick | same |
+| Walking | `setDestination` 2 units ahead every 0.1 s | the same; `stopPathing` on release | same (the release measured, section 9) |
+| A skill's lock | `sub_821DC600` (the skill at `+708`) | `skill_locks_movement` (GOG `+0xc`) | same |
+| X | `sub_8221BC80(-1)`: no walking, the attack where the hero stands | PC's attack in range, else in place toward the target | same (section 9) |
+| A dying or dead hero | no target, no moves, no buttons (`0x821EC0E8` skips to `0x821EC9F4`, which drops the candidates' marks at the client's `+444`, `+452`) when its AI state (`+632`, GOG `+0x284`) is 5 or 6 (*(OT)* `AISTATE_DYING`, `AISTATE_DEAD`) or it is not alive | **was:** the search and the highlight went on | fixed on the branch `audit-dead-hero` |
+| The target's choice | `sub_821EB598` every frame (alive, not 5 or 6) | every 15 ms | same rule |
+| B, Y, LT, RT | `sub_8221BC80(skill)`, aimed by `sub_8221C838` | PC's hotbar keys 3 to 6, the virtual cursor 2 units ahead | to compare: the aim and the target a skill takes |
+| LB, RB | not read yet | PC's hotbar keys 1 and 2 | to read |
+| Walking, read again | `sub_82199E08(client, 0)`, every frame while the hero is not aiming (`hero[510]` 0) and its AI state is not 34: past the stick's 0.1 dead zone, a destination **5.0** units ahead (the stick turned by the camera) **every frame**, and `hero+1500 = min(len² + 0.2, 1.0)` first (an analog speed?); at rest, `+1500` back to 1.0 and, within 2.0 of its goal, the hero faced 2.4 units along the stick (`sub_82199360`). `sub_8221B8E8` (2.0 units on a 0.1 s timer, section 9) runs only after an action held (`sub_8221BC80` returning 0) | 2.0 units every 0.1 s, a fixed speed, `stopPathing` on release | **different, not changed yet**: `+1500` is read by `sub_821D5410` and `sub_822E3A30`, not yet read; PC's `+0x5e8` (`+1500 + 0xc`) is written by its path code (`0x48cd51`), so likely another field. To read before any change (it may be the "remolino" of section 9) |
+| Start and Back in a cinematic | not traced | handled before the cinematic's test | to trace |
+| Paths and collisions | the engine (A*, `passableBetween`) | PC's engine | to confirm with OpenTorchlight |
+
+## 28. PC's menu keys swallowed in play (2026-10-24)
+
+The owner's first Windows run: the space bar (PC's KEYMAP_CLOSEALL) made PC's menus move behind
+the 360's. With the 360's interface the pad opens the screens, so in play the mod keeps PC's menu
+keys from the game, by the owner's list: KEYMAP_INVENTORY (I), PET (P), STATS (C), SKILLS (S),
+QUESTS (Q), JOURNAL (J), OPTIONS (Esc), PAUSE (Enter), CLOSEALL (the space bar) and AUTOMAP (A:
+the map is on R3, section 9). The rest work as on PC: the hotbar's 1 to 0 (the pad sends them for
+the skills), F1 to F12, Shift, Alt, Tab, W, the skills' cycle (`.` `,`), the zooms (`=` `-`,
+`]` `[`) and the console's key. A dual mode (the keyboard's menus as PC's) may come later.
+
+How: the game's window is subclassed once (`keys_off`, `proxy/x360_menu.c`); its procedure drops
+WM_KEYDOWN and WM_KEYUP of those keys, and WM_CHAR of Esc, Enter and space (CEGUI's injected
+characters), while in play (`hud_in_play`), PC's settings are not open (reached from the 360's
+pause menu; the keyboard works there), the developer console is not shown (its CEGUI window
+`WindowsLook/Console`, typed into) and no cinematic holds (CGameUI's `0x541db0`: PC's keys skip
+it). A press's repeats and release go as the press went, so PC never keeps a key down across those
+changes; out of play, or when the frame tick has not refreshed the state for 2 s, nothing is
+swallowed. The console's window is looked for at once when its key (`` ` ``) goes down.
+The game's window (its title) is subclassed once, with its own kind (ANSI or Unicode). Test scripts that send these keys in play (`tools/send_input.py`) now send
+nothing the game sees. PC's window procedure (`CGame::WndProc` *(OT)*, in OpenTorchlight's
+build; not located in GOG's) is what gives the keys to `CGameUI::keyEvent` and
+`CKeyManager::keyEvent` *(OT)*, so neither sees them. That GOG's keys come by the window's
+messages is seen in every run: the pad's skills are `WM_KEYDOWN` messages it posts (`post_key`,
+`proxy/pad.c`), which PC's hotbar acts on. The
+one address used is the cinematic's test, already ported to Steam's build
+(`proxy/addresses_steam.txt`). The six screen
+hotkeys patched off before (`hotkeys_off`, section 17) stay off. At the title and the main menu
+the keyboard is PC's.
+
+## 29. The stick's speed factor (the movement plan's change a, 2026-10-24)
+
+The 360's plain stick walk (`sub_82199E08`) writes `hero+1500 = min(len^2 + 0.2, 1)`, and its
+character update (`sub_821D5410`, `0x821D6ED0`..`0x821D6F10`) multiplies the speed's scale by it;
+GOG's same update (`0x4a6930`) has no such block (the audit's analysis, PR #30). The owner's
+recording replayed on the recompiled 360 build (its agent's trace, the same input) confirmed it: a
+straight at a 0.72 tilt walked at 4.36 units/s there, 6.22 on PC (the formula's 0.72 gives 4.47),
+and the half-tilt spins at 2.4 units/s there, 5.3 and 4.1 on PC.
+
+The factor is now in GOG's character update (`proxy/pad.c`, `walk_scale`): a jump at its join
+(`0x4a8062`; Steam's `0x4a5dd8`) to a trampoline that scales the speed's stack slot (read from the
+store just before: GOG's `[esp+0x1c]`, Steam's `[esp+0x18]`) by `min(len^2 + 0.2, 1)`, for the
+hero only, unless its AI state is 7 or 9 or the 360's `sub_821DC600` holds (inlined in GOG's
+`setDestination`, `0x494b67`: the skill's `+0xb4`, `+0x3c`, the hero's `+0x20b`, `+0x2c0`) with
+the skill's byte `+0x40` set. The factor is computed each frame while the hero is not aiming
+(`+0x20a`) and its AI state is not 34, and kept otherwise, as the 360 keeps `+1500`; from the
+stick only while the pad's walk takes it (its dead zone, until change c gives it the 360's 0.1),
+else 1. `pad_walk_factor=0` leaves it out, to compare. It changes what the player sees (slower at
+a partial tilt): merged only with the owner's OK after a test by hand.
+
+**Measured** (the owner's route replayed on GOG with the factor; units per second over each route):
+
+| Route | PC before | With the factor | The 360 |
+|---|---|---|---|
+| a spin at 2.0 turns/s, half tilt | 4.10 | 2.33 | 2.35 |
+| a spin at 1.5 turns/s, 0.85 tilt | 3.50 | 3.32 | 3.39 |
+| a spin at 0.66 turns/s, half tilt | 5.35 | 3.17 | 2.41 |
+| a straight at 0.72 tilt | 6.22 | 5.09 | 4.36 |
+| a straight at 0.94 tilt (factor 1) | 6.22 | 6.22 | 5.37 |
+
+The replay reproduces the recording (the 0.94 straight: 32.20 units against the recording's
+32.22). What stays apart is the path's shape (the 360 aims each frame: change b, parked, PR #40).
+## 30. A destination each frame (the movement plan's change b, 2026-10-24)
+
+(Parked here at first; measured again on top of the 360's dead zone in 30a, which supersedes the
+measurement below.)
+
+The 360's plain stick walk (`sub_82199E08`) sends a destination each frame, at 5 times the stick's
+length along the stick turned by the camera; the pad sent one every 0.1 s, 2 units ahead
+(the 360's walk after a held action, `sub_8221B8E8`). The owner's route replayed: PC's paths are
+polygons of 0.1 s chords where the 360's are curves (the spins). Now `setDestination` goes once
+per game frame (the proxy's frame listener counts them, `x360_frames`) at `5 * len` along the
+stick's world direction (the camera's yaw since section 31, refreshed on a turn of more than 5
+degrees or every 0.1 s, by its own timer); the facing each frame and the release (`stopPathing`) are unchanged.
+Left out: the 360's `sub_8219C070(hero, 0)` and its `+652` handle's release each frame after the
+destination (the pad drops the target on the stick's first frame). The 360 runs it at about 60
+frames a second, PC at its uncapped rate (100 to 200): twice to four times the path requests;
+measured in the replay (the frame rate in the trace). `pad_walk_dest=0` keeps the old one, to
+compare.
+
+**Measured (2026-10-24, the owner's route replayed; units per second over each route).** Change
+(a) alone brought the partial-tilt spins to the 360's (2.0 turns a second at half tilt: 2.33,
+the 360's 2.35; 1.5 at 0.85: 3.32 against 3.39). With (b) on top they moved away again (3.21 and
+3.61; 0.66 turns a second at half tilt: 3.63, the 360's 2.41, (a) alone 3.17); the straights did
+not change. Two causes were tried and left out:
+- the destination each frame itself was the change being measured;
+- the screen probe's direction against the 360's camera yaw: the angle between the stick and the
+  walk varies the same way on both builds (about 20 degrees across the stick's directions), with
+  a constant offset of about 6 degrees between them, so the probe does not bend it (wrong, as
+  the 8-direction replay at full tilt showed: section 31).
+Stopped there (two causes in a row): (b) is parked, (a) stands alone. Not tried yet: the frame
+rate (the 360's replay ran at about 177 frames a second, PC's at 105 to 120: a destination each
+frame is then a different rate), and the 360's per-frame `sub_8219C070`, left out. Both were
+tried later and changed nothing (a replay each); then the 360's stick dead zone was found
+(section 32), which changes the factor's input, and (b) was measured again on top of it (30a).
+
+
+### 30a. Change b again, on top of the 360's dead zone (2026-10-24, the owner's new route)
+
+With changes a, the yaw and c integrated, the owner's new route (section 32) left one difference:
+the fastest spins (the stick turning 650 to 720 degrees a second at full tilt), where PC walked 3.4
+to 4.8 units a second against the 360's 5.2 to 5.5. Change b (a destination each frame) replayed
+on the same route, against the 360 and develop's replay:
+
+| | 360 | develop | develop + b |
+|---|---|---|---|
+| fast spins, 27.75 / 28.0 / 28.25 s (units a second) | 5.51 / 5.35 / 5.22 | 3.87 / 3.43 / 3.90 | 4.99 / 5.32 / 5.21 |
+| fast spins, 51.0 / 51.25 s | 5.42 / 5.31 | 4.78 / 4.32 | 5.11 / 5.33 |
+| path, 27 to 29 s and 51 to 53 s | 9.20, 9.90 | 8.05, 9.44 | 9.14, 9.95 |
+| start | 860 ms | 860 ms | 861 ms |
+| whole path | 193.6 | 191.1 | 193.2 |
+| gap to the 360, every 0.1 s: largest, mean | | 1.34, 0.35 | 0.96, 0.30 |
+| speed at a steady tilt of 0.75 / 0.80 / 0.85 | 3.16 / 3.71 / 4.54 | 3.27 / 3.67 / 4.43 | 3.17 / 3.68 / 4.53 |
+
+At 0.6, 0.7, 0.9 and full tilt the three agree within 0.03. So b brings the fast spins to the
+360's and makes nothing else worse; its earlier result (section 30) came before the dead zone,
+when the factor read the raw stick. The 0.1 s timer stays as a backstop (a frame listener that
+stopped would else hold the hero), and the call's cost goes to the log every 5 s while the stick
+walks with `pad_log=1` or a trace on (`pad: setDestination us avg ... max ... n ...`): a path
+request each frame, against
+walls too, to be read in a run before it is integrated.
+
+**Its cost (2026-10-24, the owner's request).** The owner's new route with the fixed b: the gap to
+the 360 0.73 largest and 0.21 mean, the fast spins 5.06 to 5.44, the start 868 ms. Against walls
+(the first 8-direction file, 2 s pushes from the boxed-in town start), with b and with
+`pad_walk_dest=0`, at 60 fps with vsync (`VSYNCH :1`, `MAX_FPS :60` in the measuring copy's
+`local_settings.txt`) and uncapped (`VSYNCH :0`, `MAX_FPS :1000`); each frame's time and the
+`setDestination` time in it from `x360_frames-<date>.csv` (pad_trace), 6 to 30 s:
+
+| | 60, b | 60, no b | uncapped, b | uncapped, no b |
+|---|---|---|---|---|
+| frames a second | 60 | 60 | 172 | 182 |
+| frame ms p50 / p95 / p99 | 16.64 / 17.29 / 17.55 | 16.66 / 17.42 / 17.84 | 5.19 / 8.58 / 9.20 | 4.60 / 9.55 / 10.48 |
+| largest frame | 84 ms | 100 ms | 64 ms | 52 ms |
+| frames over 18 ms | 7 | 10 | 1 | 1 |
+| of them with `setDestination` over 1 ms | 0 | 0 | 0 | 0 |
+| `setDestination`: calls, mean, largest | 954, 30 us, 71 us | 160, 23 us, 48 us | 2775, 41 us, 386 us | 160, 28 us, 363 us |
+
+The long frames (52 to 100 ms) are on both sides, with `setDestination` at 30 us at most in
+them: the game's. At 60 fps b makes no frame miss its 16.6 ms; uncapped it costs 0.6 ms of the
+median frame. (On the route at 200 fps three 5 s windows had a call of 3.3 to 3.7 ms; none here.)
+
+## 31. The walk's direction: the stick turned by the camera's yaw (2026-10-24)
+
+The 360's plain walk (`sub_82199E08`) turns the stick by the camera's yaw: `f10 = atan2` of the
+camera's forward (`sub_821C9BF8`, the camera controller `client[16]`, its camera at `+8`, the
+orientation at `+0x410`, times `-UNIT_Z` at `0x8349D4EC`; `sub_821BEBE8` the atan2), then
+`f9 = f10 * 57.2958 - 90` (the pool `0x820AA2C0`'s `+0x27C` and `+0xB4`), the rotation's angle.
+On the ground that is: stick up walks along the camera's forward `(fx, fz)`, stick right along
+`(-fz, fx)`. The pad took the direction from a screen probe instead (a point beside the hero on
+the screen, cast to the ground by `findWorldLocation`), which perspective bends.
+
+PC's camera is the 360's: Ogre's `Camera::getDerivedDirection` and `getDerivedPosition` of the
+controller's camera (client `+0x10`, then `+8`) read (-0.485, -0.728, 0.485) and (-19.584, 18.896,
+4.756) at the town's start; the recomp agent read the 360's (-0.48507, -0.72761, 0.48507) and
+(-19.583, 18.896, 4.755). Now the pad turns the stick by the yaw of that direction, read each
+time the walk's direction is refreshed (a turn of more than 5 degrees, or every 0.1 s); the
+screen probe stays as the fallback when the camera cannot be read, and `pad_walk_yaw=0` in
+`x360_ui.ini` keeps it, to compare.
+
+**Measured (2026-10-24).** A synthetic replay (outside the repository): a lead-in to an open
+place in town, then full tilt at once in 8 directions, 0.6 s each (full tilt, so the stick's
+length plays no part), on the recompiled 360 and on GOG with each direction. The walk's angle in
+the world (atan2 of z, x) from 0.15 to 0.55 s after the press, every push at a steady 5.8 to 6.7
+units a second:
+
+| Stick | 360 | PC, screen probe | PC, camera yaw |
+|---|---|---|---|
+| up | 139.3 | 128.7 (-10.6) | 141.8 (+2.4) |
+| down | -33.1 | -41.3 (-8.2) | -30.0 (+3.2) |
+| right | -135.0 | -142.0 (-7.0) | -135.0 (0.0) |
+| left | 45.0 | 52.0 (+7.0) | 45.0 (0.0) |
+| up-right | -179.9 | 163.2 (-16.9) | -180.0 (0.0) |
+| down-left | 1.6 | -4.5 (-6.1) | 2.0 (+0.4) |
+| up-left | 84.7 | 103.2 (+18.5) | 85.2 (+0.5) |
+| down-right | -86.0 | -90.2 (-4.2) | -86.1 (0.0) |
+
+Up and down leave the exact diagonal on both builds there (the ground's). On a reversal the
+facing turns 150 degrees in 196 ms on the 360, 197 to 202 with the yaw, 224 to 249 with the
+probe. Not yet played by hand.
+
+## 32. The sticks' dead zone, the 360's (the movement plan's change c, 2026-10-24)
+
+The recompiled 360's walk starts only past a stick length of about 0.48, and below full tilt its
+speed is lower than `l^2 + 0.2` gives on the raw stick. The recomp agent's probe found why (the
+owner approved it; branch `diag/stick-read` a623c49 of the recomp): at `XamInputGetState`'s return
+the stick equals the one given in every frame (17300 frames), and at `sub_82191018`'s return it
+is rescaled. Between the two is the game's per-tick input update, `sub_821FE1D0`: when the poll
+flag `0x83065EAA` is set (by `sub_821EF318` at `0x821EF79C`) it polls (`sub_821FE8A8` copies
+each pad's `XINPUT_STATE` into `0x83557E80 + 16 * user` and clears the flag); then, for the active
+pad, it rewrites the sticks in that table in place, `sub_821FE778(&lx, &ly, 0x1EA9 = 7849)` and
+`sub_821FE778(&rx, &ry, 0x21F1 = 8689)`, and the triggers with `sub_821FE480`. `sub_821FE778` is a
+radial dead zone in shorts: the length less the dead zone, at least 0 (the pool's `+0x44`), times
+`32767 / (32767 - dz)` (`+0xD4`), along the stick's direction (divided by the length when it is
+over `+0x280`, 1e-8), clamped to 32767 (`+0x2A8`, `+0xD4`), truncated (`fctiwz`). The update has
+three callers, `sub_821EBA48` (the client's frame update), `sub_8221ABA0` and `sub_82338218`; only
+the first after the flag polls, and a later one in the same tick runs the dead zone again on the
+table already done. So the stick goes through it twice: zero up to `2d - d^2` = 0.4217 (`d` =
+7849 / 32767), and `f(f(l))` above, `f(l) = (l - d) / (1 - d)`. The probe measured 0.4218, and
+0.503 -> 0.140, 0.703 -> 0.486, 0.900 -> 0.827 (11137 frames, within 0.001 of the formula). The
+walk's own 0.1 (`sub_82199E08`) applies after it: the hero walks from 0.48. The recomp agent's
+caveat: the two passes come from the same game code's call order, measured on every partial-tilt
+frame, but the calls per tick were not counted.
+
+Here `poll()` passes the left stick through `sub_821FE778`'s rule twice with 7849 and the right
+stick twice with 8689, whatever the source (XInput, a replay, the pad file), and the pad's
+threshold becomes the walk's 0.1 on the result (it was XInput's 0.24 on the raw stick). The
+walk, its speed factor (`l^2 + 0.2`, section 29), the skills' aim and the zoom read the result;
+the proxy's own menus (the pause menu, the inventory, the navigation of PC's screens) keep the
+raw stick (their 0.5 is not the 360's code), and the recording and the trace keep the raw stick.
+It is computed with the stick normalised (the proxy's square root converges near 1, not on shorts
+squared: the review), the shorts' truncation kept. The triggers are left as they were (PC's 64 of 255;
+`sub_821FE480` not read). `pad_dead_zone=0` in `x360_ui.ini` keeps the old behaviour, to compare.
+
+**Measured (2026-10-24, the owner's route replayed with changes a, the camera's yaw and this; the
+360's trace with the recomp agent's probe).** The starts are the 360's: route 0 starts walking
+1780 ms after the stick leaves rest (the 360: 1790; before this change 57), route 3 729 (739;
+144), route 4 121 (116; 54); route 0's path is 27.50 units (27.48). By the stick's length, the
+speed and the scale (GOG's `+0x200`, the 360's `+500`) over 0.1 s with the stick steady:
+
+| Stick | 360 speed, scale | PC speed, scale |
+|---|---|---|
+| 0.50 | 1.49, 0.23 | 1.37, 0.22 |
+| 0.65 | 2.21, 0.35 | 2.13, 0.35 |
+| 0.70 | 2.94, 0.46 | 2.91, 0.47 |
+| 0.80 | 4.24, 0.68 | 4.20, 0.68 |
+| 0.90 | 5.65, 0.85 | 5.50, 0.85 |
+| 1.00 | 6.24, 1.00 | 6.24, 1.00 |
+
+In route 1 the PC hero was held at full tilt by something in its way, at about (-17.8, 28.2),
+in both replays with this change (1.7 s, then twice for about 0.5 s; the 360 passes there, and
+PC's replay before this change walked another line, its route 0 ending 4 units away): an
+obstacle on PC's path there, the pet or a townsman. So the later routes start from other
+places (up to 4 units), and their stop-and-go stretches (routes 3, 4, 6, the stick stepping)
+differ by 6 to 35 % in total path while the speed by length above agrees and most 0.5 s samples
+match within 0.2 units a second. Not played by hand yet.
+
+**A new route (2026-10-24), recorded by the owner with changes a, the yaw and this, touching
+nothing (`route-new.txt`, 55 s, outside the repository).** Replayed on the 360 (the recomp agent;
+its probe: the raw stick at `XamInputGetState` in every frame, the game's read zero up to 0.4204
+and more from 0.4239) and on PC, and against the owner's own run: the paths are 193.6 units (the
+360), 191.1 (PC replayed) and 190.4 (PC by hand); the heroes stay within 0.95 units of each other
+the whole route (the end 0.65 apart); the start is 863 ms on all three; most 2 s windows agree
+within 1 %. The one difference left is the fastest spins: with the stick turning about 650 to
+720 degrees a second at full tilt, PC walks 3.4 to 4.3 units a second where the 360 walks 5.2 to
+5.5 (27.75 to 28.25 s, 51.0 to 51.25 s), 5 to 12 % less over those 2 s windows; at 430 to 600
+degrees a second the speeds agree. The pad's destination goes every 0.1 s, the 360's every frame
+(change b, parked in section 30 before the dead zone was found).
+
+## 34. PC's resurrection screen with the pad (2026-10-24)
+
+In the owner's run of 2026-10-24 the hero died and PC's resurrection screen (`diemenu.layout`:
+`Frame` holding `Title`, `Resurrect1`-`3` with their `Choice1`-`3` texts, and `ExitGame`) could
+not be left with the pad: no code gave its buttons to the pad. The 360 has its own screen (its
+`diemenu.layout`, converted with the others) that the port does not show yet; the owner chose the
+quicker way for now: PC's screen with the pad, as PC's pause menu (section 17's list of PC's
+buttons).
+
+- `pc_menu_tick` finds its prefix by `Resurrect1` (and `Resurrect2` under the same prefix), and
+  while its `ExitGame` is attached and shown in play, with no screen of the 360's over it (pause,
+  inventory, tip, modal, dialog), collects the buttons under its `Frame` only (PC's HUD buttons
+  are on the same sheet, transparent).
+- The d-pad or the stick moves between them (top to bottom), A clicks the focused one. The play
+  pad gets nothing meanwhile (`x360_pc_menu_up`, as PC's settings: no move, skill, Start or
+  Back). The log names them as `PC's buttons for the pad 4 (resurrection)`.
+- Not ported: the 360's own resurrection screen (its look and its pad, which a port would read in
+  the 360's code first).
+
+## 35. Start during a cinematic (2026-10-24)
+
+The owner saw the pause misbehave during a cinematic. **[read]** The 360's frame update
+(`sub_821EBA48`, `r31` the client, CGameUI at its `+60`) handles Start (the client's `+612` set
+to 1: Start by its behaviour, its writer not traced **[inferred]**) only when CGameUI's menu at
+`+968` is not visible, the level is up (the client's `+44`, its virtual `+32`) and `sub_821ED810`
+(the cinematic: "The hero not played during a cinematic", above) is false. Then, on CGameUI: with
+its `+6161` set, `sub_8233EEF8` clears it and closes the menus; else, unless a dialog at `+5312`
+holds it, any open menu is closed (`sub_821E4B78`, then `sub_8233E998`); else, unless the menu at
+`+956` is visible, the menus are closed (`sub_8233E998`) and the pause toggled (`sub_8233D440`,
+the menu at `+932`, `COptionsMenu`). During a cinematic Start does nothing.
+
+**[seen]** The owner on the 360 (2026-10-24): during a cinematic Start skips it and Back opens
+nothing; at an NPC's screen (a merchant, a stash) Start and Back both close it. The skip is not in
+the frame update read above (its handler is not traced; the cinematic menu's own pad is likely).
+Back there: the 360's `+705` toggles CGameUI's `+1000` after the cinematic's first test, not
+traced further.
+
+`proxy/pad.c` opened the 360's pause on Start during a cinematic. Now, while PC's `0x541db0` holds
+and no pause or inventory is open, Start clicks PC's cinematic menu's `Skip`
+(`x360_cinematic_skip`: cinematicmenu.layout's `Skip`, found by its `DialogTextFrame`, a left
+click at its centre) and Back is dropped; not while a tip is up (it keeps every button). In the 360's inventory at a shop, Start closes the shop as
+Back and B do (`x360_inventory_pad`); elsewhere in the inventory it keeps the pet's commands.
+
+**[seen]** The owner on the 360: in a quest's talk Start and Back do nothing; a common talk is
+closed by them; a merchant's too; an in-play cinematic is skipped by Start, which also accepts
+its quest. Now Start and Back do nothing in any talk (`proxy/pad.c` keeps them from the pause and
+the inventory while a talk or another of the 360's overlays is up): right for a quest's talk; a
+common talk is not closed by them, because its pages look the same as a quest's first ones (Ok
+only) and the port has no sign yet of which it is (the quest marker is taken off without reading
+which it was).
+
+**Not working (the owner's run of 2026-10-24, late; stopped after two failed tries):** in play,
+after entering the mine, `0x541db0` held for a while with no talk shown and no Skip attached:
+twelve Starts logged `PC's Skip not shown` and nothing was skipped. So PC's in-play cinematics
+are not skipped through cinematicmenu.layout's Skip; how PC skips them (a key of its own, its
+CCinematicMenu's input) is not read. **[seen]** The owner: PC's Escape does there what the 360's
+Start does. `x360_cinematic_skip` now posts Escape (key down and up, as `pad.c`'s `post_key`) to the game's window when
+no Skip is attached; `keys_proc` lets it through while the cinematic holds. Not while a talk or another
+of the 360's overlays (a modal, fishing, a tip) is up: PC's test holds there too, and an Escape
+would reach PC's screen under it (the release review). The owner played the skip with Start in
+an in-play cinematic (2026-10-24).
+
+## 36. PC's waypoint portals with the pad (2026-10-24)
+
+The owner, on a strong test character past the first boss: PC's waypoint portals screen
+(`waypointmenu.layout`: `Frame` holding `Title`, `Button1`-`10` with their `Choice1`-`10` texts,
+and `Cancel`) could not be moved in with the pad. The owner's decision: PC's screen for now, with
+the pad, as the resurrection's (section 34). Its prefix is found by `Choice10` (with `Button10` and
+`Cancel` under it); while its `Cancel` is attached and shown in play, with no screen of the 360's
+over it, its `Frame`'s visible buttons are the pad's (the d-pad or the stick, A), B clicks its
+`Cancel`, and the play pad gets nothing (`x360_pc_menu_up`). The log names them as `PC's buttons
+for the pad N (waypoints)`. Not ported: the 360's own waypoint screen.
+
+## 37. The quest offer's reward items with the left stick (2026-10-24)
+
+The owner: offering a quest, the 360 lets the left stick go through the reward items and shows
+each one's card (its stats); the port did nothing. **[read]** The 360's quest dialog pad
+(`sub_82357ED0`, its table at `0x82357F10` by code - 5): A (5) sends the menu's command 9 or 10,
+B (6) 8 unless its `+450`, X (7) turns its `+452`, the left stick's left (19) and right (20) take
+one from or add one to its `+464`, then `sub_82358058`; the other codes (the d-pad, Start, Back)
+do nothing. `sub_82358058` wraps `+464` from -1 (none) to the last reward and back; with one, it
+shows `ItemHighlight` (`+440`) at that slot (the slots' windows at `+408`) and puts the item in the
+item tooltip at the slot; with none, it hides both.
+
+`dialog_tick` now does that: the stick's left and right (past half, one step per push) move the
+selection over the shown reward slots, wrapping through none; the 360's `ItemHighlight` takes the
+selected `ItemBkgN`'s position (its own size kept, as the 360). The item itself is PC's, found as
+PC's own mouse-over finds it (GOG `0x59be40`, `CQuestDialogMenu::handle_MouseOver` *(OT)*): CGameUI's
+`+0x2fc` (vtable `0xab7ff0`), its dialog at `+0x98`, the dialog's quest at `+8`, the quest's
+rewards at `+0x150`, their items' list from `0x5f4760` (`getRewardItems` *(OT)*: data, count `+4`,
+capacity `+8`); PC's mouse-over keeps the item at the menu's `+0x118`. Its card is the 360's
+(`fill_card`, the inventory's), placed as in the owner's capture of the 360: its right edge 6 % of the
+slot's width into the slot, its middle at the slot's (measured against the port's capture); hidden with none and when the talk closes. The first
+try (the hidden cursor on PC's slot, PC's own hover card) drew PC's card, with its golden frame,
+its description beside it: dropped. The reward's icon is drawn square (its window, 40x65 in the layout, made as tall as wide, its
+middle kept), not stretched: the 360 draws it so (the owner's capture; PC's icon art has less
+margin than the 360's, so PC's gem stays larger). The selected slot comes in front of the highlight with its own background off (the rollover
+image's centre is opaque; the 360 shows the icon over the gold frame). The selection is dropped
+when the slots or their item change; the hidden cursor is moved off
+PC's slots. The log names each step (`x360 dialog: reward item N`). Played by the owner
+(2026-10-25): the selection, the square icon over the gold frame and the card's place as the 360's.
+**Differs:** the card's width, about 446 px against the 360's 786 at 1920x1080: PC lays its card
+out at its own width (`fill_card`, the inventory's), so the text wraps into more lines and the
+card is taller. Matching it needs PC's card laid out wider (to do).
