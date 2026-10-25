@@ -5918,6 +5918,18 @@ static void interact_prompt(void) {
     if (!w) return;
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     if (!gp) gp = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+    {   /* DIAGNOSIS: the target and why the prompt is not shown, once per target */
+        static unsigned char *logged = (unsigned char *)1;
+        void *x360_pad_candidate(void);
+        if (u != logged) {
+            logged = u;
+            x360_log("x360 interact: target "); x360_log_num((long)u);
+            x360_log(" candidate "); x360_log_num((long)x360_pad_candidate());
+            if (u) { x360_log(" label "); x360_log_num((long)*(void **)(u + 0x198)); x360_log(" pet "); x360_log_num(u == the_pet()); }
+            x360_log(" inv "); x360_log_num(inventory_open); x360_log(" shop "); x360_log_num(shop != 0);
+            x360_log(" qd "); x360_log_num(qd_shown); x360_log(" modal "); x360_log_num(modal_shown); x360_log("\r\n");
+        }
+    }
     if (!u || u == hero || u == the_pet() || inventory_open || shop || qd_shown || modal_shown || x360_overlay_open() || !rect_of || !gp ||
         !(lw = *(void **)(u + 0x198)) || !(par = gp(w, 0))) { show(w, 0); return; }
     rect_of(lw, 0, &lr);
@@ -5937,6 +5949,11 @@ static void interact_prompt(void) {
             if (y > sh - m - H) y = sh - m - H;
         }
         set_size(w, x - pr.left, y - pr.top, W, H);
+        {   /* DIAGNOSIS */
+            static unsigned char *logged;
+            if (u != logged) { logged = u; x360_log("x360 interact: shown at "); x360_log_num((long)x); x360_log(","); x360_log_num((long)y);
+                               x360_log(" parent at "); x360_log_num((long)pr.left); x360_log(","); x360_log_num((long)pr.top); x360_log("\r\n"); }
+        }
     }
     show(w, 1);
 }
