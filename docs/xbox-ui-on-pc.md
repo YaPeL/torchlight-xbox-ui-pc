@@ -3779,7 +3779,8 @@ writes the cinematics' `+6024` (1) and `+6028` (0), not followed. The port
 black backdrop, page (`Background`) and text (`i_962`) left out, PC's own page and text under
 it; PC's top and bottom bars and Skip transparent (`Alpha` 0); A, B, X, Y and Start press PC's
 Skip (`x360_cinematic_skip` leaves Start to it while it is shown). In-play cinematics (no Skip
-attached) are as before.
+attached) are as before. Played by the owner (2026-10-28): the 360's frame with its A on the story screens, A
+continues (the log: the frame shown and PC's Skip pressed four times).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
