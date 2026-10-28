@@ -1175,15 +1175,53 @@ static int hero_meets(unsigned char *item) {
 }
 
 /* Whether a bag's owner can take a spell (the 360's sub_822B9CA0, for the A's "Learn": the bar,
- * sub_8236C8D0, 0x8236DD9C; and its learning, sub_8236BD80): PC's use checks for the owner,
- * usable_now and the one PC's use runs first (GOG 0x4b87c0, thiscall on the item: target, pet;
- * the level, the stats, the skills). */
+ * sub_8236C8D0, 0x8236DD9C; and its learning, sub_8236BD80): the item's charges (+496; GOG's
+ * +0x1f0: -9999 endless, 0 none), its level requirement against the owner's level (sub_822BB0A8
+ * against +240; GOG 0x4b7710 against +0xf0), then sub_82284DB0(owner, name, level, 0) with the
+ * spell its skill teaches (the item's skill +380, its LEARN SKILL effect sub_8227DB00(skill, 65),
+ * the name at +88 and the level sub_8227A228(effect, 0)): no for a spell the owner's skill manager
+ * (+388) has at that name and level, or one of its known spells (+760: four, a pet's two) has
+ * that name; with its last argument 0 the places are not counted (the replacing menu comes for
+ * a full one). PC's own canLearnSpell (GOG 0x484bf0) always counts them, so here it is built
+ * from PC's parts (the mods agent's reading, 2026-10-28): the item's skill +0x17c,
+ * Skill::getEffectByType 0x47dd70 (65), the name at the effect's +0x74, its level
+ * Effect::getValue(0) 0x478e30; the skill manager +0x184, SkillManager::getSkill(name, level)
+ * 0x5dc1d0; the known spells' names at +0x2f8 (0x1c each, empty with their size +0x14 at 0),
+ * compared without case as getSkill does. */
+static int same_text_nocase(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        char x = *a >= 'A' && *a <= 'Z' ? *a + 32 : *a, y = *b >= 'A' && *b <= 'Z' ? *b + 32 : *b;
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+static int can_take_spell_raw(unsigned char *item, unsigned char *owner) {
+    typedef void *(__fastcall *effect_by_type_fn)(void *skill, void *edx, int type);
+    typedef float (__fastcall *effect_value_fn)(void *effect, void *edx, int index);
+    typedef void *(__fastcall *get_skill_fn)(void *manager, void *edx, const void *name, int level);
+    typedef int (__fastcall *req_fn)(void *item, void *edx, void *who);
+    int charges = *(int *)(item + 0x1f0), places = isa(owner, 87) ? 2 : 4, i, level, req;
+    unsigned char *skill = *(unsigned char **)(item + 0x17c), *effect, *manager;
+    char want[96], have[96];
+    if (charges == 0) return 0;
+    req = ((req_fn)0x004b7710)(item, 0, owner);
+    if (req > 0 && req > *(int *)(owner + 0xf0)) return 0;
+    effect = skill ? (unsigned char *)((effect_by_type_fn)0x0047dd70)(skill, 0, 65) : 0;
+    if (!effect || !wstring_utf8(effect + 0x74, want, sizeof want)) return 0;
+    level = (int)((effect_value_fn)0x00478e30)(effect, 0, 0);
+    manager = *(unsigned char **)(owner + 0x184);
+    if (manager && ((get_skill_fn)0x005dc1d0)(manager, 0, effect + 0x74, level)) return 0;
+    for (i = 0; i < places; i++) {
+        const unsigned char *known = owner + 0x2f8 + i * 0x1c;
+        if (*(unsigned *)(known + 0x14) && wstring_utf8(known, have, sizeof have) && same_text_nocase(have, want)) return 0;
+    }
+    return 1;
+}
 static int can_take_spell(unsigned char *item, unsigned char *owner) {
-    typedef unsigned char (__fastcall *can_use_by_fn)(void *item, void *edx, void *target, void *pet);
-    int can = 0;
+    int ok = 0;
     if (!item || !owner) return 0;
-    __try { can = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { can = 0; }
-    return can;
+    __try { ok = can_take_spell_raw(item, owner); } __except (1) { ok = 0; }
+    return ok;
 }
 
 static void fill_details(int row, unsigned char *item) {
@@ -2375,6 +2413,12 @@ static int pet_learn(unsigned char *item, unsigned char *owner) {
         if (sp) known++;
     }
     if (can && known < 2 && ui) {
+        typedef unsigned char (__fastcall *can_use_by_fn)(void *item, void *edx, void *target, void *pet);
+        int pc_ok = 0;
+        /* PC's own check, the one its use runs first (GOG 0x4b87c0): failing there its use plays
+         * a refusal sound the 360 does not have. */
+        __try { pc_ok = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { pc_ok = 0; }
+        if (!pc_ok) { x360_log("x360 inv: A in the pet's bag: PC refuses the spell\r\n"); hide_info(); return 0; }
         ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
         x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
         hide_info();   /* the 360's card closes after a use (in-game/29); the scroll is gone */

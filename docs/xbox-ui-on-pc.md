@@ -1359,7 +1359,17 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   clears it and closes. Once closed (`sub_8236ECC0`): a kept selection makes the owner forget
   that spell (`sub_82284FD0`; PC's `CCharacter::unLearnSpell(int)` *(OT)*, GOG `0x489a30`, Steam
   `0x487ba0`) and learn the new one (`sub_8236BB70` again). The port (`sr_*`, `pet_learn`): the
-  same, for the pet's bag. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  same, for the pet's bag. **Whether the owner can take the spell** (the bar's Learn and the menu's
+  opening): the 360's `sub_822B9CA0` ends in `sub_82284DB0(owner, name, level, 0)`, which says no
+  only for a spell the owner already has (its skill manager by name and level, or a known spell's
+  name) and does not count the places (1 there counts them, when learning). PC's own
+  `canLearnSpell` (GOG `0x484bf0`) always counts them, and PC's use check (`0x4b87c0`) ends in it,
+  so with two known spells nothing could be taken (the owner's run: no A, no menu). Now built
+  from PC's parts (the mods agent's reading): the charges, the level requirement, the item's skill
+  `+0x17c`, `Skill::getEffectByType` `0x47dd70` (65), the name at the effect's `+0x74`, its level
+  `Effect::getValue(0)` `0x478e30`, `SkillManager::getSkill(name, level)` `0x5dc1d0` on `+0x184`,
+  the known names at `+0x2f8` without case. PC's own check still runs before PC's use (its
+  refusal sound). Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
