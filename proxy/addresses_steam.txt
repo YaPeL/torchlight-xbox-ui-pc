@@ -25,6 +25,7 @@
 0x00482710 0x004809f0 verified   code    window, callers x5
 0x00482740 0x00480a20 verified   code    window, callers x6
 0x00484bf0 0x00482e70 verified   comment callers x2
+0x00484e90 0x00483110 verified   code    window, body, callers
 0x00484ff0 0x00483270 verified   code    window, body, callers
 0x004854a0 0x004836e0 verified   code    callers, strings
 0x004854dd 0x00483712 verified   comment local, near x2

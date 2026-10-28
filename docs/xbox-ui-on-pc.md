@@ -1369,7 +1369,11 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   `+0x17c`, `Skill::getEffectByType` `0x47dd70` (65), the name at the effect's `+0x74`, its level
   `Effect::getValue(0)` `0x478e30`, `SkillManager::getSkill(name, level)` `0x5dc1d0` on `+0x184`,
   the known names at `+0x2f8` without case. PC's own check still runs before PC's use (its
-  refusal sound). Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  refusal sound). The review (2026-10-28): PC's own check can only run after the forgetting (with
+  the places full it says no), so a refusal there gives the forgotten spell back
+  (`CCharacter::learnSpell(std::wstring, int)` *(OT)*, GOG `0x484e90`, Steam `0x483110`, its name
+  saved before); nothing is forgotten if the pet or its scroll is gone when the menu closes; the
+  hero's A on a spell it cannot take does nothing (the 360's bar shows none). Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds

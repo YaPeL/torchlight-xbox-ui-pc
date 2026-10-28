@@ -2464,6 +2464,12 @@ static void act(void) {
         if (r == 2) sr_begin(item, owner);
         return;
     }
+    /* The hero's spell it cannot take: no A on the 360's bar (sub_8236C8D0), nothing done (PC's
+     * use would play its refusal sound). */
+    if (!is_pet && isa(item, 129) && !can_take_spell(item, owner)) {
+        x360_log("x360 inv: A: the hero cannot take that spell (no A on the 360)\r\n");
+        return;
+    }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
         /* The pet uses nothing and wears only what fits it (PC's canEquip for the pet). */
         x360_log("x360 inv: A in the pet's bag: the pet cannot wear it\r\n");
@@ -4947,6 +4953,21 @@ static void sr_begin(unsigned char *item, unsigned char *owner) {
     sr_show(1);
 }
 
+/* Whether an item is still in a unit's bag (the menu kept it while open). */
+static int in_bag(unsigned char *owner, unsigned char *item) {
+    unsigned char *inv = owner ? *(unsigned char **)(owner + GOG_INVENTORY) : 0;
+    void **refs;
+    unsigned n, i;
+    if (!inv) return 0;
+    refs = *(void ***)(inv + INV_REFS);
+    n = *(unsigned *)(inv + INV_REFS + 4);
+    for (i = 0; i < n && i < 256; i++) {
+        unsigned char *ref = (unsigned char *)refs[i];
+        if (ref && *(void **)(ref + REF_ITEM) == item) return 1;
+    }
+    return 0;
+}
+
 /* The owner's known spells' names in the log (the menu's choice checked in a run). */
 static void sr_log_places(const char *when, unsigned char *owner, int sel) {
     char name[96];
@@ -4967,11 +4988,37 @@ static void sr_finish(int keep) {
     int sel = keep ? sr_sel : -1;
     sr_show(0);
     sr_item = sr_owner = 0; sr_sel = -1;
+    if (sel >= 0 && item && owner && (owner != the_pet() || !in_bag(owner, item))) {
+        x360_log("x360 menu: the pet or its scroll gone: nothing forgotten\r\n");
+        sel = -1;
+    }
     if (sel >= 0 && item && owner) {
+        typedef void (__fastcall *learn_fn)(void *who, void *edx, wstring_by_value name, int level);
+        unsigned short saved[96];
+        int saved_level = 0, have = 0;
+        wstr_ctor_fn wc;
+        wstr_dtor_fn wd;
         sr_log_places("before", owner, sel);
-        __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); } __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
+        __try {
+            const unsigned char *known = owner + 0x2f8 + sel * 0x1c;
+            unsigned len = *(const unsigned *)(known + 0x14), res = *(const unsigned *)(known + 0x18), i;
+            const unsigned short *text = res < 8 ? (const unsigned short *)(known + 4) : *(const unsigned short *const *)(known + 4);
+            if (len && len < 95 && text) { for (i = 0; i < len; i++) saved[i] = text[i]; saved[len] = 0; have = 1; }
+            saved_level = *(const int *)(owner + 0x368 + sel * 4);
+            ((unlearn_fn)0x00489a30)(owner, 0, sel);
+        } __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
         x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
-        pet_learn(item, owner);
+        /* PC's own check runs only now (with the places full it says no); refused, the spell
+         * forgotten is given back (CCharacter::learnSpell(std::wstring, int) *(OT)*, GOG
+         * 0x484e90, thiscall, the name by value: the callee destroys it). */
+        if (pet_learn(item, owner) != 1 && have && wstring_functions(&wc, &wd)) {
+            wstring_by_value name;
+            __try {
+                wc(&name, 0, saved);
+                ((learn_fn)0x00484e90)(owner, 0, name, saved_level);
+                x360_log("x360 menu: PC refused the new spell: the forgotten one given back\r\n");
+            } __except (1) { x360_log("x360 menu: exception giving the spell back\r\n"); }
+        }
         sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
     }
     refresh_all();
