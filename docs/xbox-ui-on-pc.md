@@ -1324,7 +1324,7 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
   A: "prefixed ring", Equipped, its A "Unequip"; A again took it off. Something the pet cannot
   wear was not tried.
-- **The requirements line, and Learn only when it can be taken (2026-10-28). [read; seen]** The
+- **The requirements line, and Learn only when it can be taken (2026-10-28). [read; seen; played]** The
   owner's capture of the 360 (the recomp, the pet's bag with a level-30 spell): the row's red
   `req.notmet` text under the name, and no A in its bar (only Y and X). **The row**
   (`sub_822BBF38`, from `sub_82368980`): after the identify hint, each requirement over 0
@@ -1337,6 +1337,8 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   level (`+0xf0`) and stats. **The bar** (`sub_8236C8D0`, `0x8236DD9C`): a spell's A is "Learn"
   only when `sub_822B9CA0(spell, owner)` holds (for the player with no free place another text,
   not ported); here `can_take_spell`, the same checks as the learning.
+  Played by the owner on GOG (2026-10-28): the red line under a weapon the hero cannot use and
+  under the pet's spells above its level; A on a spell the pet already knows does nothing.
 - **A spell in the pet's bag (2026-10-28). [read]** The owner: A on a spell in the pet's bag did
   nothing (the port took "the pet uses nothing" as a rule). The 360's A (`sub_8236AA48`, its last
   branch `sub_8236BD80`) for a spell (ISA 129): `sub_822B9CA0(spell, owner)` (the item a spell, its
@@ -1349,16 +1351,16 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   GOG `0x4b87c0`: level, stats, skills; failing there PC plays a refusal sound the 360 lacks), PC's use with a user
   (GOG `0x54d980`, thiscall on CGameUI: level, item, user, target, pet; PC's right click on a
   menu owner's spell gives the owner for the last three, `0x582150`; it takes the item out of its
-  inventory) with the pet; with two known, the replacing menu is not ported (logged); else
+  inventory) with the pet; with two known, the replacing menu (below); else
   nothing, no sound, as the 360. **[the recomp's run]** (2026-10-28, the mods agent's probe on the
-  sound calls `sub_8232E898`, `sub_8232EB20` and `sub_822B9CA0`'s result; a level-1 pet): Heal
-  Self I and Summon Archers I learned (`sub_822B9CA0` 1, sound 20 from the learn's path, the row
-  gone); Heal Self VI (level 30), six presses: `sub_822B9CA0` 0, no sound, text, tip, modal or
+  sound calls `sub_8232E898`, `sub_8232EB20` and `sub_822B9CA0`'s result; a level-1 pet): two
+  level-1 spells learned (`sub_822B9CA0` 1, sound 20 from the learn's path, the row
+  gone); a level-30 spell, six presses: `sub_822B9CA0` 0, no sound, text, tip, modal or
   flash; only the item's card closed until the selection moved (the header's rebuild): so here
   too (`hide_info`), also with the places full (the 360 counts them only for a spell the owner
-  can take). Played by the owner on GOG (2026-10-28): the pet learned Summon Archers I and Heal
-  Self I; Heal Self VI (level 30) did nothing.
-- **The spell-replacing menu (2026-10-28). [read]** The owner: with the pet's two places full, a
+  can take). Played by the owner on GOG (2026-10-28): the pet learned two level-1 spells; a
+  level-30 spell did nothing; A on a spell it already knows does nothing either.
+- **The spell-replacing menu (2026-10-28). [read; played]** The owner: with the pet's two places full, a
   third spell it can take opens another screen on the 360. `CMessageSpellRemoveXenon` (vtable
   `0x820D1AD4`, CGameUI's `+6296`; `spellremove_xenon` in the message housing), opened by
   `sub_8236BB70`: the column keeps it (`+380`), the menu the owner (`+44`) and an order of its
@@ -1389,6 +1391,9 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   sound, 66, no sound nor any text for 5 s); nothing is forgotten if the pet or its scroll is gone when the menu closes; the
   hero's A on a spell it cannot take does nothing (the 360's bar shows none). Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
+  Played by the owner on GOG (2026-10-28): the menu opened with the pet's two places full and a
+  third spell it could take, on the first spell; A kept the choice, the chosen spell forgotten,
+  the later one moved down and the new one learned in the second place. The give-back was played only with a simulated refusal before it was removed.
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
   (GOG `0x5431a5`-`0x5438d9`, for the hero): its colour table (the singleton `0x524d40`, wstrings
