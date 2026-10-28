@@ -2353,7 +2353,12 @@ static void act(void) {
             x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
         } else if (known >= 2) {
             x360_log("x360 inv: A in the pet's bag: the pet knows two spells (the 360's replacing menu, not ported)\r\n");
-        } else x360_log("x360 inv: A in the pet's bag: the pet cannot learn it\r\n");
+        } else {
+            /* The recomp's run (2026-10-28, a spell over the pet's level): no sound, text or
+             * modal; only the item's card closes (the header's rebuild), until the row moves. */
+            x360_log("x360 inv: A in the pet's bag: the pet cannot learn it\r\n");
+            hide_info();
+        }
         return;
     }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {

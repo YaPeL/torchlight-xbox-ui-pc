@@ -1323,7 +1323,12 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   (GOG `0x54d980`, thiscall on CGameUI: level, item, user, target, pet; PC's right click on a
   menu owner's spell gives the owner for the last three, `0x582150`; it takes the item out of its
   inventory) with the pet; with two known, the replacing menu is not ported (logged); else
-  nothing, no sound, as the 360. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  nothing, no sound, as the 360. **[the recomp's run]** (2026-10-28, the mods agent's probe on the
+  sound calls `sub_8232E898`, `sub_8232EB20` and `sub_822B9CA0`'s result; a level-1 pet): Heal
+  Self I and Summon Archers I learned (`sub_822B9CA0` 1, sound 20 from the learn's path, the row
+  gone); Heal Self VI (level 30), six presses: `sub_822B9CA0` 0, no sound, text, tip, modal or
+  flash; only the item's card closed until the selection moved (the header's rebuild): so here
+  too (`hide_info`). Played by the owner on GOG: the pet learned Summon Archers I. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
