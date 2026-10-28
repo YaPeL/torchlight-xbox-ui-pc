@@ -1319,7 +1319,7 @@ static void tab_marks_draw(unsigned now) {
     for (p = 0; p < 2; p++) {
         int f = panel_filter(p), tabs = !at_transmute && !panels[p].is_select;
         if (!panels[p].root) continue;
-        if (inventory_open && tab_mark[p][f] == 1) tab_mark[p][f] = 2;
+        if (inventory_open && tabs && tab_mark[p][f] == 1) tab_mark[p][f] = 2;   /* seen: only with the tabs shown */
         for (i = 0; i < 6; i++)
             show(win_of(panels[p].prefix, tab_hi[i]),
                  inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f && lit);
