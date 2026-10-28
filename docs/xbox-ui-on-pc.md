@@ -1384,7 +1384,7 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
     and `DropTextColour` (black), and hides the text at 0. Ten callers pass the seconds (not read
     one by one). The port (`large_message_tick`): PC's own code times the hold, so the 360's text
     is at full alpha while PC's is shown and fades over 0.5 s once PC hides it. The owner saw the
-    fade on the 360.
+    fade on the 360. Played by the owner (2026-10-28): the title fades out.
   - **The pad's slots:** LB, RB, B, Y, LT, RT press PC's hotbar keys 1 to 6 (section 9), so the
     360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
     and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
