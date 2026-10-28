@@ -1587,7 +1587,9 @@ OK"):
   item joining a stack keeps the stack's item, as the 360's exception); one that comes in equipped
   (a weapon picked up with the hands empty: the 360's equipped event, no mark; the recomp's run
   left the sword's tab unmarked) marks nothing. The `Hi` shown has its
-  alpha set to the 360's triangle, `|t - 1|` with t running down from 2 to 0 every 2 s.
+  alpha set to the 360's triangle, `|t - 1|` with t running down from 2 to 0 every 2 s. Played by the owner
+  (2026-10-28, a copy of a new hero with the console's six items picked up in the mine): the
+  marks and their blink seen on the weapons', jewellery's and spells' tabs.
 - **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
   gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
   `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).
