@@ -3880,12 +3880,13 @@ not the 360's. The 360's `CCinematicMenu` (`sub_82349BA8`) loads `media/ui/cinem
 looks up only `Skip`, `DialogText` and `Background` (its `+264`, `+268`, `+272`); the frame is the
 layout's own: `main_topborder` with its ends at the top, `main_bottomborder` (1024 x 93, bottom,
 centred) with its ends at the bottom and in it the A button and the layout's text (`i_951`). Its
-pad (`sub_82349E80`): while the menu is up any button sets its `+26` (continue); code 10 also
-writes the cinematics' `+6024` (1) and `+6028` (0), not followed. The port
+pad (`sub_82349E80`): while the menu is up any button sets its `+26`; only its code 10 (A: the
+owner on the recomp, 2026-10-28, only A goes on) writes the cinematics' `+6024` (1) and `+6028`
+(0), which end the page. The port
 (`cinematic_bar_tick`): while PC's Skip is attached, the 360's layout over PC's screen with its
 black backdrop, page (`Background`) and text (`i_962`) left out, PC's own page and text under
-it; PC's top and bottom bars and Skip transparent (`Alpha` 0); A, B, X, Y and Start press PC's
-Skip (`x360_cinematic_skip` leaves Start to it while it is shown). In-play cinematics (no Skip
+it; PC's top and bottom bars and Skip transparent (`Alpha` 0); A presses PC's
+Skip, and only A (`x360_cinematic_skip` leaves Start to it while it is shown: nothing). In-play cinematics (no Skip
 attached) are as before. Played by the owner (2026-10-28): the 360's frame with its A on the story screens, A
 continues (the log: the frame shown and PC's Skip pressed four times). **The text's box (2026-10-28). [read; seen]** The owner's capture against the recomp's: PC's
 story text sat in a grey-framed box, the 360's on a dark translucent band. Both games' ItemText
@@ -3899,7 +3900,12 @@ frame, in pixels, as its own top. The 360 raises it the same way (`sub_8234A2B8`
 place over a time from the voice's length, `+276` against `+280`). Played by the owner (2026-10-28): the box
 visible and enabled where the 360 has it (the log: 327,652 to 1592,933 at 1080), the band under the
 text darker than the page above it (mean brightness 20.7 against 35.8 without a box, the 360's 28.0
-against 39.4); any button continues, as the 360's (X tried).
+against 39.4). **[seen]** The text's place, font and size as the recomp's (the owner's capture:
+its first line at 327, 665 at 1080, lines 23 pixels apart); its rise is PC's and the 360's alike:
+both take its length times 0.015 s, at least 10 s (the 360's `sub_82349EE0`: `+300` the text's
+length, `0x820AA7D8` 0.015, `0x820AA3CC` 10.0; GOG `0x5653cf`: `0xab2a18` 0.015, `0xa8ec08`
+10.0), from below its box (the 360's `sub_8234A2B8`: the box's height plus 50 pixels below its
+place, linearly to it). An X had continued it in the port; on the 360 only A does: now only A.
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
