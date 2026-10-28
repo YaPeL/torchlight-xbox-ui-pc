@@ -1150,7 +1150,7 @@ static int effects_count(unsigned char *item) {
 }
 
 /* Whether the hero meets an item's requirements, as the 360's row tells it (sub_822BBF38: its
- * "Requirements not met" in red, by the player's level and stats, whatever the bag): each
+ * req.notmet text in red, by the player's level and stats, whatever the bag): each
  * requirement over 0 against the hero's level (+240, GOG +0xf0) and stats. PC's getters
  * (CEquipment::get...Requirement(CCharacter*) *(OT)*, thiscall on the item): level 0x4b7710,
  * strength 0x4b77f0, dexterity 0x4b7900, magic 0x4b7a10, defense 0x4b7b20 (each found beside the

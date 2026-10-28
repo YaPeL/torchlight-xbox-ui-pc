@@ -1311,12 +1311,12 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
   A: "prefixed ring", Equipped, its A "Unequip"; A again took it off. Something the pet cannot
   wear was not tried.
-- **Requirements not met, and Learn only when it can be taken (2026-10-28). [read; seen]** The
+- **The requirements line, and Learn only when it can be taken (2026-10-28). [read; seen]** The
   owner's capture of the 360 (the recomp, the pet's bag with a level-30 spell): the row's red
-  "Requirements not met" under the name, and no A in its bar (only Y and X). **The row**
+  `req.notmet` text under the name, and no A in its bar (only Y and X). **The row**
   (`sub_822BBF38`, from `sub_82368980`): after the identify hint, each requirement over 0
   against the **player's** level (`+240`) and stats, whatever the bag; one above writes
-  "Requirements not met" (`0x820C1824`, UTF-16BE; key `req.notmet`) in red. Its other branches
+  the text at `0x820C1824` (UTF-16BE; key `req.notmet`) in red. Its other branches
   (a quest item, ISA 103; a gambler's, ISA 127; `+920`) are not ported. The port (`hero_meets`):
   PC's `CEquipment::get...Requirement(CCharacter*)` *(OT)* (level `0x4b7710`, strength
   `0x4b77f0`, dexterity `0x4b7900`, magic `0x4b7a10`, defense `0x4b7b20`, each found beside the
