@@ -1302,8 +1302,11 @@ static void *of_category(void *bag, int filter) {
  * Here PC tells no listener: the hero's and the pet's bags are read every 100 ms, and an item not
  * in them before is picked up; one gone for less than 1.5 s and back is not (PC takes a potion
  * out while the hero drinks and puts the rest back), which also leaves out the items that only
- * join a stack (their stack keeps its item). Not done: the Hi's blink. The code that walks the
- * column's list at +108 was not found (docs, section 11); the Hi is shown steady until then. */
+ * join a stack (their stack keeps its item). The blink: each column's update (sub_821994F8, the
+ * column and the frame's time) takes a time at +124 down by the frame's time, adds 2.0 when it
+ * reaches 0 (0x820AA33C), and writes |t - 1.0| straight into the alpha (+244) of every window in
+ * the column's list at +108, the marked Hi windows: a triangle from 1 to 0 and back in 2 s (the
+ * recomp's run, 2026-10-28: the Hi kept visible, its alpha ramping between about 0.04 and 0.95). */
 static const char *const tab_hi[6] = {"weaponHi", "armorHi", "trinketHi", "potionHi", "scrollHi", "fishHi"};
 static int tab_mark[2][6];                   /* the hero's bag, the pet's: 1 picked up, 2 seen */
 #define MARK_ITEMS 256
@@ -1315,14 +1318,19 @@ static int panel_filter(int p) { return p == active_panel ? filter : panels[p].f
  * focused column; the columns' own filters seen. */
 static void tab_marks_draw(unsigned now) {
     int p, i;
-    (void)now;
+    float t = 2.0f - (float)(now % 2000) / 1000.0f, a = t > 1.0f ? t - 1.0f : 1.0f - t;
+    char alpha[16];
+    *put_float(alpha, a) = 0;
     for (p = 0; p < 2; p++) {
         int f = panel_filter(p), tabs = !at_transmute && !panels[p].is_select;
         if (!panels[p].root) continue;
         if (inventory_open && tabs && tab_mark[p][f] == 1) tab_mark[p][f] = 2;   /* seen: only with the tabs shown */
-        for (i = 0; i < 6; i++)
-            show(win_of(panels[p].prefix, tab_hi[i]),
-                 inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f);
+        for (i = 0; i < 6; i++) {
+            void *hi = win_of(panels[p].prefix, tab_hi[i]);
+            int on = inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f;
+            show(hi, on);
+            if (on) prop(hi, "Alpha", alpha);
+        }
     }
 }
 
@@ -1351,7 +1359,10 @@ static void tab_marks_tick(unsigned now) {
             if (!item) continue;
             for (j = 0; j < mark_bags[p].n && mark_bags[p].item[j] != item; j++) {}
             if (j < mark_bags[p].n) { mark_bags[p].at[j] = now; continue; }
-            if (mark_bags[p].ready) {   /* with the screen open no mark: the filter moves to it */
+            /* With the screen open no mark: the filter moves to it. One that comes in equipped (a
+             * weapon picked up with the hands empty) is told as equipped, sub_82369A70: nothing
+             * (the recomp's run: the sword picked up and equipped left its tab unmarked). */
+            if (mark_bags[p].ready && *(int *)(ref + REF_SLOT) >= EQUIPPED_SLOTS) {
                 int c = category(item);
                 if (c < 6) { if (!inventory_open) tab_mark[p][c] = 1; picked = c; picked_panel = p; }
             }

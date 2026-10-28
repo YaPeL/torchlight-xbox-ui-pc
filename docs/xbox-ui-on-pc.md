@@ -1563,20 +1563,22 @@ OK"):
   `potionHi`, `scrollHi`, `fishHi` for the categories 0-5, the table at `0x834C5480`) hidden; a
   filter at 1 shows its `Hi` in the focused column when it is not the column's filter, and adds
   it to a list of the column's (`+108`, `sub_82363BC8` a vector's push); otherwise the column's
-  filter goes to 2, seen. **Not found:** what walks that list (the blink itself). Looked at, none
-  of them: the menu's, its base's and the column's virtuals; every function that reads `+108` and
-  `+112` from one register (the UI's range, then the whole image with a visibility or alpha call:
-  the HUD's update, the screen-size table); the getters of `this + 108`; the animated windows'
-  manager (`sub_82344BF0`, CGameUI's list at `+6244`: only the triggers' sway and the menu's
-  `+400`/`+404`); the HUD's own alpha changes; the code after the tabs' drawing
-  (`sub_82367D38` → `sub_82365A48`, the bar's texts). The `Hi` windows are touched only by
-  `sub_823660E0` (made, hidden) and `sub_823654B8`. Next: watch the `Hi` windows in a run of the
-  recomp. **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
+  filter goes to 2, seen. **The blink** (2026-10-28, the recomp's run: the owner's recipe, a
+  hero in the mines picking up six items with the bag closed, the mods agent's probe on
+  `setVisible`, `setAlpha` and `setProperty`): the `Hi` stays visible and its alpha ramps up and
+  down (about 0.04 to 0.95), written by neither setter. **[read]** The writer: each column's
+  update, `sub_821994F8(column, frame time)` (while the screen is open, `+293`): a time at `+124`
+  taken down by the frame's time, 2.0 added when it reaches 0 (`0x820AA33C`), and `|t - 1.0|`
+  stored straight into the alpha (`+244`) of every window in the list at `+108`, with the alpha's
+  changed event: a triangle from 1 to 0 and back every 2 s. (Searched statically before without
+  finding it: a window's alpha written directly, not through `setAlpha`.) **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
   no listener, so the hero's and the pet's bags are read every 100 ms (the HUD's tick, and the
   inventory's while it is open); an item not in them before is picked up, one gone for less than
   1.5 s and back is not (PC takes a potion out while the hero drinks and puts the rest back; an
-  item joining a stack keeps the stack's item, as the 360's exception). The `Hi` is shown steady
-  (no blink) until the 360's blink is read.
+  item joining a stack keeps the stack's item, as the 360's exception); one that comes in equipped
+  (a weapon picked up with the hands empty: the 360's equipped event, no mark; the recomp's run
+  left the sword's tab unmarked) marks nothing. The `Hi` shown has its
+  alpha set to the 360's triangle, `|t - 1|` with t running down from 2 to 0 every 2 s.
 - **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
   gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
   `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).
