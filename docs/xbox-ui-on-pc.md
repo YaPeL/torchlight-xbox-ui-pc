@@ -1586,7 +1586,9 @@ OK"):
   1.5 s and back is not (PC takes a potion out while the hero drinks and puts the rest back; an
   item joining a stack keeps the stack's item, as the 360's exception); one that comes in equipped
   (a weapon picked up with the hands empty: the 360's equipped event, no mark; the recomp's run
-  left the sword's tab unmarked) marks nothing. The `Hi` shown has its
+  left the sword's tab unmarked) marks nothing. Out of play (a load, the main menu) the bags are
+  read anew, with no marks; the pet's marks are kept while it is in town; a filter is seen only on
+  the inventory's page (the bags' columns keep their tabs at the transmuter). The `Hi` shown has its
   alpha set to the 360's triangle, `|t - 1|` with t running down from 2 to 0 every 2 s. Played by the owner
   (2026-10-28, a copy of a new hero with the console's six items picked up in the mine): the
   marks and their blink seen on the weapons', jewellery's and spells' tabs.
