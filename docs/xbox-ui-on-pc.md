@@ -1344,7 +1344,22 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   flash; only the item's card closed until the selection moved (the header's rebuild): so here
   too (`hide_info`), also with the places full (the 360 counts them only for a spell the owner
   can take). Played by the owner on GOG (2026-10-28): the pet learned Summon Archers I and Heal
-  Self I; Heal Self VI (level 30) did nothing. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  Self I; Heal Self VI (level 30) did nothing.
+- **The spell-replacing menu (2026-10-28). [read]** The owner: with the pet's two places full, a
+  third spell it can take opens another screen on the 360. `CMessageSpellRemoveXenon` (vtable
+  `0x820D1AD4`, CGameUI's `+6296`; `spellremove_xenon` in the message housing), opened by
+  `sub_8236BB70`: the column keeps it (`+380`), the menu the owner (`+44`) and an order of its
+  four windows (`+60`: a pet's 0, 1, 2, 3; the player's 2, 0, 1, 3); the base's opening
+  (`sub_8237A970`) plays the sound 22, its closing 66. Its draw (`sub_8237C260`, each window by
+  `sub_8237C348`): the selection (`+56`) below 0 becomes 1 for a pet (3 for the player), above
+  that 0; known spell i in window order[i]; for a pet the windows 2 and 3 hidden; `spellN`'s
+  Image `spells_window`, `spells_window_rollover` when selected; `spellimageN` the spell's icon.
+  Its pad (`sub_8237BDA0`, its jump table at `0x8237BDD4`): the left stick's left and right move
+  the selection; A closes keeping it; X, Y and the sticks' up and down nothing; any other button
+  clears it and closes. Once closed (`sub_8236ECC0`): a kept selection makes the owner forget
+  that spell (`sub_82284FD0`; PC's `CCharacter::unLearnSpell(int)` *(OT)*, GOG `0x489a30`, Steam
+  `0x487ba0`) and learn the new one (`sub_8236BB70` again). The port (`sr_*`, `pet_learn`): the
+  same, for the pet's bag. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds

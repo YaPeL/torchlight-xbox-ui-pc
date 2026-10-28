@@ -46,6 +46,7 @@
 0x00488510 0x004866a0 verified   code    window, callers
 0x00488530 0x004866c0 verified   code    window, callers
 0x004885b0 0x00486740 verified   code    window, body, callers x4, callers-global
+0x00489a30 0x00487ba0 verified   code    window, body, callers x2
 0x0048ffe0 0x0048e060 verified   code    window, callers x5
 0x004900d0 0x0048e150 verified   code    window, body, callers-global, callers x4
 0x00490150 0x0048e1d0 verified   code    window, body, callers x2

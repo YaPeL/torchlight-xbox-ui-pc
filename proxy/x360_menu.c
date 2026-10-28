@@ -2356,6 +2356,39 @@ static int usable_now(unsigned char *item, unsigned char *user) {
     return ok;
 }
 
+/* A spell for the pet (the 360's sub_8236BD80 for ISA 129, then sub_8236BB70): when it can take
+ * it (can_take_spell, the 360's sub_822B9CA0) and knows fewer than two (a pet, ISA 87, has two
+ * places; its known spells counted by sub_821FD868, PC's getKnownSpell 0x484ff0), it learns it:
+ * PC's own use with a user (GOG 0x54d980, thiscall on CGameUI: level, item, user, target, pet; PC's
+ * right click on a menu owner's spell, 0x582150, gives the owner for the last three; it takes the
+ * item out of its inventory, 0x4e9ca0). PC's check comes first: when it fails PC's use plays a
+ * refusal sound the 360 does not have. A spell it cannot take does nothing but close the card,
+ * full or not (the 360 counts the places only for one it can take; the recomp's run: no sound,
+ * text or modal). 1 learned, 2 the places full (the replacing menu), 0 nothing. */
+static void sr_begin(unsigned char *item, unsigned char *owner);
+static int pet_learn(unsigned char *item, unsigned char *owner) {
+    typedef void (__fastcall *use_by_fn)(void *ui, void *edx, void *level, void *item, void *user, void *target, void *pet);
+    int known = 0, i, can = can_take_spell(item, owner);
+    for (i = 0; i < 4; i++) {
+        void *sp = 0;
+        __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
+        if (sp) known++;
+    }
+    if (can && known < 2 && ui) {
+        ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
+        x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
+        hide_info();   /* the 360's card closes after a use (in-game/29); the scroll is gone */
+        return 1;
+    }
+    if (can && known >= 2) {
+        x360_log("x360 inv: A in the pet's bag: the pet knows two spells: the replacing menu\r\n");
+        return 2;
+    }
+    x360_log("x360 inv: A in the pet's bag: the pet cannot learn it\r\n");
+    hide_info();
+    return 0;
+}
+
 static void act(void) {
     void *inv = inventory();
     unsigned char *item, *owner = (unsigned char *)cur_owner;   /* the 360's A acts for the bag's owner (+0x174) */
@@ -2374,36 +2407,10 @@ static void act(void) {
         return;
     }
     /* A spell in the pet's bag (the 360's sub_8236BD80, ISA 129: sub_822B9CA0, then sub_8236BB70):
-     * the pet learns it when it can use it (sub_822B9DA8, then the use sub_822B9A60); otherwise,
-     * with its places full (a pet, ISA 87, has two; the known spells counted by sub_821FD868, PC's
-     * getKnownSpell 0x484ff0), the 360 opens its spell-replacing menu (CGameUI +6296), not ported;
-     * else nothing, no sound. Here PC's own use with a user (GOG 0x54d980, thiscall on CGameUI:
-     * level, item, user, target, pet; PC's right click on a menu owner's spell, 0x582150, gives
-     * the owner for the last three; it takes the item out of its inventory, 0x4e9ca0). */
+     * pet_learn below; with its places full the spell-replacing menu (sr_begin). */
     if (is_pet && isa(item, 129)) {
-        typedef void (__fastcall *use_by_fn)(void *ui, void *edx, void *level, void *item, void *user, void *target, void *pet);
-        /* PC's own check first (can_take_spell: the one its use runs first, GOG 0x4b87c0, called at
-         * 0x54d996): when it fails PC's use plays a refusal sound the 360 does not have. */
-        int known = 0, i, can = can_take_spell(item, owner);
-        for (i = 0; i < 4; i++) {
-            void *sp = 0;
-            __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
-            if (sp) known++;
-        }
-        /* The 360's order: a spell the pet cannot take (sub_822B9CA0 false) never reaches the
-         * places' count (sub_8236BB70): nothing but the card closing, full or not. */
-        if (can && known < 2 && ui) {
-            ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
-            x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
-            hide_info();   /* the 360's card closes after a use (in-game/29); the scroll is gone */
-        } else if (can && known >= 2) {
-            x360_log("x360 inv: A in the pet's bag: the pet knows two spells (the 360's replacing menu, not ported)\r\n");
-        } else {
-            /* The recomp's run (2026-10-28, a spell over the pet's level): no sound, text or
-             * modal; only the item's card closes (the header's rebuild), until the row moves. */
-            x360_log("x360 inv: A in the pet's bag: the pet cannot learn it\r\n");
-            hide_info();
-        }
+        int r = pet_learn(item, owner);
+        if (r == 2) sr_begin(item, owner);
         return;
     }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
@@ -3181,6 +3188,8 @@ void x360_pad_shutdown(void);   /* pad.c: the measurement's files written before
 
 static int petcmd_open;
 static void petcmd_show(int on);
+static int sr_open;                          /* the spell-replacing menu (below) */
+static void sr_finish(int keep);
 static void sock_show(int on);
 static void triggers_reset(void);
 static void stats_load(void);
@@ -3412,7 +3421,7 @@ void x360_inventory_toggle(void) {
     if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
     else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
-    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); }
+    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); if (sr_open) sr_finish(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
      * opens (CInventoryMenuXenon's virtual +28, sub_8236F700 -> sub_82337A10(0): the hero's seen
      * byte +2471 and the setting, as PC's 0x55f570). PC asks for it when its own inventory opens
@@ -4816,6 +4825,99 @@ static void sock_show(int on) {
     x360_log(on ? "x360 menu: the gem's item select shown\r\n" : "x360 menu: the gem's item select hidden\r\n");
 }
 
+/* ---- the spell-replacing menu (a spell for a pet whose two places are full) ----
+ * The 360's CMessageSpellRemoveXenon (vtable 0x820D1AD4, CGameUI's +6296; spellremove_xenon in
+ * the message housing), opened by sub_8236BB70 when the owner can take the spell but its places
+ * are full: the column keeps it (+380), the menu its owner (+44) and an order of its four windows
+ * (+60: a pet's 0, 1, 2, 3; the player's 2, 0, 1, 3), then its draw and its opening (the base
+ * sub_8237A970: the sound 22; 66 on closing). Its draw (sub_8237C260): the selection (+56) below
+ * 0 becomes 1 for a pet (3 for the player), over 1 for a pet (3) becomes 0; each known spell i
+ * (sub_821FD868) drawn into the window order[i] by sub_8237C348: for a pet the windows 2 and 3
+ * hidden; else spellN shown, its Image spells_window, spells_window_rollover for the selected one
+ * (0x820D1AA8, 0x820D1AB8), and spellimageN the spell's icon (none without a spell). Its pad
+ * (sub_8237BDA0, its jump table at 0x8237BDD4 by Runic's codes): the left stick's left and right
+ * move the selection (then the draw); A closes keeping it; X, Y and both sticks' up and down do
+ * nothing; any other button (B, the d-pad, the triggers, Start, Back) clears it (-1) and closes.
+ * Once closed, the column (sub_8236ECC0): a selection kept makes the owner forget that spell
+ * (sub_82284FD0; PC's CCharacter::unLearnSpell(int) *(OT)*, GOG 0x489a30, thiscall, the known
+ * spell's index) and learn the new one (sub_8236BB70 again: a place is free now). */
+#define SR_PREFIX "x360sr_"
+typedef void (__fastcall *unlearn_fn)(void *who, void *edx, int index);
+static void *sr_root;
+static int sr_open, sr_sel = -1;
+static unsigned char *sr_item, *sr_owner;
+
+static void sr_draw(void) {
+    static const int pet_order[4] = {0, 1, 2, 3}, hero_order[4] = {2, 0, 1, 3};
+    int pet = sr_owner && isa(sr_owner, 87), i;
+    const int *order = pet ? pet_order : hero_order;
+    if (sr_sel < 0) sr_sel = pet ? 1 : 3;
+    else if (sr_sel > 3 || (pet && sr_sel > 1)) sr_sel = 0;
+    for (i = 0; i < 4; i++) {
+        char name[16], buf[96], *p;
+        unsigned char *sp = 0;
+        int slot = order[i];
+        copy(name, sizeof name, "spell", 0); p = put_int(name + 5, slot); *p = 0;
+        if (pet && slot > 1) { show(win_of(SR_PREFIX, name), 0); continue; }
+        show(win_of(SR_PREFIX, name), 1);
+        prop(win_of(SR_PREFIX, name), "Image", sr_sel == i ? "set:X360_widgets2 image:spells_window_rollover"
+                                                            : "set:X360_widgets2 image:spells_window");
+        if (sr_owner) { __try { sp = (unsigned char *)((known_spell_fn)0x484ff0)(sr_owner, 0, i); } __except (1) { sp = 0; } }
+        if (sp) skill_icon(sp, 0x5d5950, buf, sizeof buf); else buf[0] = 0;
+        copy(name, sizeof name, "spellimage", 0); p = put_int(name + 10, slot); *p = 0;
+        prop(win_of(SR_PREFIX, name), "Image", buf);
+    }
+}
+
+static void sr_show(int on) {
+    if (on && !sr_root) {
+        if (!housing_load()) return;
+        sr_root = load("media/ui/x360/spellremove_xenon.layout", SR_PREFIX);
+        if (!sr_root) return;
+        scale_tree(sr_root, k, 0);
+        add_child(win_of(HOUSING_PREFIX, "parent"), 0, sr_root);
+    }
+    if (!sr_root) return;
+    sr_open = on;
+    if (petcmd_root && on) set_visible(petcmd_root, 0, 0);
+    if (sock_top && on) show(sock_top, 0);
+    show(win_of(HOUSING_PREFIX, "closebutton"), 0);   /* the menu's own B line */
+    set_visible(sr_root, 0, on);
+    if (on) { sr_draw(); hide_info(); } else update_info();
+    set_visible(housing_root, 0, on);
+    if (on) move_to_front(housing_root, 0);
+    shop_sound(on ? 22 : 66);
+    x360_log(on ? "x360 menu: the spell-replacing menu shown\r\n" : "x360 menu: the spell-replacing menu hidden\r\n");
+}
+
+static void sr_begin(unsigned char *item, unsigned char *owner) {
+    sr_item = item; sr_owner = owner; sr_sel = -1;
+    sr_show(1);
+}
+
+/* Closed: with a selection kept, that spell forgotten and the new one learned. */
+static void sr_finish(int keep) {
+    unsigned char *item = sr_item, *owner = sr_owner;
+    int sel = keep ? sr_sel : -1;
+    sr_show(0);
+    sr_item = sr_owner = 0; sr_sel = -1;
+    if (sel >= 0 && item && owner) {
+        __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); } __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
+        x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
+        pet_learn(item, owner);
+    }
+    refresh_all();
+}
+
+static void sr_pad(unsigned pressed, int lx) {
+    static int held;
+    int dir = lx < -500 && !held ? -1 : lx > 500 && !held ? 1 : 0;
+    held = lx < -500 || lx > 500;
+    if (dir) { sr_sel += dir; sr_draw(); return; }
+    if (pressed & 0x1000) { sr_finish(1); return; }                       /* A */
+    if (pressed & ~(0x4000u | 0x8000u)) sr_finish(0);                      /* not X or Y: closed, none */
+}
+
 /* A on a gem in the focused bag (the hero's or the pet's). */
 static void sock_begin(unsigned char *gem) {
     sock_gem = gem;
@@ -5365,6 +5467,7 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (!inventory_open || !find_world()) return;
     triggers_tick();
     if (petcmd_open) { petcmd_pad(pressed, lx); return; }
+    if (sr_open) { sr_pad(pressed, lx); return; }
     if (sock_open) { sock_pad(pressed, ly); return; }
     if (skillmap_pad(pressed, buttons)) return;               /* the Skills page's mapping open */
     if (pressed & 0x2000) {                                            /* B */
