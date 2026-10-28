@@ -1195,6 +1195,7 @@ static int same_text_nocase(const char *a, const char *b) {
     }
     return *a == *b;
 }
+static const char *take_reason = "";      /* why can_take_spell said no (the log) */
 static int can_take_spell_raw(unsigned char *item, unsigned char *owner) {
     typedef void *(__fastcall *effect_by_type_fn)(void *skill, void *edx, int type);
     typedef float (__fastcall *effect_value_fn)(void *effect, void *edx, int index);
@@ -1203,24 +1204,25 @@ static int can_take_spell_raw(unsigned char *item, unsigned char *owner) {
     int charges = *(int *)(item + 0x1f0), places = isa(owner, 87) ? 2 : 4, i, level, req;
     unsigned char *skill = *(unsigned char **)(item + 0x17c), *effect, *manager;
     char want[96], have[96];
-    if (charges == 0) return 0;
+    if (charges == 0) { take_reason = "no charges"; return 0; }
     req = ((req_fn)0x004b7710)(item, 0, owner);
-    if (req > 0 && req > *(int *)(owner + 0xf0)) return 0;
+    if (req > 0 && req > *(int *)(owner + 0xf0)) { take_reason = "its level above the owner's"; return 0; }
     effect = skill ? (unsigned char *)((effect_by_type_fn)0x0047dd70)(skill, 0, 65) : 0;
-    if (!effect || !wstring_utf8(effect + 0x74, want, sizeof want)) return 0;
+    if (!effect || !wstring_utf8(effect + 0x74, want, sizeof want)) { take_reason = "no learn effect"; return 0; }
     level = (int)((effect_value_fn)0x00478e30)(effect, 0, 0);
     manager = *(unsigned char **)(owner + 0x184);
-    if (manager && ((get_skill_fn)0x005dc1d0)(manager, 0, effect + 0x74, level)) return 0;
+    if (manager && ((get_skill_fn)0x005dc1d0)(manager, 0, effect + 0x74, level)) { take_reason = "the owner has that skill"; return 0; }
     for (i = 0; i < places; i++) {
         const unsigned char *known = owner + 0x2f8 + i * 0x1c;
-        if (*(unsigned *)(known + 0x14) && wstring_utf8(known, have, sizeof have) && same_text_nocase(have, want)) return 0;
+        if (*(unsigned *)(known + 0x14) && wstring_utf8(known, have, sizeof have) && same_text_nocase(have, want)) { take_reason = "a known spell of that name"; return 0; }
     }
     return 1;
 }
 static int can_take_spell(unsigned char *item, unsigned char *owner) {
     int ok = 0;
     if (!item || !owner) return 0;
-    __try { ok = can_take_spell_raw(item, owner); } __except (1) { ok = 0; }
+    take_reason = "";
+    __try { ok = can_take_spell_raw(item, owner); } __except (1) { ok = 0; take_reason = "an exception"; }
     return ok;
 }
 
@@ -2428,7 +2430,12 @@ static int pet_learn(unsigned char *item, unsigned char *owner) {
         x360_log("x360 inv: A in the pet's bag: the pet knows two spells: the replacing menu\r\n");
         return 2;
     }
-    x360_log("x360 inv: A in the pet's bag: the pet cannot learn it\r\n");
+    {
+        char name[96];
+        x360_log("x360 inv: A in the pet's bag: the pet cannot learn ");
+        x360_log(unit_name(item, name, sizeof name) ? name : "it");
+        x360_log(": "); x360_log(take_reason); x360_log("\r\n");
+    }
     hide_info();
     return 0;
 }
@@ -4939,6 +4946,20 @@ static void sr_begin(unsigned char *item, unsigned char *owner) {
     sr_show(1);
 }
 
+/* The owner's known spells' names in the log (the menu's choice checked in a run). */
+static void sr_log_places(const char *when, unsigned char *owner, int sel) {
+    char name[96];
+    int i;
+    x360_log("x360 menu: places "); x360_log(when); x360_log(":");
+    for (i = 0; i < 2; i++) {
+        const unsigned char *known = owner + 0x2f8 + i * 0x1c;
+        x360_log(i == sel ? " [" : " ");
+        x360_log(*(unsigned *)(known + 0x14) && wstring_utf8(known, name, sizeof name) ? name : "-");
+        if (i == sel) x360_log("]");
+    }
+    x360_log("\r\n");
+}
+
 /* Closed: with a selection kept, that spell forgotten and the new one learned. */
 static void sr_finish(int keep) {
     unsigned char *item = sr_item, *owner = sr_owner;
@@ -4946,9 +4967,11 @@ static void sr_finish(int keep) {
     sr_show(0);
     sr_item = sr_owner = 0; sr_sel = -1;
     if (sel >= 0 && item && owner) {
+        sr_log_places("before", owner, sel);
         __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); } __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
         x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
         pet_learn(item, owner);
+        sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
     }
     refresh_all();
 }
