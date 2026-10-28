@@ -648,7 +648,10 @@ U32 frame_dims(const U32& body) {
       i = j;
       continue;
     }
-    const double v = std::stod(u8(body.substr(j, k - j)));
+    const std::string num = u8(body.substr(j, k - j));
+    size_t used = 0;
+    const double v = std::stod(num, &used);
+    if (used != num.size()) throw Error("a frame's offset is not a number: " + num);   // Python's float() raises
     out += body.substr(i, at - i);
     out += v == 0 ? body.substr(at, k + tail.size() - at) : frame_dim(v);
     i = k + tail.size();

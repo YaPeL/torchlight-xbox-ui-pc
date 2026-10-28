@@ -1056,11 +1056,14 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
 - **The looks' frames scaled too.** The looknfeel's pixel offsets are not scaled by CEGUI 0.6
   either; they are pixels at the 360's 720 rows. StaticShared's frame sections (`frame`, `frame1`,
   `frameCharacterSlot`, `itemframe`, `itemframe2`: the frame drawn `-24, -9` and `48, 18` wider
-  than its window, or `-18`/`-26`) are written by the converter (`frames_scaled`, and its C++
+  than its window; `frameCharacterSlot` -18 and 36 across, the item frames -26, -13 and 52, 26)
+  are written by the converter (`frames_scaled`, and its C++
   twin) as a multiple of an AutoScaled image's height (`widgets2`'s `framemiddle`, 22 rows at 768),
-  so that they keep the 360's size at any height. Before, at 1080 every 360 frame sat a third
-  closer to its window: the spell-replacing menu's frame measured 783x248 against the recomp's
-  806x258 (its window the same, 761x250, in the recomp's UI dump); after, 807x257. The bottom
+  so that they keep the 360's size at any height (the image and its 22 rows are the supported 360
+  build's; the converter does not check them). Before, at 1080 every 360 frame sat a third
+  closer to its window: the spell-replacing menu's frame (its visible orange line, which lies
+  inside the frame's art, not the drawn area) measured 783x248 against the recomp's 806x258 (its
+  window the same, 761x250, in the recomp's UI dump); after, 807x257. The bottom
   bar's buttons fell on the recomp's pixels too (the owner's captures, 2026-10-28). The object
   label keeps its own copy of `frame` (`label_frame_relative`, by the label's height).
 - **Position: the 360's frame.** `mastermenu_xenon` (919x690, centred; LT/RT tabs, the title, the
