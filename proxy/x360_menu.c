@@ -4942,7 +4942,8 @@ static void sr_show(int on) {
 }
 
 static void sr_begin(unsigned char *item, unsigned char *owner) {
-    sr_item = item; sr_owner = owner; sr_sel = -1;
+    /* The opening (sub_8237C1D8 with 1) sets the selection to 0, the first, then draws. */
+    sr_item = item; sr_owner = owner; sr_sel = 0;
     sr_show(1);
 }
 

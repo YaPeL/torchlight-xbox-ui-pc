@@ -1351,8 +1351,8 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   `sub_8236BB70`: the column keeps it (`+380`), the menu the owner (`+44`) and an order of its
   four windows (`+60`: a pet's 0, 1, 2, 3; the player's 2, 0, 1, 3); the base's opening
   (`sub_8237A970`) plays the sound 22, its closing 66. Its draw (`sub_8237C260`, each window by
-  `sub_8237C348`): the selection (`+56`) below 0 becomes 1 for a pet (3 for the player), above
-  that 0; known spell i in window order[i]; for a pet the windows 2 and 3 hidden; `spellN`'s
+  `sub_8237C348`): the selection (`+56`; set to 0, the first, when it opens, `sub_8237C1D8`) below
+  0 becomes 1 for a pet (3 for the player: the stick's wrap to the last), above that 0; known spell i in window order[i]; for a pet the windows 2 and 3 hidden; `spellN`'s
   Image `spells_window`, `spells_window_rollover` when selected; `spellimageN` the spell's icon.
   Its pad (`sub_8237BDA0`, its jump table at `0x8237BDD4`): the left stick's left and right move
   the selection; A closes keeping it; X, Y and the sticks' up and down nothing; any other button
