@@ -1310,7 +1310,18 @@ static void *of_category(void *bag, int filter) {
 static const char *const tab_hi[6] = {"weaponHi", "armorHi", "trinketHi", "potionHi", "scrollHi", "fishHi"};
 static int tab_mark[2][6];                   /* the hero's bag, the pet's: 1 picked up, 2 seen */
 #define MARK_ITEMS 256
-static struct { void *bag; int ready; unsigned n; void *item[MARK_ITEMS]; unsigned at[MARK_ITEMS]; } mark_bags[2];
+static struct { void *owner, *bag; int ready; unsigned n; void *item[MARK_ITEMS]; unsigned at[MARK_ITEMS]; } mark_bags[2];
+static int page;                             /* the frame's page (0 the inventory; set_page) */
+
+/* Out of play (a load, the main menu): the bags read anew, with no marks, when play comes back
+ * (another save may put its inventory where the last one was). */
+static void tab_marks_forget(void) {
+    int p, i;
+    for (p = 0; p < 2; p++) {
+        mark_bags[p].owner = mark_bags[p].bag = 0; mark_bags[p].ready = 0; mark_bags[p].n = 0;
+        for (i = 0; i < 6; i++) tab_mark[p][i] = 0;
+    }
+}
 
 static int panel_filter(int p) { return p == active_panel ? filter : panels[p].filter; }
 
@@ -1322,7 +1333,9 @@ static void tab_marks_draw(unsigned now) {
     char alpha[16];
     *put_float(alpha, a) = 0;
     for (p = 0; p < 2; p++) {
-        int f = panel_filter(p), tabs = !at_transmute && !panels[p].is_select;
+        /* The bags' columns keep their tabs at the transmuter (only its own column has none); on
+         * the other pages the tabs are not on screen. */
+        int f = panel_filter(p), tabs = !panels[p].is_select && page == 0;
         if (!panels[p].root) continue;
         if (inventory_open && tabs && tab_mark[p][f] == 1) tab_mark[p][f] = 2;   /* seen: only with the tabs shown */
         for (i = 0; i < 6; i++) {
@@ -1346,11 +1359,11 @@ static void tab_marks_tick(unsigned now) {
         unsigned char *owner = p ? the_pet() : hero, *inv = owner ? *(unsigned char **)(owner + GOG_INVENTORY) : 0;
         void **refs;
         unsigned n, i, j;
-        if (inv != mark_bags[p].bag) {   /* another hero or pet: its items as they are, no marks */
-            mark_bags[p].bag = inv; mark_bags[p].ready = 0; mark_bags[p].n = 0;
+        if (!inv) continue;              /* the pet away in town: its marks kept for its return */
+        if (inv != mark_bags[p].bag || owner != mark_bags[p].owner) {   /* another hero or pet: its items as they are, no marks */
+            mark_bags[p].owner = owner; mark_bags[p].bag = inv; mark_bags[p].ready = 0; mark_bags[p].n = 0;
             for (i = 0; i < 6; i++) tab_mark[p][i] = 0;
         }
-        if (!inv) continue;
         refs = *(void ***)(inv + INV_REFS);
         n = *(unsigned *)(inv + INV_REFS + 4);
         for (i = 0; i < n && i < 256; i++) {
@@ -1362,7 +1375,7 @@ static void tab_marks_tick(unsigned now) {
             /* With the screen open no mark: the filter moves to it. One that comes in equipped (a
              * weapon picked up with the hands empty) is told as equipped, sub_82369A70: nothing
              * (the recomp's run: the sword picked up and equipped left its tab unmarked). */
-            if (mark_bags[p].ready && *(int *)(ref + REF_SLOT) >= EQUIPPED_SLOTS) {
+            if (mark_bags[p].ready && *(int *)(ref + REF_SLOT) >= EQUIPPED_SLOTS && mark_bags[p].n < MARK_ITEMS) {
                 int c = category(item);
                 if (c < 6) { if (!inventory_open) tab_mark[p][c] = 1; picked = c; picked_panel = p; }
             }
@@ -3222,7 +3235,6 @@ static void update_info(void);
 
 /* The master menu's pages, in the 360's order (LT to the left, RT to the right). */
 static const char *const page_name[4] = {"page.inventory", "page.stats", "page.skills", "page.quest"};   /* x360_text keys */
-static int page;
 
 static void page_titles(void) {
     text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant == 0x1b ? "title.retire" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
@@ -6195,6 +6207,7 @@ static void hud_tick(void) {
         if (hud_root) show(hud_root, 0);
         if (pet_hud_root) show(pet_hud_root, 0);
         hud_in_play = 0;
+        tab_marks_forget();
         return;
     }
     hud_in_play = 1;
