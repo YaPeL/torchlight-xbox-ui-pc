@@ -1376,6 +1376,15 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
     bar and image of the same name: health, mana, experience, the pet's health and mana.
   - **The texts and their visibility** as PC's: `LevelName`, `LargeMessageText`,
     `SmallMessageText`, the pet's `FleeingText`; the pet's HUD shown when PC's is.
+  - **The large message fades out (2026-10-28). [read]** The 360 shows it at once and fades it
+    out: `sub_8233E4F8(hud, text, seconds)` sets the text (HUD `+6088`), a hold (`+6116`) of
+    `seconds` and the alpha (`+6120`) to 1.0 (an empty text sets the alpha to 0 and hides it);
+    the HUD update (`sub_821A83C8`, from `0x821AA3C0`) counts the hold down by the frame's time,
+    then takes the alpha down by 2.0 a second (`0x820AA33C`), writes it to `TextColour` (white)
+    and `DropTextColour` (black), and hides the text at 0. Ten callers pass the seconds (not read
+    one by one). The port (`large_message_tick`): PC's own code times the hold, so the 360's text
+    is at full alpha while PC's is shown and fades over 0.5 s once PC hides it. The owner saw the
+    fade on the 360. Played by the owner (2026-10-28): the title fades out.
   - **The pad's slots:** LB, RB, B, Y, LT, RT press PC's hotbar keys 1 to 6 (section 9), so the
     360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
     and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
@@ -3796,6 +3805,21 @@ no Skip is attached; `keys_proc` lets it through while the cinematic holds. Not 
 of the 360's overlays (a modal, fishing, a tip) is up: PC's test holds there too, and an Escape
 would reach PC's screen under it (the release review). The owner played the skip with Start in
 an in-play cinematic (2026-10-24).
+
+**The story screens' frame (2026-10-28). [read]** The owner: the story screens (PC's cinematic
+menu with its Skip shown: a new hero's intro, the acts' pages) showed PC's bottom bar and button,
+not the 360's. The 360's `CCinematicMenu` (`sub_82349BA8`) loads `media/ui/cinematic.layout` and
+looks up only `Skip`, `DialogText` and `Background` (its `+264`, `+268`, `+272`); the frame is the
+layout's own: `main_topborder` with its ends at the top, `main_bottomborder` (1024 x 93, bottom,
+centred) with its ends at the bottom and in it the A button and the layout's text (`i_951`). Its
+pad (`sub_82349E80`): while the menu is up any button sets its `+26` (continue); code 10 also
+writes the cinematics' `+6024` (1) and `+6028` (0), not followed. The port
+(`cinematic_bar_tick`): while PC's Skip is attached, the 360's layout over PC's screen with its
+black backdrop, page (`Background`) and text (`i_962`) left out, PC's own page and text under
+it; PC's top and bottom bars and Skip transparent (`Alpha` 0); A, B, X, Y and Start press PC's
+Skip (`x360_cinematic_skip` leaves Start to it while it is shown). In-play cinematics (no Skip
+attached) are as before. Played by the owner (2026-10-28): the 360's frame with its A on the story screens, A
+continues (the log: the frame shown and PC's Skip pressed four times).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
