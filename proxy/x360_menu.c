@@ -6809,6 +6809,7 @@ static void cinematic_bar_tick(void) {
             show(root, 0);
             for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
             prop(win_of(cin_prefix, "Frameb"), "Alpha", "1");
+            prop(win_of(cin_prefix, "Backdrop"), "Alpha", "1");
         }
         return;
     }
@@ -6820,8 +6821,6 @@ static void cinematic_bar_tick(void) {
         if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
         scale_tree(root, k, 0);
         pass_mouse(root);
-        prop(win_of(CIN_PREFIX, "i_947"), "Image", "");   /* the black backdrop: PC's page shows */
-        show(win_of(CIN_PREFIX, "Background"), 0);
         show(win_of(CIN_PREFIX, "Skip"), 0);
         show(root, 0);
     }
@@ -6836,9 +6835,25 @@ static void cinematic_bar_tick(void) {
         for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
         if (win_of(CIN_PREFIX, "DialogText") && win_of(cin_prefix, "DialogText"))
             prop(win_of(cin_prefix, "Frameb"), "Alpha", "0");   /* PC's text box: the 360's shows the text */
+        /* The page as the 360's: its black backdrop (i_947) and its Background (1024 x 725, centred
+         * across, at 68 of 768: 1440 wide from 95 at 1080) with PC's page image; PC's screen, root
+         * Backdrop, transparent (its Skip still takes the click). The owner's capture against the
+         * recomp's: PC's page was 1348 wide and some 95 pixels higher. */
+        if (win_of(CIN_PREFIX, "Background") && win_of(cin_prefix, "Background"))
+            prop(win_of(cin_prefix, "Backdrop"), "Alpha", "0");
         move_to_front(root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
+    }
+    /* PC's page image on the 360's Background (only when it changes). */
+    {
+        void *pb = win_of(cin_prefix, "Background"), *xb = win_of(CIN_PREFIX, "Background");
+        static char last_image[128];
+        char image[128];
+        if (pb && xb) {
+            read_prop(pb, "Image", image, sizeof image);
+            if (!cin_text_set || !same_text_nocase(image, last_image)) { copy(last_image, sizeof last_image, image, 0); prop(xb, "Image", image); }
+        }
     }
     /* The text in the 360's box (i_962, a ceguiWidget/ItemText: enabled, its look draws
      * ceguiWidget/StaticShared's frame, widgets1's tooltip 9-slice, dark and translucent, under

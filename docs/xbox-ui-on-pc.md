@@ -3905,7 +3905,13 @@ its first line at 327, 665 at 1080, lines 23 pixels apart); its rise is PC's and
 both take its length times 0.015 s, at least 10 s (the 360's `sub_82349EE0`: `+300` the text's
 length, `0x820AA7D8` 0.015, `0x820AA3CC` 10.0; GOG `0x5653cf`: `0xab2a18` 0.015, `0xa8ec08`
 10.0), from below its box (the 360's `sub_8234A2B8`: the box's height plus 50 pixels below its
-place, linearly to it). An X had continued it in the port; on the 360 only A does: now only A.
+place, linearly to it). An X had continued it in the port; on the 360 only A does: now only A. **The page's image (2026-10-28). [seen]** The owner's capture against the recomp's: the
+360's page art is larger and lower (x 242-1677 at 1080 against the port's 280-1628, some 95
+pixels lower): the 360's `Background` is 1024 x 725 centred across at 68 of 768 (1440 wide from
+95 at 1080, the layout's one scale), PC's is centred both ways at its own scale. Now the 360's
+`Background` shows PC's page image (its `Image`, copied when it changes) over the 360's black
+backdrop (`i_947`), and PC's whole screen (its root `Backdrop`) is transparent while the frame
+shows (its Skip still takes the click; given back when it hides).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
