@@ -1549,6 +1549,29 @@ OK"):
   `_rollover` images (frame, border, its filter's tab) and RB. A column that is not the
   player's (the 360's ISA 134 test) dims to 0.25 the tabs of the filters it has nothing in, but
   the focused column's own (`sub_823654B8`, `0x82365948`).
+- **The tabs' marks (2026-10-28). [read]** The owner: on the 360 the tabs' icons blink. Each
+  column (`CInventoryXenon`) keeps a state per filter (`+268 + 4 x category`: 0 nothing in it, 2
+  something, 1 an item picked up and not yet seen). Its `iInventoryListener` (vtable
+  `0x820D10D4`, in OT's order: picked up `sub_82369A00`; dropped, equipped, unequipped, used
+  `sub_82369A70`; destroyed) tells it of the model's changes. Picked up with the screen closed:
+  `sub_82369B08` sets the item's category (`sub_82369C48`) to 1, but not for an item that only
+  joins a stack the owner had (its `+488` over 1, not ISA 124, the owner's inventory finding it by
+  id, `sub_822E35D8`). With the screen open: no mark; the states are rebuilt (1 kept, the rest 2
+  or 0 by the owner's items), the column's filter (`+296`) is set to the item's category and the
+  header rebuilt (`sub_82367D38`). The other events only rebuild, with the screen open. The
+  drawing (`sub_823654B8`): every `Hi` window (`tab_hilite`; `weaponHi`, `armorHi`, `trinketHi`,
+  `potionHi`, `scrollHi`, `fishHi` for the categories 0-5, the table at `0x834C5480`) hidden; a
+  filter at 1 shows its `Hi` in the focused column when it is not the column's filter, and adds
+  it to a list of the column's (`+108`, `sub_82363BC8` a vector's push); otherwise the column's
+  filter goes to 2, seen. **Not found:** what walks that list (the blink itself): not the menu's
+  or its base's virtuals, not the column's, nor the functions that read `+108` and `+112` together
+  or pass `this + 108` (three tries). **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
+  no listener, so the hero's and the pet's bags are read every 100 ms (the HUD's tick, and the
+  inventory's while it is open); an item not in them before is picked up, one gone for less than
+  1.5 s and back is not (PC takes a potion out while the hero drinks and puts the rest back; an
+  item joining a stack keeps the stack's item, as the 360's exception). **[inferred]** The blink:
+  the `Hi` lit one second and off the next, as the HUD's skill "+" glow (`sub_821A83C8`'s 1.0 s
+  flag), until the 360's is found.
 - **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
   gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
   `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).

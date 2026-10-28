@@ -1287,6 +1287,95 @@ static void *of_category(void *bag, int filter) {
     return 0;
 }
 
+/* ---- the tabs' marks: a filter with an item picked up and not yet seen ----
+ * The 360's CInventoryXenon (each bag's column) keeps a state per filter (+268 + 4 x category: 0
+ * nothing in it, 2 something, 1 an item picked up and not yet seen). Its iInventoryListener's
+ * equipmentPickedUp *(OT)* (sub_82369A00, its listener vtable 0x820D10D4: picked up, then dropped,
+ * equipped, unequipped and used, all sub_82369A70) calls sub_82369B08, which sets the item's
+ * category to 1, but for an item that only joins a stack the owner had (its +488 over 1, not ISA
+ * 124, and the owner's inventory already finding it by id: sub_822E35D8); with the screen open it
+ * also sets the column's filter (+296) to that category and rebuilds the screen. The tabs' drawing
+ * (sub_823654B8, 0x82365954-0x823659A8): each "Hi" window (tab_hilite: weaponHi, armorHi,
+ * trinketHi, potionHi, scrollHi, fishHi, the table at 0x834C5480) hidden; a filter at 1 shows its
+ * Hi in the focused column when it is not the column's filter (and adds it to the column's list
+ * at +108); otherwise the column's filter is set to 2, seen.
+ * Here PC tells no listener: the hero's and the pet's bags are read every 100 ms, and an item not
+ * in them before is picked up; one gone for less than 1.5 s and back is not (PC takes a potion
+ * out while the hero drinks and puts the rest back), which also leaves out the items that only
+ * join a stack (their stack keeps its item). [inferred] The Hi's blink: the code that walks the
+ * column's list at +108 was not found (three tries); it blinks here as the HUD's skill "+" glow
+ * does (sub_821A83C8: a flag turned every 1.0 s). */
+static const char *const tab_hi[6] = {"weaponHi", "armorHi", "trinketHi", "potionHi", "scrollHi", "fishHi"};
+static int tab_mark[2][6];                   /* the hero's bag, the pet's: 1 picked up, 2 seen */
+#define MARK_ITEMS 256
+static struct { void *bag; int ready; unsigned n; void *item[MARK_ITEMS]; unsigned at[MARK_ITEMS]; } mark_bags[2];
+
+static int panel_filter(int p) { return p == active_panel ? filter : panels[p].filter; }
+
+/* The Hi windows of the hero's and the pet's columns: shown for a mark not yet seen, in the
+ * focused column, on the blink's lit half; the columns' own filters seen. */
+static void tab_marks_draw(unsigned now) {
+    int p, i, lit = (now / 1000) % 2 == 0;
+    for (p = 0; p < 2; p++) {
+        int f = panel_filter(p), tabs = !at_transmute && !panels[p].is_select;
+        if (!panels[p].root) continue;
+        if (inventory_open && tab_mark[p][f] == 1) tab_mark[p][f] = 2;
+        for (i = 0; i < 6; i++)
+            show(win_of(panels[p].prefix, tab_hi[i]),
+                 inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f && lit);
+    }
+}
+
+static void refresh_all(void);
+
+/* The hero's and the pet's bags read for new items (every 100 ms, in play). */
+static void tab_marks_tick(unsigned now) {
+    static unsigned last;
+    int p, picked = -1, picked_panel = -1;
+    if (now - last < 100) return;
+    last = now;
+    for (p = 0; p < 2; p++) {
+        unsigned char *owner = p ? the_pet() : hero, *inv = owner ? *(unsigned char **)(owner + GOG_INVENTORY) : 0;
+        void **refs;
+        unsigned n, i, j;
+        if (inv != mark_bags[p].bag) {   /* another hero or pet: its items as they are, no marks */
+            mark_bags[p].bag = inv; mark_bags[p].ready = 0; mark_bags[p].n = 0;
+            for (i = 0; i < 6; i++) tab_mark[p][i] = 0;
+        }
+        if (!inv) continue;
+        refs = *(void ***)(inv + INV_REFS);
+        n = *(unsigned *)(inv + INV_REFS + 4);
+        for (i = 0; i < n && i < 256; i++) {
+            unsigned char *ref = (unsigned char *)refs[i];
+            void *item = ref ? *(void **)(ref + REF_ITEM) : 0;
+            if (!item) continue;
+            for (j = 0; j < mark_bags[p].n && mark_bags[p].item[j] != item; j++) {}
+            if (j < mark_bags[p].n) { mark_bags[p].at[j] = now; continue; }
+            if (mark_bags[p].ready) {   /* with the screen open no mark: the filter moves to it */
+                int c = category(item);
+                if (c < 6) { if (!inventory_open) tab_mark[p][c] = 1; picked = c; picked_panel = p; }
+            }
+            if (mark_bags[p].n < MARK_ITEMS) {
+                mark_bags[p].item[mark_bags[p].n] = item;
+                mark_bags[p].at[mark_bags[p].n++] = now;
+            }
+        }
+        for (j = 0; j < mark_bags[p].n;)    /* gone for 1.5 s: forgotten */
+            if (now - mark_bags[p].at[j] > 1500) {
+                mark_bags[p].n--;
+                mark_bags[p].item[j] = mark_bags[p].item[mark_bags[p].n];
+                mark_bags[p].at[j] = mark_bags[p].at[mark_bags[p].n];
+            } else j++;
+        mark_bags[p].ready = 1;
+    }
+    /* Picked up with the screen open: the column's filter is the item's (sub_82369A00). */
+    if (picked >= 0 && inventory_open && panels[picked_panel].root) {
+        if (picked_panel == active_panel) filter = picked;
+        else panels[picked_panel].filter = picked;
+        refresh_all();
+    }
+}
+
 static void refresh(void) {
     int row, i, counts[6];
     char name[48], buf[200];
@@ -1323,8 +1412,7 @@ static void refresh(void) {
                                                                          : "set:X360_widgets2 image:backroundbase_inventory");
     prop(win("HiliteFrame"), "Image", active_panel == focus_panel ? "set:X360_widgets image:framea_rollover"
                                                                   : "set:X360_widgets image:framea");
-    show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
-    show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
+    for (i = 0; i < 6; i++) show(win(tab_hi[i]), 0);   /* the marks' own: tab_marks_draw */
     /* The item select's filter line reads "Insert Into" (the catalog's in-game/11; 0x820D0C54). */
     text(win("filtername"), x360_text(cur_select ? "filter.insert" : is_tm ? "filter.transmute" : filter_name[filter]));
     /* The transmuter's column (sub_82367D38, ISA 134): no tabs, its line of help (the layout's
@@ -2174,6 +2262,7 @@ static void refresh_all(void) {
     fill_character();
     text(win_of(MASTER, "itemcomparetext"), x360_text(compare_on ? "compare.disable" : "compare.enable"));
     update_info();
+    tab_marks_draw(GetTickCount());
 }
 
 /* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
@@ -5318,6 +5407,8 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         last_check = now;
         if (print != last_print) { last_print = print; refresh_all(); }
     }
+    tab_marks_tick(now);
+    tab_marks_draw(now);   /* the blink */
     if (buttons & 0x0001 || ly > 500) dir = -1;                      /* up */
     if (buttons & 0x0002 || ly < -500) dir = 1;                      /* down */
     if (dir != held_dir) { held_dir = dir; next_repeat = 0; }
@@ -6136,6 +6227,8 @@ static void hud_tick(void) {
         else if (!blink_at || now - blink_at >= 1000) { blink_at = now; flag = !flag; }
         show(win_of(HUD_PREFIX, "AvailableSkillsGlowIcon"), points && !flag);
     }
+    hud_stage = "marks";
+    if (find_world() && hero) tab_marks_tick(now);   /* the bags' pickups mark the inventory's tabs */
     hud_stage = "pet";
     /* The pet's: the 360's pethud.layout, PC's made transparent, its bars and text as PC's. */
     {
