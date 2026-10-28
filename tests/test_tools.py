@@ -929,6 +929,25 @@ class LabelFrameTest(unittest.TestCase):
         self.assertLess(label.find("labelframe"), label.find("<StateImagery"))
 
 
+class FramesScaledTest(unittest.TestCase):
+    def test_shared_frames_scaled_others_left(self):
+        text = ('<WidgetLook name="ceguiWidget/StaticShared"><ImagerySection name="frame1"><Area>'
+                '<Dim type="LeftEdge" ><AbsoluteDim value="-24" /></Dim>'
+                '<Dim type="TopEdge" ><AbsoluteDim value="0" /></Dim>'
+                '<UnifiedDim scale="1" type="Width" ><DimOperator op="Add"><AbsoluteDim value="48" />'
+                '</DimOperator></UnifiedDim></Area></ImagerySection>'
+                '<ImagerySection name="other"><AbsoluteDim value="5" /></ImagerySection></WidgetLook>'
+                '<WidgetLook name="x"><AbsoluteDim value="-24" /></WidgetLook>')
+        out = convert_x360_ui.frames_scaled(text)
+        self.assertIn('<ImageDim imageset="X360_widgets2" image="framemiddle" dimension="Height">'
+                      '<DimOperator op="Multiply"><AbsoluteDim value="-1.16364" /></DimOperator></ImageDim>', out)
+        self.assertIn('<AbsoluteDim value="2.32727" />', out)
+        self.assertIn('<Dim type="TopEdge" ><AbsoluteDim value="0" /></Dim>', out)
+        self.assertIn('<ImagerySection name="other"><AbsoluteDim value="5" />', out)
+        self.assertTrue(out.endswith('<WidgetLook name="x"><AbsoluteDim value="-24" /></WidgetLook>'))
+        self.assertEqual(convert_x360_ui.frames_scaled("<Falagard />"), "<Falagard />")
+
+
 class ItemDescriptionsTest(unittest.TestCase):
     def unit(self, path, name, desc):
         strings = {1: "UNIT", 2: "NAME", 3: name, 4: "DESCRIPTION"}
