@@ -6790,8 +6790,9 @@ void x360_cinematic_skip(void) {
  * layout's own: main_topborder with its ends at the top, main_bottomborder (1024 x 93, bottom,
  * centred) with its ends at the bottom and in it the A button with the layout's text. Its pad
  * (sub_82349E80): any button marks the menu's +26, but only A (its code 10 there) writes the
- * cinematics' +6024 and +6028 that end the page. Here PC's page stays, the 360's black backdrop
- * and page are left out, PC's bars and Skip made transparent, and A presses PC's Skip. */
+ * cinematics' +6024 and +6028 that end the page. Here the 360's black backdrop, page (with PC's
+ * page image) and text box (with PC's text) are shown, PC's screen transparent, and A presses PC's
+ * Skip (Start does nothing while the frame is shown). */
 #define CIN_PREFIX "x360cin_"
 static void cinematic_bar_tick(void) {
     static void *root;
@@ -6845,14 +6846,18 @@ static void cinematic_bar_tick(void) {
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
     }
-    /* PC's page image on the 360's Background (only when it changes). */
+    /* PC's page image on the 360's Background, set each tick: CEGUI keeps the image's pointer, and
+     * PC may make a page's imageset anew under the same name (the review); without PC's page the
+     * 360's black backdrop and page are hidden, PC's shows. */
     {
         void *pb = win_of(cin_prefix, "Background"), *xb = win_of(CIN_PREFIX, "Background");
-        static char last_image[128];
-        char image[128];
+        char image[256];
         if (pb && xb) {
             read_prop(pb, "Image", image, sizeof image);
-            if (!cin_text_set || !same_text_nocase(image, last_image)) { copy(last_image, sizeof last_image, image, 0); prop(xb, "Image", image); }
+            prop(xb, "Image", image);
+        } else {
+            show(xb, 0);
+            prop(win_of(CIN_PREFIX, "i_947"), "Image", "");
         }
     }
     /* The text in the 360's box (i_962, a ceguiWidget/ItemText: enabled, its look draws
