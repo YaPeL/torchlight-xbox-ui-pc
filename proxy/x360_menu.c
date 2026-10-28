@@ -6305,7 +6305,9 @@ static int pc_cinematic_up(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
     static unsigned last_search;
     unsigned now = GetTickCount();
-    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) return 1;
+    /* Once found, PC's menu is kept (it is taken off the sheet and put back, not made again): its
+     * parent chain is the test, and the tree is walked again only if its Skip is gone. */
+    if (cin_prefix[0] && win_of(cin_prefix, "Skip")) return pc_attached(cin_prefix, "Skip");
     if (now - last_search < 250) return 0;   /* the tree's walk at most four times a second */
     last_search = now;
     find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
@@ -6351,10 +6353,14 @@ static void cinematic_bar_tick(void) {
                                           "BottomBarRight", "Skip", 0};
     unsigned buttons, pressed;
     int j;
-    int x360_overlay_open(void);
+    int x360_overlay_open(void), x360_pause_open(void);
     if (failed) return;
-    if (!pc_cinematic_up() || qd_shown || x360_overlay_open()) {
-        if (cin_shown) { cin_shown = 0; show(root, 0); }
+    if (!pc_cinematic_up() || qd_shown || x360_overlay_open() || x360_pause_open() || inventory_open) {
+        if (cin_shown) {   /* PC's bars back, for whatever shows the menu now */
+            cin_shown = 0;
+            show(root, 0);
+            for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
+        }
         return;
     }
     if (!root) {
@@ -6378,11 +6384,11 @@ static void cinematic_bar_tick(void) {
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
         cin_shown = 1;
         show(root, 1);
+        for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
+        move_to_front(root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
     }
-    for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
-    move_to_front(root, 0);
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
