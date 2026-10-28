@@ -151,6 +151,7 @@
 0x00549b70 - unresolved comment ways disagree
 0x0054cad0 0x005482f0 verified   code    body, callers x5
 0x0054d465 0x00548c65 verified   comment window, local
+0x0054d980 0x00549180 verified   code    window, body, callers x6
 0x0054ddfb 0x005495f0 verified   comment window, local
 0x0054de5c 0x00549651 verified   comment window, local
 0x0054eec2 0x0054a719 verified   comment window, local
@@ -235,6 +236,7 @@
 0x0057de89 - unresolved comment no way found it
 0x0057e850 0x00579620 verified   comment window, vtable x3
 0x00580f80 0x0057bd40 verified   comment vtable, strings
+0x00582150 0x0057ceb0 verified   comment window, local
 0x00586c00 0x005818c0 verified   comment vtable, body
 0x0058ac50 0x00585980 verified   comment vtable, strings
 0x0058dcd0 0x005889a0 verified   comment window, vtable x3

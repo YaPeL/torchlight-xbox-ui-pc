@@ -1311,6 +1311,20 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
   A: "prefixed ring", Equipped, its A "Unequip"; A again took it off. Something the pet cannot
   wear was not tried.
+- **A spell in the pet's bag (2026-10-28). [read]** The owner: A on a spell in the pet's bag did
+  nothing (the port took "the pet uses nothing" as a rule). The 360's A (`sub_8236AA48`, its last
+  branch `sub_8236BD80`) for a spell (ISA 129): `sub_822B9CA0(spell, owner)` (the item a spell, its
+  charges, its level against the owner's, the owner able to take its skill), then
+  `sub_8236BB70`: the owner's known spells counted (`sub_821FD868`, four places); if the owner
+  can use the spell (`sub_822B9DA8`) it is used (`sub_822B9A60`): learned; else, with its places
+  full (a pet, ISA 87: two; else four), the 360 opens its spell-replacing menu (CGameUI `+6296`);
+  else nothing, and no sound. The port (`act`): with fewer than two known spells (`getKnownSpell`,
+  GOG `0x484ff0`) and PC's own use check for the pet (`usable_now`), PC's use with a user
+  (GOG `0x54d980`, thiscall on CGameUI: level, item, user, target, pet; PC's right click on a
+  menu owner's spell gives the owner for the last three, `0x582150`; it takes the item out of its
+  inventory) with the pet; with two known, the replacing menu is not ported (logged); else
+  nothing, no sound, as the 360. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
   (GOG `0x5431a5`-`0x5438d9`, for the hero): its colour table (the singleton `0x524d40`, wstrings

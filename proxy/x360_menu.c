@@ -666,6 +666,7 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_USE_ITEM 0x005501b0          /* CGameUI::useItem(CLevel*, CEquipment*) */
 #define GOG_EQUIP_FIRST_FREE 0x004e9fe0  /* CInventory::equipEquipmentIntoFirstFreeLocation(CEquipment*) */
 #define GOG_CAN_EQUIP_SLOT (0x164 / 4)   /* CEquipment's virtual (CCharacter*): the right click's check */
+typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);   /* getKnownSpell, GOG 0x484ff0 */
 #define GOG_COMPARISON_ITEMS 0x004e7b90  /* CInventory::getComparisonItems(CEquipment*, CEquipment**, CEquipment**) */
 #define GOG_REMOVE_EQUIPMENT 0x004e9ca0  /* CInventory::removeEquipment(CEquipment*) */
 #define GOG_PICKUP_EQUIPMENT 0x004e9a30  /* CInventory::pickupEquipment(CEquipment*, bool) */
@@ -2332,6 +2333,29 @@ static void act(void) {
         move_done();
         return;
     }
+    /* A spell in the pet's bag (the 360's sub_8236BD80, ISA 129: sub_822B9CA0, then sub_8236BB70):
+     * the pet learns it when it can use it (sub_822B9DA8, then the use sub_822B9A60); otherwise,
+     * with its places full (a pet, ISA 87, has two; the known spells counted by sub_821FD868, PC's
+     * getKnownSpell 0x484ff0), the 360 opens its spell-replacing menu (CGameUI +6296), not ported;
+     * else nothing, no sound. Here PC's own use with a user (GOG 0x54d980, thiscall on CGameUI:
+     * level, item, user, target, pet; PC's right click on a menu owner's spell, 0x582150, gives
+     * the owner for the last three; it takes the item out of its inventory, 0x4e9ca0). */
+    if (is_pet && isa(item, 129)) {
+        typedef void (__fastcall *use_by_fn)(void *ui, void *edx, void *level, void *item, void *user, void *target, void *pet);
+        int known = 0, i;
+        for (i = 0; i < 4; i++) {
+            void *sp = 0;
+            __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
+            if (sp) known++;
+        }
+        if (usable_now(item, owner) && known < 2 && ui && level) {
+            ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
+            x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
+        } else if (known >= 2) {
+            x360_log("x360 inv: A in the pet's bag: the pet knows two spells (the 360's replacing menu, not ported)\r\n");
+        } else x360_log("x360 inv: A in the pet's bag: the pet cannot learn it\r\n");
+        return;
+    }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
         /* The pet uses nothing and wears only what fits it (PC's canEquip for the pet). */
         x360_log("x360 inv: A in the pet's bag: the pet cannot wear it\r\n");
@@ -3922,7 +3946,6 @@ static void chr_show(int on) {
 }
 
 static void skill_icon(void *skill, unsigned fn, char *out, unsigned size);
-typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);
 static void pet_sheet_fill(unsigned char *pet) {
     char buf[96], *p;
     int i;
