@@ -6789,10 +6789,10 @@ void x360_cinematic_skip(void) {
  * media/ui/cinematic.layout and looks up only Skip, DialogText and Background; its frame is the
  * layout's own: main_topborder with its ends at the top, main_bottomborder (1024 x 93, bottom,
  * centred) with its ends at the bottom and in it the A button with the layout's text. Its pad
- * (sub_82349E80): any button continues (the menu's +26; code 10 also writes the cinematics'
- * +6024 and +6028, not followed). Here PC's page and text stay (its Background and DialogText);
- * the 360's black backdrop, page and text are left out, PC's bars and Skip made transparent, and
- * A, B, X, Y and Start press PC's Skip. */
+ * (sub_82349E80): any button marks the menu's +26, but only A (its code 10 there) writes the
+ * cinematics' +6024 and +6028 that end the page. Here the 360's black backdrop, page (with PC's
+ * page image) and text box (with PC's text) are shown, PC's screen transparent, and A presses PC's
+ * Skip (Start does nothing while the frame is shown). */
 #define CIN_PREFIX "x360cin_"
 static void cinematic_bar_tick(void) {
     static void *root;
@@ -6810,6 +6810,7 @@ static void cinematic_bar_tick(void) {
             show(root, 0);
             for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
             prop(win_of(cin_prefix, "Frameb"), "Alpha", "1");
+            prop(win_of(cin_prefix, "Backdrop"), "Alpha", "1");
         }
         return;
     }
@@ -6821,8 +6822,6 @@ static void cinematic_bar_tick(void) {
         if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
         scale_tree(root, k, 0);
         pass_mouse(root);
-        prop(win_of(CIN_PREFIX, "i_947"), "Image", "");   /* the black backdrop: PC's page shows */
-        show(win_of(CIN_PREFIX, "Background"), 0);
         show(win_of(CIN_PREFIX, "Skip"), 0);
         show(root, 0);
     }
@@ -6837,9 +6836,29 @@ static void cinematic_bar_tick(void) {
         for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
         if (win_of(CIN_PREFIX, "DialogText") && win_of(cin_prefix, "DialogText"))
             prop(win_of(cin_prefix, "Frameb"), "Alpha", "0");   /* PC's text box: the 360's shows the text */
+        /* The page as the 360's: its black backdrop (i_947) and its Background (1024 x 725, centred
+         * across, at 68 of 768: 1440 wide from 95 at 1080) with PC's page image; PC's screen, root
+         * Backdrop, transparent (its Skip still takes the click). The owner's capture against the
+         * recomp's: PC's page was 1348 wide and some 95 pixels higher. */
+        if (win_of(CIN_PREFIX, "Background") && win_of(cin_prefix, "Background"))
+            prop(win_of(cin_prefix, "Backdrop"), "Alpha", "0");
         move_to_front(root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
+    }
+    /* PC's page image on the 360's Background, set each tick: CEGUI keeps the image's pointer, and
+     * PC may make a page's imageset anew under the same name (the review); without PC's page the
+     * 360's black backdrop and page are hidden, PC's shows. */
+    {
+        void *pb = win_of(cin_prefix, "Background"), *xb = win_of(CIN_PREFIX, "Background");
+        char image[256];
+        if (pb && xb) {
+            read_prop(pb, "Image", image, sizeof image);
+            prop(xb, "Image", image);
+        } else {
+            show(xb, 0);
+            prop(win_of(CIN_PREFIX, "i_947"), "Image", "");
+        }
     }
     /* The text in the 360's box (i_962, a ceguiWidget/ItemText: enabled, its look draws
      * ceguiWidget/StaticShared's frame, widgets1's tooltip 9-slice, dark and translucent, under
@@ -6878,8 +6897,11 @@ static void cinematic_bar_tick(void) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;
     prev = buttons;
-    if (pressed & (0x1000 | 0x2000 | 0x4000 | 0x8000 | 0x0010)) {
-        x360_log("x360 cinematic: a button, PC's Skip\r\n");
+    /* Only A continues (the owner on the recomp, 2026-10-28: only A goes on; the 360's
+     * sub_82349E80 marks any button at +26 but only its code 10, A here, writes the cinematics'
+     * +6024/+6028 that end the page). */
+    if (pressed & 0x1000) {
+        x360_log("x360 cinematic: A, PC's Skip\r\n");
         press_pc(cin_prefix, "Skip");
     }
 }
