@@ -6543,7 +6543,8 @@ static void cinematic_bar_tick(void) {
         cin_text_set = 0;
         show(root, 1);
         for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
-        prop(win_of(cin_prefix, "Frameb"), "Alpha", "0");   /* PC's text box: the 360's shows the text */
+        if (win_of(CIN_PREFIX, "DialogText") && win_of(cin_prefix, "DialogText"))
+            prop(win_of(cin_prefix, "Frameb"), "Alpha", "0");   /* PC's text box: the 360's shows the text */
         move_to_front(root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
@@ -6572,9 +6573,13 @@ static void cinematic_bar_tick(void) {
                 rect6 t, f;
                 float v[8] = {0, 0, 0, 0, 1, 0, 1, 0};
                 rect_of(pt, 0, &t); rect_of(pf, 0, &f);
+                static float last_off = -100000.0f;
                 v[3] = v[7] = t.top - f.top;
-                write_rect(value, v);
-                prop(xt, "UnifiedAreaRect", value);
+                if (last_off < -99999.0f || v[3] - last_off > 0.5f || last_off - v[3] > 0.5f) {   /* only when it moves */
+                    last_off = v[3];
+                    write_rect(value, v);
+                    prop(xt, "UnifiedAreaRect", value);
+                }
             }
         }
     }
