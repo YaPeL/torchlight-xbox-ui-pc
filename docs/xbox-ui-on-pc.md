@@ -1563,15 +1563,20 @@ OK"):
   `potionHi`, `scrollHi`, `fishHi` for the categories 0-5, the table at `0x834C5480`) hidden; a
   filter at 1 shows its `Hi` in the focused column when it is not the column's filter, and adds
   it to a list of the column's (`+108`, `sub_82363BC8` a vector's push); otherwise the column's
-  filter goes to 2, seen. **Not found:** what walks that list (the blink itself): not the menu's
-  or its base's virtuals, not the column's, nor the functions that read `+108` and `+112` together
-  or pass `this + 108` (three tries). **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
+  filter goes to 2, seen. **Not found:** what walks that list (the blink itself). Looked at, none
+  of them: the menu's, its base's and the column's virtuals; every function that reads `+108` and
+  `+112` from one register (the UI's range, then the whole image with a visibility or alpha call:
+  the HUD's update, the screen-size table); the getters of `this + 108`; the animated windows'
+  manager (`sub_82344BF0`, CGameUI's list at `+6244`: only the triggers' sway and the menu's
+  `+400`/`+404`); the HUD's own alpha changes; the code after the tabs' drawing
+  (`sub_82367D38` → `sub_82365A48`, the bar's texts). The `Hi` windows are touched only by
+  `sub_823660E0` (made, hidden) and `sub_823654B8`. Next: watch the `Hi` windows in a run of the
+  recomp. **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
   no listener, so the hero's and the pet's bags are read every 100 ms (the HUD's tick, and the
   inventory's while it is open); an item not in them before is picked up, one gone for less than
   1.5 s and back is not (PC takes a potion out while the hero drinks and puts the rest back; an
-  item joining a stack keeps the stack's item, as the 360's exception). **[inferred]** The blink:
-  the `Hi` lit one second and off the next, as the HUD's skill "+" glow (`sub_821A83C8`'s 1.0 s
-  flag), until the 360's is found.
+  item joining a stack keeps the stack's item, as the 360's exception). The `Hi` is shown steady
+  (no blink) until the 360's blink is read.
 - **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
   gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
   `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).

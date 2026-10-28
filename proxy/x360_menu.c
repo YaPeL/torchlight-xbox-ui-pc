@@ -1302,9 +1302,8 @@ static void *of_category(void *bag, int filter) {
  * Here PC tells no listener: the hero's and the pet's bags are read every 100 ms, and an item not
  * in them before is picked up; one gone for less than 1.5 s and back is not (PC takes a potion
  * out while the hero drinks and puts the rest back), which also leaves out the items that only
- * join a stack (their stack keeps its item). [inferred] The Hi's blink: the code that walks the
- * column's list at +108 was not found (three tries); it blinks here as the HUD's skill "+" glow
- * does (sub_821A83C8: a flag turned every 1.0 s). */
+ * join a stack (their stack keeps its item). Not done: the Hi's blink. The code that walks the
+ * column's list at +108 was not found (docs, section 11); the Hi is shown steady until then. */
 static const char *const tab_hi[6] = {"weaponHi", "armorHi", "trinketHi", "potionHi", "scrollHi", "fishHi"};
 static int tab_mark[2][6];                   /* the hero's bag, the pet's: 1 picked up, 2 seen */
 #define MARK_ITEMS 256
@@ -1313,16 +1312,17 @@ static struct { void *bag; int ready; unsigned n; void *item[MARK_ITEMS]; unsign
 static int panel_filter(int p) { return p == active_panel ? filter : panels[p].filter; }
 
 /* The Hi windows of the hero's and the pet's columns: shown for a mark not yet seen, in the
- * focused column, on the blink's lit half; the columns' own filters seen. */
+ * focused column; the columns' own filters seen. */
 static void tab_marks_draw(unsigned now) {
-    int p, i, lit = (now / 1000) % 2 == 0;
+    int p, i;
+    (void)now;
     for (p = 0; p < 2; p++) {
         int f = panel_filter(p), tabs = !at_transmute && !panels[p].is_select;
         if (!panels[p].root) continue;
         if (inventory_open && tabs && tab_mark[p][f] == 1) tab_mark[p][f] = 2;   /* seen: only with the tabs shown */
         for (i = 0; i < 6; i++)
             show(win_of(panels[p].prefix, tab_hi[i]),
-                 inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f && lit);
+                 inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f);
     }
 }
 
@@ -5408,7 +5408,7 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         if (print != last_print) { last_print = print; refresh_all(); }
     }
     tab_marks_tick(now);
-    tab_marks_draw(now);   /* the blink */
+    tab_marks_draw(now);
     if (buttons & 0x0001 || ly > 500) dir = -1;                      /* up */
     if (buttons & 0x0002 || ly < -500) dir = 1;                      /* down */
     if (dir != held_dir) { held_dir = dir; next_repeat = 0; }
