@@ -3832,7 +3832,10 @@ image is the same file on both), PC's (`Frameb`, GuiLook/ItemText) with GuiLook'
 the 360's box is shown, PC's made transparent (`Alpha` 0, given back on hiding), and the 360's
 `DialogText` takes PC's text (set only when it changes) and PC's rise: PC's text's offset in its
 frame, in pixels, as its own top. The 360 raises it the same way (`sub_8234A2B8`: from below to its
-place over a time from the voice's length, `+276` against `+280`).
+place over a time from the voice's length, `+276` against `+280`). Played by the owner (2026-10-28): the box
+visible and enabled where the 360 has it (the log: 327,652 to 1592,933 at 1080), the band under the
+text darker than the page above it (mean brightness 20.7 against 35.8 without a box, the 360's 28.0
+against 39.4); any button continues, as the 360's (X tried).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
