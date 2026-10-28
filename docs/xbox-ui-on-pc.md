@@ -3767,6 +3767,20 @@ of the 360's overlays (a modal, fishing, a tip) is up: PC's test holds there too
 would reach PC's screen under it (the release review). The owner played the skip with Start in
 an in-play cinematic (2026-10-24).
 
+**The story screens' frame (2026-10-28). [read]** The owner: the story screens (PC's cinematic
+menu with its Skip shown: a new hero's intro, the acts' pages) showed PC's bottom bar and button,
+not the 360's. The 360's `CCinematicMenu` (`sub_82349BA8`) loads `media/ui/cinematic.layout` and
+looks up only `Skip`, `DialogText` and `Background` (its `+264`, `+268`, `+272`); the frame is the
+layout's own: `main_topborder` with its ends at the top, `main_bottomborder` (1024 x 93, bottom,
+centred) with its ends at the bottom and in it the A button and the layout's text (`i_951`). Its
+pad (`sub_82349E80`): while the menu is up any button sets its `+26` (continue); code 10 also
+writes the cinematics' `+6024` (1) and `+6028` (0), not followed. The port
+(`cinematic_bar_tick`): while PC's Skip is attached, the 360's layout over PC's screen with its
+black backdrop, page (`Background`) and text (`i_962`) left out, PC's own page and text under
+it; PC's top and bottom bars and Skip transparent (`Alpha` 0); A, B, X, Y and Start press PC's
+Skip (`x360_cinematic_skip` leaves Start to it while it is shown). In-play cinematics (no Skip
+attached) are as before.
+
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
 The owner, on a strong test character past the first boss: PC's waypoint portals screen
