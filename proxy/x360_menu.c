@@ -6334,18 +6334,32 @@ static void press_pc(const char *prefix, const char *name) {
 
 static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
 
-/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
- * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), a left click at its centre
- * (press_pc). */
-void x360_cinematic_skip(void) {
-    static char cin_prefix[64];
+/* PC's cinematic menu (cinematicmenu.layout), its prefix: Skip by DialogTextFrame. Attached, not
+ * only found: PC takes a closed menu off the sheet (as the settings' search). No other layout of
+ * PC's has a window ending in Skip. */
+static char cin_prefix[64];
+static int cin_shown;            /* the 360's frame shown over PC's story screen */
+
+static int pc_cinematic_up(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
-    /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
-     * other layout of PC's has a window ending in Skip. */
+    static unsigned last_search;
+    unsigned now = GetTickCount();
+    /* Once found, PC's menu is kept (it is taken off the sheet and put back, not made again): its
+     * parent chain is the test, and the tree is walked again only if its Skip is gone. */
+    if (cin_prefix[0] && win_of(cin_prefix, "Skip")) return pc_attached(cin_prefix, "Skip");
+    if (now - last_search < 250) return 0;   /* the tree's walk at most four times a second */
+    last_search = now;
+    find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
+    return cin_prefix[0] && pc_attached(cin_prefix, "Skip");
+}
+
+/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
+ * menu's Skip, a left click at its centre (press_pc). */
+void x360_cinematic_skip(void) {
     int x360_overlay_open(void);
     if (qd_shown || x360_overlay_open()) return;   /* a talk, a modal, fishing, a tip: Start does nothing there, and no Escape reaches PC's screen under them (the release review) */
-    if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
-    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) { press_pc(cin_prefix, "Skip"); return; }
+    if (cin_shown) return;                          /* the story screen's own buttons (cinematic_bar_tick) */
+    if (pc_cinematic_up()) { press_pc(cin_prefix, "Skip"); return; }
     /* In play no Skip is shown: PC's Escape skips it, as the 360's Start (the owner, 2026-10-24),
      * posted to the game's window (keys_proc lets it through while the cinematic holds). */
     {
@@ -6357,6 +6371,69 @@ void x360_cinematic_skip(void) {
             PostMessageW(w, 0x101, 0x1b, (long)0xc0010001);     /* WM_KEYUP */
             x360_log("x360 menu: Start in a cinematic, Escape posted\r\n");
         } else x360_log("x360 menu: Start in a cinematic, no Skip and no game window\r\n");
+    }
+}
+
+/* The story screens (PC's cinematic menu with its Skip shown: a new hero's intro, the acts'
+ * pages): the 360's frame over PC's page. The 360's CCinematicMenu (sub_82349BA8) loads
+ * media/ui/cinematic.layout and looks up only Skip, DialogText and Background; its frame is the
+ * layout's own: main_topborder with its ends at the top, main_bottomborder (1024 x 93, bottom,
+ * centred) with its ends at the bottom and in it the A button with the layout's text. Its pad
+ * (sub_82349E80): any button continues (the menu's +26; code 10 also writes the cinematics'
+ * +6024 and +6028, not followed). Here PC's page and text stay (its Background and DialogText);
+ * the 360's black backdrop, page and text are left out, PC's bars and Skip made transparent, and
+ * A, B, X, Y and Start press PC's Skip. */
+#define CIN_PREFIX "x360cin_"
+static void cinematic_bar_tick(void) {
+    static void *root;
+    static int failed;
+    static unsigned prev;
+    static const char *const pc_bars[] = {"TopBarB", "TopBarLeft", "TopBarRight", "BottomBarB", "BottomBarLeft",
+                                          "BottomBarRight", "Skip", 0};
+    unsigned buttons, pressed;
+    int j;
+    int x360_overlay_open(void), x360_pause_open(void);
+    if (failed) return;
+    if (!pc_cinematic_up() || qd_shown || x360_overlay_open() || x360_pause_open() || inventory_open) {
+        if (cin_shown) {   /* PC's bars back, for whatever shows the menu now */
+            cin_shown = 0;
+            show(root, 0);
+            for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
+        }
+        return;
+    }
+    if (!root) {
+        RECT r;
+        HWND hw = active_window();
+        root = load("media/ui/x360/cinematic.layout", CIN_PREFIX);
+        if (!root) { failed = 1; return; }   /* PC's own bars stay */
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(root, k, 0);
+        pass_mouse(root);
+        prop(win_of(CIN_PREFIX, "i_947"), "Image", "");   /* the black backdrop: PC's page shows */
+        show(win_of(CIN_PREFIX, "Background"), 0);
+        show(win_of(CIN_PREFIX, "i_962"), 0);             /* the text: PC's */
+        show(win_of(CIN_PREFIX, "Skip"), 0);
+        show(root, 0);
+    }
+    if (!cin_shown) {
+        RECT r;
+        HWND hw = active_window();
+        if (hw && GetClientRect(hw, &r) && r.bottom > r.top)   /* the 360's spacing, as the tip's */
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+        cin_shown = 1;
+        show(root, 1);
+        for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
+        move_to_front(root, 0);
+        prev = x360_pad_buttons();      /* a button held from before does not act */
+        x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
+    }
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~prev;
+    prev = buttons;
+    if (pressed & (0x1000 | 0x2000 | 0x4000 | 0x8000 | 0x0010)) {
+        x360_log("x360 cinematic: a button, PC's Skip\r\n");
+        press_pc(cin_prefix, "Skip");
     }
 }
 
@@ -9258,6 +9335,7 @@ void x360_frame_tick(void) {
     /* The tip first: on the frame it shows, the screens under it already leave it the pad. */
     __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
+    __try { cinematic_bar_tick(); } __except (1) { x360_log("x360 cinematic: exception\r\n"); }
     __try { enchant_result_tick(); } __except (1) { ench_pending = 0; x360_log("x360 enchanter: exception taking the result\r\n"); }
     __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
     __try { bars_tick(); } __except (1) { x360_log("x360 bars: exception\r\n"); }
