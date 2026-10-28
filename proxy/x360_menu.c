@@ -1159,8 +1159,9 @@ static int effects_count(unsigned char *item) {
 static int hero_meets(unsigned char *item) {
     typedef int (__fastcall *req_fn)(void *item, void *edx, void *who);
     typedef int (__fastcall *stat_fn)(void *who, void *edx);
-    static const unsigned req[4] = {0x004b77f0, 0x004b7900, 0x004b7a10, 0x004b7b20};
-    static const unsigned stat[4] = {0x00487ec0, 0x00487e60, 0x00487d70, 0x00487d00};
+    /* Not static: Steam's build moves each address by its load base (x360_reloc). */
+    const unsigned req[4] = {0x004b77f0, 0x004b7900, 0x004b7a10, 0x004b7b20};
+    const unsigned stat[4] = {0x00487ec0, 0x00487e60, 0x00487d70, 0x00487d00};
     int r, i, ok = 1;
     if (!item || !hero) return 1;
     __try {
