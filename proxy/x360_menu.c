@@ -6516,6 +6516,8 @@ static void cinematic_bar_tick(void) {
             cin_shown = 0;
             show(root, 0);
             for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
+            prop(win_of(cin_prefix, "Frameb"), "Disabled", "False");
+            prop(win_of(cin_prefix, "DialogText"), "Font", "Serif");
         }
         return;
     }
@@ -6541,6 +6543,13 @@ static void cinematic_bar_tick(void) {
         cin_shown = 1;
         show(root, 1);
         for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
+        /* The text's box as the 360's: its ItemText draws the label only (the layout's i_962, no
+         * frame layer), PC's (GuiLook/ItemText) draws GuiLook/StaticShared's frame when enabled and
+         * the label only when disabled; and the 360's font (DialogText's X360_Serif). The text and
+         * its rise are PC's own (the 360's sub_8234A2B8 raises it the same way, over the voice's
+         * length). The owner's capture against the recomp's (2026-10-28). */
+        prop(win_of(cin_prefix, "Frameb"), "Disabled", "True");
+        prop(win_of(cin_prefix, "DialogText"), "Font", "X360_Serif");
         move_to_front(root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
