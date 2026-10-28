@@ -1558,6 +1558,40 @@ OK"):
   `_rollover` images (frame, border, its filter's tab) and RB. A column that is not the
   player's (the 360's ISA 134 test) dims to 0.25 the tabs of the filters it has nothing in, but
   the focused column's own (`sub_823654B8`, `0x82365948`).
+- **The tabs' marks (2026-10-28). [read]** The owner: on the 360 the tabs' icons blink. Each
+  column (`CInventoryXenon`) keeps a state per filter (`+268 + 4 x category`: 0 nothing in it, 2
+  something, 1 an item picked up and not yet seen). Its `iInventoryListener` (vtable
+  `0x820D10D4`, in OT's order: picked up `sub_82369A00`; dropped, equipped, unequipped, used
+  `sub_82369A70`; destroyed) tells it of the model's changes. Picked up with the screen closed:
+  `sub_82369B08` sets the item's category (`sub_82369C48`) to 1, but not for an item that only
+  joins a stack the owner had (its `+488` over 1, not ISA 124, the owner's inventory finding it by
+  id, `sub_822E35D8`). With the screen open: no mark; the states are rebuilt (1 kept, the rest 2
+  or 0 by the owner's items), the column's filter (`+296`) is set to the item's category and the
+  header rebuilt (`sub_82367D38`). The other events only rebuild, with the screen open. The
+  drawing (`sub_823654B8`): every `Hi` window (`tab_hilite`; `weaponHi`, `armorHi`, `trinketHi`,
+  `potionHi`, `scrollHi`, `fishHi` for the categories 0-5, the table at `0x834C5480`) hidden; a
+  filter at 1 shows its `Hi` in the focused column when it is not the column's filter, and adds
+  it to a list of the column's (`+108`, `sub_82363BC8` a vector's push); otherwise the column's
+  filter goes to 2, seen. **The blink** (2026-10-28, the recomp's run: the owner's recipe, a
+  hero in the mines picking up six items with the bag closed, the mods agent's probe on
+  `setVisible`, `setAlpha` and `setProperty`): the `Hi` stays visible and its alpha ramps up and
+  down (about 0.04 to 0.95), written by neither setter. **[read]** The writer: each column's
+  update, `sub_821994F8(column, frame time)` (while the screen is open, `+293`): a time at `+124`
+  taken down by the frame's time, 2.0 added when it reaches 0 (`0x820AA33C`), and `|t - 1.0|`
+  stored straight into the alpha (`+244`) of every window in the list at `+108`, with the alpha's
+  changed event: a triangle from 1 to 0 and back every 2 s. (Searched statically before without
+  finding it: a window's alpha written directly, not through `setAlpha`.) **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
+  no listener, so the hero's and the pet's bags are read every 100 ms (the HUD's tick, and the
+  inventory's while it is open); an item not in them before is picked up, one gone for less than
+  1.5 s and back is not (PC takes a potion out while the hero drinks and puts the rest back; an
+  item joining a stack keeps the stack's item, as the 360's exception); one that comes in equipped
+  (a weapon picked up with the hands empty: the 360's equipped event, no mark; the recomp's run
+  left the sword's tab unmarked) marks nothing. Out of play (a load, the main menu) the bags are
+  read anew, with no marks; the pet's marks are kept while it is in town; a filter is seen only on
+  the inventory's page (the bags' columns keep their tabs at the transmuter). The `Hi` shown has its
+  alpha set to the 360's triangle, `|t - 1|` with t running down from 2 to 0 every 2 s. Played by the owner
+  (2026-10-28, a copy of a new hero with the console's six items picked up in the mine): the
+  marks and their blink seen on the weapons', jewellery's and spells' tabs.
 - **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
   gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
   `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).
