@@ -83,6 +83,7 @@
 0x004b7470 0x004b4fb0 verified   comment window, body, callers x2
 0x004b84d0 0x004b5fb0 verified   comment window, local
 0x004b8660 0x004b6140 verified   comment window, vtable, body
+0x004b87c0 0x004b62a0 verified   code    window, body, callers x3
 0x004b8f10 0x004b6980 verified   code    window, body
 0x004b9510 0x004b6f80 verified   code    window, body, callers x2
 0x004b9b70 0x004b75b0 verified   code    body, callers x3

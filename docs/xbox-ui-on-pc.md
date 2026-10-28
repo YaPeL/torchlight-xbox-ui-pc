@@ -1319,7 +1319,8 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   can use the spell (`sub_822B9DA8`) it is used (`sub_822B9A60`): learned; else, with its places
   full (a pet, ISA 87: two; else four), the 360 opens its spell-replacing menu (CGameUI `+6296`);
   else nothing, and no sound. The port (`act`): with fewer than two known spells (`getKnownSpell`,
-  GOG `0x484ff0`) and PC's own use check for the pet (`usable_now`), PC's use with a user
+  GOG `0x484ff0`) and PC's own checks for the pet (`usable_now`, and the one PC's use runs first,
+  GOG `0x4b87c0`: level, stats, skills; failing there PC plays a refusal sound the 360 lacks), PC's use with a user
   (GOG `0x54d980`, thiscall on CGameUI: level, item, user, target, pet; PC's right click on a
   menu owner's spell gives the owner for the last three, `0x582150`; it takes the item out of its
   inventory) with the pet; with two known, the replacing menu is not ported (logged); else

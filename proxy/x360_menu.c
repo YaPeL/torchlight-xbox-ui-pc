@@ -2342,15 +2342,21 @@ static void act(void) {
      * the owner for the last three; it takes the item out of its inventory, 0x4e9ca0). */
     if (is_pet && isa(item, 129)) {
         typedef void (__fastcall *use_by_fn)(void *ui, void *edx, void *level, void *item, void *user, void *target, void *pet);
-        int known = 0, i;
+        /* PC's own check, the one its use runs first (GOG 0x4b87c0, thiscall on the item: target,
+         * pet; called at 0x54d996): the level, the stats and the skills; when it fails PC's use
+         * plays a refusal sound the 360 does not have, so it is asked here first. */
+        typedef unsigned char (__fastcall *can_use_by_fn)(void *item, void *edx, void *target, void *pet);
+        int known = 0, i, can = 0;
         for (i = 0; i < 4; i++) {
             void *sp = 0;
             __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
             if (sp) known++;
         }
-        if (usable_now(item, owner) && known < 2 && ui && level) {
+        __try { can = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { can = 0; }
+        if (can && known < 2 && ui) {
             ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
             x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
+            hide_info();   /* the 360's card closes after a use (in-game/29); the scroll is gone */
         } else if (known >= 2) {
             x360_log("x360 inv: A in the pet's bag: the pet knows two spells (the 360's replacing menu, not ported)\r\n");
         } else {
