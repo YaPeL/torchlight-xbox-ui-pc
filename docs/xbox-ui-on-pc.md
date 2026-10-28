@@ -1372,8 +1372,8 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   refusal sound). The review (2026-10-28): PC's own check can only run after the forgetting (with
   the places full it says no). A refusal there is left as on the 360: the spell forgotten stays
   lost and nothing is shown (a recomp run with the refusal forced after `sub_82284FD0`, at
-  `0x8236BC20`: the spell lost, the scroll kept in the pet's bag, no sound after the menu's
-  confirm, sound 66, nor any text for 5 s); nothing is forgotten if the pet or its scroll is gone when the menu closes; the
+  `0x8236BC20`: the spell lost, the scroll kept in the pet's bag; after the menu's own confirm
+  sound, 66, no sound nor any text for 5 s); nothing is forgotten if the pet or its scroll is gone when the menu closes; the
   hero's A on a spell it cannot take does nothing (the 360's bar shows none). Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,

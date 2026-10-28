@@ -5112,7 +5112,7 @@ static void sr_finish(int keep) {
         x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
         /* Then the new one (sub_8236BB70 again). Refused there, the 360 gives nothing back and
          * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept). */
-        if (pet_learn(item, owner) != 1) x360_log("x360 menu: PC refused the new spell after the forgetting\r\n");
+        if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
         sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
     }
     refresh_all();
