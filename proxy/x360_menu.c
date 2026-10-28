@@ -6456,6 +6456,7 @@ static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); 
  * PC's has a window ending in Skip. */
 static char cin_prefix[64];
 static int cin_shown;            /* the 360's frame shown over PC's story screen */
+static int cin_text_set;         /* its text given since the frame showed */
 
 static int pc_cinematic_up(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
@@ -6516,8 +6517,7 @@ static void cinematic_bar_tick(void) {
             cin_shown = 0;
             show(root, 0);
             for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
-            prop(win_of(cin_prefix, "Frameb"), "Disabled", "False");
-            prop(win_of(cin_prefix, "DialogText"), "Font", "Serif");
+            prop(win_of(cin_prefix, "Frameb"), "Alpha", "1");
         }
         return;
     }
@@ -6531,7 +6531,6 @@ static void cinematic_bar_tick(void) {
         pass_mouse(root);
         prop(win_of(CIN_PREFIX, "i_947"), "Image", "");   /* the black backdrop: PC's page shows */
         show(win_of(CIN_PREFIX, "Background"), 0);
-        show(win_of(CIN_PREFIX, "i_962"), 0);             /* the text: PC's */
         show(win_of(CIN_PREFIX, "Skip"), 0);
         show(root, 0);
     }
@@ -6541,18 +6540,43 @@ static void cinematic_bar_tick(void) {
         if (hw && GetClientRect(hw, &r) && r.bottom > r.top)   /* the 360's spacing, as the tip's */
             match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
         cin_shown = 1;
+        cin_text_set = 0;
         show(root, 1);
         for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
-        /* The text's box as the 360's: its ItemText draws the label only (the layout's i_962, no
-         * frame layer), PC's (GuiLook/ItemText) draws GuiLook/StaticShared's frame when enabled and
-         * the label only when disabled; and the 360's font (DialogText's X360_Serif). The text and
-         * its rise are PC's own (the 360's sub_8234A2B8 raises it the same way, over the voice's
-         * length). The owner's capture against the recomp's (2026-10-28). */
-        prop(win_of(cin_prefix, "Frameb"), "Disabled", "True");
-        prop(win_of(cin_prefix, "DialogText"), "Font", "X360_Serif");
+        prop(win_of(cin_prefix, "Frameb"), "Alpha", "0");   /* PC's text box: the 360's shows the text */
         move_to_front(root, 0);
         prev = x360_pad_buttons();      /* a button held from before does not act */
         x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
+    }
+    /* The text in the 360's box (i_962, a ceguiWidget/ItemText: enabled, its look draws
+     * ceguiWidget/StaticShared's frame, widgets1's tooltip 9-slice, dark and translucent, under
+     * the label: the band the 360 shows behind the text; the mods agent's capture, 2026-10-28; PC's
+     * own box, GuiLook's, draws a grey frame instead). Its DialogText takes PC's text and PC's
+     * rise (the 360's sub_8234A2B8 raises it the same way, from below to its place over a time
+     * from the voice's length): PC's text's offset in its frame, in pixels, given to ours. */
+    {
+        typedef struct { float top, bottom, left, right; } rect6;
+        typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+        static pixel_rect_fn6 rect_of;
+        void *pt = win_of(cin_prefix, "DialogText"), *pf = win_of(cin_prefix, "DialogTextFrame");
+        void *xt = win_of(CIN_PREFIX, "DialogText");
+        char value[2048];
+        if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+        if (pt && xt) {
+            static unsigned last_hash;
+            unsigned h = 2166136261u, i;
+            read_prop(pt, "Text", value, sizeof value);
+            for (i = 0; value[i]; i++) h = (h ^ (unsigned char)value[i]) * 16777619u;
+            if (h != last_hash || !cin_text_set) { last_hash = h; cin_text_set = 1; text(xt, value); }   /* only when it changes */
+            if (pf && rect_of) {
+                rect6 t, f;
+                float v[8] = {0, 0, 0, 0, 1, 0, 1, 0};
+                rect_of(pt, 0, &t); rect_of(pf, 0, &f);
+                v[3] = v[7] = t.top - f.top;
+                write_rect(value, v);
+                prop(xt, "UnifiedAreaRect", value);
+            }
+        }
     }
     buttons = x360_pad_buttons();
     pressed = buttons & ~prev;

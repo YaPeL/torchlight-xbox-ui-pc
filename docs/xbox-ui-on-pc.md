@@ -3823,12 +3823,15 @@ black backdrop, page (`Background`) and text (`i_962`) left out, PC's own page a
 it; PC's top and bottom bars and Skip transparent (`Alpha` 0); A, B, X, Y and Start press PC's
 Skip (`x360_cinematic_skip` leaves Start to it while it is shown). In-play cinematics (no Skip
 attached) are as before. Played by the owner (2026-10-28): the 360's frame with its A on the story screens, A
-continues (the log: the frame shown and PC's Skip pressed four times). **The text's box (2026-10-28). [read; seen]** The owner's capture against the
-recomp's: the 360's story text has no box (its `i_962`, a ceguiWidget ItemText, draws the label
-only), PC's had a grey frame: its `Frameb` (GuiLook/ItemText) draws `GuiLook/StaticShared`'s frame
-when enabled and only the label when disabled. Now `Frameb` is disabled while the 360's frame is
-shown, and PC's `DialogText` takes the 360's font (`X360_Serif`); both given back when it hides.
-The text and its rise stay PC's: the 360 raises it the same way (`sub_8234A2B8`: from below to its
+continues (the log: the frame shown and PC's Skip pressed four times). **The text's box (2026-10-28). [read; seen]** The owner's capture against the recomp's: PC's
+story text sat in a grey-framed box, the 360's on a dark translucent band. Both games' ItemText
+looks draw their StaticShared frame when enabled (and only the label when disabled): the 360's
+(`i_962`, ceguiWidget/ItemText) with widgets1's tooltip 9-slice, dark (the mods agent, from its
+capture: the draw over the page is that 9-slice at `i_962`'s rect grown by the frame; the page's
+image is the same file on both), PC's (`Frameb`, GuiLook/ItemText) with GuiLook's grey one. Now
+the 360's box is shown, PC's made transparent (`Alpha` 0, given back on hiding), and the 360's
+`DialogText` takes PC's text (set only when it changes) and PC's rise: PC's text's offset in its
+frame, in pixels, as its own top. The 360 raises it the same way (`sub_8234A2B8`: from below to its
 place over a time from the voice's length, `+276` against `+280`).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
