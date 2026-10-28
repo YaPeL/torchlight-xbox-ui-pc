@@ -1311,6 +1311,19 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
   A: "prefixed ring", Equipped, its A "Unequip"; A again took it off. Something the pet cannot
   wear was not tried.
+- **Requirements not met, and Learn only when it can be taken (2026-10-28). [read; seen]** The
+  owner's capture of the 360 (the recomp, the pet's bag with a level-30 spell): the row's red
+  "Requirements not met" under the name, and no A in its bar (only Y and X). **The row**
+  (`sub_822BBF38`, from `sub_82368980`): after the identify hint, each requirement over 0
+  against the **player's** level (`+240`) and stats, whatever the bag; one above writes
+  "Requirements not met" (`0x820C1824`, UTF-16BE; key `req.notmet`) in red. Its other branches
+  (a quest item, ISA 103; a gambler's, ISA 127; `+920`) are not ported. The port (`hero_meets`):
+  PC's `CEquipment::get...Requirement(CCharacter*)` *(OT)* (level `0x4b7710`, strength
+  `0x4b77f0`, dexterity `0x4b7900`, magic `0x4b7a10`, defense `0x4b7b20`, each found beside the
+  hero's stat it is compared with in PC's own check, `0x4b8715`-`0x4b879e`) against the hero's
+  level (`+0xf0`) and stats. **The bar** (`sub_8236C8D0`, `0x8236DD9C`): a spell's A is "Learn"
+  only when `sub_822B9CA0(spell, owner)` holds (for the player with no free place another text,
+  not ported); here `can_take_spell`, the same checks as the learning.
 - **A spell in the pet's bag (2026-10-28). [read]** The owner: A on a spell in the pet's bag did
   nothing (the port took "the pet uses nothing" as a rule). The 360's A (`sub_8236AA48`, its last
   branch `sub_8236BD80`) for a spell (ISA 129): `sub_822B9CA0(spell, owner)` (the item a spell, its

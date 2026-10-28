@@ -280,7 +280,7 @@ STRINGS = {
     "compare.enable": 0x820D0FEC, "compare.disable": 0x820D0FC0,
     "filter.0": 0x820D0BE0, "filter.1": 0x820C0CB4, "filter.2": 0x820D0BF0, "filter.3": 0x820D0C00,
     "filter.4": 0x820D0C1C, "filter.5": 0x820D0C34,
-    "effects": 0x820D0EF0, "level": 0x820C0DD4, "requires_level": 0x820C0DB4, "identify_hint": 0x820C17FC,
+    "effects": 0x820D0EF0, "level": 0x820C0DD4, "requires_level": 0x820C0DB4, "identify_hint": 0x820C17FC, "req.notmet": 0x820C1824,
     "reward.xp": 0x820BEB40, "reward.gp": 0x820CF528, "reward.fame": 0x820C0494,
     "stance.0": 0x820D198C, "stance.1": 0x820D1968, "stance.2": 0x820D19AC,
     "time.hrs": 0x820CF7C8, "time.mins": 0x820CF7D0, "time.secs": 0x820CF7DC,

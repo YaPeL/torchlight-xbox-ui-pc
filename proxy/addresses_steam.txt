@@ -81,8 +81,15 @@
 0x004b3fe0 0x004b1be0 verified   code    body, callers
 0x004b4470 0x004b2030 verified   comment callers x4
 0x004b7470 0x004b4fb0 verified   comment window, body, callers x2
+0x004b7710 0x004b5250 verified   code    window, body, callers x3
+0x004b77f0 0x004b5330 verified   code    window, callers
+0x004b7900 0x004b5440 verified   code    window, callers
+0x004b7a10 0x004b5550 verified   code    window, callers
+0x004b7b20 0x004b5660 verified   code    window, callers
 0x004b84d0 0x004b5fb0 verified   comment window, local
 0x004b8660 0x004b6140 verified   comment window, vtable, body
+0x004b8715 0x004b61f5 verified   comment window, local
+0x004b879e 0x004b627e verified   comment window, local
 0x004b87c0 0x004b62a0 verified   code    window, body, callers x3
 0x004b8f10 0x004b6980 verified   code    window, body
 0x004b9510 0x004b6f80 verified   code    window, body, callers x2

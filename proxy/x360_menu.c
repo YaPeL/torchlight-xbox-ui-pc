@@ -1149,6 +1149,43 @@ static int effects_count(unsigned char *item) {
     return n;
 }
 
+/* Whether the hero meets an item's requirements, as the 360's row tells it (sub_822BBF38: its
+ * "Requirements not met" in red, by the player's level and stats, whatever the bag): each
+ * requirement over 0 against the hero's level (+240, GOG +0xf0) and stats. PC's getters
+ * (CEquipment::get...Requirement(CCharacter*) *(OT)*, thiscall on the item): level 0x4b7710,
+ * strength 0x4b77f0, dexterity 0x4b7900, magic 0x4b7a10, defense 0x4b7b20 (each found beside the
+ * hero's stat it is compared with in PC's own check, 0x4b8715-0x4b879e); the hero's: strength
+ * 0x487ec0, dexterity 0x487e60, magic 0x487d70, defense 0x487d00. */
+static int hero_meets(unsigned char *item) {
+    typedef int (__fastcall *req_fn)(void *item, void *edx, void *who);
+    typedef int (__fastcall *stat_fn)(void *who, void *edx);
+    static const unsigned req[4] = {0x004b77f0, 0x004b7900, 0x004b7a10, 0x004b7b20};
+    static const unsigned stat[4] = {0x00487ec0, 0x00487e60, 0x00487d70, 0x00487d00};
+    int r, i, ok = 1;
+    if (!item || !hero) return 1;
+    __try {
+        r = ((req_fn)0x004b7710)(item, 0, hero);
+        if (r > 0 && r > *(int *)(hero + 0xf0)) ok = 0;
+        for (i = 0; i < 4 && ok; i++) {
+            r = ((req_fn)req[i])(item, 0, hero);
+            if (r > 0 && r > ((stat_fn)stat[i])(hero, 0)) ok = 0;
+        }
+    } __except (1) { ok = 1; }
+    return ok;
+}
+
+/* Whether a bag's owner can take a spell (the 360's sub_822B9CA0, for the A's "Learn": the bar,
+ * sub_8236C8D0, 0x8236DD9C; and its learning, sub_8236BD80): PC's use checks for the owner,
+ * usable_now and the one PC's use runs first (GOG 0x4b87c0, thiscall on the item: target, pet;
+ * the level, the stats, the skills). */
+static int can_take_spell(unsigned char *item, unsigned char *owner) {
+    typedef unsigned char (__fastcall *can_use_by_fn)(void *item, void *edx, void *target, void *pet);
+    int can = 0;
+    if (!item || !owner) return 0;
+    __try { can = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { can = 0; }
+    return can;
+}
+
 static void fill_details(int row, unsigned char *item) {
     char name[48], buf[64], *p;
     int identified = item[GOG_IDENTIFIED] != 0, stack = *(int *)(item + GOG_STACK);
@@ -1177,9 +1214,12 @@ static void fill_details(int row, unsigned char *item) {
     }
     row_name(name, "DamageArmor", row); text(win(name), buf); show(win(name), buf[0] != 0);
     row_name(name, "Requirment", row);
-    text(win(name), identified ? "" : x360_text("identify_hint"));
-    prop(win(name), "TextColour", "FFFF2A2A");
-    show(win(name), !identified);
+    {
+        int unmet = identified && !hero_meets(item);
+        text(win(name), !identified ? x360_text("identify_hint") : unmet ? x360_text("req.notmet") : "");
+        prop(win(name), "TextColour", "FFFF2A2A");
+        show(win(name), !identified || unmet);
+    }
     /* "Effects:" and the count (sub_82368980, the string at 0x820d0ef0) for an identified item
      * with any, not a CONSUMABLE (1); the 360 also hides it at a GAMBLER (127). */
     {
@@ -1525,7 +1565,7 @@ static void refresh(void) {
                  * for a spell, Socket for a gem: in-game/10), Y Drop, X Swap (to the pet's bag);
                  * no Info. */
                 a = label[0] ? label : x360_text(equipped ? "act.unequip"
-                                                 : isa(item, 129) ? "act.learn"
+                                                 : isa(item, 129) ? (can_take_spell(item, (unsigned char *)cur_owner) ? "act.learn" : "")
                                                  : isa(item, 120) ? "act.socket"
                                                  : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? (usable_now(item, (unsigned char *)cur_owner) ? "act.use" : "")
                                                  : "act.equip");
@@ -2342,17 +2382,14 @@ static void act(void) {
      * the owner for the last three; it takes the item out of its inventory, 0x4e9ca0). */
     if (is_pet && isa(item, 129)) {
         typedef void (__fastcall *use_by_fn)(void *ui, void *edx, void *level, void *item, void *user, void *target, void *pet);
-        /* PC's own check, the one its use runs first (GOG 0x4b87c0, thiscall on the item: target,
-         * pet; called at 0x54d996): the level, the stats and the skills; when it fails PC's use
-         * plays a refusal sound the 360 does not have, so it is asked here first. */
-        typedef unsigned char (__fastcall *can_use_by_fn)(void *item, void *edx, void *target, void *pet);
-        int known = 0, i, can = 0;
+        /* PC's own check first (can_take_spell: the one its use runs first, GOG 0x4b87c0, called at
+         * 0x54d996): when it fails PC's use plays a refusal sound the 360 does not have. */
+        int known = 0, i, can = can_take_spell(item, owner);
         for (i = 0; i < 4; i++) {
             void *sp = 0;
             __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
             if (sp) known++;
         }
-        __try { can = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { can = 0; }
         /* The 360's order: a spell the pet cannot take (sub_822B9CA0 false) never reaches the
          * places' count (sub_8236BB70): nothing but the card closing, full or not. */
         if (can && known < 2 && ui) {
