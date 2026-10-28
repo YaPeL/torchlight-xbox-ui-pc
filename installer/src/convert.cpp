@@ -623,6 +623,58 @@ U32 label_frame_relative(const U32& text) {
   return text.substr(0, size_t(start)) + label + text.substr(size_t(e));
 }
 
+// ---- the shared frames scaled with the screen (convert_x360_ui.frames_scaled) ----
+U32 frame_dim(double value) {
+  char buf[64];
+  std::snprintf(buf, sizeof buf, "%.5f", value * 768 / 720 / 22);
+  return U32(U"<ImageDim imageset=\"" + kPrefix + U"widgets2\" image=\"framemiddle\" dimension=\"Height\">") +
+         U"<DimOperator op=\"Multiply\"><AbsoluteDim value=\"" + u32(buf) + U"\" /></DimOperator></ImageDim>";
+}
+
+// re.sub(r'<AbsoluteDim value="(-?[0-9.]+)" />', ...) over a section: a non-zero value scaled.
+U32 frame_dims(const U32& body) {
+  const U32 head = U"<AbsoluteDim value=\"", tail = U"\" />";
+  U32 out;
+  size_t i = 0;
+  for (;;) {
+    const size_t at = body.find(head, i);
+    if (at == U32::npos) break;
+    size_t j = at + head.size(), k = j;
+    if (k < body.size() && body[k] == U'-') k++;
+    const size_t digits = k;
+    while (k < body.size() && ((body[k] >= U'0' && body[k] <= U'9') || body[k] == U'.')) k++;
+    if (k == digits || body.compare(k, tail.size(), tail) != 0) {
+      out += body.substr(i, j - i);
+      i = j;
+      continue;
+    }
+    const std::string num = u8(body.substr(j, k - j));
+    size_t used = 0;
+    const double v = std::stod(num, &used);
+    if (used != num.size()) throw Error("a frame's offset is not a number: " + num);   // Python's float() raises
+    out += body.substr(i, at - i);
+    out += v == 0 ? body.substr(at, k + tail.size() - at) : frame_dim(v);
+    i = k + tail.size();
+  }
+  return out + body.substr(i);
+}
+
+U32 frames_scaled(const U32& text) {
+  const long long shared = pyfind(text, U"<WidgetLook name=\"ceguiWidget/StaticShared\"");
+  if (shared < 0) return text;
+  const long long end = pyfind(text, U"</WidgetLook>", shared);
+  if (end < 0) return text;
+  U32 look = text.substr(size_t(shared), size_t(end - shared));
+  for (const char* name : {"frame", "frame1", "frameCharacterSlot", "itemframe", "itemframe2"}) {
+    const long long a = pyfind(look, u32(std::string("<ImagerySection name=\"") + name + "\">"));
+    if (a < 0) continue;
+    const long long b = pyfind(look, U"</ImagerySection>", a);
+    if (b < 0) continue;
+    look = look.substr(0, size_t(a)) + frame_dims(look.substr(size_t(a), size_t(b - a))) + look.substr(size_t(b));
+  }
+  return text.substr(0, size_t(shared)) + look + text.substr(size_t(end));
+}
+
 std::vector<std::string> convert_ui(const ConvertOptions& opt) {
   std::vector<std::string> said;
   if (!is_style(opt.style)) throw Error("unknown prompt style " + opt.style);
@@ -752,6 +804,7 @@ std::vector<std::string> convert_ui(const ConvertOptions& opt) {
     text = rename_fonts(text, fonts);
     text = label_button_relative(text);
     text = label_frame_relative(text);
+    text = frames_scaled(text);
     Json u = Json::list();
     for (const U32& s : unknown) u.l().push_back(Json::str(u8(s)));
     report["looknfeel_unknown_imagesets"] = u;
