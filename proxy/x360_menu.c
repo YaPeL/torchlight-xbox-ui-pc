@@ -5539,6 +5539,45 @@ static void mirror_text_of(const char *prefix, const char *name) { mirror_text_s
 
 static void mirror_text(const char *name) { mirror_text_of(HUD_PREFIX, name); }
 
+/* The large message (the place's title on entering a level): the 360 shows it at once and fades it
+ * out. sub_8233E4F8(hud, text, seconds) sets the text, a hold (HUD +6116) of `seconds` and the
+ * alpha (+6120) to 1.0; the HUD update (sub_821A83C8, 0x821AA3C0) counts the hold down by the
+ * frame's time and then takes the alpha down by 2.0 a second (0x820AA33C), writing it to
+ * TextColour (white) and DropTextColour (black), and hides the text at 0. The hold is PC's own
+ * (the same game code passes it): while PC's text is shown the 360's is at 1.0, and when PC hides
+ * it the 360's fades out over 0.5 s. */
+static void large_message_tick(unsigned now) {
+    void *p = pc_window("LargeMessageText"), *x = win_of(HUD_PREFIX, "LargeMessageText");
+    char value[256], colour[16];
+    static is_visible_fn vis;
+    static unsigned fade_from;
+    static int alpha_shown = -1;      /* the alpha last written, in 1/255 */
+    int alpha;
+    if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!x) return;
+    if (p && vis && vis(p, 0, 0)) {
+        read_prop(p, "Text", value, sizeof value);
+        prop(x, "Text", value);
+        fade_from = 0;
+        alpha = 255;
+    } else {
+        if (!fade_from && alpha_shown > 0) fade_from = now;
+        alpha = fade_from ? 255 - (int)((now - fade_from) * 255 * 2 / 1000) : 0;
+        if (alpha <= 0) { alpha = 0; fade_from = 0; }
+    }
+    if (alpha != alpha_shown) {
+        static const char hex[] = "0123456789ABCDEF";
+        int j;
+        colour[0] = hex[alpha >> 4]; colour[1] = hex[alpha & 15]; colour[8] = 0;
+        for (j = 2; j < 8; j++) colour[j] = 'F';
+        prop(x, "TextColour", colour);
+        for (j = 2; j < 8; j++) colour[j] = '0';
+        prop(x, "DropTextColour", colour);
+        alpha_shown = alpha;
+    }
+    show(x, alpha > 0);
+}
+
 /* A text of the 360's HUD set to the text of PC's window `from` (another name), shown as it. */
 static void copy_text(const char *to, const char *from) {
     void *p = pc_window(from), *x = win_of(HUD_PREFIX, to);
@@ -6173,7 +6212,7 @@ static void hud_tick(void) {
      * 600 ms after a shop until they come back) only the window's own (the owner: the name went
      * off and on again as an NPC's menu closed). */
     mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open || pc_ui_back_at || hidden_count);
-    mirror_text("LargeMessageText");
+    large_message_tick(now);
     mirror_text("SmallMessageText");
     hud_stage = "target";
     target_tick();
