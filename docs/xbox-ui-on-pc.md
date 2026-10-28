@@ -1329,7 +1329,9 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   Self I and Summon Archers I learned (`sub_822B9CA0` 1, sound 20 from the learn's path, the row
   gone); Heal Self VI (level 30), six presses: `sub_822B9CA0` 0, no sound, text, tip, modal or
   flash; only the item's card closed until the selection moved (the header's rebuild): so here
-  too (`hide_info`). Played by the owner on GOG: the pet learned Summon Archers I. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  too (`hide_info`), also with the places full (the 360 counts them only for a spell the owner
+  can take). Played by the owner on GOG (2026-10-28): the pet learned Summon Archers I and Heal
+  Self I; Heal Self VI (level 30) did nothing. Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
   verified).
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds

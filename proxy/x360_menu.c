@@ -2353,11 +2353,13 @@ static void act(void) {
             if (sp) known++;
         }
         __try { can = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { can = 0; }
+        /* The 360's order: a spell the pet cannot take (sub_822B9CA0 false) never reaches the
+         * places' count (sub_8236BB70): nothing but the card closing, full or not. */
         if (can && known < 2 && ui) {
             ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
             x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
             hide_info();   /* the 360's card closes after a use (in-game/29); the scroll is gone */
-        } else if (known >= 2) {
+        } else if (can && known >= 2) {
             x360_log("x360 inv: A in the pet's bag: the pet knows two spells (the 360's replacing menu, not ported)\r\n");
         } else {
             /* The recomp's run (2026-10-28, a spell over the pet's level): no sound, text or
