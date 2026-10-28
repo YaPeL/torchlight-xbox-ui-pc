@@ -5106,32 +5106,13 @@ static void sr_finish(int keep) {
         sel = -1;
     }
     if (sel >= 0 && item && owner) {
-        typedef void (__fastcall *learn_fn)(void *who, void *edx, wstring_by_value name, int level);
-        unsigned short saved[96];
-        int saved_level = 0, have = 0;
-        wstr_ctor_fn wc;
-        wstr_dtor_fn wd;
         sr_log_places("before", owner, sel);
-        __try {
-            const unsigned char *known = owner + 0x2f8 + sel * 0x1c;
-            unsigned len = *(const unsigned *)(known + 0x14), res = *(const unsigned *)(known + 0x18), i;
-            const unsigned short *text = res < 8 ? (const unsigned short *)(known + 4) : *(const unsigned short *const *)(known + 4);
-            if (len && len < 95 && text) { for (i = 0; i < len; i++) saved[i] = text[i]; saved[len] = 0; have = 1; }
-            saved_level = *(const int *)(owner + 0x368 + sel * 4);
-            ((unlearn_fn)0x00489a30)(owner, 0, sel);
-        } __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
+        __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); }
+        __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
         x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
-        /* PC's own check runs only now (with the places full it says no); refused, the spell
-         * forgotten is given back (CCharacter::learnSpell(std::wstring, int) *(OT)*, GOG
-         * 0x484e90, thiscall, the name by value: the callee destroys it). */
-        if (pet_learn(item, owner) != 1 && have && wstring_functions(&wc, &wd)) {
-            wstring_by_value name;
-            __try {
-                wc(&name, 0, saved);
-                ((learn_fn)0x00484e90)(owner, 0, name, saved_level);
-                x360_log("x360 menu: PC refused the new spell: the forgotten one given back\r\n");
-            } __except (1) { x360_log("x360 menu: exception giving the spell back\r\n"); }
-        }
+        /* Then the new one (sub_8236BB70 again). Refused there, the 360 gives nothing back and
+         * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept). */
+        if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
         sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
     }
     refresh_all();
