@@ -1901,6 +1901,26 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     desc_restore();
     root = card_root(i);
     if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
+    /* The 360's card is PC's layout (tooltip.layout, tooltipcompare.layout: the same windows) with
+     * its own looks, ceguiWidget/ItemTooltip and ItemTooltip2 (both games: Falagard/Default):
+     * StaticShared's itemframe, its background widgets2's itemtooltipmiddle, drawn 187/255
+     * opaque by its own texture, so the bag shows through it (the owner's recomp capture); PC's
+     * gold frame is opaque. The look is set once per card (setLookNFeel remakes its imagery). */
+    {
+        typedef void (__fastcall *set_str_fn)(void *self, void *edx, const void *s);
+        static set_str_fn set_look;
+        const char *want = i ? "ceguiWidget/ItemTooltip2" : "ceguiWidget/ItemTooltip";
+        char now[64];
+        if (!set_look) set_look = (set_str_fn)need("?setLookNFeel@Window@CEGUI@@UAEXABVString@2@@Z");
+        read_prop(root, "LookNFeel", now, sizeof now);
+        if (set_look && !same_text_nocase(now, want)) {
+            object look;
+            string_ctor(&look, 0, want);
+            __try { set_look(root, 0, &look); x360_log("x360 inv: the card's look set to the 360's\r\n"); }
+            __except (1) { x360_log("x360 inv: setLookNFeel on the card threw\r\n"); }
+            string_dtor(&look, 0);
+        }
+    }
     /* The 360's card names the item in its SerifBig (the catalog's 103ItemName); PC's layout has
      * FrizQuadrataBig there. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
      * the 360's already. */
