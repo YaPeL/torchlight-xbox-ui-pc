@@ -1289,6 +1289,14 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   - Placement: the card is moved onto the GUI sheet, to the right of the bag's list over the
     third column, its top at the selected row's. As on the 360 it is not kept inside the column
     (it may be wider) nor inside the frame; only the screen's bottom keeps it up.
+  - The look: the 360's `tooltip.layout` has PC's windows, with the look
+    `ceguiWidget/ItemTooltip` (`ItemTooltip2` for the comparison's) instead of PC's
+    `GuiLook/ItemTooltip`. That look draws StaticShared `itemframe`, whose middle
+    (`widgets2`'s `itemtooltipmiddle`) is 187/255 opaque: the 360's see-through card. The recomp's
+    UI dump shows no alpha of its own on the card. `fill_card` sets the 360's look on the card's
+    root (`setLookNFeel`) when it differs. A run (2026-10-29, unattended, the test copy): the
+    item's card drawn with the 360's frame and the bag seen through it, as the recomp's
+    screenshot; the comparison's cards not seen in that run.
   - An unidentified item shows PC's "Unidentified items cannot be used - use an identify scroll
     to reveal enchantments".
 - **Item compare** (the bar's `ToggleItemCompare`, beside the d-pad's left-right image). The 360
