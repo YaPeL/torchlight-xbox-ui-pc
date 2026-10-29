@@ -1354,7 +1354,8 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     unsigned i;
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
     if (pressed & 0x4000) log_until = GetTickCount() + 3000;
-    if (pressed & 0x4000) {
+    /* With the stick past 0.1 the 360's X drops the target and only walks (sub_8221B8E8). */
+    if ((pressed & 0x4000) && !stick_active()) {
         if (candidate) attack_candidate(hero);
         else if (item_candidate && derives_from(item_candidate, ".?AVCBreakable@@")) break_item(hero);
         else swing(hero);
@@ -1779,7 +1780,9 @@ static void order(void) {
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
             drop_calls++;
         }
-        if (!(buttons & 0x4000)) {
+        /* X held walks too: the 360's X (sub_8221B8E8, every frame while held) drops the hero's
+         * target while the stick is past 0.1 and moves it toward the stick (sub_8221C730). */
+        {
             int changed = direction_changed();
             if (changed && !change_t0) change_t0 = now;
             if ((changed && face_each_frame) || now - last_probe >= 100) {
@@ -1923,7 +1926,7 @@ static void order(void) {
         }
     }
     if (pressed) buttons_pressed(hero, pressed);
-    if ((buttons & 0x4000) && !(pressed & 0x4000) && now - last_order >= 100) {
+    if ((buttons & 0x4000) && !(pressed & 0x4000) && !stick_active() && now - last_order >= 100) {
         /* X held: search again and keep attacking, as holding PC's button repeats the click. */
         last_order = now;
         if (candidate) attack_candidate(hero);
