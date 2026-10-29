@@ -1937,10 +1937,12 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
             string_dtor(&look, 0);
         }
     }
-    /* The 360's card names the item in its SerifBig (the catalog's 103ItemName); PC's layout has
-     * FrizQuadrataBig there. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
+    /* The 360's card names the item in its SerifBig (the catalog's 103ItemName; its tooltip.layout's
+     * ItemName), and a comparison card in its Serif14 (tooltipcompare.layout's ItemName); PC's
+     * layouts have FrizQuadrataBig and FrizQuadrata there. SerifBig on a comparison card clipped
+     * the name at its width. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
      * the 360's already. */
-    prop(descendant_ending(root, "ItemName"), "Font", "X360_SerifBig");
+    prop(descendant_ending(root, "ItemName"), "Font", i ? "X360_Serif14" : "X360_SerifBig");
     /* The 360's card has its dividers' windows but draws nothing there (in-game/10, 30: the card's
      * background at their rows); PC's draw a white line. */
     prop(descendant_ending(root, "Divider"), "Alpha", "0");
