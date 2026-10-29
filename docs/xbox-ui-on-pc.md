@@ -4198,5 +4198,16 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   update's hold call (0x491b60 returning to 0x4af410, the point +0x1cc), for the hero while X is
   held, +0x1cc is set to the pad's point (the 360's) first. The same sweep replayed then: PC's
   facing at the end of each direction equal to the recomp's within 1 degree in all 8. At rest with X
-  still held PC's hero drifted 6 degrees in 0.8 s (the recomp's none): left open. Not played by the
-  owner yet.
+  still held PC's hero drifted 6 degrees in 0.8 s (the recomp's none).
+- **The bend's cause (2026-10-29, read and measured).** `findWorldLocation` (0x411d60) casts the
+  cursor's ray onto a plane at the hero's +0x1b4 y, raised by 1.7 (0xa91ce4) when its flag is set,
+  and every attack, skill and hold caller sets it (0x4148cc, 0x414e84, 0x414ef2, 0x41538b,
+  0x4973a3, 0x5e4c87). The pad projected the aim point at the hero's own height, so the same pixel
+  came back from the higher plane pulled toward the camera's foot: the bend toward the screen's
+  bottom, none along the camera's axis. Now the point is projected onto that plane: in the same
+  sweep PC's own point at the hold turn (before the port's) matched the 360's within 0.7 degrees
+  (median of 389 frames; at most 12 in a frame at the stick's release), and the facing matched the
+  recomp's within 1 degree in all 8 directions. The skills' keys take the same cursor and plane.
+  At rest the aim keeps the stick's last way, as the 360's +448 (sub_8221B8E8 calls moveTo only
+  past 0.1), not the facing read each frame: the drift at rest went from 6 to 1 degree in 0.8 s.
+  The hold turn's point stays as the 360's rule. Not played by the owner yet.
