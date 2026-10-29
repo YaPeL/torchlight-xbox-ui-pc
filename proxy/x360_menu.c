@@ -666,6 +666,7 @@ static void *load(const char *file, const char *prefix) {
 #define GOG_USE_ITEM 0x005501b0          /* CGameUI::useItem(CLevel*, CEquipment*) */
 #define GOG_EQUIP_FIRST_FREE 0x004e9fe0  /* CInventory::equipEquipmentIntoFirstFreeLocation(CEquipment*) */
 #define GOG_CAN_EQUIP_SLOT (0x164 / 4)   /* CEquipment's virtual (CCharacter*): the right click's check */
+typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);   /* getKnownSpell, GOG 0x484ff0 */
 #define GOG_COMPARISON_ITEMS 0x004e7b90  /* CInventory::getComparisonItems(CEquipment*, CEquipment**, CEquipment**) */
 #define GOG_REMOVE_EQUIPMENT 0x004e9ca0  /* CInventory::removeEquipment(CEquipment*) */
 #define GOG_PICKUP_EQUIPMENT 0x004e9a30  /* CInventory::pickupEquipment(CEquipment*, bool) */
@@ -1148,6 +1149,84 @@ static int effects_count(unsigned char *item) {
     return n;
 }
 
+/* Whether the hero meets an item's requirements, as the 360's row tells it (sub_822BBF38: its
+ * req.notmet text in red, by the player's level and stats, whatever the bag): each
+ * requirement over 0 against the hero's level (+240, GOG +0xf0) and stats. PC's getters
+ * (CEquipment::get...Requirement(CCharacter*) *(OT)*, thiscall on the item): level 0x4b7710,
+ * strength 0x4b77f0, dexterity 0x4b7900, magic 0x4b7a10, defense 0x4b7b20 (each found beside the
+ * hero's stat it is compared with in PC's own check, 0x4b8715-0x4b879e); the hero's: strength
+ * 0x487ec0, dexterity 0x487e60, magic 0x487d70, defense 0x487d00. */
+static int hero_meets(unsigned char *item) {
+    typedef int (__fastcall *req_fn)(void *item, void *edx, void *who);
+    typedef int (__fastcall *stat_fn)(void *who, void *edx);
+    /* Not static: Steam's build moves each address by its load base (x360_reloc). */
+    const unsigned req[4] = {0x004b77f0, 0x004b7900, 0x004b7a10, 0x004b7b20};
+    const unsigned stat[4] = {0x00487ec0, 0x00487e60, 0x00487d70, 0x00487d00};
+    int r, i, ok = 1;
+    if (!item || !hero) return 1;
+    __try {
+        r = ((req_fn)0x004b7710)(item, 0, hero);
+        if (r > 0 && r > *(int *)(hero + 0xf0)) ok = 0;
+        for (i = 0; i < 4 && ok; i++) {
+            r = ((req_fn)req[i])(item, 0, hero);
+            if (r > 0 && r > ((stat_fn)stat[i])(hero, 0)) ok = 0;
+        }
+    } __except (1) { ok = 1; }
+    return ok;
+}
+
+/* Whether a bag's owner can take a spell (the 360's sub_822B9CA0, for the A's "Learn": the bar,
+ * sub_8236C8D0, 0x8236DD9C; and its learning, sub_8236BD80): the item's charges (+496; GOG's
+ * +0x1f0: -9999 endless, 0 none), its level requirement against the owner's level (sub_822BB0A8
+ * against +240; GOG 0x4b7710 against +0xf0), then sub_82284DB0(owner, name, level, 0) with the
+ * spell its skill teaches (the item's skill +380, its LEARN SKILL effect sub_8227DB00(skill, 65),
+ * the name at +88 and the level sub_8227A228(effect, 0)): no for a spell the owner's skill manager
+ * (+388) has at that name and level, or one of its known spells (+760: four, a pet's two) has
+ * that name; with its last argument 0 the places are not counted (the replacing menu comes for
+ * a full one). PC's own canLearnSpell (GOG 0x484bf0) always counts them, so here it is built
+ * from PC's parts (the mods agent's reading, 2026-10-28): the item's skill +0x17c,
+ * Skill::getEffectByType 0x47dd70 (65), the name at the effect's +0x74, its level
+ * Effect::getValue(0) 0x478e30; the skill manager +0x184, SkillManager::getSkill(name, level)
+ * 0x5dc1d0; the known spells' names at +0x2f8 (0x1c each, empty with their size +0x14 at 0),
+ * compared without case as getSkill does. */
+static int same_text_nocase(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        char x = *a >= 'A' && *a <= 'Z' ? *a + 32 : *a, y = *b >= 'A' && *b <= 'Z' ? *b + 32 : *b;
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+static const char *take_reason = "";      /* why can_take_spell said no (the log) */
+static int can_take_spell_raw(unsigned char *item, unsigned char *owner) {
+    typedef void *(__fastcall *effect_by_type_fn)(void *skill, void *edx, int type);
+    typedef float (__fastcall *effect_value_fn)(void *effect, void *edx, int index);
+    typedef void *(__fastcall *get_skill_fn)(void *manager, void *edx, const void *name, int level);
+    typedef int (__fastcall *req_fn)(void *item, void *edx, void *who);
+    int charges = *(int *)(item + 0x1f0), places = isa(owner, 87) ? 2 : 4, i, level, req;
+    unsigned char *skill = *(unsigned char **)(item + 0x17c), *effect, *manager;
+    char want[96], have[96];
+    if (charges == 0) { take_reason = "no charges"; return 0; }
+    req = ((req_fn)0x004b7710)(item, 0, owner);
+    if (req > 0 && req > *(int *)(owner + 0xf0)) { take_reason = "its level above the owner's"; return 0; }
+    effect = skill ? (unsigned char *)((effect_by_type_fn)0x0047dd70)(skill, 0, 65) : 0;
+    if (!effect || !wstring_utf8(effect + 0x74, want, sizeof want)) { take_reason = "no learn effect"; return 0; }
+    level = (int)((effect_value_fn)0x00478e30)(effect, 0, 0);
+    manager = *(unsigned char **)(owner + 0x184);
+    if (manager && ((get_skill_fn)0x005dc1d0)(manager, 0, effect + 0x74, level)) { take_reason = "the owner has that skill"; return 0; }
+    for (i = 0; i < places; i++) {
+        const unsigned char *known = owner + 0x2f8 + i * 0x1c;
+        if (*(unsigned *)(known + 0x14) && wstring_utf8(known, have, sizeof have) && same_text_nocase(have, want)) { take_reason = "a known spell of that name"; return 0; }
+    }
+    return 1;
+}
+static int can_take_spell(unsigned char *item, unsigned char *owner) {
+    int ok = 0;
+    if (!item || !owner) return 0;
+    take_reason = "";
+    __try { ok = can_take_spell_raw(item, owner); } __except (1) { ok = 0; take_reason = "an exception"; }
+    return ok;
+}
+
 static void fill_details(int row, unsigned char *item) {
     char name[48], buf[64], *p;
     int identified = item[GOG_IDENTIFIED] != 0, stack = *(int *)(item + GOG_STACK);
@@ -1176,9 +1255,12 @@ static void fill_details(int row, unsigned char *item) {
     }
     row_name(name, "DamageArmor", row); text(win(name), buf); show(win(name), buf[0] != 0);
     row_name(name, "Requirment", row);
-    text(win(name), identified ? "" : x360_text("identify_hint"));
-    prop(win(name), "TextColour", "FFFF2A2A");
-    show(win(name), !identified);
+    {
+        int unmet = identified && !hero_meets(item);
+        text(win(name), !identified ? x360_text("identify_hint") : unmet ? x360_text("req.notmet") : "");
+        prop(win(name), "TextColour", "FFFF2A2A");
+        show(win(name), !identified || unmet);
+    }
     /* "Effects:" and the count (sub_82368980, the string at 0x820d0ef0) for an identified item
      * with any, not a CONSUMABLE (1); the 360 also hides it at a GAMBLER (127). */
     {
@@ -1287,6 +1369,119 @@ static void *of_category(void *bag, int filter) {
     return 0;
 }
 
+/* ---- the tabs' marks: a filter with an item picked up and not yet seen ----
+ * The 360's CInventoryXenon (each bag's column) keeps a state per filter (+268 + 4 x category: 0
+ * nothing in it, 2 something, 1 an item picked up and not yet seen). Its iInventoryListener's
+ * equipmentPickedUp *(OT)* (sub_82369A00, its listener vtable 0x820D10D4: picked up, then dropped,
+ * equipped, unequipped and used, all sub_82369A70) calls sub_82369B08, which sets the item's
+ * category to 1, but for an item that only joins a stack the owner had (its +488 over 1, not ISA
+ * 124, and the owner's inventory already finding it by id: sub_822E35D8); with the screen open it
+ * also sets the column's filter (+296) to that category and rebuilds the screen. The tabs' drawing
+ * (sub_823654B8, 0x82365954-0x823659A8): each "Hi" window (tab_hilite: weaponHi, armorHi,
+ * trinketHi, potionHi, scrollHi, fishHi, the table at 0x834C5480) hidden; a filter at 1 shows its
+ * Hi in the focused column when it is not the column's filter (and adds it to the column's list
+ * at +108); otherwise the column's filter is set to 2, seen.
+ * Here PC tells no listener: the hero's and the pet's bags are read every 100 ms, and an item not
+ * in them before is picked up; one gone for less than 1.5 s and back is not (PC takes a potion
+ * out while the hero drinks and puts the rest back), which also leaves out the items that only
+ * join a stack (their stack keeps its item). The blink: each column's update (sub_821994F8, the
+ * column and the frame's time) takes a time at +124 down by the frame's time, adds 2.0 when it
+ * reaches 0 (0x820AA33C), and writes |t - 1.0| straight into the alpha (+244) of every window in
+ * the column's list at +108, the marked Hi windows: a triangle from 1 to 0 and back in 2 s (the
+ * recomp's run, 2026-10-28: the Hi kept visible, its alpha ramping between about 0.04 and 0.95). */
+static const char *const tab_hi[6] = {"weaponHi", "armorHi", "trinketHi", "potionHi", "scrollHi", "fishHi"};
+static int tab_mark[2][6];                   /* the hero's bag, the pet's: 1 picked up, 2 seen */
+#define MARK_ITEMS 256
+static struct { void *owner, *bag; int ready; unsigned n; void *item[MARK_ITEMS]; unsigned at[MARK_ITEMS]; } mark_bags[2];
+static int page;                             /* the frame's page (0 the inventory; set_page) */
+
+/* Out of play (a load, the main menu): the bags read anew, with no marks, when play comes back
+ * (another save may put its inventory where the last one was). */
+static void tab_marks_forget(void) {
+    int p, i;
+    for (p = 0; p < 2; p++) {
+        mark_bags[p].owner = mark_bags[p].bag = 0; mark_bags[p].ready = 0; mark_bags[p].n = 0;
+        for (i = 0; i < 6; i++) tab_mark[p][i] = 0;
+    }
+}
+
+static int panel_filter(int p) { return p == active_panel ? filter : panels[p].filter; }
+
+/* The Hi windows of the hero's and the pet's columns: shown for a mark not yet seen, in the
+ * focused column; the columns' own filters seen. */
+static void tab_marks_draw(unsigned now) {
+    int p, i;
+    float t = 2.0f - (float)(now % 2000) / 1000.0f, a = t > 1.0f ? t - 1.0f : 1.0f - t;
+    char alpha[16];
+    *put_float(alpha, a) = 0;
+    for (p = 0; p < 2; p++) {
+        /* The bags' columns keep their tabs at the transmuter (only its own column has none); on
+         * the other pages the tabs are not on screen. */
+        int f = panel_filter(p), tabs = !panels[p].is_select && page == 0;
+        if (!panels[p].root) continue;
+        if (inventory_open && tabs && tab_mark[p][f] == 1) tab_mark[p][f] = 2;   /* seen: only with the tabs shown */
+        for (i = 0; i < 6; i++) {
+            void *hi = win_of(panels[p].prefix, tab_hi[i]);
+            int on = inventory_open && tabs && tab_mark[p][i] == 1 && p == focus_panel && i != f;
+            show(hi, on);
+            if (on) prop(hi, "Alpha", alpha);
+        }
+    }
+}
+
+static void refresh_all(void);
+
+/* The hero's and the pet's bags read for new items (every 100 ms, in play). */
+static void tab_marks_tick(unsigned now) {
+    static unsigned last;
+    int p, picked = -1, picked_panel = -1;
+    if (now - last < 100) return;
+    last = now;
+    for (p = 0; p < 2; p++) {
+        unsigned char *owner = p ? the_pet() : hero, *inv = owner ? *(unsigned char **)(owner + GOG_INVENTORY) : 0;
+        void **refs;
+        unsigned n, i, j;
+        if (!inv) continue;              /* the pet away in town: its marks kept for its return */
+        if (inv != mark_bags[p].bag || owner != mark_bags[p].owner) {   /* another hero or pet: its items as they are, no marks */
+            mark_bags[p].owner = owner; mark_bags[p].bag = inv; mark_bags[p].ready = 0; mark_bags[p].n = 0;
+            for (i = 0; i < 6; i++) tab_mark[p][i] = 0;
+        }
+        refs = *(void ***)(inv + INV_REFS);
+        n = *(unsigned *)(inv + INV_REFS + 4);
+        for (i = 0; i < n && i < 256; i++) {
+            unsigned char *ref = (unsigned char *)refs[i];
+            void *item = ref ? *(void **)(ref + REF_ITEM) : 0;
+            if (!item) continue;
+            for (j = 0; j < mark_bags[p].n && mark_bags[p].item[j] != item; j++) {}
+            if (j < mark_bags[p].n) { mark_bags[p].at[j] = now; continue; }
+            /* With the screen open no mark: the filter moves to it. One that comes in equipped (a
+             * weapon picked up with the hands empty) is told as equipped, sub_82369A70: nothing
+             * (the recomp's run: the sword picked up and equipped left its tab unmarked). */
+            if (mark_bags[p].ready && *(int *)(ref + REF_SLOT) >= EQUIPPED_SLOTS && mark_bags[p].n < MARK_ITEMS) {
+                int c = category(item);
+                if (c < 6) { if (!inventory_open) tab_mark[p][c] = 1; picked = c; picked_panel = p; }
+            }
+            if (mark_bags[p].n < MARK_ITEMS) {
+                mark_bags[p].item[mark_bags[p].n] = item;
+                mark_bags[p].at[mark_bags[p].n++] = now;
+            }
+        }
+        for (j = 0; j < mark_bags[p].n;)    /* gone for 1.5 s: forgotten */
+            if (now - mark_bags[p].at[j] > 1500) {
+                mark_bags[p].n--;
+                mark_bags[p].item[j] = mark_bags[p].item[mark_bags[p].n];
+                mark_bags[p].at[j] = mark_bags[p].at[mark_bags[p].n];
+            } else j++;
+        mark_bags[p].ready = 1;
+    }
+    /* Picked up with the screen open: the column's filter is the item's (sub_82369A00). */
+    if (picked >= 0 && inventory_open && panels[picked_panel].root) {
+        if (picked_panel == active_panel) filter = picked;
+        else panels[picked_panel].filter = picked;
+        refresh_all();
+    }
+}
+
 static void refresh(void) {
     int row, i, counts[6];
     char name[48], buf[200];
@@ -1323,8 +1518,7 @@ static void refresh(void) {
                                                                          : "set:X360_widgets2 image:backroundbase_inventory");
     prop(win("HiliteFrame"), "Image", active_panel == focus_panel ? "set:X360_widgets image:framea_rollover"
                                                                   : "set:X360_widgets image:framea");
-    show(win("weaponHi"), 0); show(win("armorHi"), 0); show(win("trinketHi"), 0);
-    show(win("potionHi"), 0); show(win("scrollHi"), 0); show(win("fishHi"), 0);
+    for (i = 0; i < 6; i++) show(win(tab_hi[i]), 0);   /* the marks' own: tab_marks_draw */
     /* The item select's filter line reads "Insert Into" (the catalog's in-game/11; 0x820D0C54). */
     text(win("filtername"), x360_text(cur_select ? "filter.insert" : is_tm ? "filter.transmute" : filter_name[filter]));
     /* The transmuter's column (sub_82367D38, ISA 134): no tabs, its line of help (the layout's
@@ -1524,7 +1718,7 @@ static void refresh(void) {
                  * for a spell, Socket for a gem: in-game/10), Y Drop, X Swap (to the pet's bag);
                  * no Info. */
                 a = label[0] ? label : x360_text(equipped ? "act.unequip"
-                                                 : isa(item, 129) ? "act.learn"
+                                                 : isa(item, 129) ? (can_take_spell(item, (unsigned char *)cur_owner) ? "act.learn" : "")
                                                  : isa(item, 120) ? "act.socket"
                                                  : ((item_bool_fn)GOG_IS_USEABLE)(item, 0) ? (usable_now(item, (unsigned char *)cur_owner) ? "act.use" : "")
                                                  : "act.equip");
@@ -2174,6 +2368,7 @@ static void refresh_all(void) {
     fill_character();
     text(win_of(MASTER, "itemcomparetext"), x360_text(compare_on ? "compare.disable" : "compare.enable"));
     update_info();
+    tab_marks_draw(GetTickCount());
 }
 
 /* A on an unidentified item (the 360's "Press A to identify"): an identify scroll from the hero's
@@ -2315,6 +2510,50 @@ static int usable_now(unsigned char *item, unsigned char *user) {
     return ok;
 }
 
+/* A spell for the pet (the 360's sub_8236BD80 for ISA 129, then sub_8236BB70): when it can take
+ * it (can_take_spell, the 360's sub_822B9CA0) and knows fewer than two (a pet, ISA 87, has two
+ * places; its known spells counted by sub_821FD868, PC's getKnownSpell 0x484ff0), it learns it:
+ * PC's own use with a user (GOG 0x54d980, thiscall on CGameUI: level, item, user, target, pet; PC's
+ * right click on a menu owner's spell, 0x582150, gives the owner for the last three; it takes the
+ * item out of its inventory, 0x4e9ca0). PC's check comes first: when it fails PC's use plays a
+ * refusal sound the 360 does not have. A spell it cannot take does nothing but close the card,
+ * full or not (the 360 counts the places only for one it can take; the recomp's run: no sound,
+ * text or modal). 1 learned, 2 the places full (the replacing menu), 0 nothing. */
+static void sr_begin(unsigned char *item, unsigned char *owner);
+static int pet_learn(unsigned char *item, unsigned char *owner) {
+    typedef void (__fastcall *use_by_fn)(void *ui, void *edx, void *level, void *item, void *user, void *target, void *pet);
+    int known = 0, i, can = can_take_spell(item, owner);
+    for (i = 0; i < 4; i++) {
+        void *sp = 0;
+        __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
+        if (sp) known++;
+    }
+    if (can && known < 2 && ui) {
+        typedef unsigned char (__fastcall *can_use_by_fn)(void *item, void *edx, void *target, void *pet);
+        int pc_ok = 0;
+        /* PC's own check, the one its use runs first (GOG 0x4b87c0): failing there its use plays
+         * a refusal sound the 360 does not have. */
+        __try { pc_ok = usable_now(item, owner) && ((can_use_by_fn)0x004b87c0)(item, 0, owner, owner); } __except (1) { pc_ok = 0; }
+        if (!pc_ok) { x360_log("x360 inv: A in the pet's bag: PC refuses the spell\r\n"); hide_info(); return 0; }
+        ((use_by_fn)0x0054d980)(ui, 0, level, item, owner, owner, owner);
+        x360_log("x360 inv: A in the pet's bag: the pet learns the spell\r\n");
+        hide_info();   /* the 360's card closes after a use (in-game/29); the scroll is gone */
+        return 1;
+    }
+    if (can && known >= 2) {
+        x360_log("x360 inv: A in the pet's bag: the pet knows two spells: the replacing menu\r\n");
+        return 2;
+    }
+    {
+        char name[96];
+        x360_log("x360 inv: A in the pet's bag: the pet cannot learn ");
+        x360_log(unit_name(item, name, sizeof name) ? name : "it");
+        x360_log(": "); x360_log(take_reason); x360_log("\r\n");
+    }
+    hide_info();
+    return 0;
+}
+
 static void act(void) {
     void *inv = inventory();
     unsigned char *item, *owner = (unsigned char *)cur_owner;   /* the 360's A acts for the bag's owner (+0x174) */
@@ -2330,6 +2569,19 @@ static void act(void) {
             x360_log("x360 inv: A: bag full, kept equipped\r\n");
         else move_lost(item);
         move_done();
+        return;
+    }
+    /* A spell in the pet's bag (the 360's sub_8236BD80, ISA 129: sub_822B9CA0, then sub_8236BB70):
+     * pet_learn below; with its places full the spell-replacing menu (sr_begin). */
+    if (is_pet && isa(item, 129)) {
+        int r = pet_learn(item, owner);
+        if (r == 2) sr_begin(item, owner);
+        return;
+    }
+    /* The hero's spell it cannot take: no A on the 360's bar (sub_8236C8D0), nothing done (PC's
+     * use would play its refusal sound). */
+    if (!is_pet && isa(item, 129) && !can_take_spell(item, owner)) {
+        x360_log("x360 inv: A: the hero cannot take that spell (no A on the 360)\r\n");
         return;
     }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
@@ -3107,6 +3359,8 @@ void x360_pad_shutdown(void);   /* pad.c: the measurement's files written before
 
 static int petcmd_open;
 static void petcmd_show(int on);
+static int sr_open;                          /* the spell-replacing menu (below) */
+static void sr_finish(int keep);
 static void sock_show(int on);
 static void triggers_reset(void);
 static void stats_load(void);
@@ -3122,7 +3376,6 @@ static void update_info(void);
 
 /* The master menu's pages, in the 360's order (LT to the left, RT to the right). */
 static const char *const page_name[4] = {"page.inventory", "page.stats", "page.skills", "page.quest"};   /* x360_text keys */
-static int page;
 
 static void page_titles(void) {
     text(win_of(MASTER, "MenuName"), x360_text(!shop ? page_name[page] : at_enchant == 0x19 ? "title.destroygems" : at_enchant == 0x1a ? "title.recovergems" : at_enchant == 0x1b ? "title.retire" : at_enchant ? "title.enchanting" : at_transmute ? "title.transmuter" : !at_stash ? "title.merchant"
@@ -3338,7 +3591,7 @@ void x360_inventory_toggle(void) {
     if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
     else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
-    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); }
+    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); if (sr_open) sr_finish(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
      * opens (CInventoryMenuXenon's virtual +28, sub_8236F700 -> sub_82337A10(0): the hero's seen
      * byte +2471 and the setting, as PC's 0x55f570). PC asks for it when its own inventory opens
@@ -3922,7 +4175,6 @@ static void chr_show(int on) {
 }
 
 static void skill_icon(void *skill, unsigned fn, char *out, unsigned size);
-typedef void *(__fastcall *known_spell_fn)(void *unit, void *edx, int i);
 static void pet_sheet_fill(unsigned char *pet) {
     char buf[96], *p;
     int i;
@@ -4743,6 +4995,138 @@ static void sock_show(int on) {
     x360_log(on ? "x360 menu: the gem's item select shown\r\n" : "x360 menu: the gem's item select hidden\r\n");
 }
 
+/* ---- the spell-replacing menu (a spell for a pet whose two places are full) ----
+ * The 360's CMessageSpellRemoveXenon (vtable 0x820D1AD4, CGameUI's +6296; spellremove_xenon in
+ * the message housing), opened by sub_8236BB70 when the owner can take the spell but its places
+ * are full: the column keeps it (+380), the menu its owner (+44) and an order of its four windows
+ * (+60: a pet's 0, 1, 2, 3; the player's 2, 0, 1, 3), then its draw and its opening (the base
+ * sub_8237A970: the sound 22; 66 on closing). Its draw (sub_8237C260): the selection (+56) below
+ * 0 becomes 1 for a pet (3 for the player), over 1 for a pet (3) becomes 0; each known spell i
+ * (sub_821FD868) drawn into the window order[i] by sub_8237C348: for a pet the windows 2 and 3
+ * hidden; else spellN shown, its Image spells_window, spells_window_rollover for the selected one
+ * (0x820D1AA8, 0x820D1AB8), and spellimageN the spell's icon (none without a spell). Its pad
+ * (sub_8237BDA0, its jump table at 0x8237BDD4 by Runic's codes): the left stick's left and right
+ * move the selection (then the draw); A closes keeping it; X, Y and both sticks' up and down do
+ * nothing; any other button (B, the d-pad, the triggers, Start, Back) clears it (-1) and closes.
+ * Once closed, the column (sub_8236ECC0): a selection kept makes the owner forget that spell
+ * (sub_82284FD0; PC's CCharacter::unLearnSpell(int) *(OT)*, GOG 0x489a30, thiscall, the known
+ * spell's index) and learn the new one (sub_8236BB70 again: a place is free now). */
+#define SR_PREFIX "x360sr_"
+typedef void (__fastcall *unlearn_fn)(void *who, void *edx, int index);
+static void *sr_root;
+static int sr_open, sr_sel = -1;
+static unsigned char *sr_item, *sr_owner;
+
+static void sr_draw(void) {
+    static const int pet_order[4] = {0, 1, 2, 3}, hero_order[4] = {2, 0, 1, 3};
+    int pet = sr_owner && isa(sr_owner, 87), i;
+    const int *order = pet ? pet_order : hero_order;
+    if (sr_sel < 0) sr_sel = pet ? 1 : 3;
+    else if (sr_sel > 3 || (pet && sr_sel > 1)) sr_sel = 0;
+    for (i = 0; i < 4; i++) {
+        char name[16], buf[96], *p;
+        unsigned char *sp = 0;
+        int slot = order[i];
+        copy(name, sizeof name, "spell", 0); p = put_int(name + 5, slot); *p = 0;
+        if (pet && slot > 1) { show(win_of(SR_PREFIX, name), 0); continue; }
+        show(win_of(SR_PREFIX, name), 1);
+        prop(win_of(SR_PREFIX, name), "Image", sr_sel == i ? "set:X360_widgets2 image:spells_window_rollover"
+                                                            : "set:X360_widgets2 image:spells_window");
+        if (sr_owner) { __try { sp = (unsigned char *)((known_spell_fn)0x484ff0)(sr_owner, 0, i); } __except (1) { sp = 0; } }
+        if (sp) skill_icon(sp, 0x5d5950, buf, sizeof buf); else buf[0] = 0;
+        copy(name, sizeof name, "spellimage", 0); p = put_int(name + 10, slot); *p = 0;
+        prop(win_of(SR_PREFIX, name), "Image", buf);
+    }
+}
+
+static void sr_show(int on) {
+    if (on && !sr_root) {
+        if (!housing_load()) return;
+        sr_root = load("media/ui/x360/spellremove_xenon.layout", SR_PREFIX);
+        if (!sr_root) return;
+        scale_tree(sr_root, k, 0);
+        add_child(win_of(HOUSING_PREFIX, "parent"), 0, sr_root);
+    }
+    if (!sr_root) return;
+    sr_open = on;
+    if (petcmd_root && on) set_visible(petcmd_root, 0, 0);
+    if (sock_top && on) show(sock_top, 0);
+    show(win_of(HOUSING_PREFIX, "closebutton"), 0);   /* the menu's own B line */
+    set_visible(sr_root, 0, on);
+    if (on) { sr_draw(); hide_info(); } else update_info();
+    set_visible(housing_root, 0, on);
+    if (on) move_to_front(housing_root, 0);
+    shop_sound(on ? 22 : 66);
+    x360_log(on ? "x360 menu: the spell-replacing menu shown\r\n" : "x360 menu: the spell-replacing menu hidden\r\n");
+}
+
+static void sr_begin(unsigned char *item, unsigned char *owner) {
+    /* The opening (sub_8237C1D8 with 1) sets the selection to 0, the first, then draws. */
+    sr_item = item; sr_owner = owner; sr_sel = 0;
+    sr_show(1);
+}
+
+/* Whether an item is still in a unit's bag (the menu kept it while open). */
+static int in_bag(unsigned char *owner, unsigned char *item) {
+    unsigned char *inv = owner ? *(unsigned char **)(owner + GOG_INVENTORY) : 0;
+    void **refs;
+    unsigned n, i;
+    if (!inv) return 0;
+    refs = *(void ***)(inv + INV_REFS);
+    n = *(unsigned *)(inv + INV_REFS + 4);
+    for (i = 0; i < n && i < 256; i++) {
+        unsigned char *ref = (unsigned char *)refs[i];
+        if (ref && *(void **)(ref + REF_ITEM) == item) return 1;
+    }
+    return 0;
+}
+
+/* The owner's known spells' names in the log (the menu's choice checked in a run). */
+static void sr_log_places(const char *when, unsigned char *owner, int sel) {
+    char name[96];
+    int i;
+    x360_log("x360 menu: places "); x360_log(when); x360_log(":");
+    for (i = 0; i < 2; i++) {
+        const unsigned char *known = owner + 0x2f8 + i * 0x1c;
+        x360_log(i == sel ? " [" : " ");
+        x360_log(*(unsigned *)(known + 0x14) && wstring_utf8(known, name, sizeof name) ? name : "-");
+        if (i == sel) x360_log("]");
+    }
+    x360_log("\r\n");
+}
+
+/* Closed: with a selection kept, that spell forgotten and the new one learned. */
+static void sr_finish(int keep) {
+    unsigned char *item = sr_item, *owner = sr_owner;
+    int sel = keep ? sr_sel : -1;
+    sr_show(0);
+    sr_item = sr_owner = 0; sr_sel = -1;
+    if (sel >= 0 && item && owner && (owner != the_pet() || !in_bag(owner, item))) {
+        x360_log("x360 menu: the pet or its scroll gone: nothing forgotten\r\n");
+        sel = -1;
+    }
+    if (sel >= 0 && item && owner) {
+        sr_log_places("before", owner, sel);
+        __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); }
+        __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
+        x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
+        /* Then the new one (sub_8236BB70 again). Refused there, the 360 gives nothing back and
+         * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept). */
+        if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
+        sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
+    }
+    refresh_all();
+}
+
+static void sr_pad(unsigned pressed, int lx) {
+    static int held;
+    int dir = lx < -500 && !held ? -1 : lx > 500 && !held ? 1 : 0;
+    held = lx < -500 || lx > 500;
+    if (dir) { sr_sel += dir; sr_draw(); return; }
+    if (pressed & 0x1000) { sr_finish(1); return; }                       /* A */
+    if (pressed & ~(0x4000u | 0x8000u)) sr_finish(0);                      /* not X or Y: closed, none */
+}
+
 /* A on a gem in the focused bag (the hero's or the pet's). */
 static void sock_begin(unsigned char *gem) {
     sock_gem = gem;
@@ -5292,6 +5676,7 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     if (!inventory_open || !find_world()) return;
     triggers_tick();
     if (petcmd_open) { petcmd_pad(pressed, lx); return; }
+    if (sr_open) { sr_pad(pressed, lx); return; }
     if (sock_open) { sock_pad(pressed, ly); return; }
     if (skillmap_pad(pressed, buttons)) return;               /* the Skills page's mapping open */
     if (pressed & 0x2000) {                                            /* B */
@@ -5318,6 +5703,8 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
         last_check = now;
         if (print != last_print) { last_print = print; refresh_all(); }
     }
+    tab_marks_tick(now);
+    tab_marks_draw(now);
     if (buttons & 0x0001 || ly > 500) dir = -1;                      /* up */
     if (buttons & 0x0002 || ly < -500) dir = 1;                      /* down */
     if (dir != held_dir) { held_dir = dir; next_repeat = 0; }
@@ -5538,6 +5925,45 @@ static void mirror_text_shown(const char *prefix, const char *name, int own_only
 static void mirror_text_of(const char *prefix, const char *name) { mirror_text_shown(prefix, name, 0); }
 
 static void mirror_text(const char *name) { mirror_text_of(HUD_PREFIX, name); }
+
+/* The large message (the place's title on entering a level): the 360 shows it at once and fades it
+ * out. sub_8233E4F8(hud, text, seconds) sets the text, a hold (HUD +6116) of `seconds` and the
+ * alpha (+6120) to 1.0; the HUD update (sub_821A83C8, 0x821AA3C0) counts the hold down by the
+ * frame's time and then takes the alpha down by 2.0 a second (0x820AA33C), writing it to
+ * TextColour (white) and DropTextColour (black), and hides the text at 0. The hold is PC's own
+ * (the same game code passes it): while PC's text is shown the 360's is at 1.0, and when PC hides
+ * it the 360's fades out over 0.5 s. */
+static void large_message_tick(unsigned now) {
+    void *p = pc_window("LargeMessageText"), *x = win_of(HUD_PREFIX, "LargeMessageText");
+    char value[256], colour[16];
+    static is_visible_fn vis;
+    static unsigned fade_from;
+    static int alpha_shown = -1;      /* the alpha last written, in 1/255 */
+    int alpha;
+    if (!vis) vis = (is_visible_fn)need("?isVisible@Window@CEGUI@@QBE_N_N@Z");
+    if (!x) return;
+    if (p && vis && vis(p, 0, 0)) {
+        read_prop(p, "Text", value, sizeof value);
+        prop(x, "Text", value);
+        fade_from = 0;
+        alpha = 255;
+    } else {
+        if (!fade_from && alpha_shown > 0) fade_from = now;
+        alpha = fade_from ? 255 - (int)((now - fade_from) * 255 * 2 / 1000) : 0;
+        if (alpha <= 0) { alpha = 0; fade_from = 0; }
+    }
+    if (alpha != alpha_shown) {
+        static const char hex[] = "0123456789ABCDEF";
+        int j;
+        colour[0] = hex[alpha >> 4]; colour[1] = hex[alpha & 15]; colour[8] = 0;
+        for (j = 2; j < 8; j++) colour[j] = 'F';
+        prop(x, "TextColour", colour);
+        for (j = 2; j < 8; j++) colour[j] = '0';
+        prop(x, "DropTextColour", colour);
+        alpha_shown = alpha;
+    }
+    show(x, alpha > 0);
+}
 
 /* A text of the 360's HUD set to the text of PC's window `from` (another name), shown as it. */
 static void copy_text(const char *to, const char *from) {
@@ -6054,6 +6480,7 @@ static void hud_tick(void) {
         if (hud_root) show(hud_root, 0);
         if (pet_hud_root) show(pet_hud_root, 0);
         hud_in_play = 0;
+        tab_marks_forget();
         return;
     }
     hud_in_play = 1;
@@ -6136,6 +6563,8 @@ static void hud_tick(void) {
         else if (!blink_at || now - blink_at >= 1000) { blink_at = now; flag = !flag; }
         show(win_of(HUD_PREFIX, "AvailableSkillsGlowIcon"), points && !flag);
     }
+    hud_stage = "marks";
+    if (find_world() && hero) tab_marks_tick(now);   /* the bags' pickups mark the inventory's tabs */
     hud_stage = "pet";
     /* The pet's: the 360's pethud.layout, PC's made transparent, its bars and text as PC's. */
     {
@@ -6173,7 +6602,7 @@ static void hud_tick(void) {
      * 600 ms after a shop until they come back) only the window's own (the owner: the name went
      * off and on again as an NPC's menu closed). */
     mirror_text_shown(HUD_PREFIX, "LevelName", inventory_open || pc_ui_back_at || hidden_count);
-    mirror_text("LargeMessageText");
+    large_message_tick(now);
     mirror_text("SmallMessageText");
     hud_stage = "target";
     target_tick();
@@ -6295,18 +6724,33 @@ static void press_pc(const char *prefix, const char *name) {
 
 static int pc_shown(const char *name) { return pc_shown_in(pc_qd_prefix, name); }
 
-/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
- * menu's Skip (cinematicmenu.layout: Skip by DialogTextFrame), a left click at its centre
- * (press_pc). */
-void x360_cinematic_skip(void) {
-    static char cin_prefix[64];
+/* PC's cinematic menu (cinematicmenu.layout), its prefix: Skip by DialogTextFrame. Attached, not
+ * only found: PC takes a closed menu off the sheet (as the settings' search). No other layout of
+ * PC's has a window ending in Skip. */
+static char cin_prefix[64];
+static int cin_shown;            /* the 360's frame shown over PC's story screen */
+static int cin_text_set;         /* its text given since the frame showed */
+
+static int pc_cinematic_up(void) {
     static const char *const needs[] = {"DialogTextFrame", 0};
-    /* Attached, not only found: PC takes a closed menu off the sheet (as the settings' search). No
-     * other layout of PC's has a window ending in Skip. */
+    static unsigned last_search;
+    unsigned now = GetTickCount();
+    /* Once found, PC's menu is kept (it is taken off the sheet and put back, not made again): its
+     * parent chain is the test, and the tree is walked again only if its Skip is gone. */
+    if (cin_prefix[0] && win_of(cin_prefix, "Skip")) return pc_attached(cin_prefix, "Skip");
+    if (now - last_search < 250) return 0;   /* the tree's walk at most four times a second */
+    last_search = now;
+    find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
+    return cin_prefix[0] && pc_attached(cin_prefix, "Skip");
+}
+
+/* Start during a cinematic skips it (the owner's look at the 360, 2026-10-24): PC's cinematic
+ * menu's Skip, a left click at its centre (press_pc). */
+void x360_cinematic_skip(void) {
     int x360_overlay_open(void);
     if (qd_shown || x360_overlay_open()) return;   /* a talk, a modal, fishing, a tip: Start does nothing there, and no Escape reaches PC's screen under them (the release review) */
-    if (!cin_prefix[0] || !pc_attached(cin_prefix, "Skip")) find_pc_by_suffix("Skip", needs, cin_prefix, sizeof cin_prefix);
-    if (cin_prefix[0] && pc_attached(cin_prefix, "Skip")) { press_pc(cin_prefix, "Skip"); return; }
+    if (cin_shown) return;                          /* the story screen's own buttons (cinematic_bar_tick) */
+    if (pc_cinematic_up()) { press_pc(cin_prefix, "Skip"); return; }
     /* In play no Skip is shown: PC's Escape skips it, as the 360's Start (the owner, 2026-10-24),
      * posted to the game's window (keys_proc lets it through while the cinematic holds). */
     {
@@ -6318,6 +6762,128 @@ void x360_cinematic_skip(void) {
             PostMessageW(w, 0x101, 0x1b, (long)0xc0010001);     /* WM_KEYUP */
             x360_log("x360 menu: Start in a cinematic, Escape posted\r\n");
         } else x360_log("x360 menu: Start in a cinematic, no Skip and no game window\r\n");
+    }
+}
+
+/* The story screens (PC's cinematic menu with its Skip shown: a new hero's intro, the acts'
+ * pages): the 360's frame over PC's page. The 360's CCinematicMenu (sub_82349BA8) loads
+ * media/ui/cinematic.layout and looks up only Skip, DialogText and Background; its frame is the
+ * layout's own: main_topborder with its ends at the top, main_bottomborder (1024 x 93, bottom,
+ * centred) with its ends at the bottom and in it the A button with the layout's text. Its pad
+ * (sub_82349E80): any button marks the menu's +26, but only A (its code 10 there) writes the
+ * cinematics' +6024 and +6028 that end the page. Here the 360's black backdrop, page (with PC's
+ * page image) and text box (with PC's text) are shown, PC's screen transparent, and A presses PC's
+ * Skip (Start does nothing while the frame is shown). */
+#define CIN_PREFIX "x360cin_"
+static void cinematic_bar_tick(void) {
+    static void *root;
+    static int failed;
+    static unsigned prev;
+    static const char *const pc_bars[] = {"TopBarB", "TopBarLeft", "TopBarRight", "BottomBarB", "BottomBarLeft",
+                                          "BottomBarRight", "Skip", 0};
+    unsigned buttons, pressed;
+    int j;
+    int x360_overlay_open(void), x360_pause_open(void);
+    if (failed) return;
+    if (!pc_cinematic_up() || qd_shown || x360_overlay_open() || x360_pause_open() || inventory_open) {
+        if (cin_shown) {   /* PC's bars back, for whatever shows the menu now */
+            cin_shown = 0;
+            show(root, 0);
+            for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "1");
+            prop(win_of(cin_prefix, "Frameb"), "Alpha", "1");
+            prop(win_of(cin_prefix, "Backdrop"), "Alpha", "1");
+        }
+        return;
+    }
+    if (!root) {
+        RECT r;
+        HWND hw = active_window();
+        root = load("media/ui/x360/cinematic.layout", CIN_PREFIX);
+        if (!root) { failed = 1; return; }   /* PC's own bars stay */
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(root, k, 0);
+        pass_mouse(root);
+        show(win_of(CIN_PREFIX, "Skip"), 0);
+        show(root, 0);
+    }
+    if (!cin_shown) {
+        RECT r;
+        HWND hw = active_window();
+        if (hw && GetClientRect(hw, &r) && r.bottom > r.top)   /* the 360's spacing, as the tip's */
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+        cin_shown = 1;
+        cin_text_set = 0;
+        show(root, 1);
+        for (j = 0; pc_bars[j]; j++) prop(win_of(cin_prefix, pc_bars[j]), "Alpha", "0");
+        if (win_of(CIN_PREFIX, "DialogText") && win_of(cin_prefix, "DialogText"))
+            prop(win_of(cin_prefix, "Frameb"), "Alpha", "0");   /* PC's text box: the 360's shows the text */
+        /* The page as the 360's: its black backdrop (i_947) and its Background (1024 x 725, centred
+         * across, at 68 of 768: 1440 wide from 95 at 1080) with PC's page image; PC's screen, root
+         * Backdrop, transparent (its Skip still takes the click). The owner's capture against the
+         * recomp's: PC's page was 1348 wide and some 95 pixels higher. */
+        if (win_of(CIN_PREFIX, "Background") && win_of(cin_prefix, "Background"))
+            prop(win_of(cin_prefix, "Backdrop"), "Alpha", "0");
+        move_to_front(root, 0);
+        prev = x360_pad_buttons();      /* a button held from before does not act */
+        x360_log("x360 cinematic: the 360's frame over PC's story screen\r\n");
+    }
+    /* PC's page image on the 360's Background, set each tick: CEGUI keeps the image's pointer, and
+     * PC may make a page's imageset anew under the same name (the review); without PC's page the
+     * 360's black backdrop and page are hidden, PC's shows. */
+    {
+        void *pb = win_of(cin_prefix, "Background"), *xb = win_of(CIN_PREFIX, "Background");
+        char image[256];
+        if (pb && xb) {
+            read_prop(pb, "Image", image, sizeof image);
+            prop(xb, "Image", image);
+        } else {
+            show(xb, 0);
+            prop(win_of(CIN_PREFIX, "i_947"), "Image", "");
+        }
+    }
+    /* The text in the 360's box (i_962, a ceguiWidget/ItemText: enabled, its look draws
+     * ceguiWidget/StaticShared's frame, widgets1's tooltip 9-slice, dark and translucent, under
+     * the label: the band the 360 shows behind the text; the mods agent's capture, 2026-10-28; PC's
+     * own box, GuiLook's, draws a grey frame instead). Its DialogText takes PC's text and PC's
+     * rise (the 360's sub_8234A2B8 raises it the same way, from below to its place over a time
+     * from the voice's length): PC's text's offset in its frame, in pixels, given to ours. */
+    {
+        typedef struct { float top, bottom, left, right; } rect6;
+        typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
+        static pixel_rect_fn6 rect_of;
+        void *pt = win_of(cin_prefix, "DialogText"), *pf = win_of(cin_prefix, "DialogTextFrame");
+        void *xt = win_of(CIN_PREFIX, "DialogText");
+        char value[2048];
+        if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+        if (pt && xt) {
+            static unsigned last_hash;
+            unsigned h = 2166136261u, i;
+            read_prop(pt, "Text", value, sizeof value);
+            for (i = 0; value[i]; i++) h = (h ^ (unsigned char)value[i]) * 16777619u;
+            if (h != last_hash || !cin_text_set) { last_hash = h; cin_text_set = 1; text(xt, value); }   /* only when it changes */
+            if (pf && rect_of) {
+                rect6 t, f;
+                float v[8] = {0, 0, 0, 0, 1, 0, 1, 0};
+                rect_of(pt, 0, &t); rect_of(pf, 0, &f);
+                static float last_off = -100000.0f;
+                v[3] = v[7] = t.top - f.top;
+                if (last_off < -99999.0f || v[3] - last_off > 0.5f || last_off - v[3] > 0.5f) {   /* only when it moves */
+                    last_off = v[3];
+                    write_rect(value, v);
+                    prop(xt, "UnifiedAreaRect", value);
+                }
+            }
+        }
+    }
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~prev;
+    prev = buttons;
+    /* Only A continues (the owner on the recomp, 2026-10-28: only A goes on; the 360's
+     * sub_82349E80 marks any button at +26 but only its code 10, A here, writes the cinematics'
+     * +6024/+6028 that end the page). */
+    if (pressed & 0x1000) {
+        x360_log("x360 cinematic: A, PC's Skip\r\n");
+        press_pc(cin_prefix, "Skip");
     }
 }
 
@@ -9219,6 +9785,7 @@ void x360_frame_tick(void) {
     /* The tip first: on the frame it shows, the screens under it already leave it the pad. */
     __try { tip_tick(); } __except (1) { x360_log("x360 tip: exception\r\n"); }
     __try { fishing_tick(); } __except (1) { x360_log("x360 fishing: exception\r\n"); }
+    __try { cinematic_bar_tick(); } __except (1) { x360_log("x360 cinematic: exception\r\n"); }
     __try { enchant_result_tick(); } __except (1) { ench_pending = 0; x360_log("x360 enchanter: exception taking the result\r\n"); }
     __try { modal_tick(); } __except (1) { x360_log("x360 modal: exception\r\n"); }
     __try { bars_tick(); } __except (1) { x360_log("x360 bars: exception\r\n"); }

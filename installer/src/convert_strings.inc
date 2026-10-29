@@ -62,6 +62,7 @@
     {"level", 0x820C0DD4},
     {"requires_level", 0x820C0DB4},
     {"identify_hint", 0x820C17FC},
+    {"req.notmet", 0x820C1824},
     {"reward.xp", 0x820BEB40},
     {"reward.gp", 0x820CF528},
     {"reward.fame", 0x820C0494},

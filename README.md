@@ -8,7 +8,7 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Alpha:** played with Epic's and Steam's builds on Windows, Steam's on the Steam Deck, and
-> GOG's under Proton on Linux. Report problems in
+> GOG's under Proton on Linux (v0.3.1; the changes since were played with GOG's only). Report problems in
 > [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
@@ -161,11 +161,10 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
   install option, with its notes on saves (above). A check of the saves in the installer, before
   changing the bag, is still to come.
 - **Screens still PC's** (played with the pad, but PC's look): the main menu and the pause menu;
-  the death screens, normal and hardcore; the waypoint portals; the screen that turns the story's
-  pages in story mode.
+  the death screens, normal and hardcore; the waypoint portals. The story mode's page screen is
+  PC's page in the 360's frame (its text box, its bar, A to go on).
 - **Not as on the 360 yet:**
   - the black bars shown with the zoom do not look like the 360's;
-  - the name shown on entering a town or a dungeon does not fade out as on the 360;
   - the loading screens are PC's, not the 360's.
   - the item card shown for a quest's reward is narrower than the 360's (the 360's card laid out
     at PC's width, so its text wraps into more lines and the card is taller).

@@ -193,6 +193,7 @@ def convert(files):
         text = rename_fonts(text, fonts)
         text = label_button_relative(text)
         text = label_frame_relative(text)
+        text = frames_scaled(text)
         report["looknfeel_unknown_imagesets"] = unknown
         return set_attr(tag, "Filename", put(basename(src), text.encode(enc)))
 
@@ -280,7 +281,7 @@ STRINGS = {
     "compare.enable": 0x820D0FEC, "compare.disable": 0x820D0FC0,
     "filter.0": 0x820D0BE0, "filter.1": 0x820C0CB4, "filter.2": 0x820D0BF0, "filter.3": 0x820D0C00,
     "filter.4": 0x820D0C1C, "filter.5": 0x820D0C34,
-    "effects": 0x820D0EF0, "level": 0x820C0DD4, "requires_level": 0x820C0DB4, "identify_hint": 0x820C17FC,
+    "effects": 0x820D0EF0, "level": 0x820C0DD4, "requires_level": 0x820C0DB4, "identify_hint": 0x820C17FC, "req.notmet": 0x820C1824,
     "reward.xp": 0x820BEB40, "reward.gp": 0x820CF528, "reward.fame": 0x820C0494,
     "stance.0": 0x820D198C, "stance.1": 0x820D1968, "stance.2": 0x820D19AC,
     "time.hrs": 0x820CF7C8, "time.mins": 0x820CF7D0, "time.secs": 0x820CF7DC,
@@ -355,6 +356,46 @@ def label_frame_relative(text):
         return text
     label = label[:first_state] + body + "\n" + label[first_state:]
     return text[:start] + label + text[end:]
+
+
+FRAME_LOOK = "ceguiWidget/StaticShared"
+FRAME_SECTIONS = ("frame", "frame1", "frameCharacterSlot", "itemframe", "itemframe2")
+FRAME_REF = ("widgets2", "framemiddle", 22)     # an AutoScaled image of the 360's: 22 rows at 768
+
+
+def frame_dim(value):
+    """A frame's offset of `value` pixels at the 360's 720 rows as a multiple of an AutoScaled
+    image's height (which grows by height / 768), so that it keeps its size at any resolution."""
+    imageset, image, rows = FRAME_REF
+    return (f'<ImageDim imageset="{PREFIX}{imageset}" image="{image}" dimension="Height">'
+            f'<DimOperator op="Multiply"><AbsoluteDim value="{value * 768 / 720 / rows:.5f}" />'
+            f'</DimOperator></ImageDim>')
+
+
+def frames_scaled(text):
+    """The shared frames' areas (StaticShared's frame sections: the frame drawn -24, -9 and 48, 18
+    wider than its window, pixels at the 360's 720 rows) scaled with the screen: PC's looks are
+    not, so at 1080 every 360 frame sat a third closer to its window than on the 360 (the
+    spell-replacing menu against the recomp's capture). Runs after label_frame_relative, which
+    copies the unscaled "frame" for the object label."""
+    shared = text.find(f'<WidgetLook name="{FRAME_LOOK}"')
+    if shared < 0:
+        return text
+    end = text.find("</WidgetLook>", shared)
+    if end < 0:
+        return text
+    look = text[shared:end]
+    for name in FRAME_SECTIONS:
+        a = look.find(f'<ImagerySection name="{name}">')
+        if a < 0:
+            continue
+        b = look.find("</ImagerySection>", a)
+        if b < 0:
+            continue
+        body = re.sub(r'<AbsoluteDim value="(-?[0-9.]+)" />',
+                      lambda m: m.group(0) if float(m.group(1)) == 0 else frame_dim(float(m.group(1))), look[a:b])
+        look = look[:a] + body + look[b:]
+    return text[:shared] + look + text[end:]
 
 
 def image_strings(image):

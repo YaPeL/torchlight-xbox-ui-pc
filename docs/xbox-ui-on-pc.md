@@ -1053,6 +1053,19 @@ attached to PC's GUI sheet (`System::getGUISheet`, `Window::addChildWindow`) and
   the layouts' pixel offsets are scaled by the same factor on load (CEGUI 0.6 does not scale
   them). The 360's screenshots agree: its 919x690 frame is 1290x967 at 1080 (1.40). (Height / 720,
   the first try, made the frames 7% larger than the fonts.)
+- **The looks' frames scaled too.** The looknfeel's pixel offsets are not scaled by CEGUI 0.6
+  either; they are pixels at the 360's 720 rows. StaticShared's frame sections (`frame`, `frame1`,
+  `frameCharacterSlot`, `itemframe`, `itemframe2`: the frame drawn `-24, -9` and `48, 18` wider
+  than its window; `frameCharacterSlot` -18 and 36 across, the item frames -26, -13 and 52, 26)
+  are written by the converter (`frames_scaled`, and its C++
+  twin) as a multiple of an AutoScaled image's height (`widgets2`'s `framemiddle`, 22 rows at 768),
+  so that they keep the 360's size at any height (the image and its 22 rows are the supported 360
+  build's; the converter does not check them). Before, at 1080 every 360 frame sat a third
+  closer to its window: the spell-replacing menu's frame (its visible orange line, which lies
+  inside the frame's art, not the drawn area) measured 783x248 against the recomp's 806x258 (its
+  window the same, 761x250, in the recomp's UI dump); after, 807x257. The bottom
+  bar's buttons fell on the recomp's pixels too (the owner's captures, 2026-10-28). The object
+  label keeps its own copy of `frame` (`label_frame_relative`, by the label's height).
 - **Position: the 360's frame.** `mastermenu_xenon` (919x690, centred; LT/RT tabs, the title, the
   bottom bar) is loaded too; its `ContainerFrame` (902x630, centred, +19) holds the screens in
   three columns of 301 (the character, the bag, the pet's bag); the bag's `TopFrame` is moved into
@@ -1311,6 +1324,76 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   pet wear (the pet uses nothing). A run (`t28-pet2.png`): a ring swapped to the pet with X, then
   A: "prefixed ring", Equipped, its A "Unequip"; A again took it off. Something the pet cannot
   wear was not tried.
+- **The requirements line, and Learn only when it can be taken (2026-10-28). [read; seen; played]** The
+  owner's capture of the 360 (the recomp, the pet's bag with a level-30 spell): the row's red
+  `req.notmet` text under the name, and no A in its bar (only Y and X). **The row**
+  (`sub_822BBF38`, from `sub_82368980`): after the identify hint, each requirement over 0
+  against the **player's** level (`+240`) and stats, whatever the bag; one above writes
+  the text at `0x820C1824` (UTF-16BE; key `req.notmet`) in red. Its other branches
+  (a quest item, ISA 103; a gambler's, ISA 127; `+920`) are not ported. The port (`hero_meets`):
+  PC's `CEquipment::get...Requirement(CCharacter*)` *(OT)* (level `0x4b7710`, strength
+  `0x4b77f0`, dexterity `0x4b7900`, magic `0x4b7a10`, defense `0x4b7b20`, each found beside the
+  hero's stat it is compared with in PC's own check, `0x4b8715`-`0x4b879e`) against the hero's
+  level (`+0xf0`) and stats. **The bar** (`sub_8236C8D0`, `0x8236DD9C`): a spell's A is "Learn"
+  only when `sub_822B9CA0(spell, owner)` holds (for the player with no free place another text,
+  not ported); here `can_take_spell`, the same checks as the learning.
+  Played by the owner on GOG (2026-10-28): the red line under a weapon the hero cannot use and
+  under the pet's spells above its level; A on a spell the pet already knows does nothing.
+- **A spell in the pet's bag (2026-10-28). [read]** The owner: A on a spell in the pet's bag did
+  nothing (the port took "the pet uses nothing" as a rule). The 360's A (`sub_8236AA48`, its last
+  branch `sub_8236BD80`) for a spell (ISA 129): `sub_822B9CA0(spell, owner)` (the item a spell, its
+  charges, its level against the owner's, the owner able to take its skill), then
+  `sub_8236BB70`: the owner's known spells counted (`sub_821FD868`, four places); if the owner
+  can use the spell (`sub_822B9DA8`) it is used (`sub_822B9A60`): learned; else, with its places
+  full (a pet, ISA 87: two; else four), the 360 opens its spell-replacing menu (CGameUI `+6296`);
+  else nothing, and no sound. The port (`act`): with fewer than two known spells (`getKnownSpell`,
+  GOG `0x484ff0`) and PC's own checks for the pet (`usable_now`, and the one PC's use runs first,
+  GOG `0x4b87c0`: level, stats, skills; failing there PC plays a refusal sound the 360 lacks), PC's use with a user
+  (GOG `0x54d980`, thiscall on CGameUI: level, item, user, target, pet; PC's right click on a
+  menu owner's spell gives the owner for the last three, `0x582150`; it takes the item out of its
+  inventory) with the pet; with two known, the replacing menu (below); else
+  nothing, no sound, as the 360. **[the recomp's run]** (2026-10-28, the mods agent's probe on the
+  sound calls `sub_8232E898`, `sub_8232EB20` and `sub_822B9CA0`'s result; a level-1 pet): two
+  level-1 spells learned (`sub_822B9CA0` 1, sound 20 from the learn's path, the row
+  gone); a level-30 spell, six presses: `sub_822B9CA0` 0, no sound, text, tip, modal or
+  flash; only the item's card closed until the selection moved (the header's rebuild): so here
+  too (`hide_info`), also with the places full (the 360 counts them only for a spell the owner
+  can take). Played by the owner on GOG (2026-10-28): the pet learned two level-1 spells; a
+  level-30 spell did nothing; A on a spell it already knows does nothing either.
+- **The spell-replacing menu (2026-10-28). [read; played]** The owner: with the pet's two places full, a
+  third spell it can take opens another screen on the 360. `CMessageSpellRemoveXenon` (vtable
+  `0x820D1AD4`, CGameUI's `+6296`; `spellremove_xenon` in the message housing), opened by
+  `sub_8236BB70`: the column keeps it (`+380`), the menu the owner (`+44`) and an order of its
+  four windows (`+60`: a pet's 0, 1, 2, 3; the player's 2, 0, 1, 3); the base's opening
+  (`sub_8237A970`) plays the sound 22, its closing 66. Its draw (`sub_8237C260`, each window by
+  `sub_8237C348`): the selection (`+56`; set to 0, the first, when it opens, `sub_8237C1D8`) below
+  0 becomes 1 for a pet (3 for the player: the stick's wrap to the last), above that 0; known spell i in window order[i]; for a pet the windows 2 and 3 hidden; `spellN`'s
+  Image `spells_window`, `spells_window_rollover` when selected; `spellimageN` the spell's icon.
+  Its pad (`sub_8237BDA0`, its jump table at `0x8237BDD4`): the left stick's left and right move
+  the selection; A closes keeping it; X, Y and the sticks' up and down nothing; any other button
+  clears it and closes. Once closed (`sub_8236ECC0`): a kept selection makes the owner forget
+  that spell (`sub_82284FD0`; PC's `CCharacter::unLearnSpell(int)` *(OT)*, GOG `0x489a30`, Steam
+  `0x487ba0`) and learn the new one (`sub_8236BB70` again). The port (`sr_*`, `pet_learn`): the
+  same, for the pet's bag. **Whether the owner can take the spell** (the bar's Learn and the menu's
+  opening): the 360's `sub_822B9CA0` ends in `sub_82284DB0(owner, name, level, 0)`, which says no
+  only for a spell the owner already has (its skill manager by name and level, or a known spell's
+  name) and does not count the places (1 there counts them, when learning). PC's own
+  `canLearnSpell` (GOG `0x484bf0`) always counts them, and PC's use check (`0x4b87c0`) ends in it,
+  so with two known spells nothing could be taken (the owner's run: no A, no menu). Now built
+  from PC's parts (the mods agent's reading): the charges, the level requirement, the item's skill
+  `+0x17c`, `Skill::getEffectByType` `0x47dd70` (65), the name at the effect's `+0x74`, its level
+  `Effect::getValue(0)` `0x478e30`, `SkillManager::getSkill(name, level)` `0x5dc1d0` on `+0x184`,
+  the known names at `+0x2f8` without case. PC's own check still runs before PC's use (its
+  refusal sound). The review (2026-10-28): PC's own check can only run after the forgetting (with
+  the places full it says no). A refusal there is left as on the 360: the spell forgotten stays
+  lost and nothing is shown (a recomp run with the refusal forced after `sub_82284FD0`, at
+  `0x8236BC20`: the spell lost, the scroll kept in the pet's bag; after the menu's own confirm
+  sound, 66, no sound nor any text for 5 s); nothing is forgotten if the pet or its scroll is gone when the menu closes; the
+  hero's A on a spell it cannot take does nothing (the 360's bar shows none). Steam's addresses: `0x549180`, `0x57ceb0` (port_addresses.py,
+  verified).
+  Played by the owner on GOG (2026-10-28): the menu opened with the pet's two places full and a
+  third spell it could take, on the first spell; A kept the choice, the chosen spell forgotten,
+  the later one moved down and the new one learned in the second place. The give-back was played only with a simulated refusal before it was removed.
 - **The name's colour.** The 360 takes it from the item (`sub_822BBCA8`: unidentified a fixed red,
   else by the item's kind; "prefixed shoes" in green); PC's tooltip by the same kinds
   (GOG `0x5431a5`-`0x5438d9`, for the hero): its colour table (the singleton `0x524d40`, wstrings
@@ -1376,6 +1459,15 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
     bar and image of the same name: health, mana, experience, the pet's health and mana.
   - **The texts and their visibility** as PC's: `LevelName`, `LargeMessageText`,
     `SmallMessageText`, the pet's `FleeingText`; the pet's HUD shown when PC's is.
+  - **The large message fades out (2026-10-28). [read]** The 360 shows it at once and fades it
+    out: `sub_8233E4F8(hud, text, seconds)` sets the text (HUD `+6088`), a hold (`+6116`) of
+    `seconds` and the alpha (`+6120`) to 1.0 (an empty text sets the alpha to 0 and hides it);
+    the HUD update (`sub_821A83C8`, from `0x821AA3C0`) counts the hold down by the frame's time,
+    then takes the alpha down by 2.0 a second (`0x820AA33C`), writes it to `TextColour` (white)
+    and `DropTextColour` (black), and hides the text at 0. Ten callers pass the seconds (not read
+    one by one). The port (`large_message_tick`): PC's own code times the hold, so the 360's text
+    is at full alpha while PC's is shown and fades over 0.5 s once PC hides it. The owner saw the
+    fade on the 360. Played by the owner (2026-10-28): the title fades out.
   - **The pad's slots:** LB, RB, B, Y, LT, RT press PC's hotbar keys 1 to 6 (section 9), so the
     360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
     and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
@@ -1549,6 +1641,40 @@ OK"):
   `_rollover` images (frame, border, its filter's tab) and RB. A column that is not the
   player's (the 360's ISA 134 test) dims to 0.25 the tabs of the filters it has nothing in, but
   the focused column's own (`sub_823654B8`, `0x82365948`).
+- **The tabs' marks (2026-10-28). [read]** The owner: on the 360 the tabs' icons blink. Each
+  column (`CInventoryXenon`) keeps a state per filter (`+268 + 4 x category`: 0 nothing in it, 2
+  something, 1 an item picked up and not yet seen). Its `iInventoryListener` (vtable
+  `0x820D10D4`, in OT's order: picked up `sub_82369A00`; dropped, equipped, unequipped, used
+  `sub_82369A70`; destroyed) tells it of the model's changes. Picked up with the screen closed:
+  `sub_82369B08` sets the item's category (`sub_82369C48`) to 1, but not for an item that only
+  joins a stack the owner had (its `+488` over 1, not ISA 124, the owner's inventory finding it by
+  id, `sub_822E35D8`). With the screen open: no mark; the states are rebuilt (1 kept, the rest 2
+  or 0 by the owner's items), the column's filter (`+296`) is set to the item's category and the
+  header rebuilt (`sub_82367D38`). The other events only rebuild, with the screen open. The
+  drawing (`sub_823654B8`): every `Hi` window (`tab_hilite`; `weaponHi`, `armorHi`, `trinketHi`,
+  `potionHi`, `scrollHi`, `fishHi` for the categories 0-5, the table at `0x834C5480`) hidden; a
+  filter at 1 shows its `Hi` in the focused column when it is not the column's filter, and adds
+  it to a list of the column's (`+108`, `sub_82363BC8` a vector's push); otherwise the column's
+  filter goes to 2, seen. **The blink** (2026-10-28, the recomp's run: the owner's recipe, a
+  hero in the mines picking up six items with the bag closed, the mods agent's probe on
+  `setVisible`, `setAlpha` and `setProperty`): the `Hi` stays visible and its alpha ramps up and
+  down (about 0.04 to 0.95), written by neither setter. **[read]** The writer: each column's
+  update, `sub_821994F8(column, frame time)` (while the screen is open, `+293`): a time at `+124`
+  taken down by the frame's time, 2.0 added when it reaches 0 (`0x820AA33C`), and `|t - 1.0|`
+  stored straight into the alpha (`+244`) of every window in the list at `+108`, with the alpha's
+  changed event: a triangle from 1 to 0 and back every 2 s. (Searched statically before without
+  finding it: a window's alpha written directly, not through `setAlpha`.) **The port** (`tab_marks_tick`, `tab_marks_draw`): PC tells
+  no listener, so the hero's and the pet's bags are read every 100 ms (the HUD's tick, and the
+  inventory's while it is open); an item not in them before is picked up, one gone for less than
+  1.5 s and back is not (PC takes a potion out while the hero drinks and puts the rest back; an
+  item joining a stack keeps the stack's item, as the 360's exception); one that comes in equipped
+  (a weapon picked up with the hands empty: the 360's equipped event, no mark; the recomp's run
+  left the sword's tab unmarked) marks nothing. Out of play (a load, the main menu) the bags are
+  read anew, with no marks; the pet's marks are kept while it is in town; a filter is seen only on
+  the inventory's page (the bags' columns keep their tabs at the transmuter). The `Hi` shown has its
+  alpha set to the 360's triangle, `|t - 1|` with t running down from 2 to 0 every 2 s. Played by the owner
+  (2026-10-28, a copy of a new hero with the console's six items picked up in the mine): the
+  marks and their blink seen on the weapons', jewellery's and spells' tabs.
 - **The bar's buttons** (`sub_8236E888`): each takes its icon plus its text (A and X also 2.5); a
   gap of `max(0, (0.9 x tray width - sum) x 0.15)` after each with a text; the group centred at
   `gap/2 - sum/2 + 5`, in the order A, Y, X (720-row pixels, scaled by height / 720 here).
@@ -3766,6 +3892,46 @@ no Skip is attached; `keys_proc` lets it through while the cinematic holds. Not 
 of the 360's overlays (a modal, fishing, a tip) is up: PC's test holds there too, and an Escape
 would reach PC's screen under it (the release review). The owner played the skip with Start in
 an in-play cinematic (2026-10-24).
+
+**The story screens' frame (2026-10-28). [read]** The owner: the story screens (PC's cinematic
+menu with its Skip shown: a new hero's intro, the acts' pages) showed PC's bottom bar and button,
+not the 360's. The 360's `CCinematicMenu` (`sub_82349BA8`) loads `media/ui/cinematic.layout` and
+looks up only `Skip`, `DialogText` and `Background` (its `+264`, `+268`, `+272`); the frame is the
+layout's own: `main_topborder` with its ends at the top, `main_bottomborder` (1024 x 93, bottom,
+centred) with its ends at the bottom and in it the A button and the layout's text (`i_951`). Its
+pad (`sub_82349E80`): while the menu is up any button sets its `+26`; only its code 10 (A: the
+owner on the recomp, 2026-10-28, only A goes on) writes the cinematics' `+6024` (1) and `+6028`
+(0), which end the page. The port
+(`cinematic_bar_tick`): while PC's Skip is attached, the 360's layout over PC's screen (at first
+with its backdrop, page and text left out; since 2026-10-28 all shown, below); PC's top and bottom
+bars and Skip transparent (`Alpha` 0); A presses PC's Skip, and only A (Start does nothing while
+the frame is shown). In-play cinematics (no Skip
+attached) are as before. Played by the owner (2026-10-28): the 360's frame with its A on the story screens, A
+continues (the log: the frame shown and PC's Skip pressed four times). **The text's box (2026-10-28). [read; seen]** The owner's capture against the recomp's: PC's
+story text sat in a grey-framed box, the 360's on a dark translucent band. Both games' ItemText
+looks draw their StaticShared frame when enabled (and only the label when disabled): the 360's
+(`i_962`, ceguiWidget/ItemText) with widgets1's tooltip 9-slice, dark (the mods agent, from its
+capture: the draw over the page is that 9-slice at `i_962`'s rect grown by the frame; the page's
+image is the same file on both), PC's (`Frameb`, GuiLook/ItemText) with GuiLook's grey one. Now
+the 360's box is shown, PC's made transparent (`Alpha` 0, given back on hiding), and the 360's
+`DialogText` takes PC's text (set only when it changes) and PC's rise: PC's text's offset in its
+frame, in pixels, as its own top. The 360 raises it the same way (`sub_8234A2B8`: from below to its
+place over a time from the voice's length, `+276` against `+280`). Played by the owner (2026-10-28): the box
+visible and enabled where the 360 has it (the log: 327,652 to 1592,933 at 1080), the band under the
+text darker than the page above it (mean brightness 20.7 against 35.8 without a box, the 360's 28.0
+against 39.4). **[seen]** The text's place, font and size as the recomp's (the owner's capture:
+its first line at 327, 665 at 1080, lines 23 pixels apart); its rise is PC's and the 360's alike:
+both take its length times 0.015 s, at least 10 s (the 360's `sub_82349EE0`: `+300` the text's
+length, `0x820AA7D8` 0.015, `0x820AA3CC` 10.0; GOG `0x5653cf`: `0xab2a18` 0.015, `0xa8ec08`
+10.0), from below its box (the 360's `sub_8234A2B8`: the box's height plus 50 pixels below its
+place, linearly to it). An X had continued it in the port; on the 360 only A does: now only A. **The page's image (2026-10-28). [seen]** The owner's capture against the recomp's: the
+360's page art is larger and lower (x 242-1677 at 1080 against the port's 280-1628, some 95
+pixels lower): the 360's `Background` is 1024 x 725 centred across at 68 of 768 (1440 wide from
+95 at 1080, the layout's one scale), PC's is centred both ways at its own scale. Now the 360's
+`Background` shows PC's page image (its `Image`, copied when it changes) over the 360's black
+backdrop (`i_947`), and PC's whole screen (its root `Backdrop`) is transparent while the frame
+shows (its Skip still takes the click; given back when it hides). The image is set each tick (CEGUI
+keeps the image's pointer; PC may make a page's imageset anew under the same name: the review).
 
 ## 36. PC's waypoint portals with the pad (2026-10-24)
 
