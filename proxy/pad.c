@@ -1192,6 +1192,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         last_t_log = GetTickCount();
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
         x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+        x360_log(" range x100 "); x360_log_num((long)(target_range(hero) * 100));
         x360_log(" enemy "); x360_log_num((long)c);
         x360_log(" hero target "); x360_log_num((long)*(void **)(hero + 0x290));
         x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking\r\n" : "\r\n");
