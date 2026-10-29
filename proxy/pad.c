@@ -768,6 +768,8 @@ static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) 
     x360_log("pad: aim stick "); x360_log_num(lx); x360_log(" "); x360_log_num(ly);
     x360_log(" point x1000 "); x360_log_num((long)((aim_point[0] - aim_hero[0]) * 1000));
     x360_log(" "); x360_log_num((long)((aim_point[2] - aim_hero[2]) * 1000));
+    x360_log(" p70 "); x360_log_num((long)((*(float *)(hero + 0x70) - aim_hero[0]) * 1000));
+    x360_log(" "); x360_log_num((long)((*(float *)(hero + 0x78) - aim_hero[2]) * 1000));
     x360_log(" pc1cc "); x360_log_num((long)((*(float *)(hero + 0x1cc) - aim_hero[0]) * 1000));
     x360_log(" "); x360_log_num((long)((*(float *)(hero + 0x1d4) - aim_hero[2]) * 1000));
     {
