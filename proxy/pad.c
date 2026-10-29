@@ -1004,6 +1004,41 @@ static void *unit_in_view(unsigned char *hero, unsigned char *level, const float
     return best;
 }
 
+/* The comparison with the recomp's log (pad_log=1): a unit's distance and signed angle from the
+ * hero's facing, as the search measures them. */
+static void log_rel(const float *m, void *unit) {
+    float p[3], dx, dz;
+    if (!unit) return;
+    ((get_position_fn)GOG_GET_POSITION)(unit, 0, p, 1);
+    dx = p[0] - m[3];
+    dz = p[2] - m[11];
+    x360_log(" d x100 "); x360_log_num((long)(root(dx * dx + dz * dz) * 100));
+    x360_log(" a "); x360_log_num((long)angle_deg(m[10] * dx - m[2] * dz, m[2] * dx + m[10] * dz));
+}
+
+/* On a press of X: every live enemy within 15 (the search's filters but the cone), its distance,
+ * angle and line of sight. */
+static void log_scene(unsigned char *hero, unsigned char *level, const float *m) {
+    void **node = *(void ***)*(void **)(level + GOG_LEVEL_UNITS);
+    int n = 0;
+    for (; node && n < 100000; node = (void **)node[1], n++) {
+        unsigned char *u = (unsigned char *)node[0];
+        float p[3], dx, dz, from[3], to[3];
+        if (!u || u == hero || !((bool_fn)GOG_ALIVE)(u, 0)) continue;
+        if (!((bool_fn)(*(void ***)u)[0x20 / 4])(u, 0) || !u[0x6d] || !u[0x161]) continue;
+        if (!((align_fn)GOG_ALIGNMENT_MATCHES)(ALIGN_ENEMY, u)) continue;
+        ((get_position_fn)GOG_GET_POSITION)(u, 0, p, 1);
+        dx = p[0] - m[3];
+        dz = p[2] - m[11];
+        if (dx * dx + dz * dz > 225.0f) continue;
+        from[0] = m[3]; from[1] = m[7] + 5.0f; from[2] = m[11];
+        to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
+        x360_log("pad:   enemy "); x360_log_num((long)u);
+        log_rel(m, u);
+        x360_log(((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0) ? " sight\r\n" : " blocked\r\n");
+    }
+}
+
 static const char *class_of(void *object) {
     unsigned char *col = object ? *(unsigned char **)(*(unsigned char **)object - 4) : 0;
     unsigned char *td = col ? *(unsigned char **)(col + 12) : 0;
@@ -1193,8 +1228,8 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
         x360_log("pad: t "); x360_log_num((long)GetTickCount());
         x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
         x360_log(" range x100 "); x360_log_num((long)(target_range(hero) * 100));
-        x360_log(" enemy "); x360_log_num((long)c);
-        x360_log(" hero target "); x360_log_num((long)*(void **)(hero + 0x290));
+        x360_log(" enemy "); x360_log_num((long)c); log_rel(m, c);
+        x360_log(" hero target "); x360_log_num((long)*(void **)(hero + 0x290)); log_rel(m, *(void **)(hero + 0x290));
         x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking\r\n" : "\r\n");
     }
     candidate = c;
@@ -1840,6 +1875,7 @@ static void order(void) {
             hero_matrix(hero, m);
             x360_log(pressed & 0x4000 ? "pad: X pressed; near:\r\n" : "pad: A pressed; near:\r\n");
             list_near(hero, level, m);
+            if (pressed & 0x4000) log_scene(hero, level, m);
         }
         if ((!candidate && (pressed & 0x4000)) || (pressed & 0x1000) || now - last_search >= SEARCH_MS) {
             last_search = now;
