@@ -1652,6 +1652,44 @@ static void turn_patch_install(void) {
     x360_log("pad: the turn's calls logged while X is held (pad_log=1)\r\n");
 }
 
+/* pad_log=1: the hero's attack routine (0x496eb0) while X is held, its aim point +0x1cc before the
+ * path step (0x49757a, after the cursor's point, the vertical ray and the range's clamp) and after
+ * it (0x497681): the turn's point was bent from the cursor's way. Each site is a 6-byte
+ * mov reg, [esi+imm] with esi the unit; a jump to a trampoline that logs and runs it. */
+#define GOG_ATTACK_BEFORE_PATH 0x0049757a
+#define GOG_ATTACK_AFTER_PATH 0x00497681
+static void __cdecl attack_log(unsigned char *unit, int tag) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    float pos[3];
+    if (!client || unit != *(unsigned char **)(client + 0x2c) || !(buttons & 0x4000) || turn_logged >= 4000) return;
+    turn_logged++;
+    ((get_position_fn)GOG_GET_POSITION)(unit, 0, pos, 1);
+    x360_log(tag ? "pad: attack after path 1cc " : "pad: attack before path 1cc ");
+    x360_log_num((long)((*(float *)(unit + 0x1cc) - pos[0]) * 1000)); x360_log(" ");
+    x360_log_num((long)((*(float *)(unit + 0x1d4) - pos[2]) * 1000));
+    x360_log("\r\n");
+}
+static void site_patch_install(unsigned addr, int tag) {
+    unsigned char *at = (unsigned char *)addr, *t;
+    DWORD old;
+    int i, n = 0;
+    if (at[0] != 0x8b || (at[1] & 0xc7) != 0x86) { x360_log("pad: an attack site not as read: not logged\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x6a; t[n++] = (unsigned char)tag;                       /* push tag */
+    t[n++] = 0x56;                                                    /* push esi */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)attack_log - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 6; i++) t[n++] = at[i];                           /* the mov replaced */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 6) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 6, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+}
+
 /* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
  * expanded nodes (sub_82217DA8 after sub_822F6B70: hero+512's +68 = 200; the pet's 800), PC at 800
  * (GOG 0x416d40: push 0x320, then 0x486130 writes [hero+0x20c]+0x44; the pet's 800 at 0x416e92 and
@@ -2170,7 +2208,11 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running && verbose) turn_patch_install();
+    if (x360_pad_running && verbose) {
+        turn_patch_install();
+        site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
+        site_patch_install(GOG_ATTACK_AFTER_PATH, 1);
+    }
     if (x360_pad_running) path_cap_patch();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");
