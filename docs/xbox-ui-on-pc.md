@@ -4196,4 +4196,7 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   (+510) puts the stick's point in +448 unchanged (no range, no path; the path's last waypoint
   replaces it only when the hold byte is clear) and the update turns to it. **[port]** At the
   update's hold call (0x491b60 returning to 0x4af410, the point +0x1cc), for the hero while X is
-  held, +0x1cc is set to the pad's point (the 360's) first. Not played yet.
+  held, +0x1cc is set to the pad's point (the 360's) first. The same sweep replayed then: PC's
+  facing at the end of each direction equal to the recomp's within 1 degree in all 8. At rest with X
+  still held PC's hero drifted 6 degrees in 0.8 s (the recomp's none): left open. Not played by the
+  owner yet.
