@@ -8,7 +8,7 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Alpha:** played with Epic's and Steam's builds on Windows, Steam's on the Steam Deck, and
-> GOG's under Proton on Linux (v0.3.1; the changes since were played with GOG's only). Report problems in
+> GOG's under Proton on Linux (v0.5.5). Report problems in
 > [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
