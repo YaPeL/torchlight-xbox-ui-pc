@@ -1665,7 +1665,7 @@ static void __cdecl attack_log(unsigned char *unit, int tag) {
     if (!client || unit != *(unsigned char **)(client + 0x2c) || !(buttons & 0x4000) || turn_logged >= 4000) return;
     turn_logged++;
     ((get_position_fn)GOG_GET_POSITION)(unit, 0, pos, 1);
-    x360_log(tag ? "pad: attack after path 1cc " : "pad: attack before path 1cc ");
+    x360_log(tag == 2 ? "pad: setDestination walks (path) 1cc " : tag ? "pad: attack after path 1cc " : "pad: attack before path 1cc ");
     x360_log_num((long)((*(float *)(unit + 0x1cc) - pos[0]) * 1000)); x360_log(" ");
     x360_log_num((long)((*(float *)(unit + 0x1d4) - pos[2]) * 1000));
     x360_log("\r\n");
@@ -1684,6 +1684,46 @@ static void site_patch_install(unsigned addr, int tag) {
     t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
     t[n++] = 0x61;                                                    /* popad */
     for (i = 0; i < 6; i++) t[n++] = at[i];                           /* the mov replaced */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 6) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 6, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+}
+
+/* pad_log=1: setDestination (0x494b30) for the hero while X is held, its caller, the hold byte and
+ * the destination, and its walking branch's path step (0x494dbb, logged by attack_log with tag 2):
+ * the 360's moveTo (sub_8228F8C8) skips the path when the hold byte is set. */
+#define GOG_DEST_PATH_STEP 0x00494dbb
+static void __cdecl dest_log(unsigned char *unit, unsigned ret, float x, float z) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    float pos[3];
+    if (!client || unit != *(unsigned char **)(client + 0x2c) || !(buttons & 0x4000) || turn_logged >= 4000) return;
+    turn_logged++;
+    ((get_position_fn)GOG_GET_POSITION)(unit, 0, pos, 1);
+    x360_log("pad: setDestination from "); x360_log_num((long)ret);
+    x360_log(" hold "); x360_log_num(unit[GOG_HOLD_POSITION]);
+    x360_log(" dest "); x360_log_num((long)((x - pos[0]) * 1000)); x360_log(" "); x360_log_num((long)((z - pos[2]) * 1000));
+    x360_log("\r\n");
+}
+static void dest_patch_install(void) {
+    static const unsigned char want[6] = {0x83, 0xec, 0x28, 0x53, 0x55, 0x56};   /* sub esp, 0x28; push ebx, ebp, esi */
+    unsigned char *at = (unsigned char *)GOG_SET_DESTINATION, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < 6; i++)
+        if (at[i] != want[i]) { x360_log("pad: setDestination's entry not as read: not logged\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x2c;       /* push [esp+44]: z */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x2c;       /* push [esp+44]: x */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the return address */
+    t[n++] = 0x51;                                                    /* push ecx: the unit */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)dest_log - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x10;                      /* add esp, 16 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 6; i++) t[n++] = at[i];
     t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 6) - (t + n + 5)); n += 5;
     if (!VirtualProtect(at, 6, 0x40, &old)) return;
     at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90;
@@ -2212,6 +2252,8 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
         site_patch_install(GOG_ATTACK_AFTER_PATH, 1);
+        site_patch_install(GOG_DEST_PATH_STEP, 2);
+        dest_patch_install();
     }
     if (x360_pad_running) path_cap_patch();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");

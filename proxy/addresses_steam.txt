@@ -69,6 +69,7 @@
 0x00494ab0 0x00492a50 verified   code    window, body, callers x6
 0x00494b30 0x00492ad0 verified   code    window, body, callers x5
 0x00494b67 0x00492b07 verified   comment window 16, local 0+16 in 0x494b30->0x492ad0
+0x00494dbb 0x00492d5b verified   code    window 24, local in 0x494b30->0x492ad0
 0x0049511b 0x004930bb verified   comment window, local
 0x0049757a 0x00495509 verified   code    window 16, local in 0x496eb0->0x494e50
 0x00497681 0x00495611 verified   code    window 16, local in 0x496eb0->0x494e50
