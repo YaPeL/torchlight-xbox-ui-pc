@@ -1606,6 +1606,52 @@ static void walk_patch_install(void) {
     x360_log(")\r\n");
 }
 
+/* ---- pad_log=1: who turns the hero while X is held (issue #89's measurement) ----
+ * PC's turn (0x48d390, thiscall: the unit, a direction, a rate) writes +0x1d8 and turns the facing
+ * from +0xa0/+0xa8. Each call for the hero while X is down is logged with its caller, the direction,
+ * +0xa0/+0xa8 and the rotation's m[2], m[10]: the replayed X sweep left the hero's facing bent from
+ * the aim point. A jump at its entry (sub esp, 0x90: 6 bytes) to a trampoline. */
+#define GOG_TURN 0x0048d390
+static int turn_logged;
+static void __cdecl turn_log(unsigned char *unit, const float *dir, unsigned ret) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    float m[16];
+    if (!client || unit != *(unsigned char **)(client + 0x2c) || !(buttons & 0x4000) || turn_logged >= 4000) return;
+    turn_logged++;
+    hero_matrix(unit, m);
+    x360_log("pad: turncall t "); x360_log_num((long)GetTickCount());
+    x360_log(" from "); x360_log_num((long)ret);
+    x360_log(" dir "); x360_log_num((long)(dir[0] * 1000)); x360_log(" "); x360_log_num((long)(dir[2] * 1000));
+    x360_log(" a0 "); x360_log_num((long)(*(float *)(unit + 0xa0) * 1000)); x360_log(" "); x360_log_num((long)(*(float *)(unit + 0xa8) * 1000));
+    x360_log(" m "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+    x360_log(" 1cc "); x360_log_num((long)((*(float *)(unit + 0x1cc) - m[3]) * 1000)); x360_log(" "); x360_log_num((long)((*(float *)(unit + 0x1d4) - m[11]) * 1000));
+    x360_log("\r\n");
+}
+static void turn_patch_install(void) {
+    static const unsigned char want[6] = {0x81, 0xec, 0x90, 0x00, 0x00, 0x00};   /* sub esp, 0x90 */
+    unsigned char *at = (unsigned char *)GOG_TURN, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < 6; i++)
+        if (at[i] != want[i]) { x360_log("pad: the turn's entry not as read: no turn log\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x20;       /* push [esp+32]: the return address */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the direction */
+    t[n++] = 0x51;                                                    /* push ecx: the unit */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)turn_log - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x0c;                      /* add esp, 12 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 6; i++) t[n++] = at[i];                           /* sub esp, 0x90 */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 6) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 6, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+    x360_log("pad: the turn's calls logged while X is held (pad_log=1)\r\n");
+}
+
 /* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
  * expanded nodes (sub_82217DA8 after sub_822F6B70: hero+512's +68 = 200; the pet's 800), PC at 800
  * (GOG 0x416d40: push 0x320, then 0x486130 writes [hero+0x20c]+0x44; the pet's 800 at 0x416e92 and
@@ -2124,6 +2170,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
+    if (x360_pad_running && verbose) turn_patch_install();
     if (x360_pad_running) path_cap_patch();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");
     x360_log(direct ? ", direct (setDestination)" : edges_by_message ? ", edges as window messages" : ", edges into CEGUI");

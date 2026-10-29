@@ -51,6 +51,7 @@
 0x004885b0 0x00486740 verified   code    window, body, callers x4, callers-global
 0x00488aa0 0x00486c90 verified   code    window, body, callers x6
 0x00489a30 0x00487ba0 verified   code    window, body, callers x2
+0x0048d390 0x0048b450 verified   code    window 16, body +0x8,+0x18,+0x30, callers x2
 0x0048d690 0x0048b750 verified   comment body, callers x6
 0x0048ec4b 0x0048cccb verified   comment window, local
 0x0048ef80 0x0048d000 verified   comment window, body, callers x2
