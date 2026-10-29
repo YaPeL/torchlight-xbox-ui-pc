@@ -753,6 +753,7 @@ static void zoom_tick(unsigned char *client) {
  * window; the point's and the hero's pixels. */
 static float aim_hero[3];
 static int verbose;                         /* pad_log=1: the per-search and near-list diagnosis */
+static int camera_ground(unsigned char *client, float *fx, float *fz);
 static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) {
     static unsigned last;
     unsigned now = GetTickCount();
@@ -768,6 +769,11 @@ static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) 
     x360_log(" "); x360_log_num((long)((aim_point[2] - aim_hero[2]) * 1000));
     x360_log(" pc1cc "); x360_log_num((long)((*(float *)(hero + 0x1cc) - aim_hero[0]) * 1000));
     x360_log(" "); x360_log_num((long)((*(float *)(hero + 0x1d4) - aim_hero[2]) * 1000));
+    {
+        float cfx = 0.0f, cfz = 0.0f;
+        camera_ground(client, &cfx, &cfz);
+        x360_log(" camera "); x360_log_num((long)(cfx * 1000)); x360_log(" "); x360_log_num((long)(cfz * 1000));
+    }
     x360_log(" win "); x360_log_num(rc->right - rc->left); x360_log(" "); x360_log_num(rc->bottom - rc->top);
     x360_log(projected ? " px " : " not projected, ok "); x360_log_num(projected ? (long)px : aim_point_ok);
     x360_log(" "); x360_log_num(projected ? (long)py : 0);
