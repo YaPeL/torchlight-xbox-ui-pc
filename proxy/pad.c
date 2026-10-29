@@ -1354,7 +1354,8 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     unsigned i;
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
     if (pressed & 0x4000) log_until = GetTickCount() + 3000;
-    /* With the stick past 0.1 the 360's X drops the target and only walks (sub_8221B8E8). */
+    /* With the stick past 0.1 the 360's X drops the target (sub_8221B8E8); the attack goes toward
+     * the stick, by the walk's setDestination with the hold byte set. */
     if ((pressed & 0x4000) && !stick_active()) {
         if (candidate) attack_candidate(hero);
         else if (item_candidate && derives_from(item_candidate, ".?AVCBreakable@@")) break_item(hero);
@@ -1773,6 +1774,22 @@ static void order(void) {
         float l2 = ((float)lx * lx + (float)ly * ly) / 1000000.0f;
         x360_walk_factor = stick_active() ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
     }
+    /* The 360 holds position while X is down (sub_821EBA48, 0x821EC21C: the hero's +0x1FE, PC's
+     * +0x20a, PC's Shift; set every frame X is down, cleared the first frame it is up). With it the
+     * stick's setDestination below attacks toward the stick instead of walking (sub_8221C730 and
+     * setDestination's hold branch, sub_8228F8C8 at 0x8228FF9C), and the hero's own attack update
+     * never chases its target (sub_82295138, 0x8229543C). */
+    {
+        static int holding;
+        static unsigned char saved;
+        if (buttons & 0x4000) {
+            if (!holding) { saved = hero[GOG_HOLD_POSITION]; holding = 1; }
+            hero[GOG_HOLD_POSITION] = 1;
+        } else if (holding) {
+            hero[GOG_HOLD_POSITION] = saved;
+            holding = 0;
+        }
+    }
     if (stick_active()) {
         if (!was_active) {
             /* Moving the stick drops the target, as on the 360. */
@@ -1780,8 +1797,9 @@ static void order(void) {
             ((set_target_fn)GOG_SET_TARGET_ITEM)(hero, 0, 0);
             drop_calls++;
         }
-        /* X held walks too: the 360's X (sub_8221B8E8, every frame while held) drops the hero's
-         * target while the stick is past 0.1 and moves it toward the stick (sub_8221C730). */
+        /* With X held too: the 360's X (sub_8221B8E8, every frame while held) drops the hero's
+         * target while the stick is past 0.1 and sends it toward the stick (sub_8221C730), which
+         * with the hold byte set is an attack toward the stick, not a walk. */
         {
             int changed = direction_changed();
             if (changed && !change_t0) change_t0 = now;

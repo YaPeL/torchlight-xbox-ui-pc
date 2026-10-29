@@ -4141,3 +4141,20 @@ or the facing at rest), and `sub_8221C520` rescales it to a distance from the sk
 (`sub_82293548`) makes its own search within the skill's angle (its data `+0x64`) and aims at the
 unit found. The port presses PC's hotbar key with the virtual cursor 2 units ahead on screen: the
 distance and the trigger's pressure are not the 360's. Not changed yet.
+
+**Compared with the recomp (2026-10-29, the owner's runs on one save: claud with a bow, Orden Mines
+floor 3 on arrival).** **[the runs; read]**
+- The recomp's probe logged, per frame, the rows `sub_821B58C0` evaluates (local x, z, angle,
+  sight, priority) and its pick. The port's rule (above) replayed on those rows gives the 360's
+  pick in all 4919 picks of a 121 s run: the choice is the 360's. It favours units at negative
+  angles and depends on the list's order, on the 360 too.
+- What felt different was X held. The 360 sets the hero's hold byte (`+0x1FE`, PC's `+0x20a`,
+  PC's Shift) every frame X is down and clears it the first frame it is up (`sub_821EBA48`,
+  0x821EC21C, 0x821EC254). While X is down `sub_8221B8E8` runs each frame: past 0.1 on the stick
+  it drops the hero's target and calls `sub_8221C730`, the stick's `setDestination`
+  (`sub_8228F8C8`), which with the hold byte attacks toward the point instead of walking
+  (0x8228FF9C); and the hero's attack update never chases with it set (`sub_82295138`,
+  0x8229543C): out of range it attacks in place. The port held the stick still while X was down
+  and repeated its attack every 0.1 s. Now: the hold byte follows X; the stick's walk runs with X
+  down (so it attacks toward the stick); X's press and repeat attack the candidate only with the
+  stick at rest. Not run yet.
