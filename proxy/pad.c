@@ -748,6 +748,34 @@ static void zoom_tick(unsigned char *client) {
     *(float *)(cam + 0x1c) = z;
 }
 
+/* pad_log=1, X held: the aim point's way through the cursor, every 30 ms (issue #89's run: the
+ * hero turned one fixed way). The stick; the point and PC's +0x1cc less the hero, times 1000; the
+ * window; the point's and the hero's pixels. */
+static float aim_hero[3];
+static int verbose;                         /* pad_log=1: the per-search and near-list diagnosis */
+static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) {
+    static unsigned last;
+    unsigned now = GetTickCount();
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    unsigned char *hero = client ? *(unsigned char **)(client + 0x2c) : 0;
+    float hx = -1.0f, hy = -1.0f;
+    if (now - last < 30 || !hero) return;
+    last = now;
+    x360_world_to_screen(aim_hero, (float)(rc->right - rc->left), (float)(rc->bottom - rc->top), &hx, &hy);
+    x360_log("pad: aim stick "); x360_log_num(lx); x360_log(" "); x360_log_num(ly);
+    x360_log(" point x1000 "); x360_log_num((long)((aim_point[0] - aim_hero[0]) * 1000));
+    x360_log(" "); x360_log_num((long)((aim_point[2] - aim_hero[2]) * 1000));
+    x360_log(" pc1cc "); x360_log_num((long)((*(float *)(hero + 0x1cc) - aim_hero[0]) * 1000));
+    x360_log(" "); x360_log_num((long)((*(float *)(hero + 0x1d4) - aim_hero[2]) * 1000));
+    x360_log(" win "); x360_log_num(rc->right - rc->left); x360_log(" "); x360_log_num(rc->bottom - rc->top);
+    x360_log(projected ? " px " : " not projected, ok "); x360_log_num(projected ? (long)px : aim_point_ok);
+    x360_log(" "); x360_log_num(projected ? (long)py : 0);
+    x360_log(" q "); x360_log_num(q.x); x360_log(" "); x360_log_num(q.y);
+    x360_log(" hero px "); x360_log_num((long)hx); x360_log(" "); x360_log_num((long)hy);
+    x360_log("\r\n");
+}
+
 static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     BOOL r = real_get_cursor_pos(p);
     HWND w;
@@ -779,7 +807,8 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         POINT q;
         q.x = cx;
         q.y = cy;
-        float px, py;
+        float px = 0.0f, py = 0.0f;
+        int projected = 0;
         if (direct && aim_point_ok && aim_until && GetTickCount() < aim_until &&
             x360_world_to_screen(aim_point, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
             /* Aiming (X held, a skill's key): the 360's point itself, 2 units from the hero along the
@@ -788,6 +817,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
              * is bent by the perspective (section 31) and by the hero's place on the screen. */
             q.x = (long)px;
             q.y = (long)py;
+            projected = 1;
         } else if (len2 > DEAD_ZONE * DEAD_ZONE) {
             /* The direction only, at a fixed distance, as the 360 does (2 world units). */
             long len = 1;
@@ -810,6 +840,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
                 edge(w, held, q.x, q.y);
             }
         }
+        if (verbose && direct && (buttons & 0x4000)) aim_log(&rc, projected, px, py, q);
         ClientToScreen(w, &q);
         *p = q;
     }
@@ -1201,7 +1232,6 @@ static void list_near(unsigned char *hero, unsigned char *level, const float *m)
 
 static long long t_units, t_items, w_units, w_items;
 static int want_items;                      /* unused: the item search runs every 0.1 s for the highlight */
-static int verbose;                         /* pad_log=1: the per-search and near-list diagnosis */
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
     void *c, *a, *it;
@@ -1821,7 +1851,9 @@ static void order(void) {
      * toward the stick instead of walking (setDestination's hold branch, the 360's 0x8228FF9C),
      * and the hero's own attack update never chases (the 360's sub_82295138, 0x8229543C). */
     if (buttons & 0x4000) {
-        if ((int)(aim_until - (now + 200)) < 0) aim_until = now + 200;   /* a skill's 400 ms kept */
+        /* A skill's 400 ms kept. Not by the difference alone: with aim_until 0 and the tick count
+         * past 2^31 it reads as ahead and the aim was never set (the owner's run, 2026-10-29). */
+        if (!aim_until || (int)(aim_until - (now + 200)) < 0) aim_until = now + 200;
         if (!hold_key_down) { post_key_state(0x10 /* VK_SHIFT */, 0x2a, 1); hold_key_down = 1; }
         hold_key_kept = 1;
         /* The posted key reaches PC's client a frame later: the byte now, for this frame's
@@ -1835,6 +1867,7 @@ static void order(void) {
     if (aim_until && now < aim_until) {
         float p[3], dx, dz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f, fx, fz, len;
         ((get_position_fn)GOG_GET_POSITION)(hero, 0, p, 1);
+        aim_hero[0] = p[0]; aim_hero[1] = p[1]; aim_hero[2] = p[2];
         if (stick_active() && camera_ground(client, &fx, &fz)) {
             dx = sx * -fz + sy * fx;
             dz = sx * fx + sy * fz;
