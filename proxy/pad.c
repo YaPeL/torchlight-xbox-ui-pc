@@ -754,6 +754,7 @@ static void zoom_tick(unsigned char *client) {
 static float aim_hero[3];
 static int verbose;                         /* pad_log=1: the per-search and near-list diagnosis */
 static int camera_ground(unsigned char *client, float *fx, float *fz);
+static void hero_matrix(unsigned char *hero, float *m);
 static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) {
     static unsigned last;
     unsigned now = GetTickCount();
@@ -773,6 +774,25 @@ static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) 
         float cfx = 0.0f, cfz = 0.0f;
         camera_ground(client, &cfx, &cfz);
         x360_log(" camera "); x360_log_num((long)(cfx * 1000)); x360_log(" "); x360_log_num((long)(cfz * 1000));
+    }
+    {
+        /* CEGUI's own cursor (the game's, from its input, not GetCursorPos) and the facing. */
+        typedef void *(__cdecl *single_fn)(void);
+        typedef float *(__fastcall *pos_fn)(void *self, void *edx, float *out);
+        FARPROC x360_need(const char *name);
+        static single_fn cursor_get;
+        static pos_fn cursor_pos;
+        void *cur;
+        float v[2] = {-1.0f, -1.0f}, m[16];
+        if (!cursor_get) {
+            cursor_get = (single_fn)x360_need("?getSingletonPtr@?$Singleton@VMouseCursor@CEGUI@@@CEGUI@@SAPAVMouseCursor@2@XZ");
+            cursor_pos = (pos_fn)x360_need("?getPosition@MouseCursor@CEGUI@@QBE?AVVector2@2@XZ");
+        }
+        cur = cursor_get ? cursor_get() : 0;
+        if (cur && cursor_pos) cursor_pos(cur, 0, v);
+        x360_log(" cegui "); x360_log_num((long)v[0]); x360_log(" "); x360_log_num((long)v[1]);
+        hero_matrix(hero, m);
+        x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
     }
     x360_log(" win "); x360_log_num(rc->right - rc->left); x360_log(" "); x360_log_num(rc->bottom - rc->top);
     x360_log(projected ? " px " : " not projected, ok "); x360_log_num(projected ? (long)px : aim_point_ok);
