@@ -4170,7 +4170,7 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   window messages, as the hotbar's keys) and the virtual cursor points the stick's way (its last
   way at rest). In an unattended run the hero turned with the sweep, attacked toward it and stayed
   in place.
-- **The aim point (2026-10-29, written, not built: the owner asked for code reading only).** With
+- **The aim point (2026-10-29).** With
   X held the hero turns toward the point PC's client takes from the cursor (0x4153a5); the
   virtual cursor sat on the screen at the stick's angle, which the perspective bends on the
   ground (section 31) and the hero's place on the screen shifts: the owner found aiming hard. Now,
@@ -4179,3 +4179,21 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   stick turned by the camera's yaw, or along the facing at rest. The review's points: the hold key
   is released whenever a frame's pad update did not reach play (a menu, a load, death), and a
   keyboard Shift held is left down.
+  Measured: in the owner's first run the aim window was never set (a wrap-safe comparison read 0 as
+  ahead once the tick count passed 2^31), so the client faced the real mouse: fixed (ea9ea58). After
+  it the point PC's client stores matched the 360's to 0.01 degrees (median of 1028 frames).
+- **X's turn against the recomp (2026-10-29, measured).** The recomp agent's X sweep (X held, the
+  stick through 8 directions, 0.4 s each, from the bench save on arrival) replayed on PC
+  (`pad_replay`): the recomp's hero faced the stick's point within 4 degrees; PC's ended bent toward
+  the screen's bottom (up to 40-65 degrees; 0 at the stick's up and down) and kept turning at rest.
+  Ruled out by measurement: the real mouse (CEGUI's cursor was the virtual one), the hero's +0x70
+  against `getPosition(true)` (equal), the facing read (+0xa0/+0xa8, the turn's, equal to the
+  rotation's), the hero's 200-node path cap (`pad_path_cap=0`: the same bend), the attack routine
+  0x496eb0 (not run) and setDestination's path step (not run: with the hold byte its branch
+  0x495119 stores the point unchanged, as the 360's). The only turn is the update's hold branch
+  (0x4af3f7 -> 0x491b60 -> 0x48d390), and by then +0x1cc is another point, near the hero and bent;
+  its writer was not found. **[read, 360; the recomp agent]** `sub_8228F8C8` with the hold byte
+  (+510) puts the stick's point in +448 unchanged (no range, no path; the path's last waypoint
+  replaces it only when the hold byte is clear) and the update turns to it. **[port]** At the
+  update's hold call (0x491b60 returning to 0x4af410, the point +0x1cc), for the hero while X is
+  held, +0x1cc is set to the pad's point (the 360's) first. Not played yet.

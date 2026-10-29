@@ -1730,6 +1730,51 @@ static void dest_patch_install(void) {
     VirtualProtect(at, 6, old, &old);
 }
 
+/* ---- The turn while X is held: the 360's point (issue #89) ----
+ * The 360's moveTo (sub_8228F8C8, the recomp agent's reading) with the hold byte set (+510) puts
+ * the stick's point in +448 unchanged, no range and no path, and the unit update turns to it
+ * (sub_821D3FD8 at 0x821D50B4, sub_8219FD08). PC's setDestination does the same with its hold byte
+ * (0x494bf5 -> 0x495175), but by its own update's hold branch (0x4af3f7: the turn to +0x1cc,
+ * 0x491b60) the point is another, near the hero and bent toward the screen's bottom (measured
+ * against the recomp's X sweep: up to 40-65 degrees; its writer not found). So at that call, for
+ * the hero while the pad aims, +0x1cc is the pad's point (aim_point: the 360's, from order()).
+ * A jump at 0x491b60's entry (sub esp, 0xc; push esi; push edi) to a trampoline that calls
+ * hold_turn_point with the unit, the point's address and the return address. */
+#define GOG_TURN_TO_POINT 0x00491b60
+#define GOG_UPDATE_HOLD_TURN_RET 0x004af410   /* after the update's call at 0x4af40b */
+static void __cdecl hold_turn_point(unsigned char *unit, float *point, unsigned ret) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    if (ret != GOG_UPDATE_HOLD_TURN_RET || !client || unit != *(unsigned char **)(client + 0x2c)) return;
+    if (point != (float *)(unit + 0x1cc) || !unit[GOG_HOLD_POSITION] || !(buttons & 0x4000)) return;
+    if (!aim_point_ok || !aim_until || (int)(GetTickCount() - aim_until) >= 0) return;
+    point[0] = aim_point[0];
+    point[2] = aim_point[2];
+}
+static void hold_turn_install(void) {
+    static const unsigned char want[5] = {0x83, 0xec, 0x0c, 0x56, 0x57};
+    unsigned char *at = (unsigned char *)GOG_TURN_TO_POINT, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < 5; i++)
+        if (at[i] != want[i]) { x360_log("pad: the turn to a point not as read: X's turn left to PC\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) { x360_log("pad: no memory for X's turn\r\n"); return; }
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x20;       /* push [esp+32]: the return address */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the point */
+    t[n++] = 0x51;                                                    /* push ecx: the unit */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)hold_turn_point - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x0c;                      /* add esp, 12 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 5; i++) t[n++] = at[i];                           /* the entry replaced */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 5) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 5, 0x40, &old)) { x360_log("pad: the turn to a point not writable\r\n"); return; }
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5));
+    VirtualProtect(at, 5, old, &old);
+    x360_log("pad: X's turn faces the 360's point (0x491b60)\r\n");
+}
+
 /* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
  * expanded nodes (sub_82217DA8 after sub_822F6B70: hero+512's +68 = 200; the pet's 800), PC at 800
  * (GOG 0x416d40: push 0x320, then 0x486130 writes [hero+0x20c]+0x44; the pet's 800 at 0x416e92 and
@@ -2248,6 +2293,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
+    if (x360_pad_running) hold_turn_install();
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
