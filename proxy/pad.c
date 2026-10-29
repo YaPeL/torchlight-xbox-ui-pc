@@ -804,6 +804,19 @@ static void aim_log(const RECT *rc, int projected, float px, float py, POINT q) 
     x360_log("\r\n");
 }
 
+/* The height PC's findWorldLocation (0x411d60) casts the cursor's ray onto: the hero's +0x1b4
+ * (its y) plus 1.7 (0xa91ce4) when its flag is set, as every attack, skill and hold-position caller
+ * passes it (0x4148cc, 0x414e84, 0x414ef2, 0x41538b, 0x4973a3, 0x5e4c87). The aim point projected
+ * at the hero's own height came back from that plane bent toward the camera's foot, the screen's
+ * bottom (the hold turn and the skills: up to 40-65 degrees against the recomp's X sweep). */
+#define AIM_PLANE_RAISE 1.7f
+static float aim_plane_y(void) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    unsigned char *hero = client ? *(unsigned char **)(client + 0x2c) : 0;
+    return hero ? *(float *)(hero + 0x1b8) + AIM_PLANE_RAISE : aim_point[1];
+}
+
 static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     BOOL r = real_get_cursor_pos(p);
     HWND w;
@@ -837,8 +850,12 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         q.y = cy;
         float px = 0.0f, py = 0.0f;
         int projected = 0;
+        float on_plane[3];
+        on_plane[0] = aim_point[0];
+        on_plane[1] = aim_plane_y();
+        on_plane[2] = aim_point[2];
         if (direct && aim_point_ok && aim_until && GetTickCount() < aim_until &&
-            x360_world_to_screen(aim_point, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
+            x360_world_to_screen(on_plane, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
             /* Aiming (X held, a skill's key): the 360's point itself, 2 units from the hero along the
              * stick turned by the camera's yaw, or along the facing at rest (sub_8221C838), projected
              * by the camera. A point on the screen at the stick's angle, cast to the ground,
@@ -1748,6 +1765,14 @@ static void __cdecl hold_turn_point(unsigned char *unit, float *point, unsigned 
     if (ret != GOG_UPDATE_HOLD_TURN_RET || !client || unit != *(unsigned char **)(client + 0x2c)) return;
     if (point != (float *)(unit + 0x1cc) || !unit[GOG_HOLD_POSITION] || !(buttons & 0x4000)) return;
     if (!aim_point_ok || !aim_until || (int)(GetTickCount() - aim_until) >= 0) return;
+    if (verbose && turn_logged < 4000) {
+        /* What PC had there, beside the pad's point (both less the hero's position, x1000). */
+        turn_logged++;
+        x360_log("pad: hold turn pc "); x360_log_num((long)((point[0] - aim_hero[0]) * 1000));
+        x360_log(" "); x360_log_num((long)((point[2] - aim_hero[2]) * 1000));
+        x360_log(" pad "); x360_log_num((long)((aim_point[0] - aim_hero[0]) * 1000));
+        x360_log(" "); x360_log_num((long)((aim_point[2] - aim_hero[2]) * 1000)); x360_log("\r\n");
+    }
     point[0] = aim_point[0];
     point[2] = aim_point[2];
 }
@@ -2059,8 +2084,15 @@ static void order(void) {
     }
     /* The aim point (X held, or a skill's key just pressed): the 360's sub_8221C838, the hero plus
      * 2.0 along the stick turned by the camera's yaw (probe()'s world_x, world_z), or, at rest,
-     * along the hero's facing (its vfunc +0x98 vector: the third column of its rotation). */
+     * along the hero's facing (its vfunc +0x98 vector: the third column of its rotation). At rest
+     * the way is kept (the stick's last, or the facing when the aim began at rest), as the 360's
+     * +448 keeps the last point while the stick is still (sub_8221B8E8 calls moveTo only past
+     * 0.1): read from the facing each frame, the hero's own turn toward it fed back and drifted
+     * (6 degrees in 0.8 s against the recomp's sweep). */
+    static float rest_dx, rest_dz;
+    static int rest_set;
     aim_point_ok = 0;
+    if (!(aim_until && now < aim_until)) rest_set = 0;
     if (aim_until && now < aim_until) {
         float p[3], dx, dz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f, fx, fz, len;
         ((get_position_fn)GOG_GET_POSITION)(hero, 0, p, 1);
@@ -2068,11 +2100,18 @@ static void order(void) {
         if (stick_active() && camera_ground(client, &fx, &fz)) {
             dx = sx * -fz + sy * fx;
             dz = sx * fx + sy * fz;
+            rest_dx = dx;   /* kept for the stick's release, as the 360's last point */
+            rest_dz = dz;
+            rest_set = 1;
+        } else if (rest_set) {
+            dx = rest_dx;
+            dz = rest_dz;
         } else {
             float m[16];
             hero_matrix(hero, m);
-            dx = m[2];
-            dz = m[10];
+            dx = rest_dx = m[2];
+            dz = rest_dz = m[10];
+            rest_set = 1;
         }
         len = root(dx * dx + dz * dz);
         if (len > 1e-3f) {
