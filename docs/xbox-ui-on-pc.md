@@ -4124,7 +4124,7 @@ nearer ones seem chosen without regard to the hero's facing. Read again in the r
   `0x488aa0`: the alignments differ, or one is 4) beats one it is not, whatever the distance;
   otherwise only a nearer unit replaces the best, and between two hostile ones only if its signed
   angle (`atan2(local x, local z)`, degrees) is not more than 5 past the best's. The port took the
-  nearest. Both now done (not run yet).
+  nearest. Both now done (played: below).
 - **A second pass inside the search, not done:** when the cone has no unit, any angle within 3.0,
   with no sight test, for units `sub_821B8D70` accepts: beyond 2.0 only when the hero's byte
   `+0x1FC` is clear and within 2.75; and the unit in a list `sub_821E3C48` keeps, or with one of
@@ -4142,8 +4142,8 @@ or the facing at rest), and `sub_8221C520` rescales it to a distance from the sk
 unit found. The port presses PC's hotbar key with the virtual cursor 2 units ahead on screen: the
 distance and the trigger's pressure are not the 360's. Not changed yet.
 
-**Compared with the recomp (2026-10-29, the owner's runs on one save: claud with a bow, Orden Mines
-floor 3 on arrival).** **[the runs; read]**
+**Compared with the recomp (2026-10-29, the owner's runs on one save: the test character with a
+bow, a mines floor saved on arrival).** **[the runs; read]**
 - The recomp's probe logged, per frame, the rows `sub_821B58C0` evaluates (local x, z, angle,
   sight, priority) and its pick. The port's rule (above) replayed on those rows gives the 360's
   pick in all 4919 picks of a 121 s run: the choice is the 360's. It favours units at negative
@@ -4157,7 +4157,7 @@ floor 3 on arrival).** **[the runs; read]**
   0x8229543C): out of range it attacks in place. The port held the stick still while X was down
   and repeated its attack every 0.1 s. Now: the hold byte follows X; the stick's walk runs with X
   down (so it attacks toward the stick); X's press and repeat attack the candidate only with the
-  stick at rest. Not run yet.
+  stick at rest (the hold byte so written did not last: the next bullet).
 - **The hold byte written by the port was lost (measured, 2026-10-29).** With X held and the stick
   sweeping, PC's hero never turned (its facing fixed 4 s), while the recomp's turned toward the
   stick. The recomp's probe of its unit update (`sub_821D3FD8`): with `+0x1FE` set and no running
@@ -4170,3 +4170,12 @@ floor 3 on arrival).** **[the runs; read]**
   window messages, as the hotbar's keys) and the virtual cursor points the stick's way (its last
   way at rest). In an unattended run the hero turned with the sweep, attacked toward it and stayed
   in place.
+- **The aim point (2026-10-29, written, not built: the owner asked for code reading only).** With
+  X held the hero turns toward the point PC's client takes from the cursor (0x4153a5); the
+  virtual cursor sat on the screen at the stick's angle, which the perspective bends on the
+  ground (section 31) and the hero's place on the screen shifts: the owner found aiming hard. Now,
+  while X is held or a skill's key aims, the virtual cursor is the projection (Ogre's camera, as
+  the "A Interact" prompt's) of the 360's point, `sub_8221C838`'s: the hero plus 2.0 along the
+  stick turned by the camera's yaw, or along the facing at rest. The review's points: the hold key
+  is released whenever a frame's pad update did not reach play (a menu, a load, death), and a
+  keyboard Shift held is left down.

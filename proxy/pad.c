@@ -150,7 +150,7 @@ typedef void *(__fastcall *find_item_fn)(void *level, void *edx, const float *ma
 /* The 360's numbers (docs/xbox-ui-on-pc.md, section 9a). */
 #define TARGET_HALF_ANGLE 30.0f
 #define TARGET_MIN 0.5f
-#define TARGET_RANGE 7.0f
+#define TARGET_RANGE 7.0f      /* the enemy search's least range (target_range) */
 #define TARGET_RANGE_ANY 3.5f
 #define BEHIND 1.5f           /* the 360's second pass: its origin 1.5 behind the hero */
 #define ITEM_HALF_ANGLE 60.0f
@@ -162,6 +162,9 @@ static float face_x = 0.0f, face_z = 1.0f; /* the hero's facing: the stick's las
 static void *candidate, *item_candidate;    /* the 360's +0x1BC and +0x1C4 */
 static unsigned aim_until;                  /* the virtual cursor aims ahead of the hero until then */
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
+static float aim_point[3];                  /* the 360's aim point in the world (order(), while aiming) */
+static int aim_point_ok;
+int x360_world_to_screen(const float *p, float sw, float sh, float *x, float *y);   /* proxy/x360_menu.c */
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
 void x360_run_console(void);
@@ -776,7 +779,16 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         POINT q;
         q.x = cx;
         q.y = cy;
-        if (len2 > DEAD_ZONE * DEAD_ZONE) {
+        float px, py;
+        if (direct && aim_point_ok && aim_until && GetTickCount() < aim_until &&
+            x360_world_to_screen(aim_point, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
+            /* Aiming (X held, a skill's key): the 360's point itself, 2 units from the hero along the
+             * stick turned by the camera's yaw, or along the facing at rest (sub_8221C838), projected
+             * by the camera. A point on the screen at the stick's angle, cast to the ground,
+             * is bent by the perspective (section 31) and by the hero's place on the screen. */
+            q.x = (long)px;
+            q.y = (long)py;
+        } else if (len2 > DEAD_ZONE * DEAD_ZONE) {
             /* The direction only, at a fixed distance, as the 360 does (2 world units). */
             long len = 1;
             while (len * len < len2) len++;
@@ -1194,7 +1206,8 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
     void *c, *a, *it;
     hero_matrix(hero, m);
-    /* The 360 (sub_821EB598): an enemy in the cone within 7; else any unit in the cone within 3.5;
+    /* The 360 (sub_821EB598): an enemy in the cone within 7 or the weapon's range + 2; else any
+     * unit in the cone within 3.5;
      * both become the candidate X acts on and A talks to. */
     {
         long long t0, t1, t2;
@@ -1343,6 +1356,17 @@ static void post_key_state(unsigned vk, unsigned scan, int down) {
     if (!w) return;
     if (down) PostMessageW(w, 0x0100 /* WM_KEYDOWN */, vk, (long)(1 | (scan << 16)));
     else PostMessageW(w, 0x0101 /* WM_KEYUP */, vk, (long)(0xC0000001UL | (scan << 16)));
+}
+
+/* X's hold key (Shift, posted while X is down: see order()). Released when X is up, and when a
+ * frame's order() returned before the gameplay path (a menu, the inventory, a cinematic, a load,
+ * death: the review), so it never stays down under them. The keyboard's own Shift, if held, is
+ * left down. */
+static int hold_key_down, hold_key_kept;
+static void release_hold_key(void) {
+    if (!hold_key_down) return;
+    hold_key_down = 0;
+    if (!real_get_async_key_state || !(real_get_async_key_state(0x10) & 0x8000)) post_key_state(0x10, 0x2a, 0);
 }
 
 static void post_key(unsigned vk) {
@@ -1662,6 +1686,8 @@ static void order(void) {
     static int was_active;
     unsigned pressed;
     if (in_probe) return;
+    if (!(buttons & 0x4000) || !hold_key_kept) release_hold_key();
+    hold_key_kept = 0;
     app = *(unsigned char **)GOG_APP_GLOBAL;
     client = app ? *(unsigned char **)(app + 0x64) : 0;
     hero = client ? *(unsigned char **)(client + 0x2c) : 0;
@@ -1794,14 +1820,36 @@ static void order(void) {
      * the stick's way, or its last way at rest. With it the stick's setDestination below attacks
      * toward the stick instead of walking (setDestination's hold branch, the 360's 0x8228FF9C),
      * and the hero's own attack update never chases (the 360's sub_82295138, 0x8229543C). */
-    {
-        static int shift_down;
-        if (buttons & 0x4000) {
-            aim_until = now + 200;
-            if (!shift_down) { post_key_state(0x10 /* VK_SHIFT */, 0x2a, 1); shift_down = 1; }
-        } else if (shift_down) {
-            post_key_state(0x10, 0x2a, 0);
-            shift_down = 0;
+    if (buttons & 0x4000) {
+        if ((int)(aim_until - (now + 200)) < 0) aim_until = now + 200;   /* a skill's 400 ms kept */
+        if (!hold_key_down) { post_key_state(0x10 /* VK_SHIFT */, 0x2a, 1); hold_key_down = 1; }
+        hold_key_kept = 1;
+        /* The posted key reaches PC's client a frame later: the byte now, for this frame's
+         * setDestination (PC's client writes it from the key afterwards anyway). */
+        hero[GOG_HOLD_POSITION] = 1;
+    }
+    /* The aim point (X held, or a skill's key just pressed): the 360's sub_8221C838, the hero plus
+     * 2.0 along the stick turned by the camera's yaw (probe()'s world_x, world_z), or, at rest,
+     * along the hero's facing (its vfunc +0x98 vector: the third column of its rotation). */
+    aim_point_ok = 0;
+    if (aim_until && now < aim_until) {
+        float p[3], dx, dz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f, fx, fz, len;
+        ((get_position_fn)GOG_GET_POSITION)(hero, 0, p, 1);
+        if (stick_active() && camera_ground(client, &fx, &fz)) {
+            dx = sx * -fz + sy * fx;
+            dz = sx * fx + sy * fz;
+        } else {
+            float m[16];
+            hero_matrix(hero, m);
+            dx = m[2];
+            dz = m[10];
+        }
+        len = root(dx * dx + dz * dz);
+        if (len > 1e-3f) {
+            aim_point[0] = p[0] + 2.0f * dx / len;
+            aim_point[1] = p[1];
+            aim_point[2] = p[2] + 2.0f * dz / len;
+            aim_point_ok = 1;
         }
     }
     /* The turn during an attack (pad_log=1, while X is down): what the update's branch tests
