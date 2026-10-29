@@ -4106,6 +4106,34 @@ under PC's pause, death, waypoint or settings screens (the owner saw both over P
 Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within
 about 30 pixels of the 360's capture at 1080 (the cameras not quite the same).
 
+## 45. The 360's brightness and contrast (2026-10-29, read; not ported yet)
+
+The owner's request: the 360's two graphics sliders on PC (not on the 1.0 list). Read from the
+recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; nothing run):
+- **The screen:** CSettingsMenuXenon loads `settingsmenu_xenon.uilayout` (`sub_823802F8`) and finds
+  the controls by id: `Brightness` (menu `+276`), `Contrast` (`+280`), their tabs `+312`, `+316`.
+  `sub_8237FD30` steps a slider by ±0.05 on its event types 4 and 3 (which pad input sends those is
+  not located): brightness ±10, contrast ±5 a step.
+- **Range and default:** `sub_82380CA8` clamps brightness to 100–600 and contrast to 100–400 and
+  places the tab at their fraction; defaults 290 and 210 (`sub_823DEF18`; the Defaults button
+  `sub_82380F88` resets them). Kept as `BRIGHTNESS` and `CONTRAST` in the profile's
+  `local_settings.txt`.
+- **Keep or cancel:** the values at the menu's opening are saved (`sub_823807E8`); at its closing
+  (`sub_821FF750`) they are kept if menu `+265` is set, else restored (the button that sets `+265`
+  not located).
+- **Applied live:** `sub_821F9DA8` (each update) truncates both to integers and, when they differ
+  from its cache (zero at start, so also at start), calls `sub_82577F08(B, C)`.
+- **The formula (`sub_82577F08`):** one display gamma ramp, the same for red, green and blue: for
+  i = 0..255, `out[i] = clamp(B*128 + (i-128)*B*C/256, 0, 65535)`. Brightness is the gain, contrast
+  the slope around the middle. Given to the device's gamma ramp (`sub_82768DD0`; the recomp hooks
+  its table and piecewise-linear writers, `sub_82776500` and `sub_827765F8`, and reads a table
+  entry as `(value >> 6) / 1023`). No shader or Ogre call.
+- **At the defaults** the ramp is not the identity: about 10% out for black and 57% for the middle
+  grey; identity is near B 257, C 256.
+- **PC (GOG):** no gamma, brightness or contrast option, string or data (`Torchlight.exe`, Pak.zip;
+  its `BRIGHTNESS` is the light editor's). Ogre's render systems offer only "sRGB Gamma
+  Conversion".
+
 ## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
 
 A player reported that enemies more than half the screen away are never X's target, and that
