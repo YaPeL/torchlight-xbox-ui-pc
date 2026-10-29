@@ -120,6 +120,9 @@ static unsigned last_order;    /* GetTickCount of the last setDestination */
 #define GOG_UNIT_OK 0x0040e6e0           /* thiscall bool: findCharacterWithinView's last filter */
 #define GOG_SIGHT_UNOBSTRUCTED 0x004fdd60 /* CLevel::sightUnobstructed(Vector3 const*, Vector3 const*, bool) */
 #define GOG_GET_PET 0x0040e720           /* the hero's pet by index (thiscall, int) */
+#define GOG_HOSTILE 0x00488aa0           /* thiscall bool (CCharacter*): the 360's sub_822A48D0, the
+                                            target search's priority (the alignments differ, or one is 4) */
+#define GOG_UNIT_WEAPON 0x408            /* the hero's weapon in use (PC's 0x48d690 stores it; the 360's +0x3EC) */
 #define GOG_ISA 0x00480760               /* CBaseUnit::ISA(type), thiscall */
 #define GOG_LEVEL_ITEMS 0x68             /* the level's item list: [[level+0x68]] the first node {item, next} */
 #define GOG_FIND_ITEM 0x00500a50         /* CLevel::findItemWithinView(Matrix4 const&, float half
@@ -912,17 +915,50 @@ static void highlight_item(unsigned char *level, void *item) {
 
 /* The 360's choice of target (sub_821B58C0, read in section 9e): every unit that passes PC's
  * own filters (those of findCharacterWithinView, GOG 0x5006c0), within 0.5 at any angle or within
- * 30 degrees of the hero's facing and 7 units, with a clear line of sight beyond 0.5; the nearest.
- * (The 360 also prefers units of a kind sub_822A48D0 tells, not read yet.) */
+ * 30 degrees of the hero's facing and the range, with a clear line of sight beyond 0.5; the best
+ * as below. (Its second pass, any angle within 3.0 for units sub_821B8D70 tells, is not done.) */
 typedef unsigned char(__cdecl *align_fn)(int alignment, void *unit);
 typedef void *(__fastcall *get_pet_fn)(void *hero, void *edx, int index);
 typedef unsigned char(__fastcall *sight_fn)(void *level, void *edx, const float *from, const float *to, int flag);
 
+/* The signed angle, in degrees, of (x, z) from +z toward +x: the 360's atan2(lx, lz) * 57.2958
+ * (sub_821BEBE8). No C library: atan by halving the argument, then its series. */
+static float angle_deg(float x, float z) {
+    float r, sum, t, r2, a;
+    int i, halvings = 0;
+    if (z == 0.0f) return x > 0 ? 90.0f : x < 0 ? -90.0f : 0.0f;
+    r = x / z;
+    while ((r > 0.2f || r < -0.2f) && halvings < 12) {
+        float q = 1 + r * r;
+        r = r / (1 + root(q));
+        halvings++;
+    }
+    r2 = r * r; sum = r; t = r;
+    for (i = 1; i < 10; i++) { t *= -r2; sum += t / (2 * i + 1); }
+    while (halvings-- > 0) sum *= 2;
+    a = sum * 57.2958f;
+    if (z < 0) a += x >= 0 ? 180.0f : -180.0f;
+    return a;
+}
+
+/* The 360's range for the enemy search (sub_821EB598, 0x821EB808): 7, or the weapon's +0x78 plus
+ * 2 if longer; the weapon in use (+0x3EC there, GOG's +0x408), its +0x238, else its +0x23C (the
+ * objects PC's attack range reads too, 0x48ef80, and its +0x78 at 0x48ec4b). */
+static float target_range(unsigned char *hero) {
+    unsigned char *w = *(unsigned char **)(hero + GOG_UNIT_WEAPON), *p;
+    float r = TARGET_RANGE;
+    if (!w) return r;
+    p = *(unsigned char **)(w + 0x238);
+    if (!p) p = *(unsigned char **)(w + 0x23c);
+    if (p && *(float *)(p + 0x78) + 2.0f > r) r = *(float *)(p + 0x78) + 2.0f;
+    return r;
+}
+
 static void *unit_in_view(unsigned char *hero, unsigned char *level, const float *m, int alignment, float range) {
     void **node = *(void ***)*(void **)(level + GOG_LEVEL_UNITS);
     void *best = 0;
-    float best_d = 1e9f, tan30 = 0.57735f;
-    int n = 0;
+    float best_d = 9999.0f, best_a = 1000.0f, tan30 = 0.57735f;
+    int n = 0, best_p = 0;
     for (; node && n < 100000; node = (void **)node[1], n++) {
         unsigned char *u = (unsigned char *)node[0];
         float p[3], dx, dz, lx, lz, d;
@@ -939,7 +975,6 @@ static void *unit_in_view(unsigned char *hero, unsigned char *level, const float
         dx = p[0] - m[3];
         dz = p[2] - m[11];
         d = root(dx * dx + dz * dz);
-        if (d >= best_d) continue;
         /* The hero's facing, in the world, is the third column of its rotation (m[2], m[10]):
          * the same direction the old cone used. lz: along it; lx: across it. */
         lz = m[2] * dx + m[10] * dz;
@@ -951,8 +986,20 @@ static void *unit_in_view(unsigned char *hero, unsigned char *level, const float
             to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
             if (!((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0)) continue;
         }
-        best = u;
-        best_d = d;
+        /* The best (0x821B5B94-0x821B5C48): a hostile unit (sub_822A48D0) beats one that is not,
+         * whatever the distance; otherwise only a nearer one replaces the best, and between two
+         * hostile ones only if its signed angle is not more than 5 degrees past the best's. */
+        {
+            int p = ((bool_int_fn)GOG_HOSTILE)(hero, 0, (int)u) != 0;
+            float a = angle_deg(lx, lz);
+            if (best && !(d < best_d) && !(!best_p && p)) continue;
+            if (best && best_p && !p) continue;
+            if (best_p && p && a > best_a + 5.0f) continue;
+            best = u;
+            best_d = d;
+            best_a = a;
+            best_p = p;
+        }
     }
     return best;
 }
@@ -1117,7 +1164,7 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
     {
         long long t0, t1, t2;
         QueryPerformanceCounter(&t0);
-        c = unit_in_view(hero, level, m, ALIGN_ENEMY, TARGET_RANGE);
+        c = unit_in_view(hero, level, m, ALIGN_ENEMY, target_range(hero));
         candidate_friendly = 0;
         if (!c) {
             /* The second pass searches from 1.5 behind the hero (the 360 moves the matrix's origin

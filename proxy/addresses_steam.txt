@@ -49,7 +49,11 @@
 0x00488510 0x004866a0 verified   code    window, callers
 0x00488530 0x004866c0 verified   code    window, callers
 0x004885b0 0x00486740 verified   code    window, body, callers x4, callers-global
+0x00488aa0 0x00486c90 verified   code    window, body, callers x6
 0x00489a30 0x00487ba0 verified   code    window, body, callers x2
+0x0048d690 0x0048b750 verified   comment body, callers x6
+0x0048ec4b 0x0048cccb verified   comment window, local
+0x0048ef80 0x0048d000 verified   comment window, body, callers x2
 0x0048ffe0 0x0048e060 verified   code    window, callers x5
 0x004900d0 0x0048e150 verified   code    window, body, callers-global, callers x4
 0x00490150 0x0048e1d0 verified   code    window, body, callers x2
