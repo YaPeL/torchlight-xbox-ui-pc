@@ -4105,3 +4105,39 @@ anchor projected with Ogre's camera (its view and projection matrices, `getDeriv
 under PC's pause, death, waypoint or settings screens (the owner saw both over PC's pause menu).
 Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within
 about 30 pixels of the 360's capture at 1080 (the cameras not quite the same).
+
+## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
+
+A player reported that enemies more than half the screen away are never X's target, and that
+nearer ones seem chosen without regard to the hero's facing. Read again in the recomp:
+
+**X's target (`sub_821EB598`, `sub_821B58C0`).** **[read]**
+- The range of the enemy search is 7, or the weapon's range plus 2 when that is longer
+  (0x821EB808-0x821EB85C): the weapon in use (the 360's hero `+0x3EC`), its `+0x238`, else its
+  `+0x23C`, that object's float `+0x78`. GOG keeps the same weapon at the hero's `+0x408` (PC's
+  `0x48d690` stores it), with the same `+0x238`/`+0x23C` objects; PC's attack range reads their
+  `+0x74` (`0x48ef80`) and `+0x78` (`0x48ec4b`). Steam's offsets are the same. The port used 7
+  always: a ranged weapon's farther enemies were left out.
+- No bow, gun or staff branch, no camera, no stick in the search; 30 degrees and 0.5 are constants
+  inside `sub_821B58C0`. So with a melee weapon the 360 does not target beyond 7 either.
+- **The best (0x821B5B94-0x821B5C48):** a unit the hero is hostile to (`sub_822A48D0`, PC's
+  `0x488aa0`: the alignments differ, or one is 4) beats one it is not, whatever the distance;
+  otherwise only a nearer unit replaces the best, and between two hostile ones only if its signed
+  angle (`atan2(local x, local z)`, degrees) is not more than 5 past the best's. The port took the
+  nearest. Both now done (not run yet).
+- **A second pass inside the search, not done:** when the cone has no unit, any angle within 3.0,
+  with no sight test, for units `sub_821B8D70` accepts: beyond 2.0 only when the hero's byte
+  `+0x1FC` is clear and within 2.75; and the unit in a list `sub_821E3C48` keeps, or with one of
+  the flags 130, 175, 132, 133, 134, 41, 128, 170 (`sub_821D7CE0`: the unit's `+0x60`→`+0x10`
+  table, by its `+0x174`). Their PC equivalents are not located. On the 360 this pass is what
+  picks a near enemy outside the facing.
+- The candidate is searched every frame with no hysteresis; `sub_8221BC80` promotes it to the
+  client's target when that is empty or dead, and drops it when the stick is pushed (as the port).
+
+**The skills' point (B, Y, LT, RT).** **[read; measured by the mods agent with no enemy alive]**
+`sub_8221BC80` clears the hero's target, takes the point 2 ahead (the stick turned by the camera,
+or the facing at rest), and `sub_8221C520` rescales it to a distance from the skill's data
+(`[skill+0x5C]+0x54` and `+0x58`; with a trigger, its pressure); then the engine's skill use
+(`sub_82293548`) makes its own search within the skill's angle (its data `+0x64`) and aims at the
+unit found. The port presses PC's hotbar key with the virtual cursor 2 units ahead on screen: the
+distance and the trigger's pressure are not the 360's. Not changed yet.
