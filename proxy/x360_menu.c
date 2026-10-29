@@ -9347,6 +9347,181 @@ static void swap_checkbox_tick(const char *prefix) {
     }
 }
 
+/* ---- The 360's brightness and contrast (doc section 45) ----
+ * The 360's two graphics sliders (settingsmenu_xenon's Brightness and Contrast) on the 360's scale,
+ * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8).
+ * The value goes to the display as the 360's ramp (sub_82577F08): for i = 0..255, the same for red,
+ * green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), given here to D3D9's SetGammaRamp and
+ * applied when the values change (sub_821F9DA8 compares them with its cache each update). PC's
+ * look is the start (the owner's choice, 2026-10-29): 257 and 256 make the ramp the identity, so
+ * nothing is set until a slider moves; the 360's defaults are 290 and 210. A slider passing either
+ * default stops on it, and its header says which (the owner). */
+#define X360_PC_BRIGHTNESS 257   /* also in setup.c */
+#define X360_PC_CONTRAST 256
+#define X360_360_BRIGHTNESS 290
+#define X360_360_CONTRAST 210
+int x360_brightness_setting(void);
+int x360_contrast_setting(void);
+void x360_gamma_setting_write(int brightness, int contrast);
+static int gamma_b = -1, gamma_c, gamma_applied_b = X360_PC_BRIGHTNESS, gamma_applied_c = X360_PC_CONTRAST, gamma_dirty;
+/* PC's IDirect3DDevice9: Ogre's auto-created window's custom attribute D3DDEVICE (a virtual of
+ * RenderTarget, its slot found in RenderTarget's exported vtable); 0 under another render system. */
+static void *gamma_device(void) {
+    typedef void *(__cdecl *root_fn)(void);
+    typedef void *(__fastcall *window_fn)(void *root, void *edx);
+    typedef void (__fastcall *attribute_fn)(void *self, void *edx, const void *name, void *out);
+    typedef void (__fastcall *std_ctor_fn)(void *self, void *edx, const char *s);
+    typedef void (__fastcall *std_dtor_fn)(void *self, void *edx);
+    static void *device;
+    static int tried;
+    void *ogre, *msvcp;
+    root_fn root;
+    window_fn auto_window;
+    void **target_vt, *base, *window, **window_vt;
+    std_ctor_fn std_ctor;
+    std_dtor_fn std_dtor;
+    int slot = -1, i;
+    object name;
+    if (device || tried) return device;
+    tried = 1;
+    ogre = GetModuleHandleA("OgreMain.dll");
+    msvcp = GetModuleHandleA("msvcp90.dll");
+    if (!ogre || !msvcp) return 0;
+    root = (root_fn)GetProcAddress(ogre, "?getSingleton@Root@Ogre@@SAAAV12@XZ");
+    auto_window = (window_fn)GetProcAddress(ogre, "?getAutoCreatedWindow@Root@Ogre@@QAEPAVRenderWindow@2@XZ");
+    target_vt = (void **)GetProcAddress(ogre, "??_7RenderTarget@Ogre@@6B@");
+    base = (void *)GetProcAddress(ogre, "?getCustomAttribute@RenderTarget@Ogre@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAX@Z");
+    std_ctor = (std_ctor_fn)GetProcAddress(msvcp, "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@PBD@Z");
+    std_dtor = (std_dtor_fn)GetProcAddress(msvcp, "??1?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ");
+    if (!root || !auto_window || !target_vt || !base || !std_ctor || !std_dtor) { x360_log("x360 gamma: Ogre's names not found\r\n"); return 0; }
+    for (i = 0; i < 80; i++) if (target_vt[i] == base) { slot = i; break; }
+    if (slot < 0) { x360_log("x360 gamma: getCustomAttribute's slot not found\r\n"); return 0; }
+    window = auto_window(root(), 0);
+    if (!window) { tried = 0; return 0; }   /* not made yet: asked again */
+    window_vt = *(void ***)window;
+    std_ctor(&name, 0, "D3DDEVICE");
+    __try { ((attribute_fn)window_vt[slot])(window, 0, &name, &device); }
+    __except (1) { device = 0; x360_log("x360 gamma: getCustomAttribute threw\r\n"); }
+    std_dtor(&name, 0);
+    x360_log(device ? "x360 gamma: PC's D3D9 device found\r\n" : "x360 gamma: no D3D9 device (another render system)\r\n");
+    return device;
+}
+/* The 360's ramp for (b, c), set on PC's device (IDirect3DDevice9::SetGammaRamp, its slot 21,
+ * swap chain 0, D3DSGR_NO_CALIBRATION). */
+static void gamma_apply(int b, int c) {
+    typedef void (__stdcall *set_ramp_fn)(void *device, unsigned swap_chain, unsigned long flags, const void *ramp);
+    unsigned short ramp[3][256];
+    void *device = gamma_device();
+    int i;
+    gamma_applied_b = b;   /* asked once per change, found or not */
+    gamma_applied_c = c;
+    if (!device) return;
+    for (i = 0; i < 256; i++) {
+        float v = (float)b * 128.0f + (float)(i - 128) * (float)b * (float)c / 256.0f;
+        if (v < 0.0f) v = 0.0f;
+        if (v > 65535.0f) v = 65535.0f;
+        ramp[0][i] = ramp[1][i] = ramp[2][i] = (unsigned short)v;
+    }
+    __try { ((set_ramp_fn)(*(void ***)device)[21])(device, 0, 0, ramp); x360_log("x360 gamma: the ramp set\r\n"); }
+    __except (1) { x360_log("x360 gamma: SetGammaRamp threw\r\n"); }
+}
+/* Each frame: the values from the settings file at start, then the sliders'; applied on a change,
+ * saved once PC's settings screen has closed. */
+static void gamma_frame(int settings_up) {
+    if (gamma_b < 0) { gamma_b = x360_brightness_setting(); gamma_c = x360_contrast_setting(); }
+    if (gamma_b != gamma_applied_b || gamma_c != gamma_applied_c) gamma_apply(gamma_b, gamma_c);
+    if (!settings_up && gamma_dirty) { gamma_dirty = 0; x360_gamma_setting_write(gamma_b, gamma_c); }
+}
+static void gamma_header(void *header, const char *label, int value, int pc, int x360) {
+    char s[64], digits[8];
+    unsigned at = 0, k;
+    int n = value, d = 0;
+    for (k = 0; label[k]; k++) s[at++] = label[k];
+    s[at++] = ' ';
+    do { digits[d++] = (char)('0' + n % 10); n /= 10; } while (n && d < 7);
+    while (d) s[at++] = digits[--d];
+    if (value == pc || value == x360) {
+        const char *tag = value == pc ? " (PC default)" : " (360 default)";
+        for (k = 0; tag[k]; k++) s[at++] = tag[k];
+    }
+    s[at] = 0;
+    text(header, s);
+}
+/* One slider and its header in PC's settings screen, `top` pixels under the window `below` (its
+ * column), the slider holding the 360's value less 100 out of `range`. Returns the value shown;
+ * *last is -1 for a new screen. */
+static int gamma_slider(const char *prefix, const char *name, const char *header_name, const char *below,
+                        const char *label, int value, float top, float range, float step, int pc, int x360, int *last) {
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    typedef float (__fastcall *getf_fn)(const void *self, void *edx);
+    typedef void (__fastcall *setf_fn)(void *self, void *edx, float v);
+    static parent_fn parent_of;
+    static getf_fn get_cur;
+    static setf_fn set_max, set_cur, set_step;
+    void *slider = win_of(prefix, name), *header = win_of(prefix, header_name), *anchor = win_of(prefix, below);
+    int now;
+    if (!parent_of) {
+        parent_of = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+        get_cur = (getf_fn)need("?getCurrentValue@Slider@CEGUI@@QBEMXZ");
+        set_max = (setf_fn)need("?setMaxValue@Slider@CEGUI@@QAEXM@Z");
+        set_cur = (setf_fn)need("?setCurrentValue@Slider@CEGUI@@QAEXM@Z");
+        set_step = (setf_fn)need("?setClickStep@Slider@CEGUI@@QAEXM@Z");
+    }
+    if (!parent_of || !get_cur || !set_max || !set_cur || !set_step || !anchor) return value;
+    if (!slider || !header) {
+        char r[160];
+        float v[8];
+        void *parent = parent_of(anchor, 0);
+        if (!parent || (!slider && !(slider = create_window(prefix, name, "GuiLook/Slider"))) ||
+            (!header && !(header = create_window(prefix, header_name, "GuiLook/StaticText")))) {
+            x360_log("x360 gamma: a slider not made\r\n");
+            return value;
+        }
+        add_child(parent, 0, header);
+        add_child(parent, 0, slider);
+        read_prop(anchor, "UnifiedAreaRect", r, sizeof r);
+        if (parse_rect(r, v)) {
+            /* The header 20 px tall and the slider 255 by 25 under it (PC's MusicHeader and
+             * MusicVolume's sizes), at the anchor's left. */
+            v[4] = v[0]; v[5] = v[1] + 255.0f;
+            v[6] = v[2]; v[3] += top; v[7] = v[3] + 20.0f;
+            write_rect(r, v);
+            prop(header, "UnifiedAreaRect", r);
+            v[3] += 20.0f; v[7] = v[3] + 25.0f;
+            write_rect(r, v);
+            prop(slider, "UnifiedAreaRect", r);
+        }
+        x360_log("x360 gamma: a slider made in PC's settings\r\n");
+        *last = -1;
+    }
+    if (*last < 0) {
+        set_max(slider, 0, range);
+        set_step(slider, 0, step);
+        set_cur(slider, 0, (float)(value - 100));
+        *last = value;
+        gamma_header(header, label, value, pc, x360);
+        return value;
+    }
+    now = 100 + (int)(get_cur(slider, 0) + 0.5f);
+    if (now == *last) return now;
+    if ((*last < pc && now > pc) || (*last > pc && now < pc)) now = pc;   /* passing a default stops on it */
+    else if ((*last < x360 && now > x360) || (*last > x360 && now < x360)) now = x360;
+    set_cur(slider, 0, (float)(now - 100));
+    *last = now;
+    gamma_header(header, label, now, pc, x360);
+    return now;
+}
+static void gamma_sliders_tick(const char *prefix) {
+    static int last_b = -1, last_c = -1;
+    int b, c;
+    if (gamma_b < 0) return;
+    b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
+                     gamma_b, 50.0f, 500.0f, 10.0f, X360_PC_BRIGHTNESS, X360_360_BRIGHTNESS, &last_b);
+    c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
+                     gamma_c, 50.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
+    if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
+}
+
 static void nav_collect(void *w, int depth, int only_under_pause) {
     typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
@@ -9541,6 +9716,8 @@ static void pc_menus_nav_tick(void) {
     x360_pc_die_up = die || wp;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
+    if (settings) __try { gamma_sliders_tick(settings_prefix); } __except (1) { x360_log("x360 gamma: exception in the settings' sliders\r\n"); }
+    __try { gamma_frame(settings); } __except (1) { x360_log("x360 gamma: exception applying the ramp\r\n"); }
     cursor_hook_install();
     if (nav_cursor_off != !(settings || create)) {
         nav_cursor_off = !(settings || create);

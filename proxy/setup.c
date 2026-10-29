@@ -119,30 +119,81 @@ int x360_swap_active;
 static int swap_setting = -1;
 HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);   /* cegui_proxy.c */
 DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
-int x360_swap_setting(void) {
-    if (swap_setting < 0) {
-        char text[256];
-        HANDLE f;
-        swap_setting = 0;
-        f = x360_data_open("x360_settings.ini", 0x80000000UL, 1, 3);   /* GENERIC_READ, OPEN_EXISTING */
-        if (f != (HANDLE)(long)-1) {
-            x360_read_text(f, text, sizeof text, 0);
-            CloseHandle(f);
-            swap_setting = has(text, "swap_confirm_cancel=1");
+#define X360_PC_BRIGHTNESS 257   /* also in x360_menu.c */
+#define X360_PC_CONTRAST 256
+/* The 360's brightness and contrast (doc section 45), on the 360's scale: 100-600 and 100-400.
+ * Their defaults here are PC's look (257 and 256 make the 360's ramp the identity: the owner's
+ * choice, 2026-10-29); the 360's own are 290 and 210. */
+static int brightness_setting = X360_PC_BRIGHTNESS, contrast_setting = X360_PC_CONTRAST;
+/* key=N in text, or fallback (a number of up to 4 digits). */
+static int setting_number(const char *text, const char *key, int fallback) {
+    unsigned i, j, k = len(key);
+    for (i = 0; text[i]; i++) {
+        if (i && text[i - 1] != '\n') continue;
+        for (j = 0; j < k && lower(text[i + j]) == key[j]; j++) {}
+        if (j == k) {
+            int n = 0, digits = 0;
+            for (j = i + k; text[j] >= '0' && text[j] <= '9' && digits < 4; j++, digits++) n = n * 10 + (text[j] - '0');
+            return digits ? n : fallback;
         }
     }
+    return fallback;
+}
+static void settings_load(void) {
+    char text[256];
+    HANDLE f;
+    if (swap_setting >= 0) return;
+    swap_setting = 0;
+    f = x360_data_open("x360_settings.ini", 0x80000000UL, 1, 3);   /* GENERIC_READ, OPEN_EXISTING */
+    if (f != (HANDLE)(long)-1) {
+        x360_read_text(f, text, sizeof text, 0);
+        CloseHandle(f);
+        swap_setting = has(text, "swap_confirm_cancel=1");
+        brightness_setting = setting_number(text, "brightness=", X360_PC_BRIGHTNESS);
+        contrast_setting = setting_number(text, "contrast=", X360_PC_CONTRAST);
+    }
+    if (brightness_setting < 100 || brightness_setting > 600) brightness_setting = X360_PC_BRIGHTNESS;
+    if (contrast_setting < 100 || contrast_setting > 400) contrast_setting = X360_PC_CONTRAST;
+}
+static void put_number(char *out, unsigned *at, int n) {
+    char digits[8];
+    int k = 0;
+    do { digits[k++] = (char)('0' + n % 10); n /= 10; } while (n && k < 7);
+    while (k) out[(*at)++] = digits[--k];
+}
+static void put_text(char *out, unsigned *at, const char *s) { while (*s) out[(*at)++] = *s++; }
+/* Every setting written again (the file holds them all). */
+static int settings_write(void) {
+    char text[128];
+    unsigned at = 0;
+    DWORD done;
+    HANDLE f;
+    put_text(text, &at, swap_setting > 0 ? "swap_confirm_cancel=1\r\n" : "swap_confirm_cancel=0\r\n");
+    put_text(text, &at, "brightness="); put_number(text, &at, brightness_setting); put_text(text, &at, "\r\n");
+    put_text(text, &at, "contrast="); put_number(text, &at, contrast_setting); put_text(text, &at, "\r\n");
+    f = x360_data_open("x360_settings.ini", 0x40000000UL, 0, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
+    if (f == (HANDLE)(long)-1) { x360_log("x360 settings: x360_settings.ini not written\r\n"); return 0; }
+    WriteFile(f, text, at, &done, 0);
+    CloseHandle(f);
+    return 1;
+}
+int x360_swap_setting(void) {
+    settings_load();
     return swap_setting;
 }
 void x360_swap_setting_write(int on) {
-    static const char yes[] = "swap_confirm_cancel=1\r\n", no[] = "swap_confirm_cancel=0\r\n";
-    DWORD done;
-    HANDLE f;
-    f = x360_data_open("x360_settings.ini", 0x40000000UL, 0, 2);   /* GENERIC_WRITE, CREATE_ALWAYS */
-    if (f == (HANDLE)(long)-1) { x360_log("x360 prompts: x360_settings.ini not written\r\n"); return; }
-    WriteFile(f, on ? yes : no, sizeof yes - 1, &done, 0);
-    CloseHandle(f);
+    settings_load();
     swap_setting = on;
+    if (!settings_write()) return;
     x360_log(on ? "x360 prompts: Nintendo's layout on (from the next start)\r\n" : "x360 prompts: Nintendo's layout off (from the next start)\r\n");
+}
+int x360_brightness_setting(void) { settings_load(); return brightness_setting; }
+int x360_contrast_setting(void) { settings_load(); return contrast_setting; }
+void x360_gamma_setting_write(int brightness, int contrast) {
+    settings_load();
+    brightness_setting = brightness;
+    contrast_setting = contrast;
+    if (settings_write()) x360_log("x360 gamma: brightness and contrast saved\r\n");
 }
 /* Whether the pad now is Nintendo's, physical (no Steam Input in front). */
 int x360_pad_is_nintendo(void) {
