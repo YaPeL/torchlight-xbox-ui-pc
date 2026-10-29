@@ -1335,6 +1335,16 @@ static void diagnose(unsigned char *hero) {
 }
 
 static HWND game_window;                     /* the game's window, cached the first time it is active */
+/* A key held or released (WM_KEYDOWN or WM_KEYUP alone), with its scan code. */
+static void post_key_state(unsigned vk, unsigned scan, int down) {
+    HWND w = GetActiveWindow();
+    if (w) game_window = w;
+    w = game_window;
+    if (!w) return;
+    if (down) PostMessageW(w, 0x0100 /* WM_KEYDOWN */, vk, (long)(1 | (scan << 16)));
+    else PostMessageW(w, 0x0101 /* WM_KEYUP */, vk, (long)(0xC0000001UL | (scan << 16)));
+}
+
 static void post_key(unsigned vk) {
     HWND w = GetActiveWindow();
     if (w) game_window = w;
@@ -1774,20 +1784,53 @@ static void order(void) {
         float l2 = ((float)lx * lx + (float)ly * ly) / 1000000.0f;
         x360_walk_factor = stick_active() ? (l2 + 0.2f < 1.0f ? l2 + 0.2f : 1.0f) : 1.0f;
     }
-    /* The 360 holds position while X is down (sub_821EBA48, 0x821EC21C: the hero's +0x1FE, PC's
-     * +0x20a, PC's Shift; set every frame X is down, cleared the first frame it is up). With it the
-     * stick's setDestination below attacks toward the stick instead of walking (sub_8221C730 and
-     * setDestination's hold branch, sub_8228F8C8 at 0x8228FF9C), and the hero's own attack update
-     * never chases its target (sub_82295138, 0x8229543C). */
+    /* The 360 holds position while X is down (sub_821EBA48, 0x821EC21C: the hero's +0x1FE set, and
+     * the stick's point given to sub_8228F7E0, every frame X is down; cleared the first frame it is
+     * up). PC's client does the same each frame for its hold key (GOG 0x415349-0x4153af: the hold
+     * byte +0x20a from the key's state, and setTargetDirection toward the cursor's world point), and
+     * writes the byte back each frame, so ours was lost before the hero's update, whose turn toward
+     * that point (0x4af3ae-0x4af40b, the 360's 0x821D4F94-0x821D50B4) then never ran. So X holds
+     * PC's hold key (Shift, by its messages, as the hotbar's keys) and the virtual cursor points
+     * the stick's way, or its last way at rest. With it the stick's setDestination below attacks
+     * toward the stick instead of walking (setDestination's hold branch, the 360's 0x8228FF9C),
+     * and the hero's own attack update never chases (the 360's sub_82295138, 0x8229543C). */
     {
-        static int holding;
-        static unsigned char saved;
+        static int shift_down;
         if (buttons & 0x4000) {
-            if (!holding) { saved = hero[GOG_HOLD_POSITION]; holding = 1; }
-            hero[GOG_HOLD_POSITION] = 1;
-        } else if (holding) {
-            hero[GOG_HOLD_POSITION] = saved;
-            holding = 0;
+            aim_until = now + 200;
+            if (!shift_down) { post_key_state(0x10 /* VK_SHIFT */, 0x2a, 1); shift_down = 1; }
+        } else if (shift_down) {
+            post_key_state(0x10, 0x2a, 0);
+            shift_down = 0;
+        }
+    }
+    /* The turn during an attack (pad_log=1, while X is down): what the update's branch tests
+     * (GOG 0x486550 and 0x486590; the 360's sub_821DC600 and 0x821D4D00): the running skill +0x2d0,
+     * its +0x3e, +0xb4, +0x3c, the timer +0x2c0, the byte +0x20b, the target +0x290, the state
+     * +0x284, and the facing. */
+    if (verbose && (buttons & 0x4000)) {
+        static unsigned last_turn_log;
+        if (now - last_turn_log >= 30) {
+            unsigned char *sk = *(unsigned char **)(hero + 0x2d0);
+            float m[16];
+            last_turn_log = now;
+            hero_matrix(hero, m);
+            x360_log("pad: turn t "); x360_log_num((long)now);
+            x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+            x360_log(" want "); x360_log_num((long)(*(float *)(hero + 0x1d8) * 1000));
+            x360_log(" "); x360_log_num((long)(*(float *)(hero + 0x1e0) * 1000));
+            x360_log(" skill "); x360_log_num((long)sk);
+            if (sk) {
+                x360_log(" 3e "); x360_log_num(sk[0x3e]);
+                x360_log(" b4 "); x360_log_num(*(int *)(sk + 0xb4));
+                x360_log(" 3c "); x360_log_num(sk[0x3c]);
+            }
+            x360_log(" t2c0 x1000 "); x360_log_num((long)(*(float *)(hero + 0x2c0) * 1000));
+            x360_log(" 20b "); x360_log_num(hero[0x20b]);
+            x360_log(" hold "); x360_log_num(hero[GOG_HOLD_POSITION]);
+            x360_log(" target "); x360_log_num((long)*(void **)(hero + 0x290));
+            x360_log(" state "); x360_log_num(*(int *)(hero + 0x284));
+            x360_log(((bool_fn)GOG_PERFORMING_ATTACK)(hero, 0) ? " attacking\r\n" : "\r\n");
         }
     }
     if (stick_active()) {

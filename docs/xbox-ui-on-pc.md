@@ -4158,3 +4158,15 @@ floor 3 on arrival).** **[the runs; read]**
   and repeated its attack every 0.1 s. Now: the hold byte follows X; the stick's walk runs with X
   down (so it attacks toward the stick); X's press and repeat attack the candidate only with the
   stick at rest. Not run yet.
+- **The hold byte written by the port was lost (measured, 2026-10-29).** With X held and the stick
+  sweeping, PC's hero never turned (its facing fixed 4 s), while the recomp's turned toward the
+  stick. The recomp's probe of its unit update (`sub_821D3FD8`): with `+0x1FE` set and no running
+  skill (`sub_821DC600` false) it turns to the point `+0x1C0` (0x821D4F94 → 0x821D50A4, the turn
+  `sub_8219FD08` at 0x821D50B4), the point `sub_821EBA48` gives `sub_8228F7E0` each frame. PC's
+  update has the same branch (0x4af3ae-0x4af40b: hold `+0x20a`, the point `+0x1cc`, the turn
+  0x491b60), but PC's client writes the hold byte every frame from its hold key (0x415349-0x4153af:
+  1 and setTargetDirection toward the cursor's world point when the key is down, else 0), so the
+  port's write was gone by the hero's update. Now X holds PC's hold key itself (Shift, by its
+  window messages, as the hotbar's keys) and the virtual cursor points the stick's way (its last
+  way at rest). In an unattended run the hero turned with the sweep, attacked toward it and stayed
+  in place.
