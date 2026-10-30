@@ -2102,6 +2102,7 @@ static void order(void) {
      * 0.1): read from the facing each frame, the hero's own turn toward it fed back and drifted
      * (6 degrees in 0.8 s against the recomp's sweep). */
     static float rest_dx, rest_dz;
+    static unsigned assist_logged;
     static int rest_set;
     aim_point_ok = 0;
     if (!aiming(now)) rest_set = 0;
@@ -2131,6 +2132,32 @@ static void order(void) {
             aim_point[1] = p[1];
             aim_point[2] = p[2] + 2.0f * dz / len;
             aim_point_ok = 1;
+            /* The shot's assist (the 360's attack execution sub_822919A8, the recomp agent's
+             * reading): with no target (X with the stick past 0.1 drops it) the shot searches
+             * from the hero's transform, whose facing is the stick's way, a cone of 30 degrees out
+             * to the weapon's reach plus 1 (sub_822F8128, 0x82291DD0), and aims at the unit found
+             * (0x82292058; no homing). Here the same cone from the stick's way, out to
+             * target_range (the weapon's +0x78 plus 2: 10 with the test bow against the 360's
+             * 10.45), and the point becomes the unit's: the hero turns to it too, where the
+             * 360's turns to the stick and only the shot goes to the unit. */
+            if ((buttons & 0x4000) && stick_active() && level) {
+                float c[16];
+                void *u;
+                hero_matrix(hero, c);
+                c[2] = dx / len; c[10] = dz / len;
+                c[0] = dz / len; c[8] = -dx / len;
+                u = unit_in_view(hero, level, c, ALIGN_ENEMY, target_range(hero));
+                if (u) {
+                    float t[3];
+                    ((get_position_fn)GOG_GET_POSITION)(u, 0, t, 1);
+                    aim_point[0] = t[0];
+                    aim_point[2] = t[2];
+                    if (verbose && now - assist_logged >= 200) {
+                        assist_logged = now;
+                        x360_log("pad: X's shot assist on "); x360_log_num((long)u); log_rel(c, u); x360_log("\r\n");
+                    }
+                }
+            }
         }
     }
     /* The turn during an attack (pad_log=1, while X is down): what the update's branch tests

@@ -4217,6 +4217,18 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   (fz, 0, -fx), as PC's `unit_in_view` computes it (lx = fz*dx - fx*dz): the recomp's own atan2
   arguments and the same formula on world positions agree to 0.01 degrees with the same sign, so
   the tie rule's "5 degrees past the best" favours the same side on both.
+- **The shot's assist (read, the recomp agent; 2026-10-29).** The owner found the recomp's bow
+  hitting an enemy about 15 degrees off the stick, and the port's not. **[read, 360]** The attack
+  execution `sub_822919A8`, with no target (+644, +652 clear: X with the stick past 0.1), searches
+  from the hero's transform (its facing, the stick's way) with `sub_822F8128`: a cone of 30
+  degrees (pool+944) out to the weapon's reach plus 1 (0x82291DD0; 10.45 with the test bow; its
+  first argument, 1.5, not read), hostile units (`sub_822A49D0`), and aims the shot at the unit
+  found (0x82292058: its position, the height by both units' +348; a sight test may cut it;
+  no homing). **[port]** While X is held with the stick out, the same cone from the stick's way
+  (`unit_in_view`, the enemy pass, out to `target_range`: 10 with the test bow) and the aim point
+  becomes the unit's position. Differences: the hero turns to the unit (the 360's turns to the
+  stick and only the shot goes to it), and the reach is the weapon's +0x78 plus 2, not the 360's
+  formula. Not played yet.
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
