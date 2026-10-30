@@ -1842,21 +1842,16 @@ static void __cdecl attack_entry_log(unsigned char *unit, unsigned ret, unsigned
  * without the 1.5 rule, and its attack keeps the prop to strike it later ([esp+0x40]): a bow's
  * arrow, or the swing's hit. Here, after PC's searches (0x4a5b6e), for the hero while the pad's X
  * is down and no unit was found: the 360's prop is interacted with (CBreakable::interact, the
- * virtual 79, GOG 0x484340) and kept as PC's prop to strike, so the hero turns to it. frame: the
+ * virtual 79, GOG 0x484340), the hero given the event 11 and turned to it, as the 360 does; the
+ * attack's skill or weapon flags are not looked at (a skill cast with X held searches too). frame: the
  * trampoline's pushad (ebx at [4]); the function's esp 32 bytes above it. The prop's slot is the
  * found point's flags slot less 0x118 ([esp+0x40] and 0x158 on GOG, 0x3c and 0x154 on Steam). */
 static unsigned prop_slot;
+#define GOG_UNIT_EVENT 0x00486450         /* the unit's event (thiscall: the event, on; ret 8) */
 #define GOG_BREAKABLE_INTERACT_SLOT 79    /* CItem's interact(CCharacter*) +0x13c: CBreakable's 0x484340 */
 typedef unsigned char(__fastcall *is_kind_fn)(void *item, void *edx, int kind);
 typedef unsigned char(__fastcall *item_bool_fn)(void *item, void *edx);
 typedef unsigned char(__fastcall *interact_fn)(void *item, void *edx, void *character);
-static float weapon_reach(unsigned char *hero) {
-    unsigned char *w = *(unsigned char **)(hero + GOG_UNIT_WEAPON), *p;
-    if (!w) return 0.0f;
-    p = *(unsigned char **)(w + 0x238);
-    if (!p) p = *(unsigned char **)(w + 0x23c);
-    return p ? *(float *)(p + 0x78) : 0.0f;
-}
 static void *prop_360(unsigned char *level, const float *m, float range, float *out_d, float *out_a) {
     void **node = *(void ***)*(void **)(level + GOG_LEVEL_ITEMS);
     int n = 0;
@@ -1881,22 +1876,35 @@ static void *prop_360(unsigned char *level, const float *m, float range, float *
     return 0;
 }
 static void __cdecl attack_found(unsigned char *unit, unsigned *frame) {
+    typedef void(__fastcall *event_fn)(void *unit, void *edx, int event, int on);
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
     unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
     unsigned char *level = client ? *(unsigned char **)(client + 0x38) : 0;
-    unsigned char *esp0 = (unsigned char *)frame + 32;
+    unsigned char *esp0 = (unsigned char *)frame + 32, *wd;
     void *found = (void *)frame[4], *prop = 0;
     float m[16], d = 0, a = 0, range = 0;
     int broke = 0;
     if (!client || unit != *(unsigned char **)(client + 0x2c)) return;
     hero_matrix(unit, m);
-    if (level && !found && prop_slot && (buttons & 0x4000)) {
-        range = weapon_reach(unit) + 1.0f;
+    /* With X down, no unit found and no item target of the hero's own (+0x298, PC's 0x4a5a77): the
+     * 360's prop replaces what PC's search (60 degrees) kept. The reach is PC's for that search
+     * (0x4a5b1a): (+0x450 * +0x84 + the attack's weapon data's +0x78 + 0.2) * +0x44c + 1, the weapon
+     * data the slot 0x1c below the prop's. */
+    if (level && !found && prop_slot && (buttons & 0x4000) && !*(void **)(unit + 0x298) &&
+        (wd = *(unsigned char **)(esp0 + prop_slot - 0x1c)) != 0) {
+        range = (*(float *)(unit + 0x450) * *(float *)(unit + 0x84) + *(float *)(wd + 0x78) + 0.2f) *
+                *(float *)(unit + 0x44c) + 1.0f;
         prop = prop_360(level, m, range, &d, &a);
-        if (prop) {
-            if (derives_from(prop, ".?AVCBreakable@@"))
-                broke = ((interact_fn)(*(void ***)prop)[GOG_BREAKABLE_INTERACT_SLOT])(prop, 0, unit) & 0xff;
-            *(void **)(esp0 + prop_slot) = prop;   /* PC's prop to strike: the hero turns to it */
+        *(void **)(esp0 + prop_slot) = prop;
+        if (prop && derives_from(prop, ".?AVCBreakable@@")) {
+            float p[3];
+            /* 0x822926B0: the interact, the event 11 (PC's own strike of a prop does the same,
+             * 0x4a63e4: the virtual +0x13c, then 0x486450(11, 1)), and the hero turned to it. PC's
+             * attack then finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing. */
+            broke = ((interact_fn)(*(void ***)prop)[GOG_BREAKABLE_INTERACT_SLOT])(prop, 0, unit) & 0xff;
+            ((event_fn)GOG_UNIT_EVENT)(unit, 0, 11, 1);
+            ((get_position_fn)GOG_GET_POSITION)(prop, 0, p, 1);
+            ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(unit, 0, p[0], p[2]);
         }
     }
     if (prop || (verbose && turn_logged < 4000)) {

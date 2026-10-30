@@ -38,6 +38,7 @@
 0x00486150 0x00484360 verified   code    window, body, callers x6
 0x00486180 0x00484390 verified   code    window, callers x3
 0x004863b0 0x004845c0 verified   code    window, body, callers x6
+0x00486450 0x00484660 verified   code    window, callers x6
 0x00486550 0x00484760 verified   code    window, body, callers x6
 0x00486590 0x004847a0 verified   comment window 24, body, callers
 0x00487d00 0x00485e90 verified   code    window, body, callers x6

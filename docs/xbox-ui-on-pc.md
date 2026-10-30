@@ -4345,10 +4345,13 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   angle and the reach its caller's), without the 1.5 rule, and it keeps the prop for the strike
   ([esp+0x40]): the bow's arrow, which a barrel that near did not stop (the owner).
   `CBreakable::interact` is its virtual 79 (GOG 0x484340, Steam 0x482600; `CItem`'s is the pick-up
-  0x4d0d90). **[port]** After PC's searches (0x4a5b6e), for the hero with the pad's X down and no
-  unit found: the 360's search (in list order, the first that passes; the reach the weapon's +0x78
-  plus 1), its interact called on the hero, and the prop kept as PC's prop to strike, so the hero
-  turns to it. Not run yet.
+  0x4d0d90). PC's own strike of a prop (0x4a63e4) is the 360's sequence: the interact, then the
+  event 11 (0x486450). **[port]** After PC's searches (0x4a5b6e), for the hero with the pad's X
+  down, no unit found and no item target of its own (+0x298): the 360's search (in list order, the
+  first that passes; the reach PC's for its own search, 0x4a5b1a), replacing what PC's 60-degree
+  search kept; on a barrel, its interact, the event 11, and the hero turned to it. PC's attack then
+  finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing, as on the 360. A skill cast
+  with X held searches too (its flags not looked at). Reviewed against the disassembly; not run yet.
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
