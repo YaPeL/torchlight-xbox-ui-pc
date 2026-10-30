@@ -2023,6 +2023,55 @@ static void missile_aim_install(void) {
     x360_log("pad: a missile weapon aims at the 360's cone unit (0x4b9240)\r\n");
 }
 
+/* ---- PC's mouse-over while the pad aims: none, as the 360's ----
+ * PC's client sets the unit and the item under the cursor each frame (0x41b832: its UI's
+ * setHoverUnit 0x40f930, +0x2c; 0x41b83d: setHoverItem 0x54d390, +0x34), which PC highlights and
+ * its target bar shows. While the pad aims, the virtual cursor sits 2 units ahead of the hero
+ * (the 360's point): a barrel or a unit there was highlighted by PC's mouse-over (the owner),
+ * where the 360, which has no cursor, highlights only its candidate. While aiming, both setters
+ * get no unit. A jump at each entry (push esi; lea esi, [ecx+0x2c]; mov ecx, [esi]: 6 bytes;
+ * push ebx; mov ebx, [esp+8]: 5 bytes) to a trampoline that may clear the argument. */
+#define GOG_UI_SET_HOVER_UNIT 0x0040f930
+#define GOG_UI_SET_HOVER_ITEM 0x0054d390
+static unsigned hover_cleared;   /* pad_log=1: how many the mouse-over had while aiming */
+static void __cdecl hover_filter(void **slot) {
+    if (direct && *slot && aiming(GetTickCount())) {
+        *slot = 0;
+        if (verbose && (++hover_cleared & 63) == 1) {
+            x360_log("pad: PC's mouse-over left empty while aiming, times "); x360_log_num((long)hover_cleared); x360_log("\r\n");
+        }
+    }
+}
+static int hover_patch(unsigned addr, const unsigned char *want, int len) {
+    unsigned char *at = (unsigned char *)addr, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < len; i++)
+        if (at[i] != want[i]) { x360_log("pad: a mouse-over setter not as read: left to PC\r\n"); return 0; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return 0;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x24;       /* lea eax, [esp+36]: the argument's slot */
+    t[n++] = 0x50;                                                    /* push eax */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)hover_filter - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x04;                      /* add esp, 4 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < len; i++) t[n++] = at[i];
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + len) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, len, 0x40, &old)) return 0;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5));
+    for (i = 5; i < len; i++) at[i] = 0x90;
+    VirtualProtect(at, len, old, &old);
+    return 1;
+}
+static void hover_install(void) {
+    static const unsigned char unit_entry[6] = {0x56, 0x8d, 0x71, 0x2c, 0x8b, 0x0e};
+    static const unsigned char item_entry[5] = {0x53, 0x8b, 0x5c, 0x24, 0x08};
+    int u = hover_patch(GOG_UI_SET_HOVER_UNIT, unit_entry, 6), i = hover_patch(GOG_UI_SET_HOVER_ITEM, item_entry, 5);
+    if (u && i) x360_log("pad: PC's mouse-over left empty while the pad aims (0x40f930, 0x54d390)\r\n");
+    else if (u || i) x360_log(u ? "pad: PC's mouse-over: only the unit's left empty while aiming\r\n" : "pad: PC's mouse-over: only the item's left empty while aiming\r\n");
+}
+
 /* ---- The attack's search: a unit within 1.5 at any angle, as the 360's ----
  * The 360's searches (sub_822F8128, both of sub_822919A8's) take a unit closer than f1 = 1.5
  * (pool+196) at any angle, with only the sight test (0x822F842C; the recomp agent's logs: hits at
@@ -2618,7 +2667,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); attack_near_install(); missile_aim_install(); attack_found_install(); }
+    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); attack_near_install(); missile_aim_install(); attack_found_install(); hover_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);

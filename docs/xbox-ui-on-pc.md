@@ -4352,6 +4352,14 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   search kept; on a barrel, its interact, the event 11, and the hero turned to it. PC's attack then
   finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing, as on the 360. A skill cast
   with X held searches too (its flags not looked at). Reviewed against the disassembly; not run yet.
+- **PC's mouse-over while aiming (2026-10-30).** PC's client sets the unit and the item under the
+  cursor every frame (0x41b832: its UI's setHoverUnit 0x40f930, +0x2c; 0x41b83d: setHoverItem
+  0x54d390, +0x34), and PC highlights them. While the pad aims, the virtual cursor sits 2 units
+  ahead of the hero, so a barrel or a unit there lit up (the owner); the 360 has no cursor and
+  highlights only its candidate. **[port]** While aiming, both setters get no unit or item (a
+  trampoline at each entry clears the argument). **[the owner's run]** It works: no highlight under
+  the cursor while aiming, and the 360's candidate still highlighted (over 500 setter calls
+  cleared in the log). Steam UNCHANGED.
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
