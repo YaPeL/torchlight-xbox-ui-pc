@@ -4143,7 +4143,10 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   **[measured]** GOG, the bench save on arrival, a screenshot at 290/210 against one at 257/256:
   per input level the median output follows clamp(B*128 + (v-128)*B*C/256)/257 within 0.34 levels
   (median of 231 levels; the 90th percentile 3.8, the worst at the brightest few levels, where few
-  pixels fall).
+  pixels fall). The recomp agent's same pair on the recomp (F9 captures replayed at 1920x1080):
+  within 0.53 (median of 217 levels; every level but pure black within about 1). The sliders seen
+  in PC's settings screen, their headers "Brightness N" and "Contrast N" with "(PC)" or "(360)" at
+  the defaults (a longer tag was clipped).
 
 ## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
 

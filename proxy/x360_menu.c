@@ -9454,7 +9454,7 @@ static void gamma_header(void *header, const char *label, int value, int pc, int
     do { digits[d++] = (char)('0' + n % 10); n /= 10; } while (n && d < 7);
     while (d) s[at++] = digits[--d];
     if (value == pc || value == x360) {
-        const char *tag = value == pc ? " (PC default)" : " (360 default)";
+        const char *tag = value == pc ? " (PC)" : " (360)";   /* the defaults; longer was clipped (the run) */
         for (k = 0; tag[k]; k++) s[at++] = tag[k];
     }
     s[at] = 0;
