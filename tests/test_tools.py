@@ -919,6 +919,8 @@ class SkillColumnTest(unittest.TestCase):
         self.assertIn('Name="skillicon0_1_1"', out)
         self.assertNotIn('skillbg0_1_0" >\n<Property Name="Visible"', out)
         self.assertEqual(convert_x360_ui.add_skill_column(out), out)
+        lone = convert_x360_ui.add_skill_column('<Window Type="i" Name="skillbg1_2_1" />')
+        self.assertIn('Name="skillbg1_2_2" >\n<Property Name="Visible" Value="False" />\n</Window>', lone)
 
 
 class LabelFrameTest(unittest.TestCase):

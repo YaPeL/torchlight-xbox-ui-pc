@@ -4354,6 +4354,22 @@ static int skills_place(int three) {
     return 1;
 }
 
+/* The columns: 3 when a skill of the class is in PC's third (and the converted UI has it); set
+ * before the fill and before a move (the page's first move may come before its fill). */
+static void skills_columns(void) {
+    unsigned n, i;
+    void **list = skill_list(&n);
+    int three = 0;
+    for (i = 0; list && i < n; i++) {
+        unsigned char *sk = (unsigned char *)list[i];
+        if (sk && *(int *)(sk + 0xd4) == 2 && *(int *)(sk + 0xdc) >= 0 && *(int *)(sk + 0xdc) <= 2 &&
+            *(int *)(sk + 0xd8) >= 0 && *(int *)(sk + 0xd8) <= 5) three = 1;
+    }
+    sk_cols = three && skills_place(1) ? 3 : 2;
+    if (sk_cols == 2) skills_place(0);
+    if (sk_col >= sk_cols) sk_col = sk_cols - 1;
+}
+
 static void skills_fill(void) {
     unsigned n, i;
     void **list = skill_list(&n);
@@ -4366,18 +4382,7 @@ static void skills_fill(void) {
     unsigned char ws[32];
     static const unsigned short empty[] = {0};
     if (!skills_root || !hero || !wstring_functions(&wctor, &wdtor)) return;
-    /* The columns: 3 when a skill of the class is in PC's third (and the converted UI has it). */
-    {
-        int three = 0;
-        for (i = 0; list && i < n; i++) {
-            unsigned char *sk = (unsigned char *)list[i];
-            if (sk && *(int *)(sk + 0xd4) == 2 && *(int *)(sk + 0xdc) >= 0 && *(int *)(sk + 0xdc) <= 2 &&
-                *(int *)(sk + 0xd8) >= 0 && *(int *)(sk + 0xd8) <= 5) three = 1;
-        }
-        sk_cols = three && skills_place(1) ? 3 : 2;
-        if (sk_cols == 2) skills_place(0);
-        if (sk_col >= sk_cols) sk_col = sk_cols - 1;
-    }
+    skills_columns();
     /* Every cell hidden; the skills' shown. */
     for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 3; c++) {
         copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
@@ -4603,6 +4608,8 @@ static const int spell_tab[4] = {0, 1, 1, 2}, spell_col[4] = {1, 0, 1, 0};
 
 static void skills_move(int dx, int dy) {
     int tries;
+    if (!skills_root) return;
+    skills_columns();
     for (tries = 0; tries < 40; tries++) {
         if (sk_spells) {
             if (dx) { sk_spell = (sk_spell + (dx > 0 ? 1 : 3)) % 4; break; }

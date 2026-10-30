@@ -240,7 +240,10 @@ def add_skill_column(text):
             return text
         suffix = f"{m.group(1)}_{m.group(2)}_"
         cell = re.sub(r'(Name="[A-Za-z]+' + suffix + r')1"', r'\g<1>2"', text[m.start():end])
-        cell = cell.replace(">", '>\n<Property Name="Visible" Value="False" />', 1)
+        if re.match(r"<Window\b[^>]*/>", cell):
+            cell = cell[:-2].rstrip() + ' >\n<Property Name="Visible" Value="False" />\n</Window>'
+        else:
+            cell = cell.replace(">", '>\n<Property Name="Visible" Value="False" />', 1)
         out.append(text[done:end])
         out.append("\n" + cell)
         done = end
