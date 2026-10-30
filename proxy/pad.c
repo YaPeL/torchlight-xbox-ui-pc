@@ -1933,6 +1933,53 @@ static void missile_aim_install(void) {
     x360_log("pad: a missile weapon aims at the 360's cone unit (0x4b9240)\r\n");
 }
 
+/* The same for a weapon whose attack is its skill (the staff on PC: 0x48de30, called by the attack
+ * at 0x4a5a0b before 0x4b9240): it aims the skill at a point the unit's vfunc +0x98 gives from its
+ * target, +0x290, else +0x298 (0x48dfcb-0x48dfdb), along the facing with neither. There, for the
+ * hero with no target, the unit the 360's search finds (the 360's staff hits the cone's unit within
+ * the weapon's reach plus 1, 0x82291DD0: target_range here). A jump over the 6-byte
+ * mov eax, [esi+0x298] at 0x48dfd5 (reached only with +0x290 clear) to a trampoline that runs it
+ * and, with eax 0, asks skill_aim for a unit. */
+#define GOG_SKILL_WEAPON_TARGET 0x0048dfd5
+static void *__cdecl skill_aim(void *current, unsigned char *attacker) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    unsigned char *level = client ? *(unsigned char **)(client + 0x38) : 0;
+    float m[16];
+    void *u;
+    if (current || !level || attacker != *(unsigned char **)(client + 0x2c)) return current;
+    hero_matrix(attacker, m);
+    u = unit_in_view(attacker, level, m, ALIGN_ENEMY, target_range(attacker));
+    if (u && verbose && turn_logged < 4000) {
+        turn_logged++;
+        x360_log("pad: the weapon's skill aimed at "); x360_log_num((long)u); log_rel(m, u); x360_log("\r\n");
+    }
+    return u;
+}
+static void skill_aim_install(void) {
+    static const unsigned char want[6] = {0x8b, 0x86, 0x98, 0x02, 0x00, 0x00};   /* mov eax, [esi+0x298] */
+    unsigned char *at = (unsigned char *)GOG_SKILL_WEAPON_TARGET, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < 6; i++)
+        if (at[i] != want[i]) { x360_log("pad: the weapon skill's target not as read: its aim left to PC\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return;
+    for (i = 0; i < 6; i++) t[n++] = at[i];                           /* mov eax, [esi+0x298] */
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x56;                                                    /* push esi: the attacker */
+    t[n++] = 0x50;                                                    /* push eax: the target so far */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)skill_aim - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+    t[n++] = 0x89; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x1c;       /* mov [esp+28], eax: popad's eax */
+    t[n++] = 0x61;                                                    /* popad */
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 6) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 6, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+    x360_log("pad: a skill weapon aims at the 360's cone unit (0x48dfd5)\r\n");
+}
+
 /* ---- The attack's cone with a ranged weapon: the 360's 30 degrees ----
  * PC's attack (0x4a5880), as the 360's sub_822919A8, searches a cone from the attacker's transform
  * when it has no target (0x5006c0 at 0x4a5b07: a unit within the reach whose |atan2(x, z)| from
@@ -2501,7 +2548,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); missile_aim_install(); }
+    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); missile_aim_install(); skill_aim_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
