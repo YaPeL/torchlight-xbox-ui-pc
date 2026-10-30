@@ -9,6 +9,7 @@
 0x0040c8f0 0x0040c7c0 verified   code    window, body, callers
 0x0040e6e0 0x0040e5b0 verified   code    window, body, callers x6
 0x0040e720 0x0040e5f0 verified   code    window, body, callers x6
+0x0040f930 0x0040f770 verified   code    window 16, body, callers
 0x00411b8f 0x0041198f verified   comment window, local
 0x00411d60 0x00411b60 verified   code    window, body, callers x6
 0x004142a0 0x004140e0 verified   comment window, body, callers
@@ -24,6 +25,8 @@
 0x00416d40 0x00416ad1 verified   code    window 16, local 0+16 (port_addresses)
 0x00417380 0x00417110 verified   code    body +0x58,+0x78,+0x88, callers 0x402559, 0x419d62, 0x41b919, 0x41ba70 (port_addresses)
 0x0041b56b 0x0041b171 verified   comment window, local
+0x0041b832 0x0041b438 verified   comment window 24, local in 0x41ab50->0x41a790
+0x0041b83d 0x0041b443 verified   comment local loose in 0x41ab50->0x41a790
 0x00478e30 0x00477c20 verified   code    window, body, callers x5
 0x0047dd70 0x0047c320 verified   code    window, body, callers x2
 0x00480760 0x0047eaf0 verified   code    window, body, callers x6
@@ -197,6 +200,7 @@
 0x00547ca0 0x00543660 verified   code    body, callers x5
 0x00549b70 - unresolved comment ways disagree
 0x0054cad0 0x005482f0 verified   code    body, callers x5
+0x0054d390 0x00548b90 verified   code    window 16, body, callers x3
 0x0054d465 0x00548c65 verified   comment window, local
 0x0054d980 0x00549180 verified   code    window, body, callers x6
 0x0054ddfb 0x005495f0 verified   comment window, local
