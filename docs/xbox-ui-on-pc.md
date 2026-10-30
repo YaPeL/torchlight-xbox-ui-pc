@@ -4270,7 +4270,9 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   argument skips the angle), but PC's attack passes 0 (0x4a5af2). **[port]** 1.5 there, for every
   attacker. Left for another branch: PC's barrels are items, not units, so its attack's search
   never sees them; and PC's own mouse-over highlights what the virtual cursor crosses (the 360 has
-  none). Not played yet.
+  none). Reviewed against the disassembly (the slot is 0x5006c0's third argument, d is the
+  horizontal length; a unit that near is taken whatever the reach argument). Not measured on PC: in
+  three unattended runs at the bench the floor's archers kept their distance (nearest 1.64).
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
