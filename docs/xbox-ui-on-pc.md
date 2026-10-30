@@ -4261,6 +4261,16 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   measured with the test character's swapped save came from the bow's attack data the swapped
   record kept (the reach the same as the pistol's there), an artifact of the swap. The pistol and the bow
   go through the 30-degree cone (above).
+- **A unit right beside the hero (2026-10-30, read).** The owner: next to a barrel, PC's shot did
+  not break it, where the recomp's broke it at once. **[read, 360; the recomp agent]** The 360's
+  searches (`sub_822F8128`) take a unit closer than f1 = 1.5 at any angle, with the sight test only
+  (0x822F842C; logged hits at 1.2 / -96 and 1.2 / -53.6 degrees), and their filter is the unit's
+  team and targetable flag, not its type, so a barrel is a candidate as a monster is. **[read, PC]**
+  PC's search 0x5006c0 has the same near rule (0x500903: a unit no farther than its first float
+  argument skips the angle), but PC's attack passes 0 (0x4a5af2). **[port]** 1.5 there, for every
+  attacker. Left for another branch: PC's barrels are items, not units, so its attack's search
+  never sees them; and PC's own mouse-over highlights what the virtual cursor crosses (the 360 has
+  none). Not played yet.
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).

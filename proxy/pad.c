@@ -1937,6 +1937,33 @@ static void missile_aim_install(void) {
     x360_log("pad: a missile weapon aims at the 360's cone unit (0x4b9240)\r\n");
 }
 
+/* ---- The attack's search: a unit within 1.5 at any angle, as the 360's ----
+ * The 360's searches (sub_822F8128, both of sub_822919A8's) take a unit closer than f1 = 1.5
+ * (pool+196) at any angle, with only the sight test (0x822F842C; the recomp agent's logs: hits at
+ * 1.2 and -96 degrees). PC's search 0x5006c0 has the same rule (0x500903: a unit no farther than its
+ * first float argument skips the angle), but PC's attack passes 0 there (0x4a5af2: fldz; fstp
+ * [esp]), so a unit right beside the hero, 40 degrees off, was not found (the owner: a barrel or an
+ * enemy close by not hit, where the recomp hits it). The 5 bytes become a jump to a store of 1.5.
+ * For every attacker, as the 360's routine. */
+#define GOG_ATTACK_MIN_DISTANCE 0x004a5af2
+static void attack_near_install(void) {
+    static const unsigned char want[5] = {0xd9, 0xee, 0xd9, 0x1c, 0x24};   /* fldz; fstp dword [esp] */
+    unsigned char *at = (unsigned char *)GOG_ATTACK_MIN_DISTANCE, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < 5; i++)
+        if (at[i] != want[i]) { x360_log("pad: the attack search's near distance not as read: left at PC's 0\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 32, 0x3000, 0x40);
+    if (!t) return;
+    t[n++] = 0xc7; t[n++] = 0x04; t[n++] = 0x24;                      /* mov dword [esp], 1.5f */
+    *(unsigned long *)(t + n) = 0x3fc00000UL; n += 4;
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 5) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 5, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5));
+    VirtualProtect(at, 5, old, &old);
+    x360_log("pad: the attack's search takes a unit within 1.5 at any angle, as the 360's (0x4a5af2)\r\n");
+}
+
 /* ---- The attack's cone with a ranged weapon: the 360's 30 degrees ----
  * PC's attack (0x4a5880), as the 360's sub_822919A8, searches a cone from the attacker's transform
  * when it has no target (0x5006c0 at 0x4a5b07: a unit within the reach whose |atan2(x, z)| from
@@ -2505,7 +2532,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); missile_aim_install(); }
+    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); attack_near_install(); missile_aim_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
