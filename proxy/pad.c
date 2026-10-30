@@ -141,6 +141,7 @@ typedef void(__fastcall *float_ptr_fn)(void *hero, void *edx, float f, void *p);
 
 /* Diagnostics: what our own code did since the last search. */
 static unsigned dest_calls, drop_calls, log_until;
+static unsigned x_pressed_at;   /* X's last press: a tap's attack runs after the release */
 typedef void *(__fastcall *find_character_fn)(void *level, void *edx, const float *matrix, int alignment,
                                              float min, float half_angle, float range, int best,
                                              void *exclude, void *skill);
@@ -1473,7 +1474,7 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     };
     unsigned i;
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
-    if (pressed & 0x4000) log_until = GetTickCount() + 3000;
+    if (pressed & 0x4000) { log_until = GetTickCount() + 3000; x_pressed_at = GetTickCount(); }
     /* With the stick past 0.1 the 360's X drops the target (sub_8221B8E8); the attack goes toward
      * the stick, by the walk's setDestination with the hold byte set. */
     if ((pressed & 0x4000) && !stick_active()) {
@@ -1886,11 +1887,12 @@ static void __cdecl attack_found(unsigned char *unit, unsigned *frame) {
     int broke = 0;
     if (!client || unit != *(unsigned char **)(client + 0x2c)) return;
     hero_matrix(unit, m);
-    /* With X down, no unit found and no item target of the hero's own (+0x298, PC's 0x4a5a77): the
+    /* With X down (or pressed within 1 s: a tap's attack comes after the release), no unit found and no item target of the hero's own (+0x298, PC's 0x4a5a77): the
      * 360's prop replaces what PC's search (60 degrees) kept. The reach is PC's for that search
      * (0x4a5b1a): (+0x450 * +0x84 + the attack's weapon data's +0x78 + 0.2) * +0x44c + 1, the weapon
      * data the slot 0x1c below the prop's. */
-    if (level && !found && prop_slot && (buttons & 0x4000) && !*(void **)(unit + 0x298) &&
+    if (level && !found && prop_slot && ((buttons & 0x4000) || (x_pressed_at && GetTickCount() - x_pressed_at < 1000)) &&
+        !*(void **)(unit + 0x298) &&
         (wd = *(unsigned char **)(esp0 + prop_slot - 0x1c)) != 0) {
         range = (*(float *)(unit + 0x450) * *(float *)(unit + 0x84) + *(float *)(wd + 0x78) + 0.2f) *
                 *(float *)(unit + 0x44c) + 1.0f;
