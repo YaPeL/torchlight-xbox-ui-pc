@@ -4255,7 +4255,10 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   in an automated run, 8 of 18 shots aimed at a cone unit (-21 to +24 degrees); played by the owner,
   the crossbow 13 of 23. The staff is a melee weapon on PC (the owner: only blows, nothing ranged):
   its attacks enter 0x4b9240, which launches nothing for it (the hook's count, 16 of 19, is of
-  entries, not shots); the 360's staff hits through the same hit path as the bow (`sub_82298DE0`). The pistol and the bow
+  entries, not shots). The 360's is melee too (the recomp agent: base_staff's RANGE 0.8 and
+  STRIKERANGE 1.3 on both builds; with a Vanquisher its hits within 3.44); the far hits (to 9.3)
+  measured with the test character's swapped save came from the bow's attack data the swapped
+  record kept (the reach the same as the pistol's there), an artifact of the swap. The pistol and the bow
   go through the 30-degree cone (above).
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
