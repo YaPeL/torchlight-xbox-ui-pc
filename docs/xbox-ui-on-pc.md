@@ -4253,8 +4253,9 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   **[port]** At PC's launcher (0x4b9240), for the hero with no target, the target is the unit the
   360's first search finds (`unit_in_view`, 30 degrees, out to 21). Measured (2026-10-30): the wand
   in an automated run, 8 of 18 shots aimed at a cone unit (-21 to +24 degrees); played by the owner,
-  the crossbow 13 of 23 and the staff 16 of 19 (the staff launches through 0x4b9240 on PC, a
-  projectile, where the 360's hits the unit at once). The pistol and the bow
+  the crossbow 13 of 23. The staff is a melee weapon on PC (the owner: only blows, nothing ranged):
+  its attacks enter 0x4b9240, which launches nothing for it (the hook's count, 16 of 19, is of
+  entries, not shots); the 360's staff hits through the same hit path as the bow (`sub_82298DE0`). The pistol and the bow
   go through the 30-degree cone (above).
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
