@@ -166,8 +166,6 @@ static int aiming(unsigned now) { return aim_until && (int)(now - aim_until) < 0
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static float aim_point[3];                  /* the 360's aim point in the world (order(), while aiming) */
 static int aim_point_ok;
-static float shot_point[3];                  /* the shot's assist: the unit's position (order()) */
-static int shot_point_ok;
 int x360_world_to_screen(const float *p, float sw, float sh, float *x, float *y);   /* proxy/x360_menu.c */
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
@@ -856,9 +854,9 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         float px = 0.0f, py = 0.0f;
         int projected = 0;
         float on_plane[3];
-        on_plane[0] = shot_point_ok ? shot_point[0] : aim_point[0];
+        on_plane[0] = aim_point[0];
         on_plane[1] = aim_plane_y();
-        on_plane[2] = shot_point_ok ? shot_point[2] : aim_point[2];
+        on_plane[2] = aim_point[2];
         if (direct && aim_point_ok && aiming(GetTickCount()) &&
             x360_world_to_screen(on_plane, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
             /* Aiming (X held, a skill's key): the 360's point itself, 2 units from the hero along the
@@ -1813,48 +1811,6 @@ static void hold_turn_install(void) {
     x360_log("pad: X's turn faces the 360's point (0x491b60)\r\n");
 }
 
-/* After the update's hold turn (0x4af410, the return of its call to 0x491b60): the hero turned to
- * the stick's point; with the shot's assist on a unit, +0x1cc goes back to that unit's point,
- * so the shot the attack fires after it goes there (the 360's sub_822919A8 aims the
- * shot, not the hero). A jump over the 7-byte fld [esp+0x9c] to a trampoline. */
-static void __cdecl shot_restore(unsigned char *unit) {
-    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
-    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
-    float pos[3], dx, dz, len;
-    if (!shot_point_ok || !client || unit != *(unsigned char **)(client + 0x2c)) return;
-    if (!unit[GOG_HOLD_POSITION] || !(buttons & 0x4000) || !aiming(GetTickCount())) return;
-    ((get_position_fn)GOG_GET_POSITION)(unit, 0, pos, 1);
-    dx = shot_point[0] - pos[0];
-    dz = shot_point[2] - pos[2];
-    len = root(dx * dx + dz * dz);
-    if (len < 1e-3f) return;
-    /* Only the point: the hero's attack (0x496b70) hands the skill +0x1cc; +0x1d8 is the turn's
-     * own way (0x48d390), and setting it to the unit's each frame made the turn to the stick slow
-     * and jerky (the owner: rougher than the 360's; the log: the facing 6-20 degrees behind). */
-    *(float *)(unit + 0x1cc) = shot_point[0];
-    *(float *)(unit + 0x1d4) = shot_point[2];
-}
-static void shot_restore_install(void) {
-    static const unsigned char want[7] = {0xd9, 0x84, 0x24, 0x9c, 0x00, 0x00, 0x00};   /* fld dword [esp+0x9c] */
-    unsigned char *at = (unsigned char *)GOG_UPDATE_HOLD_TURN_RET, *t;
-    DWORD old;
-    int i, n = 0;
-    for (i = 0; i < 7; i++)
-        if (at[i] != want[i]) { x360_log("pad: the hold turn's return not as read: no shot assist\r\n"); return; }
-    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
-    if (!t) return;
-    t[n++] = 0x60;                                                    /* pushad */
-    t[n++] = 0x56;                                                    /* push esi: the unit */
-    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)shot_restore - (t + n + 5)); n += 5;
-    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x04;                      /* add esp, 4 */
-    t[n++] = 0x61;                                                    /* popad */
-    for (i = 0; i < 7; i++) t[n++] = at[i];
-    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;
-    if (!VirtualProtect(at, 7, 0x40, &old)) return;
-    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
-    VirtualProtect(at, 7, old, &old);
-}
-
 /* pad_log=1: PC's attack (0x4a5880, the 360's sub_822919A8: with no target it searches a cone from
  * the unit's transform, 0x5006c0 at 0x4a5b07, then 0x500a50) for the hero: at its entry the caller,
  * the weapon argument, the flags and the target +0x290; after the searches (0x4a5b6e) the unit it
@@ -1924,6 +1880,30 @@ static void attack_log_install(void) {
             VirtualProtect(at, 8, old, &old);
         }
     }
+}
+
+/* ---- The attack's cone with a ranged weapon: the 360's 30 degrees ----
+ * PC's attack (0x4a5880), as the 360's sub_822919A8, searches a cone from the attacker's transform
+ * when it has no target (0x5006c0 at 0x4a5b07: a unit within the reach whose |atan2(x, z)| from
+ * the facing is under the angle given) and attacks the unit found. The angle is 60 for a melee
+ * weapon and 10 for a ranged one (type 0x23: 0x4a5a4a loads 0xa8ec08); the 360's search for the bow,
+ * the pistol, the staff, the wand and the crossbow passes 30 (pool+944; the recomp agent's runs: hits
+ * within +-29.8 degrees). With 10, a shot with the stick 15 degrees off an enemy missed where the
+ * 360's hits (the owner; the log: PC's units found within 7 degrees). The fld's operand points at 30
+ * for every unit's ranged attack: the 360's search is the same for its monsters (sub_822919A8). */
+#define GOG_ATTACK_RANGED_CONE 0x004a5a4a
+static float ranged_cone = 30.0f;
+static void attack_cone_install(void) {
+    unsigned char *at = (unsigned char *)GOG_ATTACK_RANGED_CONE;
+    float *was;
+    DWORD old;
+    if (at[0] != 0xd9 || at[1] != 0x05) { x360_log("pad: the ranged attack's cone not as read: left at PC's\r\n"); return; }
+    was = *(float **)(at + 2);
+    if (*was != 10.0f) { x360_log("pad: the ranged attack's cone not 10: left at PC's\r\n"); return; }
+    if (!VirtualProtect(at, 6, 0x40, &old)) return;
+    *(float **)(at + 2) = &ranged_cone;
+    VirtualProtect(at, 6, old, &old);
+    x360_log("pad: the ranged attack's cone 30 degrees, as the 360's (0x4a5a4a)\r\n");
 }
 
 /* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
@@ -2217,7 +2197,6 @@ static void order(void) {
      * 0.1): read from the facing each frame, the hero's own turn toward it fed back and drifted
      * (6 degrees in 0.8 s against the recomp's sweep). */
     static float rest_dx, rest_dz;
-    static unsigned assist_logged;
     static int rest_set;
     aim_point_ok = 0;
     if (!aiming(now)) rest_set = 0;
@@ -2247,37 +2226,6 @@ static void order(void) {
             aim_point[1] = p[1];
             aim_point[2] = p[2] + 2.0f * dz / len;
             aim_point_ok = 1;
-            /* The shot's assist (the 360's attack execution sub_822919A8, the recomp agent's
-             * reading): with no target (X with the stick past 0.1 drops it) the shot searches
-             * from the hero's transform, whose facing is the stick's way, a cone of 30 degrees out
-             * to the weapon's reach plus 1 (sub_822F8128, 0x82291DD0), and aims at the unit found
-             * (0x82292058; no homing). Here the same cone from the stick's way, out to
-             * target_range (the weapon's +0x78 plus 2: 10 with the test bow against the 360's
-             * 10.45), and the shot's point (shot_point) is the unit's: the virtual cursor goes
-             * there, so PC's client and attack take it; the hero still turns to the stick (the
-             * hold turn's point is aim_point, then shot_restore puts the unit's back for the
-             * shot, as the 360's turns to the stick and only the shot goes to the unit). */
-            shot_point_ok = 0;
-            if ((buttons & 0x4000) && stick_active() && level) {
-                float c[16];
-                void *u;
-                hero_matrix(hero, c);
-                c[2] = dx / len; c[10] = dz / len;
-                c[0] = dz / len; c[8] = -dx / len;
-                u = unit_in_view(hero, level, c, ALIGN_ENEMY, target_range(hero));
-                if (u) {
-                    float t[3];
-                    ((get_position_fn)GOG_GET_POSITION)(u, 0, t, 1);
-                    shot_point[0] = t[0];
-                    shot_point[1] = t[1];
-                    shot_point[2] = t[2];
-                    shot_point_ok = 1;
-                    if (verbose && now - assist_logged >= 200) {
-                        assist_logged = now;
-                        x360_log("pad: X's shot assist on "); x360_log_num((long)u); log_rel(c, u); x360_log("\r\n");
-                    }
-                }
-            }
         }
     }
     /* The turn during an attack (pad_log=1, while X is down): what the update's branch tests
@@ -2462,10 +2410,11 @@ static void order(void) {
             highlight_item(level, item_candidate);
         }
     }
-    /* While the pad aims, the virtual cursor crosses units (the shot's assist puts it on one):
+    /* While the pad aims, the virtual cursor crosses units:
      * PC's own mouse-over clears a unit's highlight when the cursor leaves it (its UI's +0x2c, the
      * client at 0x41520d), the candidate's too, and highlight() above sets it again only when the
-     * candidate changes: the owner saw it flicker. Each frame while aiming, set again. */
+     * candidate changes: the owner saw it flicker (with an earlier assist that put the cursor on
+     * the unit). Each frame while aiming, set again. */
     if (highlighted && aiming(now) && in_list(level, GOG_LEVEL_UNITS, highlighted)) {
         typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
         ((set_bool_fn)(*(void ***)highlighted)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted, 0, 1);
@@ -2499,7 +2448,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) { hold_turn_install(); shot_restore_install(); }
+    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
