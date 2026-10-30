@@ -210,9 +210,42 @@ def convert(files):
         text, unknown = rename_sets(text, names)
         text = rename_fonts(text, fonts)
         name = basename(path)[: -len(".uilayout")] + ".layout" if path.endswith(".uilayout") else basename(path).lower()
+        if name.lower() == "skillsmenu_xenon.layout":
+            text = add_skill_column(text)
         put(name, text.encode(enc))
         report["layouts"][name] = {"windows": len(re.findall(r"<Window\b", text)), "unknown_imagesets": unknown}
     return out, report
+
+
+def add_skill_column(text):
+    """A third column of the skill tree's cells for PC's classes (issue #88): the 360's tree has 2
+    columns per pane (skillbg<pane>_<row>_<column>), PC's 3. Each cell of the second column is
+    copied after itself, its windows' names ending in _2 instead of _1, hidden (the proxy shows and
+    places them for a class with a skill in the third column). The recomp does the same in its
+    layout cache (the recomp agent: torchlight-achievements, AddSkillColumn)."""
+    if re.search(r'Name="skillbg\d_\d_2"', text):
+        return text
+    out, done = [], 0
+    for m in re.finditer(r'<Window\b[^>]*Name="skillbg(\d)_(\d)_1"[^>]*>', text):
+        depth, pos = 0, m.start()
+        for t in re.finditer(r"<Window\b[^>]*?(/?)>|</Window>", text[m.start():]):
+            if t.group(0).startswith("</"):
+                depth -= 1
+            elif not t.group(1):
+                depth += 1
+            if depth == 0:
+                end = m.start() + t.end()
+                break
+        else:
+            return text
+        suffix = f"{m.group(1)}_{m.group(2)}_"
+        cell = re.sub(r'(Name="[A-Za-z]+' + suffix + r')1"', r'\g<1>2"', text[m.start():end])
+        cell = cell.replace(">", '>\n<Property Name="Visible" Value="False" />', 1)
+        out.append(text[done:end])
+        out.append("\n" + cell)
+        done = end
+    out.append(text[done:])
+    return "".join(out)
 
 
 # The 360's CInteractiveMenu: two bars at the screen's top and bottom (set:Loading image:background),

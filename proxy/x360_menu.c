@@ -4075,6 +4075,7 @@ typedef void *(__fastcall *find_skill_fn)(void *manager, void *edx, const void *
 typedef void (__fastcall *set_skill_level_fn)(void *manager, void *edx, void *skill, int level);
 typedef unsigned char (__fastcall *use_point_fn)(void *unit, void *edx);
 static int sk_tab, sk_row, sk_col, sk_spells;
+static int sk_cols = 2;                   /* the tree's columns: 3 for a class with a skill in PC's third */
 static float help_width;
 
 /* ---- the skill's description as the 360 writes it (sub_823B07C8) ----
@@ -4292,6 +4293,67 @@ static int skill_learnable(unsigned char *sk) {
     return *(int *)(sk + 0xa8) < skill_max(sk);
 }
 
+/* PC's third column (issue #88). PC's classes place their skills in 3 columns per pane (the skill's
+ * +0xd4 is 0 to 2), the 360's tree has 2: a skill of the third column was not shown. The converter
+ * adds a hidden third column of cells (skillbg<pane>_<row>_2, copies of the second's,
+ * tools/convert_x360_ui.py add_skill_column); for a class with a skill there, the three cells of a
+ * row are placed across the two cells' width at 0.78 of their size, 0.1 of their width apart, their
+ * icon and level scaled with them; any other class keeps the layout's places. The recomp does the
+ * same for the classes that need it (the recomp agent: torchlight-achievements, skill_tree_model's
+ * ThreeColumnCells, kThreeColumnScale 0.78, kThreeColumnGap 0.1). */
+static void skill_cell_name(char *out, const char *kind, int t, int r, int c) {
+    char *p;
+    copy(out, 48, kind, 0);
+    p = out + length(out);
+    p = put_int(p, t); *p++ = '_'; p = put_int(p, r); *p++ = '_'; p = put_int(p, c); *p = 0;
+}
+static int skills_place(int three) {
+    static const char *const kinds[3] = {"skillbg", "skillicon", "skilllvl"};
+    static float orig[3][6][3][3][8];        /* pane, row, column, kind: the layout's areas */
+    static int saved, placed = 2, missing;
+    char name[48], value[160];
+    int t, r, c, k;
+    if (three == (placed == 3)) return 1;
+    if (missing) return 0;
+    if (!saved) {
+        for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 3; c++) for (k = 0; k < 3; k++) {
+            void *w;
+            skill_cell_name(name, kinds[k], t, r, c);
+            w = win_of(SKILLS_PREFIX, name);
+            read_prop(w, "UnifiedAreaRect", value, sizeof value);
+            if (!w || !parse_rect(value, orig[t][r][c][k])) {
+                x360_log("x360 skills: the converted UI has no third column (install again): PC's third column not shown\r\n");
+                missing = 1;
+                return 0;
+            }
+        }
+        saved = 1;
+    }
+    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) {
+        const float *a = orig[t][r][0][0], *b = orig[t][r][1][0];
+        /* {{x0 scale, x0 offset}, {y0 ..}, {x1 ..}, {y1 ..}}: the offsets at 1, 3, 5, 7. */
+        float w = (a[5] - a[1]) * 0.78f, h = (a[7] - a[3]) * 0.78f, gap = (a[5] - a[1]) * 0.1f;
+        float left = (a[1] + b[5]) / 2 - (3 * w + 2 * gap) / 2, mid = (a[3] + a[7]) / 2;
+        for (c = 0; c < 3; c++) for (k = 0; k < 3; k++) {
+            float v[8];
+            int i;
+            for (i = 0; i < 8; i++) v[i] = orig[t][r][c][k][i];
+            if (three && k == 0) {
+                v[1] = left + c * (w + gap); v[5] = v[1] + w;
+                v[3] = mid - h / 2; v[7] = mid + h / 2;
+            } else if (three) {
+                for (i = 1; i < 8; i += 2) v[i] *= 0.78f;
+            }
+            skill_cell_name(name, kinds[k], t, r, c);
+            write_rect(value, v);
+            prop(win_of(SKILLS_PREFIX, name), "UnifiedAreaRect", value);
+        }
+    }
+    placed = three ? 3 : 2;
+    x360_log(three ? "x360 skills: PC's three columns\r\n" : "x360 skills: the 360's two columns\r\n");
+    return 1;
+}
+
 static void skills_fill(void) {
     unsigned n, i;
     void **list = skill_list(&n);
@@ -4304,8 +4366,20 @@ static void skills_fill(void) {
     unsigned char ws[32];
     static const unsigned short empty[] = {0};
     if (!skills_root || !hero || !wstring_functions(&wctor, &wdtor)) return;
+    /* The columns: 3 when a skill of the class is in PC's third (and the converted UI has it). */
+    {
+        int three = 0;
+        for (i = 0; list && i < n; i++) {
+            unsigned char *sk = (unsigned char *)list[i];
+            if (sk && *(int *)(sk + 0xd4) == 2 && *(int *)(sk + 0xdc) >= 0 && *(int *)(sk + 0xdc) <= 2 &&
+                *(int *)(sk + 0xd8) >= 0 && *(int *)(sk + 0xd8) <= 5) three = 1;
+        }
+        sk_cols = three && skills_place(1) ? 3 : 2;
+        if (sk_cols == 2) skills_place(0);
+        if (sk_col >= sk_cols) sk_col = sk_cols - 1;
+    }
     /* Every cell hidden; the skills' shown. */
-    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 2; c++) {
+    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 3; c++) {
         copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
         p = put_int(p, c); *p = 0;
         show(win_of(SKILLS_PREFIX, name), 0);
@@ -4326,7 +4400,7 @@ static void skills_fill(void) {
         int passive, selected;
         if (!sk) continue;
         t = *(int *)(sk + 0xdc); r = *(int *)(sk + 0xd8); c = *(int *)(sk + 0xd4);
-        if (t < 0 || t > 2 || r < 0 || r > 5 || c < 0 || c > 1) continue;
+        if (t < 0 || t > 2 || r < 0 || r > 5 || c < 0 || c >= sk_cols) continue;
         copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
         p = put_int(p, c); *p = 0;
         bg = win_of(SKILLS_PREFIX, name);
@@ -4539,8 +4613,8 @@ static void skills_move(int dx, int dy) {
                 sk_row = dy < 0 ? 5 : 0;
             }
         } else {
-            if (dx > 0) { if (++sk_col > 1) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
-            if (dx < 0) { if (--sk_col < 0) { sk_col = 1; if (--sk_tab < 0) sk_tab = 2; } }
+            if (dx > 0) { if (++sk_col >= sk_cols) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
+            if (dx < 0) { if (--sk_col < 0) { sk_col = sk_cols - 1; if (--sk_tab < 0) sk_tab = 2; } }
             if ((dy < 0 && --sk_row < 0) || (dy > 0 && ++sk_row > 5)) {
                 sk_spells = 1;
                 sk_spell = sk_tab == 0 ? 0 : sk_tab == 2 ? 3 : sk_col == 0 ? 1 : 2;

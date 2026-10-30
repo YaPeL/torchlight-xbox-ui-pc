@@ -4363,3 +4363,25 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
+
+## 47. PC's third column in the skill tree (issue #88, 2026-10-30)
+
+**[the issue]** A player's Alchemist showed 2 of PC's 3 columns per pane, so some skills were missing.
+**[read]** PC's classes place a skill at a pane, a row and a column 0 to 2 (the skill's +0xdc, +0xd8,
++0xd4). The 360's tree (`skillsmenu_xenon`) has cells `skillbg<pane>_<row>_<column>` for columns 0
+and 1 only, because the 360's own classes were redrawn for 2 columns, and the port's fill skipped
+column 2.
+**[the recomp agent]** The recomp adds a real third column, but only for a class with a skill in
+column 2 (its layout cache copies the second column's cells as hidden `_2` cells). The three cells
+of a row are placed across the two cells' width at 0.78 of their size, 0.1 of their width apart.
+A class without one keeps the layout (torchlight-achievements: `AddSkillColumn`, `ThreeColumnCells`).
+**[port]**
+- The converter does the same as the recomp (`add_skill_column`: each second-column cell copied
+  after itself, its windows' names ending in `_2`, hidden).
+- The page shows 3 columns when the class has a skill in column 2. It places them with the
+  recomp's measures, the icon and the level scaled with the cell, and the left and right moves go
+  through the 3 columns before the next pane. With any other class, the layout's places are kept.
+- A converted UI from before this change has no third column. The log then says so ("install
+  again") and the page keeps 2 columns.
+**[run]** An Alchemist copy in the test root (unattended): "PC's three columns" in the log, with 3
+cells per row in each pane. The right moves crossed column 2. Steam UNCHANGED.
