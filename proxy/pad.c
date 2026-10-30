@@ -152,6 +152,7 @@ typedef void *(__fastcall *find_item_fn)(void *level, void *edx, const float *ma
 #define TARGET_MIN 0.5f
 #define TARGET_RANGE 7.0f      /* the enemy search's least range (target_range) */
 #define TARGET_RANGE_ANY 3.5f
+#define SHOT_ASSIST_RANGE 21.0f  /* the 360's missile aim search (pool+1628, sub_822919A8 at 0x82291C08) */
 #define BEHIND 1.5f           /* the 360's second pass: its origin 1.5 behind the hero */
 #define ITEM_HALF_ANGLE 60.0f
 #define ITEM_RANGE 3.0f
@@ -2177,12 +2178,12 @@ static void order(void) {
             aim_point[2] = p[2] + 2.0f * dz / len;
             aim_point_ok = 1;
             /* The shot's assist (the 360's attack execution sub_822919A8, the recomp agent's
-             * reading): with no target (X with the stick past 0.1 drops it) the shot searches
-             * from the hero's transform, whose facing is the stick's way, a cone of 30 degrees out
-             * to the weapon's reach plus 1 (sub_822F8128, 0x82291DD0), and aims at the unit found
-             * (0x82292058; no homing). Here the same cone from the stick's way, out to
-             * target_range (the weapon's +0x78 plus 2: 10 with the test bow against the 360's
-             * 10.45), and the shot's point (shot_point) is the unit's: the virtual cursor goes
+             * reading): with no target (X with the stick past 0.1 drops it) a missile weapon
+             * searches from the hero's transform, whose facing is the stick's way, a cone of 30
+             * degrees out to 21 (sub_822F8128 returning to 0x82291C08: pool+944, pool+1628) and
+             * the arrow (sub_822BAB50, from 0x82291CA4) is aimed at the unit found, its target id
+             * given to the missile. Here the same cone from the stick's way out to 21, and the
+             * shot's point (shot_point) is the unit's: the virtual cursor goes
              * there, so PC's client and attack take it; the hero still turns to the stick (the
              * hold turn's point is aim_point, then shot_restore puts the unit's back for the
              * shot, as the 360's turns to the stick and only the shot goes to the unit). */
@@ -2193,7 +2194,7 @@ static void order(void) {
                 hero_matrix(hero, c);
                 c[2] = dx / len; c[10] = dz / len;
                 c[0] = dz / len; c[8] = -dx / len;
-                u = unit_in_view(hero, level, c, ALIGN_ENEMY, target_range(hero));
+                u = unit_in_view(hero, level, c, ALIGN_ENEMY, SHOT_ASSIST_RANGE);
                 if (u) {
                     float t[3];
                     ((get_position_fn)GOG_GET_POSITION)(u, 0, t, 1);
