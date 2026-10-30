@@ -9618,21 +9618,24 @@ static void swap_checkbox_tick(const char *prefix) {
 
 /* ---- The 360's brightness and contrast (doc section 45) ----
  * The 360's two graphics sliders (settingsmenu_xenon's Brightness and Contrast) on the 360's scale,
- * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8).
- * The value goes to the display as the 360's ramp (sub_82577F08): for i = 0..255, the same for red,
- * green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), given here to D3D9's SetGammaRamp and
- * applied when the values change (sub_821F9DA8 compares them with its cache each update). PC's
- * look is the start (the owner's choice, 2026-10-29): 257 and 256 make the ramp the identity, so
- * nothing is set until a slider moves; the 360's defaults are 290 and 210. A slider passing either
- * default stops on it, and its header says which (the owner). */
-#define X360_PC_BRIGHTNESS 257   /* also in setup.c */
-#define X360_PC_CONTRAST 256
-#define X360_360_BRIGHTNESS 290
-#define X360_360_CONTRAST 210
+ * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8), the
+ * 360's defaults 290 and 210 at the start. The 360's ramp (sub_82577F08): for i = 0..255, the same for
+ * red, green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), applied when the values change
+ * (sub_821F9DA8). PC draws its image brighter than the 360 draws its own (the recomp agent's captures
+ * of the same place: a mean of 30 on GOG against 20 on the recomp, both with no ramp), and the 360's
+ * default ramp brightens the 360's; given as such, GOG at 290/210 was much brighter than the recomp
+ * at its defaults (54 against 39; the owner saw it). So the ramp is applied relative to PC's image:
+ * each level i is taken back through the 360's default ramp (PC's image standing for the 360's at its
+ * defaults), then through the ramp of the sliders' values, so the defaults give the recomp's look (a
+ * simulation on the same capture: 39.6 against its 39.0, the blacks raised as the 360's) and a slider
+ * moves the image as much as on the 360 (the owner, 2026-10-30). A slider passing the default stops
+ * on it. */
+#define X360_DEFAULT_BRIGHTNESS 290   /* also in setup.c */
+#define X360_DEFAULT_CONTRAST 210
 int x360_brightness_setting(void);
 int x360_contrast_setting(void);
 void x360_gamma_setting_write(int brightness, int contrast);
-static int gamma_b = -1, gamma_c, gamma_applied_b = X360_PC_BRIGHTNESS, gamma_applied_c = X360_PC_CONTRAST, gamma_dirty;
+static int gamma_b = -1, gamma_c, gamma_applied_b = -1, gamma_applied_c = -1, gamma_dirty;   /* -1: set at the start */
 /* PC's IDirect3DDevice9: the custom attribute D3DDEVICE (a virtual of RenderTarget, its slot found in
  * RenderTarget's exported vtable) of Ogre's auto-created window, or, as Torchlight makes its own,
  * of the game camera's viewport target; 0 under another render system. */
@@ -9706,7 +9709,13 @@ static void gamma_apply(int b, int c) {
     gamma_applied_b = b;
     gamma_applied_c = c;
     for (i = 0; i < 256; i++) {
-        float v = (float)b * 128.0f + (float)(i - 128) * (float)b * (float)c / 256.0f;
+        /* PC's level i taken back through the 360's default ramp (its 16-bit output i*257), then
+         * through the sliders' ramp. */
+        const float d = (float)X360_DEFAULT_BRIGHTNESS, dc = (float)X360_DEFAULT_CONTRAST;
+        float j = 128.0f + ((float)i * 257.0f - d * 128.0f) / (d * dc / 256.0f), v;
+        if (j < 0.0f) j = 0.0f;
+        if (j > 255.0f) j = 255.0f;
+        v = (float)b * 128.0f + (j - 128.0f) * (float)b * (float)c / 256.0f;
         if (v < 0.0f) v = 0.0f;
         if (v > 65535.0f) v = 65535.0f;
         ramp[0][i] = ramp[1][i] = ramp[2][i] = (unsigned short)v;
@@ -9741,7 +9750,7 @@ static void gamma_frame(int settings_up, const char *prefix) {
         x360_log("x360 gamma: the settings closed without Apply: the values at their opening put back\r\n");
     }
     was_up = settings_up;
-    if (++frames % 120 == 0 && (gamma_applied_b != X360_PC_BRIGHTNESS || gamma_applied_c != X360_PC_CONTRAST)) {
+    if (++frames % 120 == 0 && gamma_applied_b >= 0) {
         static void *last_device;
         void *d;
         gamma_device_fresh = 1;
@@ -9759,10 +9768,7 @@ static void gamma_header(void *header, const char *label, int value, int pc, int
     s[at++] = ' ';
     do { digits[d++] = (char)('0' + n % 10); n /= 10; } while (n && d < 7);
     while (d) s[at++] = digits[--d];
-    if (value == pc || value == x360) {
-        const char *tag = value == pc ? " (PC)" : " (360)";   /* the defaults; longer was clipped (the run) */
-        for (k = 0; tag[k]; k++) s[at++] = tag[k];
-    }
+    (void)pc; (void)x360;   /* no default's tag (the owner, 2026-10-30) */
     s[at] = 0;
     text(header, s);
 }
@@ -9839,9 +9845,9 @@ static void gamma_sliders_tick(const char *prefix) {
     int b, c;
     if (gamma_b < 0) return;
     b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
-                     gamma_b, 80.0f, 500.0f, 10.0f, X360_PC_BRIGHTNESS, X360_360_BRIGHTNESS, &last_b);
+                     gamma_b, 80.0f, 500.0f, 10.0f, X360_DEFAULT_BRIGHTNESS, X360_DEFAULT_BRIGHTNESS, &last_b);
     c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
-                     gamma_c, 80.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
+                     gamma_c, 80.0f, 300.0f, 5.0f, X360_DEFAULT_CONTRAST, X360_DEFAULT_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
     {
         /* Cancel and Apply moved down by what the sliders add under the last row (the contrast
