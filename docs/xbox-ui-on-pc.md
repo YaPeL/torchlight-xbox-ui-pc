@@ -4240,6 +4240,15 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   (0x41520d) cleared it when the cursor left a unit (the owner saw it flicker). Played by the owner
   (2026-10-29): the shots hit as the recomp's; the units PC's attacks found were from -25 to +20
   degrees (17 of 22 attacks found one).
+- **Other ranged weapons on PC (2026-10-29, measured).** The recomp agent's weapon runs (the bench
+  save with the bow's record swapped by its GUID and name, the same pad script) replayed on GOG with
+  the 30-degree cone: the pistol's attacks go through the cone search (0x4a5b6e reached), as the
+  bow's; the wand's, the crossbow's and the staff's never reach it (0 of 22, 23 and 25 attacks).
+  **[read, PC]** Before the cone, 0x4a5a04-0x4a5a23 hands a missile weapon the unit's +0x290 target
+  (0x48de30, then 0x4b9240) and returns: with X and the stick the target is clear, so the missile
+  flies along the facing. **[measured, 360; the recomp agent]** The wand and the crossbow launch a
+  missile aimed at the cone's unit, the staff hits it at once (no missile), the pistol as the bow.
+  Not ported yet: PC would need the cone's unit given to its missile path.
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
