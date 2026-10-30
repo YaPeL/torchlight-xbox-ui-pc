@@ -6348,6 +6348,9 @@ void x360_hud_tick(void) {
  * +1608); the anchor below (interact_prompt). */
 /* A world point on the screen, in the window's pixels, by Ogre's camera (the client's +0x10, its
  * +8, as proxy/pad.c reads it): its projection and view matrices; 0 behind the camera. */
+static int world_to_screen(const float *p, float sw, float sh, float *x, float *y);
+/* For proxy/pad.c: the pad's aim point on the screen (its virtual cursor while X or a skill aims). */
+int x360_world_to_screen(const float *p, float sw, float sh, float *x, float *y) { return world_to_screen(p, sw, sh, x, y); }
 static int world_to_screen(const float *p, float sw, float sh, float *x, float *y) {
     typedef const float *(__fastcall *mat_fn)(const void *self, void *edx);
     static mat_fn view, proj;
