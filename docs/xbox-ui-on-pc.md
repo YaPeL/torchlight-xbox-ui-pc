@@ -4333,6 +4333,25 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   none). Reviewed against the disassembly (the slot is 0x5006c0's third argument, d is the
   horizontal length; a unit that near is taken whatever the reach argument). Not measured on PC: in
   three unattended runs at the bench the floor's archers kept their distance (nearest 1.64).
+- **Barrels (2026-10-30).** **[measured, 360; the recomp agent]** A barrel spawned 0.9 in front of
+  the hero, X tapped, the stick neutral, with the bow and with the staff: the unit searches find
+  nothing (a barrel is no candidate there, as the barrel-v2 run had shown), and the barrel breaks
+  at once through a third search: `sub_822F8500` at 0x82291E28 walks the level's props, keeps those
+  with +412, +353, the virtual +32 and the kind 29, and returns the FIRST within 30 degrees and
+  the weapon's reach plus 1 (10.45 with the bow, 3.75 with the staff), or within 1.5 at any angle,
+  in sight; at 0x822926B0 its virtual +308 (`CBreakable::interact`, sub_822824C0) is called on the
+  hero. No hit and no missile; the 360 highlights nothing there. **[read, PC]** PC has the same
+  search (0x500a50, the same filters at +0x19c, +0x161, the virtual +0x20 and the kind 0x1d, the
+  angle and the reach its caller's), without the 1.5 rule, and it keeps the prop for the strike
+  ([esp+0x40]): the bow's arrow, which a barrel that near did not stop (the owner).
+  `CBreakable::interact` is its virtual 79 (GOG 0x484340, Steam 0x482600; `CItem`'s is the pick-up
+  0x4d0d90). PC's own strike of a prop (0x4a63e4) is the 360's sequence: the interact, then the
+  event 11 (0x486450). **[port]** After PC's searches (0x4a5b6e), for the hero with the pad's X
+  down, no unit found and no item target of its own (+0x298): the 360's search (in list order, the
+  first that passes; the reach PC's for its own search, 0x4a5b1a), replacing what PC's 60-degree
+  search kept; on a barrel, its interact, the event 11, and the hero turned to it. PC's attack then
+  finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing, as on the 360. A skill cast
+  with X held searches too (its flags not looked at). Reviewed against the disassembly; not run yet.
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
