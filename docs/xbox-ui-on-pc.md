@@ -4248,12 +4248,13 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   (0x48de30, then 0x4b9240) and returns: with X and the stick the target is clear, so the missile
   flies along the facing. **[measured, 360; the recomp agent]** The wand and the crossbow launch a
   missile aimed at the cone's unit, the staff hits it at once (no missile), the pistol as the bow.
-  The automated wand, crossbow and staff runs did not attack at all: the test character lacks
-  the crossbow's dexterity (the owner), and the replay's taps did not fire them. **[port]** At PC's
-  launcher (0x4b9240), for the hero with no target, the target is the unit the 360's first search
-  finds (`unit_in_view`, 30 degrees, out to 21). Played by the owner (2026-10-30): the wand 8 of 27
-  shots aimed at a cone unit (-21 to +24 degrees), the crossbow 13 of 23, the staff 16 of 19 (the
-  staff launches through 0x4b9240 too on PC, where the 360's hits at once). The pistol and the bow
+  In the automated runs the crossbow and the staff never attacked (the hero's attack, 0x4a6804,
+  not reached; the test character lacks the crossbow's dexterity, the owner); the wand did.
+  **[port]** At PC's launcher (0x4b9240), for the hero with no target, the target is the unit the
+  360's first search finds (`unit_in_view`, 30 degrees, out to 21). Measured (2026-10-30): the wand
+  in an automated run, 8 of 18 shots aimed at a cone unit (-21 to +24 degrees); played by the owner,
+  the crossbow 13 of 23 and the staff 16 of 19 (the staff launches through 0x4b9240 on PC, a
+  projectile, where the 360's hits the unit at once). The pistol and the bow
   go through the 30-degree cone (above).
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
