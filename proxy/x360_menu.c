@@ -9801,7 +9801,10 @@ static int gamma_slider(const char *prefix, const char *name, const char *header
         read_prop(anchor, "UnifiedAreaRect", r, sizeof r);
         if (parse_rect(r, v)) {
             /* The header 20 px tall and the slider 255 by 25 under it (PC's MusicHeader and
-             * MusicVolume's sizes), at the anchor's left. */
+             * MusicVolume's sizes), at the anchor's left; the header `top` below the anchor's top,
+             * 80 as PC's own (settingsmenu.layout: each header 80 under the control above's top,
+             * MusicHeader -70 under ResolutionDropdown -150, SoundHeader 30 under MusicVolume -50;
+             * 50 was too close, the owner). */
             v[4] = v[0]; v[5] = v[1] + 255.0f;
             v[6] = v[2]; v[3] += top; v[7] = v[3] + 20.0f;
             write_rect(r, v);
@@ -9836,9 +9839,9 @@ static void gamma_sliders_tick(const char *prefix) {
     int b, c;
     if (gamma_b < 0) return;
     b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
-                     gamma_b, 50.0f, 500.0f, 10.0f, X360_PC_BRIGHTNESS, X360_360_BRIGHTNESS, &last_b);
+                     gamma_b, 80.0f, 500.0f, 10.0f, X360_PC_BRIGHTNESS, X360_360_BRIGHTNESS, &last_b);
     c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
-                     gamma_c, 50.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
+                     gamma_c, 80.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
 }
 #undef last_b
