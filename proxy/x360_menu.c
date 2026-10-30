@@ -9843,6 +9843,27 @@ static void gamma_sliders_tick(const char *prefix) {
     c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
                      gamma_c, 80.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
+    {
+        /* Cancel and Apply moved down by what the sliders add under the last row (the contrast
+         * slider's bottom against ShowBlood's), so they keep PC's own gap under it: at PC's 80 the
+         * sliders reached the buttons (the owner's capture). Once per settings window. */
+        static void *moved_for;
+        void *apply = win_of(prefix, "Apply"), *cancel = win_of(prefix, "Cancel");
+        void *slider = win_of(prefix, "x360Contrast"), *row = win_of(prefix, "ShowBlood");
+        char r[160];
+        float vs[8], vr[8];
+        if (apply && cancel && slider && row && moved_for != apply) {
+            read_prop(slider, "UnifiedAreaRect", r, sizeof r);
+            if (parse_rect(r, vs)) {
+                read_prop(row, "UnifiedAreaRect", r, sizeof r);
+                if (parse_rect(r, vr) && vs[7] > vr[7]) {
+                    move_by(apply, 0, vs[7] - vr[7]);
+                    move_by(cancel, 0, vs[7] - vr[7]);
+                    moved_for = apply;
+                }
+            }
+        }
+    }
 }
 #undef last_b
 #undef last_c
