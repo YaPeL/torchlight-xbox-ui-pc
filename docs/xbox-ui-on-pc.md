@@ -1297,6 +1297,10 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
     root (`setLookNFeel`) when it differs. A run (2026-10-29, unattended, the test copy): the
     item's card drawn with the 360's frame and the bag seen through it, as the recomp's
     screenshot; the comparison's cards not seen in that run.
+  - The damage-per-second digits (`BigDPS`, FrizQuadrataBig): against the recomp in English
+    (2026-10-30, 1920x1080), the same number is 22 px tall on both (37 and 34 px wide). A
+    first recomp capture, in Spanish, had them a third shorter: the Spanish pak (`pak_es.zip`)
+    maps the FrizQuadrata fonts to another TTF. The language, not the port.
   - An unidentified item shows PC's "Unidentified items cannot be used - use an identify scroll
     to reveal enchantments".
 - **Item compare** (the bar's `ToggleItemCompare`, beside the d-pad's left-right image). The 360
