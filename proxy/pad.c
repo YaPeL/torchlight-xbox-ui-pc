@@ -161,6 +161,8 @@ typedef void *(__fastcall *find_item_fn)(void *level, void *edx, const float *ma
 static float face_x = 0.0f, face_z = 1.0f; /* the hero's facing: the stick's last direction, in the world */
 static void *candidate, *item_candidate;    /* the 360's +0x1BC and +0x1C4 */
 static unsigned aim_until;                  /* the virtual cursor aims ahead of the hero until then */
+/* Whether the aim window is open now: wrap-safe (the tick count passes 2^31 and wraps at 2^32). */
+static int aiming(unsigned now) { return aim_until && (int)(now - aim_until) < 0; }
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static float aim_point[3];                  /* the 360's aim point in the world (order(), while aiming) */
 static int aim_point_ok;
@@ -711,7 +713,8 @@ static void poll(void) {
 
 /* The pad's buttons for a tick that runs every frame (proxy/x360_menu.c's dialog: PC's modal
  * dialogs stop the GetCursorPos polls that drive order()). */
-unsigned x360_pad_buttons(void) { poll(); return buttons; }
+static void release_hold_key_if_stale(void);
+unsigned x360_pad_buttons(void) { poll(); release_hold_key_if_stale(); return buttons; }
 int x360_pad_ly(void) { poll(); return menu_ly; }   /* the proxy's menus: the stick before the 360's dead zone */
 int x360_pad_lx(void) { poll(); return menu_lx; }
 /* What A would use (the 360's +0x1BC/+0x1C4): an item, else a unit near (for the labels). */
@@ -825,10 +828,10 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
     if (direct) {
         if (!in_probe) {
             order();
-            if (!(aim_until && GetTickCount() < aim_until)) return r;
+            if (!aiming(GetTickCount())) return r;
         }
     }
-    if (!(stick_active() || (buttons & 0x1000) || clicking() || (direct && aim_until && GetTickCount() < aim_until))) {
+    if (!(stick_active() || (buttons & 0x1000) || clicking() || (direct && aiming(GetTickCount())))) {
         if (held) {
             /* Released: the button goes up where the real cursor is. */
             POINT c = *p;
@@ -854,7 +857,7 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         on_plane[0] = aim_point[0];
         on_plane[1] = aim_plane_y();
         on_plane[2] = aim_point[2];
-        if (direct && aim_point_ok && aim_until && GetTickCount() < aim_until &&
+        if (direct && aim_point_ok && aiming(GetTickCount()) &&
             x360_world_to_screen(on_plane, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
             /* Aiming (X held, a skill's key): the 360's point itself, 2 units from the hero along the
              * stick turned by the camera's yaw, or along the facing at rest (sub_8221C838), projected
@@ -1435,13 +1438,21 @@ static void post_key_state(unsigned vk, unsigned scan, int down) {
 
 /* X's hold key (Shift, posted while X is down: see order()). Released when X is up, and when a
  * frame's order() returned before the gameplay path (a menu, the inventory, a cinematic, a load,
- * death: the review), so it never stays down under them. The keyboard's own Shift, if held, is
+ * death: the review), so it does not stay down under them; when order() itself stops (a PC modal
+ * dialog), release_hold_key_if_stale. The keyboard's own Shift, if held, is
  * left down. */
 static int hold_key_down, hold_key_kept;
+static unsigned order_at;   /* GetTickCount() of order()'s last run */
 static void release_hold_key(void) {
     if (!hold_key_down) return;
     hold_key_down = 0;
     if (!real_get_async_key_state || !(real_get_async_key_state(0x10) & 0x8000)) post_key_state(0x10, 0x2a, 0);
+}
+/* PC's modal dialogs (and a lost focus) stop the GetCursorPos polls that run order() (the review):
+ * the frame's other users of the pad (proxy/x360_menu.c's ticks, through x360_pad_buttons) let the
+ * hold key go when order() has not run for 250 ms. */
+static void release_hold_key_if_stale(void) {
+    if (hold_key_down && GetTickCount() - order_at > 250) release_hold_key();
 }
 
 static void post_key(unsigned vk) {
@@ -1764,7 +1775,7 @@ static void __cdecl hold_turn_point(unsigned char *unit, float *point, unsigned 
     unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
     if (ret != GOG_UPDATE_HOLD_TURN_RET || !client || unit != *(unsigned char **)(client + 0x2c)) return;
     if (point != (float *)(unit + 0x1cc) || !unit[GOG_HOLD_POSITION] || !(buttons & 0x4000)) return;
-    if (!aim_point_ok || !aim_until || (int)(GetTickCount() - aim_until) >= 0) return;
+    if (!aim_point_ok || !aiming(GetTickCount())) return;
     if (verbose && turn_logged < 4000) {
         /* What PC had there, beside the pad's point (both less the hero's position, x1000). */
         turn_logged++;
@@ -1938,6 +1949,7 @@ static void order(void) {
     static int was_active;
     unsigned pressed;
     if (in_probe) return;
+    order_at = now;
     if (!(buttons & 0x4000) || !hold_key_kept) release_hold_key();
     hold_key_kept = 0;
     app = *(unsigned char **)GOG_APP_GLOBAL;
@@ -2092,8 +2104,8 @@ static void order(void) {
     static float rest_dx, rest_dz;
     static int rest_set;
     aim_point_ok = 0;
-    if (!(aim_until && now < aim_until)) rest_set = 0;
-    if (aim_until && now < aim_until) {
+    if (!aiming(now)) rest_set = 0;
+    if (aiming(now)) {
         float p[3], dx, dz, sx = (float)lx / 1000.0f, sy = (float)ly / 1000.0f, fx, fz, len;
         ((get_position_fn)GOG_GET_POSITION)(hero, 0, p, 1);
         aim_hero[0] = p[0]; aim_hero[1] = p[1]; aim_hero[2] = p[2];

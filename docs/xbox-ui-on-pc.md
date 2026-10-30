@@ -4175,7 +4175,7 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   virtual cursor sat on the screen at the stick's angle, which the perspective bends on the
   ground (section 31) and the hero's place on the screen shifts: the owner found aiming hard. Now,
   while X is held or a skill's key aims, the virtual cursor is the projection (Ogre's camera, as
-  the "A Interact" prompt's) of the 360's point, `sub_8221C838`'s: the hero plus 2.0 along the
+  the interact prompt's, `TargetInteractHover`) of the 360's point, `sub_8221C838`'s: the hero plus 2.0 along the
   stick turned by the camera's yaw, or along the facing at rest. The review's points: the hold key
   is released whenever a frame's pad update did not reach play (a menu, a load, death), and a
   keyboard Shift held is left down.
@@ -4200,7 +4200,7 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   facing at the end of each direction equal to the recomp's within 1 degree in all 8. At rest with X
   still held PC's hero drifted 6 degrees in 0.8 s (the recomp's none).
 - **The bend's cause (2026-10-29, read and measured).** `findWorldLocation` (0x411d60) casts the
-  cursor's ray onto a plane at the hero's +0x1b4 y, raised by 1.7 (0xa91ce4) when its flag is set,
+  cursor's ray onto a plane at the y of the hero's vector +0x1b4 (its +0x1b8), raised by 1.7 (0xa91ce4) when its flag is set,
   and every attack, skill and hold caller sets it (0x4148cc, 0x414e84, 0x414ef2, 0x41538b,
   0x4973a3, 0x5e4c87). The pad projected the aim point at the hero's own height, so the same pixel
   came back from the higher plane pulled toward the camera's foot: the bend toward the screen's
@@ -4210,4 +4210,13 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   recomp's within 1 degree in all 8 directions. The skills' keys take the same cursor and plane.
   At rest the aim keeps the stick's last way, as the 360's +448 (sub_8221B8E8 calls moveTo only
   past 0.1), not the facing read each frame: the drift at rest went from 6 to 1 degree in 0.8 s.
-  The hold turn's point stays as the 360's rule. Not played by the owner yet.
+  The hold turn's point stays as the 360's rule. Played by the owner (2026-10-29): aiming with X
+  as the recomp's; in that run and in a second one PC's own point at the hold turn was within 0.3
+  and 0.36 degrees of the 360's (medians of 1317 and 1304 frames, at most 2).
+- **The pick's angle sign (read, the recomp agent).** The 360's local x in `sub_821B58C0` is along
+  (fz, 0, -fx), as PC's `unit_in_view` computes it (lx = fz*dx - fx*dz): the recomp's own atan2
+  arguments and the same formula on world positions agree to 0.01 degrees with the same sign, so
+  the tie rule's "5 degrees past the best" favours the same side on both.
+- **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
+  Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
+  measured).
