@@ -1814,8 +1814,8 @@ static void hold_turn_install(void) {
 }
 
 /* After the update's hold turn (0x4af410, the return of its call to 0x491b60): the hero turned to
- * the stick's point; with the shot's assist on a unit, +0x1cc and +0x1d8 go back to that unit's
- * point and way, so the shot the attack fires after it goes there (the 360's sub_822919A8 aims the
+ * the stick's point; with the shot's assist on a unit, +0x1cc goes back to that unit's point,
+ * so the shot the attack fires after it goes there (the 360's sub_822919A8 aims the
  * shot, not the hero). A jump over the 7-byte fld [esp+0x9c] to a trampoline. */
 static void __cdecl shot_restore(unsigned char *unit) {
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
@@ -1828,11 +1828,11 @@ static void __cdecl shot_restore(unsigned char *unit) {
     dz = shot_point[2] - pos[2];
     len = root(dx * dx + dz * dz);
     if (len < 1e-3f) return;
+    /* Only the point: the hero's attack (0x496b70) hands the skill +0x1cc; +0x1d8 is the turn's
+     * own way (0x48d390), and setting it to the unit's each frame made the turn to the stick slow
+     * and jerky (the owner: rougher than the 360's; the log: the facing 6-20 degrees behind). */
     *(float *)(unit + 0x1cc) = shot_point[0];
     *(float *)(unit + 0x1d4) = shot_point[2];
-    *(float *)(unit + 0x1d8) = dx / len;
-    *(float *)(unit + 0x1dc) = 0.0f;
-    *(float *)(unit + 0x1e0) = dz / len;
 }
 static void shot_restore_install(void) {
     static const unsigned char want[7] = {0xd9, 0x84, 0x24, 0x9c, 0x00, 0x00, 0x00};   /* fld dword [esp+0x9c] */
