@@ -4351,7 +4351,11 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   first that passes; the reach PC's for its own search, 0x4a5b1a), replacing what PC's 60-degree
   search kept; on a barrel, its interact, the event 11, and the hero turned to it. PC's attack then
   finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing, as on the 360. A skill cast
-  with X held searches too (its flags not looked at). Reviewed against the disassembly; not run yet.
+  with X held searches too (its flags not looked at). Reviewed against the disassembly. **[the
+  owner's run, 2026-10-30]** First an unattended run showed a tap of X attacking after its release,
+  past the X-down test, so the search also runs within 1 s of X's press. Then the owner played the
+  bench with the bow: 8 barrels broken at 0.68 to 9.6, all within 26 degrees, the reach 10.45 (the
+  360's figure). The owner: it behaves the same as the 360 now. Steam UNCHANGED. Melee not tried.
 - **PC's mouse-over while aiming (2026-10-30).** PC's client sets the unit and the item under the
   cursor every frame (0x41b832: its UI's setHoverUnit 0x40f930, +0x2c; 0x41b83d: setHoverItem
   0x54d390, +0x34), and PC highlights them. While the pad aims, the virtual cursor sits 2 units
@@ -4400,7 +4404,7 @@ boxes.
   - up and down (17, 18) change the quest;
   - left and right (19, 20) move a reward cursor from -1 (none) to the last, wrapping
     (`sub_8237E4D8`), which shows `ItemHighlight` at the box and the item's card (`sub_82344B90`).
-**[measured, 360]** The recomp agent's run (rewards-r0..r3) with The Gleaming Ember: right, then
+**[measured, 360]** The recomp agent's run (rewards-r0..r3) with a quest whose one reward is a gem: right, then
 right, then left gave the reward, none, the reward. The card's root was at (863.9, 463.4) of 720
 rows for `ItemBkg1` at (600.8, 586), its bottom at 684.
 **[port]**
@@ -4412,6 +4416,6 @@ rows for `ItemBkg1` at (600.8, 586), its bottom at 684.
 - The page's d-pad up and down removed, as on the 360.
 - Not ported: the stack count's text and the rarity background the 360 makes at the page's build
   (their images unread).
-**[run]** Unattended, an Alchemist with The Gleaming Ember: the gem's box with its icon; the cursor
+**[run]** Unattended, an Alchemist with the same quest taken: the gem's box with its icon; the cursor
 went 0, -1, 0 as on the 360; the card at about x 1272 of 1920 (the 360's 1296) and ending at 1026.
 Steam UNCHANGED. The icon is drawn larger than the 360's (it fills the slot's width).
