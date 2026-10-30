@@ -4106,7 +4106,7 @@ under PC's pause, death, waypoint or settings screens (the owner saw both over P
 Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within
 about 30 pixels of the 360's capture at 1080 (the cameras not quite the same).
 
-## 45. The 360's brightness and contrast (2026-10-29, read; not ported yet)
+## 45. The 360's brightness and contrast (2026-10-29, read; ported 2026-10-30)
 
 The owner's request: the 360's two graphics sliders on PC (not on the 1.0 list). Read from the
 recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; nothing run):
@@ -4133,6 +4133,17 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
 - **PC (GOG):** no gamma, brightness or contrast option, string or data (`Torchlight.exe`, Pak.zip;
   its `BRIGHTNESS` is the light editor's). Ogre's render systems offer only "sRGB Gamma
   Conversion".
+
+- **The port (2026-10-30).** Two sliders in PC's settings screen (under its own options), on the
+  360's scale, kept in `%LOCALAPPDATA%\x360ui\x360_settings.ini` (`brightness=`, `contrast=`);
+  PC's look at the start (257 and 256, the identity), the 360's defaults (290, 210) marked. The
+  ramp, the 360's formula, is given to PC's IDirect3DDevice9::SetGammaRamp (its slot 21); the device
+  is the custom attribute D3DDEVICE of the game camera's viewport target (Torchlight makes its window
+  itself, so Ogre's getAutoCreatedWindow is null: the first version never found it).
+  **[measured]** GOG, the bench save on arrival, a screenshot at 290/210 against one at 257/256:
+  per input level the median output follows clamp(B*128 + (v-128)*B*C/256)/257 within 0.34 levels
+  (median of 231 levels; the 90th percentile 3.8, the worst at the brightest few levels, where few
+  pixels fall).
 
 ## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
 
