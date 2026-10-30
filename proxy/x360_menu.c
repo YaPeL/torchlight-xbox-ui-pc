@@ -1826,13 +1826,16 @@ static void desc_restore(void) {
  * its own looks, ceguiWidget/ItemTooltip and ItemTooltip2 (both games: Falagard/Default):
  * StaticShared's itemframe, its background widgets2's itemtooltipmiddle, drawn 187/255
  * opaque by its own texture, so the bag shows through it (the owner's recomp capture); PC's
- * gold frame is opaque. The look is set once per card (setLookNFeel remakes its imagery), before
- * PC fills and sizes the card: the look's initialiser sets the root's Font (X360_Serif), as on
- * the 360, where the card always has it. setLookNFeel drops the old look before it fetches the
- * new one, so the new one must be loaded first (WidgetLookManager::isWidgetLookAvailable): a
- * missing look would leave the card with a name and no look, which throws in PC's drawing. A
- * card whose look is missing, or whose LookNFeel cannot be read, is tried once. The look stays
- * on PC's tooltip after the bag closes: the 360 has no other look for it. */
+ * gold frame is opaque. The look is set once per card (setLookNFeel remakes its imagery), after
+ * PC filled it (its root may only exist then). The look's initialiser sets the root's Font
+ * (X360_Serif); in CEGUI 0.6 a window without a Font of its own takes the system's default, not
+ * its parent's, so the children PC sized are not changed. setLookNFeel drops the old look before
+ * it fetches the new one, so the new one must be loaded first
+ * (WidgetLookManager::isWidgetLookAvailable): a missing look would leave the card with a name and
+ * no look, which throws in PC's drawing. A root on which setting the look failed (the look
+ * missing, the call threw, LookNFeel unreadable) is not tried again; any other root whose look
+ * differs is set again. The look stays on PC's tooltip after the bag closes: the 360 has no
+ * other look for it. */
 static void card_look(int i) {
     typedef void (__fastcall *set_str_fn)(void *self, void *edx, const void *s);
     typedef int (__fastcall *has_look_fn)(void *self, void *edx, const void *s);
@@ -1840,7 +1843,7 @@ static void card_look(int i) {
     static set_str_fn set_look;
     static has_look_fn has_look;
     static looks_fn looks;
-    static void *tried[3];                 /* the root last tried, per card */
+    static void *failed[3];                /* the root on which it last failed, per card */
     void *root = card_root(i);
     const char *want = i ? "ceguiWidget/ItemTooltip2" : "ceguiWidget/ItemTooltip";
     char now[64];
@@ -1850,20 +1853,19 @@ static void card_look(int i) {
     if (!root || i < 0 || i > 2) return;
     read_prop(root, "LookNFeel", now, sizeof now);
     if (same_text_nocase(now, want)) return;
-    if (tried[i] == root) return;          /* missing, or unreadable: already logged */
-    tried[i] = root;
+    if (failed[i] == root) return;         /* already logged */
     if (!set_look) set_look = (set_str_fn)need("?setLookNFeel@Window@CEGUI@@UAEXABVString@2@@Z");
     if (!has_look) has_look = (has_look_fn)need("?isWidgetLookAvailable@WidgetLookManager@CEGUI@@QBE_NABVString@2@@Z");
     if (!looks) looks = (looks_fn)need("?getSingletonPtr@WidgetLookManager@CEGUI@@SAPAV12@XZ");
     if (!set_look || !has_look || !looks) return;
-    if (!now[0]) x360_log("x360 inv: the card's LookNFeel not read; the 360's set once\r\n");
+    if (!now[0]) { failed[i] = root; x360_log("x360 inv: the card's LookNFeel not read; the 360's set once\r\n"); }
     string_ctor(&look, 0, want);
     __try { wlm = looks(); ok = wlm && (has_look(wlm, 0, &look) & 0xff); }
     __except (1) { ok = 0; }
-    if (!ok) x360_log("x360 inv: the 360's card look is not loaded; PC's kept\r\n");
+    if (!ok) { failed[i] = root; x360_log("x360 inv: the 360's card look is not loaded; PC's kept\r\n"); }
     else {
         __try { set_look(root, 0, &look); x360_log("x360 inv: the card's look set to the 360's\r\n"); }
-        __except (1) { x360_log("x360 inv: setLookNFeel on the card threw\r\n"); }
+        __except (1) { failed[i] = root; x360_log("x360 inv: setLookNFeel on the card threw\r\n"); }
     }
     string_dtor(&look, 0);
 }
@@ -1931,7 +1933,6 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
         desc_assign = wassign;
         desc_cstr = wcstr;
     }
-    card_look(i);
     __try {
         /* The card's character is the item's owner: for a merchant's item PC writes the price it
          * asks (its tooltip, GOG 0x546c9f: a character other than the hero, of type 41), as the
@@ -1948,6 +1949,7 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     desc_restore();
     root = card_root(i);
     if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
+    card_look(i);
     /* The 360's card names the item in its SerifBig (the catalog's 103ItemName; its tooltip.layout's
      * ItemName), and a comparison card in its Serif14 (tooltipcompare.layout's ItemName); PC's
      * layouts have FrizQuadrataBig and FrizQuadrata there. SerifBig on a comparison card clipped
