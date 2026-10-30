@@ -8,7 +8,8 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Alpha:** played with Epic's and Steam's builds on Windows, Steam's on the Steam Deck, and
-> GOG's under Proton on Linux (v0.5.5). Report problems in
+> GOG's under Proton on Linux (v0.5.5); v0.6.6's additions played with GOG's under Proton so far.
+> Report problems in
 > [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
@@ -69,6 +70,9 @@ uninstall (its questions are the window's). On Windows it is a window program: f
 add `| Out-Host` to a command to wait for it and see its output there. `notices` shows the licence
 and the third-party notices it carries; their sources are in the release's
 `sources-and-notices.zip`.
+
+To update from an earlier version, run the new installer and reinstall: it converts the 360's
+interface again (the skill tree's third column, for one, comes with that conversion).
 
 ### From this repository
 
@@ -152,6 +156,10 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - NPC dialogs, quest dialogs, tips and messages, as the 360's.
 - Fishing, with the 360's ring.
 - Labels on the floor's items near the hero, as on the 360.
+- X's attack as the 360's: its target, its aim with the stick, barrels broken in front of the hero.
+- The 360's brightness and contrast sliders, in PC's settings screen (measured under Proton; on
+  Windows not tried yet, where a windowed game may ignore them).
+- PC's classes with three columns of skills (the Alchemist, for one) show all three in the skill tree.
 
 ## Known limitations
 

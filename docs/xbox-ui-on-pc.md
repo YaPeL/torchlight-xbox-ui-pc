@@ -1289,6 +1289,18 @@ identify scroll to it (3/63 and 1/63) were seen in runs.
   - Placement: the card is moved onto the GUI sheet, to the right of the bag's list over the
     third column, its top at the selected row's. As on the 360 it is not kept inside the column
     (it may be wider) nor inside the frame; only the screen's bottom keeps it up.
+  - The look: the 360's `tooltip.layout` has PC's windows, with the look
+    `ceguiWidget/ItemTooltip` (`ItemTooltip2` for the comparison's) instead of PC's
+    `GuiLook/ItemTooltip`. That look draws StaticShared `itemframe`, whose middle
+    (`widgets2`'s `itemtooltipmiddle`) is 187/255 opaque: the 360's see-through card. The recomp's
+    UI dump shows no alpha of its own on the card. `fill_card` sets the 360's look on the card's
+    root (`setLookNFeel`) when it differs. A run (2026-10-29, unattended, the test copy): the
+    item's card drawn with the 360's frame and the bag seen through it, as the recomp's
+    screenshot; the comparison's cards not seen in that run.
+  - The damage-per-second digits (`BigDPS`, FrizQuadrataBig): against the recomp in English
+    (2026-10-30, 1920x1080), the same number is 22 px tall on both (37 and 34 px wide). A
+    first recomp capture, in Spanish, had them a third shorter: the Spanish pak (`pak_es.zip`)
+    maps the FrizQuadrata fonts to another TTF. The language, not the port.
   - An unidentified item shows PC's "Unidentified items cannot be used - use an identify scroll
     to reveal enchantments".
 - **Item compare** (the bar's `ToggleItemCompare`, beside the d-pad's left-right image). The 360
@@ -4105,3 +4117,326 @@ anchor projected with Ogre's camera (its view and projection matrices, `getDeriv
 under PC's pause, death, waypoint or settings screens (the owner saw both over PC's pause menu).
 Played by the owner (2026-10-25): the bar with NPCs and in combat; the prompt at the stash within
 about 30 pixels of the 360's capture at 1080 (the cameras not quite the same).
+
+## 45. The 360's brightness and contrast (2026-10-29, read; ported 2026-10-30)
+
+The owner's request: the 360's two graphics sliders on PC (not on the 1.0 list). Read from the
+recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; nothing run):
+- **The screen:** CSettingsMenuXenon loads `settingsmenu_xenon.uilayout` (`sub_823802F8`) and finds
+  the controls by id: `Brightness` (menu `+276`), `Contrast` (`+280`), their tabs `+312`, `+316`.
+  `sub_8237FD30` steps a slider by ±0.05 on its event types 4 and 3 (which pad input sends those is
+  not located): brightness ±10, contrast ±5 a step.
+- **Range and default:** `sub_82380CA8` clamps brightness to 100–600 and contrast to 100–400 and
+  places the tab at their fraction; defaults 290 and 210 (`sub_823DEF18`; the Defaults button
+  `sub_82380F88` resets them). Kept as `BRIGHTNESS` and `CONTRAST` in the profile's
+  `local_settings.txt`.
+- **Keep or cancel:** the values at the menu's opening are saved (`sub_823807E8`); at its closing
+  (`sub_821FF750`) they are kept if menu `+265` is set, else restored (the button that sets `+265`
+  not located).
+- **Applied live:** `sub_821F9DA8` (each update) truncates both to integers and, when they differ
+  from its cache (zero at start, so also at start), calls `sub_82577F08(B, C)`.
+- **The formula (`sub_82577F08`):** one display gamma ramp, the same for red, green and blue: for
+  i = 0..255, `out[i] = clamp(B*128 + (i-128)*B*C/256, 0, 65535)`. Brightness is the gain, contrast
+  the slope around the middle. Given to the device's gamma ramp (`sub_82768DD0`; the recomp hooks
+  its table and piecewise-linear writers, `sub_82776500` and `sub_827765F8`, and reads a table
+  entry as `(value >> 6) / 1023`). No shader or Ogre call.
+- **At the defaults** the ramp is not the identity: about 10% out for black and 57% for the middle
+  grey; identity is near B 257, C 256.
+- **PC (GOG):** no gamma, brightness or contrast option, string or data (`Torchlight.exe`, Pak.zip;
+  its `BRIGHTNESS` is the light editor's). Ogre's render systems offer only "sRGB Gamma
+  Conversion".
+
+- **The port (2026-10-30).** Two sliders in PC's settings screen (under its own options), on the
+  360's scale, kept in `%LOCALAPPDATA%\x360ui\x360_settings.ini` (`brightness=`, `contrast=`);
+  PC's look at the start (257 and 256, the identity), the 360's defaults (290, 210) marked. The
+  ramp, the 360's formula, is given to PC's IDirect3DDevice9::SetGammaRamp (its slot 21); the device
+  is the custom attribute D3DDEVICE of the game camera's viewport target (Torchlight makes its window
+  itself, so Ogre's getAutoCreatedWindow is null: the first version never found it).
+  **[measured]** GOG, the bench save on arrival, a screenshot at 290/210 against one at 257/256:
+  per input level the median output follows clamp(B*128 + (v-128)*B*C/256)/257 within 0.34 levels
+  (median of 231 levels; the 90th percentile 3.8, the worst at the brightest few levels, where few
+  pixels fall). The recomp agent's same pair on the recomp (F9 captures replayed at 1920x1080):
+  within 0.53 (median of 217 levels; every level but pure black within about 1). The sliders seen
+  in PC's settings screen, their headers "Brightness N" and "Contrast N" with "(PC)" or "(360)" at
+  the defaults (a longer tag was clipped). Keep or cancel as the 360's: the values at the screen's
+  opening are put back when it closes with its Apply not under the cursor (Cancel, Escape); seen in a
+  run (moved and Cancel: put back; moved and Apply: saved). The device is looked up again every 2 s
+  and the ramp set anew on a new one (a resolution change may make one). Measured under Proton with
+  DXVK only, which applies the ramp in its own presenter (gone with the game); on Windows' own D3D9
+  a windowed game's ramp is normally ignored (D3DCAPS2_FULLSCREENGAMMA) and a fullscreen one sets the
+  display's: not tried.
+
+- **Relative to PC's image (2026-10-30).** **[the owner]** At 290/210 GOG looked much brighter than
+  the recomp at its defaults. **[measured]** The same view with no ramp: GOG's mean 30, the recomp's
+  20 (PC draws its image brighter than the 360 draws its own). At 290/210: GOG 54, the recomp 39.
+  The ramp had been checked against each build's own image only. **[port]**
+  - Each PC level i is taken back through the 360's default ramp, then through the sliders' ramp,
+    so PC's image stands for the 360's at its defaults.
+  - The inverse is the default ramp's line continued past its ends (not clamped), so at the
+    360's defaults, the start, the ramp is exactly the identity: PC's own look, its darkest levels
+    kept apart. A clamped inverse merged every level under 26 into one grey at any setting; the
+    owner tried 290/210 with it (the recomp's look, the blacks raised) and 310/230 (the nearest to
+    PC's), and chose PC's look at the start, with the sliders moving the image from there as on
+    the 360.
+  - The headers carry no "(PC)" or "(360)" tag.
+  - A slider stops on the default when passing it.
+  **[measured]** With the clamped inverse, GOG at 290/210 against the recomp at its defaults, the
+  same view unattended: a mean of 41.1 against 39.6 (54 with the absolute ramp). Steam UNCHANGED.
+- **The settings screen's spacing (2026-10-30).** The sliders' headers sit 80 under the control
+  above's top, as PC's own (settingsmenu.layout: each header 80 under the control above). Cancel
+  and Apply move down by what the sliders add under ShowBlood, so they keep PC's gap; at 80 the
+  sliders reached them (the owner's capture).
+
+## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
+
+A player reported that enemies more than half the screen away are never X's target, and that
+nearer ones seem chosen without regard to the hero's facing. Read again in the recomp:
+
+**X's target (`sub_821EB598`, `sub_821B58C0`).** **[read]**
+- The range of the enemy search is 7, or the weapon's range plus 2 when that is longer
+  (0x821EB808-0x821EB85C): the weapon in use (the 360's hero `+0x3EC`), its `+0x238`, else its
+  `+0x23C`, that object's float `+0x78`. GOG keeps the same weapon at the hero's `+0x408` (PC's
+  `0x48d690` stores it), with the same `+0x238`/`+0x23C` objects; PC's attack range reads their
+  `+0x74` (`0x48ef80`) and `+0x78` (`0x48ec4b`). Steam's offsets are the same. The port used 7
+  always: a ranged weapon's farther enemies were left out.
+- No bow, gun or staff branch, no camera, no stick in the search; 30 degrees and 0.5 are constants
+  inside `sub_821B58C0`. So with a melee weapon the 360 does not target beyond 7 either.
+- **The best (0x821B5B94-0x821B5C48):** a unit the hero is hostile to (`sub_822A48D0`, PC's
+  `0x488aa0`: the alignments differ, or one is 4) beats one it is not, whatever the distance;
+  otherwise only a nearer unit replaces the best, and between two hostile ones only if its signed
+  angle (`atan2(local x, local z)`, degrees) is not more than 5 past the best's. The port took the
+  nearest. Both now done (played: below).
+- **A second pass inside the search, not done:** when the cone has no unit, any angle within 3.0,
+  with no sight test, for units `sub_821B8D70` accepts: beyond 2.0 only when the hero's byte
+  `+0x1FC` is clear and within 2.75; and the unit in a list `sub_821E3C48` keeps, or with one of
+  the flags 130, 175, 132, 133, 134, 41, 128, 170 (`sub_821D7CE0`: the unit's `+0x60`→`+0x10`
+  table, by its `+0x174`). Their PC equivalents are not located. On the 360 this pass is what
+  picks a near enemy outside the facing.
+- The candidate is searched every frame with no hysteresis; `sub_8221BC80` promotes it to the
+  client's target when that is empty or dead, and drops it when the stick is pushed (as the port).
+
+**The skills' point (B, Y, LT, RT).** **[read; measured by the mods agent with no enemy alive]**
+`sub_8221BC80` clears the hero's target, takes the point 2 ahead (the stick turned by the camera,
+or the facing at rest), and `sub_8221C520` rescales it to a distance from the skill's data
+(`[skill+0x5C]+0x54` and `+0x58`; with a trigger, its pressure); then the engine's skill use
+(`sub_82293548`) makes its own search within the skill's angle (its data `+0x64`) and aims at the
+unit found. The port presses PC's hotbar key with the virtual cursor 2 units ahead on screen: the
+distance and the trigger's pressure are not the 360's. Not changed yet.
+
+**Compared with the recomp (2026-10-29, the owner's runs on one save: the test character with a
+bow, a mines floor saved on arrival).** **[the runs; read]**
+- The recomp's probe logged, per frame, the rows `sub_821B58C0` evaluates (local x, z, angle,
+  sight, priority) and its pick. The port's rule (above) replayed on those rows gives the 360's
+  pick in all 4919 picks of a 121 s run: the choice is the 360's. It favours units at negative
+  angles and depends on the list's order, on the 360 too.
+- What felt different was X held. The 360 sets the hero's hold byte (`+0x1FE`, PC's `+0x20a`,
+  PC's Shift) every frame X is down and clears it the first frame it is up (`sub_821EBA48`,
+  0x821EC21C, 0x821EC254). While X is down `sub_8221B8E8` runs each frame: past 0.1 on the stick
+  it drops the hero's target and calls `sub_8221C730`, the stick's `setDestination`
+  (`sub_8228F8C8`), which with the hold byte attacks toward the point instead of walking
+  (0x8228FF9C); and the hero's attack update never chases with it set (`sub_82295138`,
+  0x8229543C): out of range it attacks in place. The port held the stick still while X was down
+  and repeated its attack every 0.1 s. Now: the hold byte follows X; the stick's walk runs with X
+  down (so it attacks toward the stick); X's press and repeat attack the candidate only with the
+  stick at rest (the hold byte so written did not last: the next bullet).
+- **The hold byte written by the port was lost (measured, 2026-10-29).** With X held and the stick
+  sweeping, PC's hero never turned (its facing fixed 4 s), while the recomp's turned toward the
+  stick. The recomp's probe of its unit update (`sub_821D3FD8`): with `+0x1FE` set and no running
+  skill (`sub_821DC600` false) it turns to the point `+0x1C0` (0x821D4F94 → 0x821D50A4, the turn
+  `sub_8219FD08` at 0x821D50B4), the point `sub_821EBA48` gives `sub_8228F7E0` each frame. PC's
+  update has the same branch (0x4af3ae-0x4af40b: hold `+0x20a`, the point `+0x1cc`, the turn
+  0x491b60), but PC's client writes the hold byte every frame from its hold key (0x415349-0x4153af:
+  1 and setTargetDirection toward the cursor's world point when the key is down, else 0), so the
+  port's write was gone by the hero's update. Now X holds PC's hold key itself (Shift, by its
+  window messages, as the hotbar's keys) and the virtual cursor points the stick's way (its last
+  way at rest). In an unattended run the hero turned with the sweep, attacked toward it and stayed
+  in place.
+- **The aim point (2026-10-29).** With
+  X held the hero turns toward the point PC's client takes from the cursor (0x4153a5); the
+  virtual cursor sat on the screen at the stick's angle, which the perspective bends on the
+  ground (section 31) and the hero's place on the screen shifts: the owner found aiming hard. Now,
+  while X is held or a skill's key aims, the virtual cursor is the projection (Ogre's camera, as
+  the interact prompt's, `TargetInteractHover`) of the 360's point, `sub_8221C838`'s: the hero plus 2.0 along the
+  stick turned by the camera's yaw, or along the facing at rest. The review's points: the hold key
+  is released whenever a frame's pad update did not reach play (a menu, a load, death), and a
+  keyboard Shift held is left down.
+  Measured: in the owner's first run the aim window was never set (a wrap-safe comparison read 0 as
+  ahead once the tick count passed 2^31), so the client faced the real mouse: fixed (ea9ea58). After
+  it the point PC's client stores matched the 360's to 0.01 degrees (median of 1028 frames).
+- **X's turn against the recomp (2026-10-29, measured).** The recomp agent's X sweep (X held, the
+  stick through 8 directions, 0.4 s each, from the bench save on arrival) replayed on PC
+  (`pad_replay`): the recomp's hero faced the stick's point within 4 degrees; PC's ended bent toward
+  the screen's bottom (up to 40-65 degrees; 0 at the stick's up and down) and kept turning at rest.
+  Ruled out by measurement: the real mouse (CEGUI's cursor was the virtual one), the hero's +0x70
+  against `getPosition(true)` (equal), the facing read (+0xa0/+0xa8, the turn's, equal to the
+  rotation's), the hero's 200-node path cap (`pad_path_cap=0`: the same bend), the attack routine
+  0x496eb0 (not run) and setDestination's path step (not run: with the hold byte its branch
+  0x495119 stores the point unchanged, as the 360's). The only turn is the update's hold branch
+  (0x4af3f7 -> 0x491b60 -> 0x48d390), and by then +0x1cc is another point, near the hero and bent;
+  its writer was not found. **[read, 360; the recomp agent]** `sub_8228F8C8` with the hold byte
+  (+510) puts the stick's point in +448 unchanged (no range, no path; the path's last waypoint
+  replaces it only when the hold byte is clear) and the update turns to it. **[port]** At the
+  update's hold call (0x491b60 returning to 0x4af410, the point +0x1cc), for the hero while X is
+  held, +0x1cc is set to the pad's point (the 360's) first. The same sweep replayed then: PC's
+  facing at the end of each direction equal to the recomp's within 1 degree in all 8. At rest with X
+  still held PC's hero drifted 6 degrees in 0.8 s (the recomp's none).
+- **The bend's cause (2026-10-29, read and measured).** `findWorldLocation` (0x411d60) casts the
+  cursor's ray onto a plane at the y of the hero's vector +0x1b4 (its +0x1b8), raised by 1.7 (0xa91ce4) when its flag is set,
+  and every attack, skill and hold caller sets it (0x4148cc, 0x414e84, 0x414ef2, 0x41538b,
+  0x4973a3, 0x5e4c87). The pad projected the aim point at the hero's own height, so the same pixel
+  came back from the higher plane pulled toward the camera's foot: the bend toward the screen's
+  bottom, none along the camera's axis. Now the point is projected onto that plane: in the same
+  sweep PC's own point at the hold turn (before the port's) matched the 360's within 0.7 degrees
+  (median of 389 frames; at most 12 in a frame at the stick's release), and the facing matched the
+  recomp's within 1 degree in all 8 directions. The skills' keys take the same cursor and plane.
+  At rest the aim keeps the stick's last way, as the 360's +448 (sub_8221B8E8 calls moveTo only
+  past 0.1), not the facing read each frame: the drift at rest went from 6 to 1 degree in 0.8 s.
+  The hold turn's point stays as the 360's rule. Played by the owner (2026-10-29): aiming with X
+  as the recomp's; in that run and in a second one PC's own point at the hold turn was within 0.3
+  and 0.36 degrees of the 360's (medians of 1317 and 1304 frames, at most 2).
+- **The pick's angle sign (read, the recomp agent).** The 360's local x in `sub_821B58C0` is along
+  (fz, 0, -fx), as PC's `unit_in_view` computes it (lx = fz*dx - fx*dz): the recomp's own atan2
+  arguments and the same formula on world positions agree to 0.01 degrees with the same sign, so
+  the tie rule's "5 degrees past the best" favours the same side on both.
+- **The shot's assist: PC's cone at 10 degrees, the 360's at 30 (2026-10-29, read and measured).** The owner
+  found the recomp's bow hitting an enemy about 15 degrees off the stick, and the port's not.
+  **[read and measured, 360; the recomp agent]** The attack execution `sub_822919A8`, with no target
+  (+644, +652 clear: X with the stick past 0.1), searches a cone from the hero's transform (its
+  facing, the stick's way) with `sub_822F8128` at 30 degrees (pool+944) out to the weapon's reach
+  plus 1 (0x82291DD0; 10.45 with the test bow). The bow, the pistol and the staff then hit that unit
+  at once (`sub_82298DE0` from 0x822927B8: 42 hits within +-29.8 degrees and 0.7-9.95; no missile);
+  the wand and the crossbow launch a missile aimed at it (`sub_822BAB50`). **[read and measured,
+  PC]** PC's attack (0x4a5880) is the same routine: with no target, the cone search 0x5006c0 from
+  the unit's transform (|atan2(x, z)| under the angle given, or within 2.0 and under 30), then
+  0x500a50. The angle is 60 for a melee weapon and 10 for a ranged one (type 0x23: 0x4a5a4a loads
+  0xa8ec08). In the owner's run the units PC's attacks found were all within 7 degrees, and those
+  15-25 degrees off were not found. **[port]** The fld's operand at 0x4a5a4a points at 30, for
+  every unit's ranged attack with no target (the 360's routine passes the same constant for any
+  attacker: read, not measured for monsters), and for a mouse player's too (Shift and a click with
+  no unit under the cursor). The angle is one stack slot that the fallback search 0x500a50 reads
+  too (0x4a5b59): with a ranged weapon it now searches 30 degrees as well (the 360's second search's
+  angle not read). An earlier assist of the port's own (the cursor on the cone's unit,
+  the shot's point put back after the hold turn) is gone: it turned the hero to the unit, or made
+  the turn jerky. While aiming, the candidate's highlight is set again each frame: PC's mouse-over
+  (0x41520d) cleared it when the cursor left a unit (the owner saw it flicker). Played by the owner
+  (2026-10-29): the shots hit as the recomp's; the units PC's attacks found were from -25 to +20
+  degrees (17 of 22 attacks found one).
+- **Other ranged weapons on PC (2026-10-29, measured).** The recomp agent's weapon runs (the bench
+  save with the bow's record swapped by its GUID and name, the same pad script) replayed on GOG with
+  the 30-degree cone: the pistol's attacks go through the cone search (0x4a5b6e reached), as the
+  bow's; the wand's never reach it (0 of 22 entries of 0x4a5880).
+  **[read, PC]** Before the cone, 0x4a5a04-0x4a5a23 hands a missile weapon the unit's +0x290 target
+  (0x48de30, then 0x4b9240) and returns: with X and the stick the target is clear, so the missile
+  flies along the facing. **[measured, 360; the recomp agent]** The wand and the crossbow launch a
+  missile aimed at the cone's unit, the staff hits it at once (no missile), the pistol as the bow.
+  In the automated runs the crossbow and the staff never attacked (the hero's attack, 0x4a6804,
+  not reached; the test character lacks the crossbow's dexterity, the owner); the wand did.
+  **[port]** At PC's launcher (0x4b9240), for the hero with no target, the target is the unit the
+  360's first search finds (`unit_in_view`, 30 degrees, out to 21), only while the pad's X is down
+  (a mouse player's click is left to PC) and for a weapon with a missile (+0x3c4). Measured (2026-10-30): the wand
+  in an automated run, 8 of 18 shots aimed at a cone unit (-21 to +24 degrees); played by the owner,
+  the crossbow 13 of 23. The staff is a melee weapon on PC (the owner: only blows, nothing ranged):
+  its attacks enter 0x4b9240, which launches nothing for it (the hook's count, 16 of 19, is of
+  entries, not shots). The 360's is melee too (the recomp agent: base_staff's RANGE 0.8 and
+  STRIKERANGE 1.3 on both builds; with another class its hits within 3.44); the far hits (to 9.3)
+  measured with the test character's swapped save came from the bow's attack data the swapped
+  record kept (the reach the same as the pistol's there), an artifact of the swap. The pistol and the bow
+  go through the 30-degree cone (above).
+- **A unit right beside the hero (2026-10-30, read).** The owner: next to a barrel, PC's shot did
+  not break it, where the recomp's broke it at once. **[read, 360; the recomp agent]** The 360's
+  searches (`sub_822F8128`) take a unit closer than f1 = 1.5 at any angle, with the sight test only
+  (0x822F842C; logged hits at 1.2 / -96 and 1.2 / -53.6 degrees), and their filter is the unit's
+  team and targetable flag, not its type, so a barrel is a candidate as a monster is. **[read, PC]**
+  PC's search 0x5006c0 has the same near rule (0x500903: a unit no farther than its first float
+  argument skips the angle), but PC's attack passes 0 (0x4a5af2). **[port]** 1.5 there, for every
+  attacker. Left for another branch: PC's barrels are items, not units, so its attack's search
+  never sees them; and PC's own mouse-over highlights what the virtual cursor crosses (the 360 has
+  none). Reviewed against the disassembly (the slot is 0x5006c0's third argument, d is the
+  horizontal length; a unit that near is taken whatever the reach argument). Not measured on PC: in
+  three unattended runs at the bench the floor's archers kept their distance (nearest 1.64).
+- **Barrels (2026-10-30).** **[measured, 360; the recomp agent]** A barrel spawned 0.9 in front of
+  the hero, X tapped, the stick neutral, with the bow and with the staff: the unit searches find
+  nothing (a barrel is no candidate there, as the barrel-v2 run had shown), and the barrel breaks
+  at once through a third search: `sub_822F8500` at 0x82291E28 walks the level's props, keeps those
+  with +412, +353, the virtual +32 and the kind 29, and returns the FIRST within 30 degrees and
+  the weapon's reach plus 1 (10.45 with the bow, 3.75 with the staff), or within 1.5 at any angle,
+  in sight; at 0x822926B0 its virtual +308 (`CBreakable::interact`, sub_822824C0) is called on the
+  hero. No hit and no missile; the 360 highlights nothing there. **[read, PC]** PC has the same
+  search (0x500a50, the same filters at +0x19c, +0x161, the virtual +0x20 and the kind 0x1d, the
+  angle and the reach its caller's), without the 1.5 rule, and it keeps the prop for the strike
+  ([esp+0x40]): the bow's arrow, which a barrel that near did not stop (the owner).
+  `CBreakable::interact` is its virtual 79 (GOG 0x484340, Steam 0x482600; `CItem`'s is the pick-up
+  0x4d0d90). PC's own strike of a prop (0x4a63e4) is the 360's sequence: the interact, then the
+  event 11 (0x486450). **[port]** After PC's searches (0x4a5b6e), for the hero with the pad's X
+  down, no unit found and no item target of its own (+0x298): the 360's search (in list order, the
+  first that passes; the reach PC's for its own search, 0x4a5b1a), replacing what PC's 60-degree
+  search kept; on a barrel, its interact, the event 11, and the hero turned to it. PC's attack then
+  finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing, as on the 360. A skill cast
+  with X held searches too (its flags not looked at). Reviewed against the disassembly. **[the
+  owner's run, 2026-10-30]** First an unattended run showed a tap of X attacking after its release,
+  past the X-down test, so the search also runs within 1 s of X's press. Then the owner played the
+  bench with the bow: 8 barrels broken at 0.68 to 9.6, all within 26 degrees, the reach 10.45 (the
+  360's figure). The owner: it behaves the same as the 360 now. Steam UNCHANGED. Melee not tried.
+- **PC's mouse-over while aiming (2026-10-30).** PC's client sets the unit and the item under the
+  cursor every frame (0x41b832: its UI's setHoverUnit 0x40f930, +0x2c; 0x41b83d: setHoverItem
+  0x54d390, +0x34), and PC highlights them. While the pad aims, the virtual cursor sits 2 units
+  ahead of the hero, so a barrel or a unit there lit up (the owner); the 360 has no cursor and
+  highlights only its candidate. **[port]** While aiming, both setters get no unit or item (a
+  trampoline at each entry clears the argument). **[the owner's run]** It works: no highlight under
+  the cursor while aiming, and the 360's candidate still highlighted (over 500 setter calls
+  cleared in the log). Steam UNCHANGED.
+- **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
+  Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
+  measured).
+
+## 47. PC's third column in the skill tree (issue #88, 2026-10-30)
+
+**[the issue]** A player's Alchemist showed 2 of PC's 3 columns per pane, so some skills were missing.
+**[read]** PC's classes place a skill at a pane, a row and a column 0 to 2 (the skill's +0xdc, +0xd8,
++0xd4). The 360's tree (`skillsmenu_xenon`) has cells `skillbg<pane>_<row>_<column>` for columns 0
+and 1 only, because the 360's own classes were redrawn for 2 columns, and the port's fill skipped
+column 2.
+**[the recomp agent]** The recomp adds a real third column, but only for a class with a skill in
+column 2 (its layout cache copies the second column's cells as hidden `_2` cells). The three cells
+of a row are placed across the two cells' width at 0.78 of their size, 0.1 of their width apart.
+A class without one keeps the layout (torchlight-achievements: `AddSkillColumn`, `ThreeColumnCells`).
+**[port]**
+- The converter does the same as the recomp (`add_skill_column`: each second-column cell copied
+  after itself, its windows' names ending in `_2`, hidden).
+- The page shows 3 columns when the class has a skill in column 2. It places them with the
+  recomp's measures, the icon and the level scaled with the cell, and the left and right moves go
+  through the 3 columns before the next pane. With any other class, the layout's places are kept.
+- A converted UI from before this change has no third column. The log then says so ("install
+  again") and the page keeps 2 columns.
+**[run]** An Alchemist copy in the test root (unattended): "PC's three columns" in the log, with 3
+cells per row in each pane. The right moves crossed column 2. Steam UNCHANGED.
+
+## 48. The Quest page's reward items (2026-10-30)
+
+**[the owner]** The Quest page's reward boxes stayed empty; the port filled only the XP, gold and fame
+boxes.
+**[read, 360; the recomp agent]**
+- `sub_8237E688` takes the selected quest's rewards (+0x150; their items' list, GOG's
+  `getRewardItems` 0x5f4760 *(OT)*). For n = 0..2 it shows `ItemBkg{n+1}` only for an item.
+  `sub_8237F310` puts the item's icon window in a slot over `ItemSlot{n+1}`, at the slot's size,
+  and shows `EmptySocket{n+1}_0` and `_1` for the item's sockets (+916; GOG's +0x39c).
+- Input (`sub_8237EF90`):
+  - the left stick only: the d-pad's codes 1 to 4 fall to the default;
+  - up and down (17, 18) change the quest;
+  - left and right (19, 20) move a reward cursor from -1 (none) to the last, wrapping
+    (`sub_8237E4D8`), which shows `ItemHighlight` at the box and the item's card (`sub_82344B90`).
+**[measured, 360]** The recomp agent's run (rewards-r0..r3) with a quest whose one reward is a gem: right, then
+right, then left gave the reward, none, the reward. The card's root was at (863.9, 463.4) of 720
+rows for `ItemBkg1` at (600.8, 586), its bottom at 684.
+**[port]**
+- The boxes, the icon in a window of its own over `ItemSlot`'s frame (square, as the quest
+  dialog's), and the sockets.
+- The stick's cursor: the highlight with the box drawn over it, as the quest dialog's.
+- The card 263 rows right of the box's left, at the box's top, pushed up to end 36 rows above the
+  screen's bottom.
+- The page's d-pad up and down removed, as on the 360.
+- Not ported: the stack count's text and the rarity background the 360 makes at the page's build
+  (their images unread).
+**[run]** Unattended, an Alchemist with the same quest taken: the gem's box with its icon; the cursor
+went 0, -1, 0 as on the 360; the card at about x 1272 of 1920 (the 360's 1296) and ending at 1026.
+Steam UNCHANGED. The icon is drawn larger than the 360's (it fills the slot's width).

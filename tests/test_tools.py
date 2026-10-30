@@ -905,6 +905,24 @@ class LabelLookTest(unittest.TestCase):
                          "<WidgetLook name=\"x\"></WidgetLook>")
 
 
+class SkillColumnTest(unittest.TestCase):
+    def test_a_third_column_copied_from_the_second_hidden(self):
+        text = ('<GUILayout><Window Type="a" Name="pane">'
+                '<Window Type="i" Name="skillbg0_1_0" ><Window Type="i" Name="skillicon0_1_0" /></Window>'
+                '<Window Type="i" Name="skillbg0_1_1" ><Property Name="X" Value="1" />'
+                '<Window Type="i" Name="skillicon0_1_1" ></Window><Window Type="t" Name="skilllvl0_1_1" /></Window>'
+                '</Window></GUILayout>')
+        out = convert_x360_ui.add_skill_column(text)
+        self.assertIn('Name="skillbg0_1_2" >\n<Property Name="Visible" Value="False" /><Property Name="X" Value="1" />', out)
+        self.assertIn('Name="skillicon0_1_2"', out)
+        self.assertIn('Name="skilllvl0_1_2"', out)
+        self.assertIn('Name="skillicon0_1_1"', out)
+        self.assertNotIn('skillbg0_1_0" >\n<Property Name="Visible"', out)
+        self.assertEqual(convert_x360_ui.add_skill_column(out), out)
+        lone = convert_x360_ui.add_skill_column('<Window Type="i" Name="skillbg1_2_1" />')
+        self.assertIn('Name="skillbg1_2_2" >\n<Property Name="Visible" Value="False" />\n</Window>', lone)
+
+
 class LabelFrameTest(unittest.TestCase):
     def test_label_frame_made_relative_in_the_label_look_only(self):
         text = ('<WidgetLook name="ceguiWidget/StaticShared"><ImagerySection name="frame"><FrameComponent>'

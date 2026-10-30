@@ -1822,6 +1822,54 @@ static void desc_restore(void) {
     desc_prop = 0;
 }
 
+/* The 360's card is PC's layout (tooltip.layout, tooltipcompare.layout: the same windows) with
+ * its own looks, ceguiWidget/ItemTooltip and ItemTooltip2 (both games: Falagard/Default):
+ * StaticShared's itemframe, its background widgets2's itemtooltipmiddle, drawn 187/255
+ * opaque by its own texture, so the bag shows through it (the owner's recomp capture); PC's
+ * gold frame is opaque. The look is set once per card (setLookNFeel remakes its imagery), after
+ * PC filled it (its root may only exist then). The look's initialiser sets the root's Font
+ * (X360_Serif); in CEGUI 0.6 a window without a Font of its own takes the system's default, not
+ * its parent's, so the children PC sized are not changed. setLookNFeel drops the old look before
+ * it fetches the new one, so the new one must be loaded first
+ * (WidgetLookManager::isWidgetLookAvailable): a missing look would leave the card with a name and
+ * no look, which throws in PC's drawing. A root on which setting the look failed (the look
+ * missing, the call threw, LookNFeel unreadable) is not tried again; any other root whose look
+ * differs is set again. The look stays on PC's tooltip after the bag closes: the 360 has no
+ * other look for it. */
+static void card_look(int i) {
+    typedef void (__fastcall *set_str_fn)(void *self, void *edx, const void *s);
+    typedef int (__fastcall *has_look_fn)(void *self, void *edx, const void *s);
+    typedef void *(__cdecl *looks_fn)(void);
+    static set_str_fn set_look;
+    static has_look_fn has_look;
+    static looks_fn looks;
+    static void *failed[3];                /* the root on which it last failed, per card */
+    void *root = card_root(i);
+    const char *want = i ? "ceguiWidget/ItemTooltip2" : "ceguiWidget/ItemTooltip";
+    char now[64];
+    object look;
+    void *wlm = 0;
+    int ok = 0;
+    if (!root || i < 0 || i > 2) return;
+    read_prop(root, "LookNFeel", now, sizeof now);
+    if (same_text_nocase(now, want)) return;
+    if (failed[i] == root) return;         /* already logged */
+    if (!set_look) set_look = (set_str_fn)need("?setLookNFeel@Window@CEGUI@@UAEXABVString@2@@Z");
+    if (!has_look) has_look = (has_look_fn)need("?isWidgetLookAvailable@WidgetLookManager@CEGUI@@QBE_NABVString@2@@Z");
+    if (!looks) looks = (looks_fn)need("?getSingletonPtr@WidgetLookManager@CEGUI@@SAPAV12@XZ");
+    if (!set_look || !has_look || !looks) return;
+    if (!now[0]) { failed[i] = root; x360_log("x360 inv: the card's LookNFeel not read; the 360's set once\r\n"); }
+    string_ctor(&look, 0, want);
+    __try { wlm = looks(); ok = wlm && (has_look(wlm, 0, &look) & 0xff); }
+    __except (1) { ok = 0; }
+    if (!ok) { failed[i] = root; x360_log("x360 inv: the 360's card look is not loaded; PC's kept\r\n"); }
+    else {
+        __try { set_look(root, 0, &look); x360_log("x360 inv: the card's look set to the 360's\r\n"); }
+        __except (1) { failed[i] = root; x360_log("x360 inv: setLookNFeel on the card threw\r\n"); }
+    }
+    string_dtor(&look, 0);
+}
+
 static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     void *root, *sys = system_ptr(), *sheet = sys ? get_gui_sheet(sys, 0) : 0;
     unsigned char *t = card(i);
@@ -1901,10 +1949,13 @@ static float fill_card(int i, void *item, void *cmp1, void *cmp2) {
     desc_restore();
     root = card_root(i);
     if (!root) { x360_log("x360 inv: the tooltip has no root\r\n"); return 0; }
-    /* The 360's card names the item in its SerifBig (the catalog's 103ItemName); PC's layout has
-     * FrizQuadrataBig there. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
+    card_look(i);
+    /* The 360's card names the item in its SerifBig (the catalog's 103ItemName; its tooltip.layout's
+     * ItemName), and a comparison card in its Serif14 (tooltipcompare.layout's ItemName); PC's
+     * layouts have FrizQuadrataBig and FrizQuadrata there. SerifBig on a comparison card clipped
+     * the name at its width. Its other windows (Serif, and FrizQuadrataBig for the big DPS) are
      * the 360's already. */
-    prop(descendant_ending(root, "ItemName"), "Font", "X360_SerifBig");
+    prop(descendant_ending(root, "ItemName"), "Font", i ? "X360_Serif14" : "X360_SerifBig");
     /* The 360's card has its dividers' windows but draws nothing there (in-game/10, 30: the card's
      * background at their rows); PC's draw a white line. */
     prop(descendant_ending(root, "Divider"), "Alpha", "0");
@@ -3367,6 +3418,7 @@ static void stats_load(void);
 static void stats_commit(void);
 static void skills_load(void);
 static void quest_load(void);
+static int quest_reward, quest_card;   /* the Quest page's reward cursor and its card (below) */
 static void *skills_root, *quest_root;
 static void *skillmap_root;   /* the Skills page's mapping overlay, and whether it is open */
 static int sk_map;
@@ -3591,7 +3643,7 @@ void x360_inventory_toggle(void) {
     if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
     else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
-    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); if (sr_open) sr_finish(0); }
+    if (!inventory_open) { hide_info(); quest_reward = -1; quest_card = 0; if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); if (sr_open) sr_finish(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
      * opens (CInventoryMenuXenon's virtual +28, sub_8236F700 -> sub_82337A10(0): the hero's seen
      * byte +2471 and the setting, as PC's 0x55f570). PC asks for it when its own inventory opens
@@ -4024,6 +4076,7 @@ typedef void *(__fastcall *find_skill_fn)(void *manager, void *edx, const void *
 typedef void (__fastcall *set_skill_level_fn)(void *manager, void *edx, void *skill, int level);
 typedef unsigned char (__fastcall *use_point_fn)(void *unit, void *edx);
 static int sk_tab, sk_row, sk_col, sk_spells;
+static int sk_cols = 2;                   /* the tree's columns: 3 for a class with a skill in PC's third */
 static float help_width;
 
 /* ---- the skill's description as the 360 writes it (sub_823B07C8) ----
@@ -4241,6 +4294,83 @@ static int skill_learnable(unsigned char *sk) {
     return *(int *)(sk + 0xa8) < skill_max(sk);
 }
 
+/* PC's third column (issue #88). PC's classes place their skills in 3 columns per pane (the skill's
+ * +0xd4 is 0 to 2), the 360's tree has 2: a skill of the third column was not shown. The converter
+ * adds a hidden third column of cells (skillbg<pane>_<row>_2, copies of the second's,
+ * tools/convert_x360_ui.py add_skill_column); for a class with a skill there, the three cells of a
+ * row are placed across the two cells' width at 0.78 of their size, 0.1 of their width apart, their
+ * icon and level scaled with them; any other class keeps the layout's places. The recomp does the
+ * same for the classes that need it (the recomp agent: torchlight-achievements, skill_tree_model's
+ * ThreeColumnCells, kThreeColumnScale 0.78, kThreeColumnGap 0.1). */
+static void skill_cell_name(char *out, const char *kind, int t, int r, int c) {
+    char *p;
+    copy(out, 48, kind, 0);
+    p = out + length(out);
+    p = put_int(p, t); *p++ = '_'; p = put_int(p, r); *p++ = '_'; p = put_int(p, c); *p = 0;
+}
+static int skills_place(int three) {
+    static const char *const kinds[3] = {"skillbg", "skillicon", "skilllvl"};
+    static float orig[3][6][3][3][8];        /* pane, row, column, kind: the layout's areas */
+    static int saved, placed = 2, missing;
+    char name[48], value[160];
+    int t, r, c, k;
+    if (three == (placed == 3)) return 1;
+    if (missing) return 0;
+    if (!saved) {
+        for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 3; c++) for (k = 0; k < 3; k++) {
+            void *w;
+            skill_cell_name(name, kinds[k], t, r, c);
+            w = win_of(SKILLS_PREFIX, name);
+            read_prop(w, "UnifiedAreaRect", value, sizeof value);
+            if (!w || !parse_rect(value, orig[t][r][c][k])) {
+                x360_log("x360 skills: the converted UI has no third column (install again): PC's third column not shown\r\n");
+                missing = 1;
+                return 0;
+            }
+        }
+        saved = 1;
+    }
+    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) {
+        const float *a = orig[t][r][0][0], *b = orig[t][r][1][0];
+        /* {{x0 scale, x0 offset}, {y0 ..}, {x1 ..}, {y1 ..}}: the offsets at 1, 3, 5, 7. */
+        float w = (a[5] - a[1]) * 0.78f, h = (a[7] - a[3]) * 0.78f, gap = (a[5] - a[1]) * 0.1f;
+        float left = (a[1] + b[5]) / 2 - (3 * w + 2 * gap) / 2, mid = (a[3] + a[7]) / 2;
+        for (c = 0; c < 3; c++) for (k = 0; k < 3; k++) {
+            float v[8];
+            int i;
+            for (i = 0; i < 8; i++) v[i] = orig[t][r][c][k][i];
+            if (three && k == 0) {
+                v[1] = left + c * (w + gap); v[5] = v[1] + w;
+                v[3] = mid - h / 2; v[7] = mid + h / 2;
+            } else if (three) {
+                for (i = 1; i < 8; i += 2) v[i] *= 0.78f;
+            }
+            skill_cell_name(name, kinds[k], t, r, c);
+            write_rect(value, v);
+            prop(win_of(SKILLS_PREFIX, name), "UnifiedAreaRect", value);
+        }
+    }
+    placed = three ? 3 : 2;
+    x360_log(three ? "x360 skills: PC's three columns\r\n" : "x360 skills: the 360's two columns\r\n");
+    return 1;
+}
+
+/* The columns: 3 when a skill of the class is in PC's third (and the converted UI has it); set
+ * before the fill and before a move (the page's first move may come before its fill). */
+static void skills_columns(void) {
+    unsigned n, i;
+    void **list = skill_list(&n);
+    int three = 0;
+    for (i = 0; list && i < n; i++) {
+        unsigned char *sk = (unsigned char *)list[i];
+        if (sk && *(int *)(sk + 0xd4) == 2 && *(int *)(sk + 0xdc) >= 0 && *(int *)(sk + 0xdc) <= 2 &&
+            *(int *)(sk + 0xd8) >= 0 && *(int *)(sk + 0xd8) <= 5) three = 1;
+    }
+    sk_cols = three && skills_place(1) ? 3 : 2;
+    if (sk_cols == 2) skills_place(0);
+    if (sk_col >= sk_cols) sk_col = sk_cols - 1;
+}
+
 static void skills_fill(void) {
     unsigned n, i;
     void **list = skill_list(&n);
@@ -4253,8 +4383,9 @@ static void skills_fill(void) {
     unsigned char ws[32];
     static const unsigned short empty[] = {0};
     if (!skills_root || !hero || !wstring_functions(&wctor, &wdtor)) return;
+    skills_columns();
     /* Every cell hidden; the skills' shown. */
-    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 2; c++) {
+    for (t = 0; t < 3; t++) for (r = 0; r < 6; r++) for (c = 0; c < 3; c++) {
         copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
         p = put_int(p, c); *p = 0;
         show(win_of(SKILLS_PREFIX, name), 0);
@@ -4275,7 +4406,7 @@ static void skills_fill(void) {
         int passive, selected;
         if (!sk) continue;
         t = *(int *)(sk + 0xdc); r = *(int *)(sk + 0xd8); c = *(int *)(sk + 0xd4);
-        if (t < 0 || t > 2 || r < 0 || r > 5 || c < 0 || c > 1) continue;
+        if (t < 0 || t > 2 || r < 0 || r > 5 || c < 0 || c >= sk_cols) continue;
         copy(name, sizeof name, "skillbg", 0); p = put_int(name + 7, t); *p++ = '_'; p = put_int(p, r); *p++ = '_';
         p = put_int(p, c); *p = 0;
         bg = win_of(SKILLS_PREFIX, name);
@@ -4478,6 +4609,8 @@ static const int spell_tab[4] = {0, 1, 1, 2}, spell_col[4] = {1, 0, 1, 0};
 
 static void skills_move(int dx, int dy) {
     int tries;
+    if (!skills_root) return;
+    skills_columns();
     for (tries = 0; tries < 40; tries++) {
         if (sk_spells) {
             if (dx) { sk_spell = (sk_spell + (dx > 0 ? 1 : 3)) % 4; break; }
@@ -4488,8 +4621,8 @@ static void skills_move(int dx, int dy) {
                 sk_row = dy < 0 ? 5 : 0;
             }
         } else {
-            if (dx > 0) { if (++sk_col > 1) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
-            if (dx < 0) { if (--sk_col < 0) { sk_col = 1; if (--sk_tab < 0) sk_tab = 2; } }
+            if (dx > 0) { if (++sk_col >= sk_cols) { sk_col = 0; if (++sk_tab > 2) sk_tab = 0; } }
+            if (dx < 0) { if (--sk_col < 0) { sk_col = sk_cols - 1; if (--sk_tab < 0) sk_tab = 2; } }
             if ((dy < 0 && --sk_row < 0) || (dy > 0 && ++sk_row > 5)) {
                 sk_spells = 1;
                 sk_spell = sk_tab == 0 ? 0 : sk_tab == 2 ? 3 : sk_col == 0 ? 1 : 2;
@@ -4652,8 +4785,19 @@ static void skills_load(void) {
  * questdetails its details (GOG 0x5ea120, the 360's sub_823C7FE8), the reward boxes for XP, gold
  * and fame shown when not 0 ("XP:" N; GOG 0x5e8750, 0x5e8730, 0x5e8770, the quest's +0x150's
  * +0xc, +0x10, +0x14 as the 360's sub_823CBE88, BE28, BEE8). Up and down choose the quest. */
+/* The reward items (the recomp agent's reading, 2026-10-30): sub_8237E688 takes the selected quest's
+ * rewards (+0x150; their items' list as sub_823D32B8 prepares it, GOG's getRewardItems 0x5f4760
+ * *(OT)*: the data, the count at +4, the capacity at +8) and for n = 0..2 shows ItemBkg{n+1} only for
+ * an item, filling it (sub_8237F310): the item's icon in ItemSlot{n+1}, EmptySocket{n+1}_0 and _1 for
+ * the item's sockets (+916 on the 360, GOG's +0x39c) at 1 and 2. Its input (sub_8237EF90): codes 17
+ * and 18 the quest (the page refreshed, the reward cursor reset), 19 and 20 (the left stick's left
+ * and right) the reward cursor +276 from -1 (none) to the last, wrapping (sub_8237E4D8), which puts
+ * ItemHighlight at ItemBkg{n+1}'s position and the item's card at that box (sub_82344B90), or hides
+ * both at -1. Not ported: the stack count's text and the rarity background the 360 makes at the
+ * page's build (their images unread). */
 #define QUEST_PREFIX "x360qu_"
 #define GOG_QUEST_MANAGER 0x7b4
+static int quest_reward = -1, quest_card;   /* the reward cursor (+276); the card shown for it */
 typedef void *(__fastcall *quest_text_fn)(void *quest, void *edx, void *out);
 typedef unsigned char (__fastcall *quest_complete_fn)(void *quest, void *edx, unsigned char flag);
 static int quest_sel, quest_top;
@@ -4685,6 +4829,71 @@ static int quest_list(void **out, int max) {
         out[count++] = data[i];
     }
     return count;
+}
+
+/* The quest's reward item i, 0 if none (its rewards +0x150, getRewardItems 0x5f4760 *(OT)*). */
+static void *quest_reward_item(void *quest, int i) {
+    typedef unsigned char *(__fastcall *list_fn)(void *self, void *edx);
+    void *found = 0;
+    __try {
+        unsigned char *rw = quest ? *(unsigned char **)((unsigned char *)quest + 0x150) : 0;
+        unsigned char *list = rw ? ((list_fn)0x005f4760)(rw, 0) : 0;
+        if (list && i >= 0 && i < *(int *)(list + 4) && (unsigned)i < *(unsigned *)(list + 8)) found = (*(void ***)list)[i];
+    } __except (1) { found = 0; }
+    return found;
+}
+
+/* The reward cursor's highlight and card (sub_8237E4D8): ItemHighlight at ItemBkg{n+1}'s position and
+ * the item's card at that box (placed as the quest dialog's: its right edge 6 % into the box, its
+ * middle at the box's), none at -1. */
+/* The selected box drawn over the highlight, as the quest dialog's (qd_lift: the rollover image's
+ * centre is opaque; the box comes in front with its own background off, given back after). */
+static void *quest_lifted;
+static char quest_lifted_image[96];
+static void quest_lift(void *bkg) {
+    if (quest_lifted == bkg) return;
+    if (quest_lifted) prop(quest_lifted, "Image", quest_lifted_image);
+    quest_lifted = bkg;
+    if (!bkg) return;
+    read_prop(bkg, "Image", quest_lifted_image, sizeof quest_lifted_image);
+    prop(bkg, "Image", "");
+    move_to_front(bkg, 0);
+}
+static void quest_reward_focus(void *quest) {
+    typedef struct { float top, bottom, left, right; } rect7;
+    typedef rect7 *(__fastcall *pixel_rect_fn7)(const void *self, void *edx, rect7 *out);
+    static pixel_rect_fn7 rect_of;
+    void *item = quest && quest_reward >= 0 ? quest_reward_item(quest, quest_reward) : 0, *bkg;
+    char w[16], r[128];
+    float h;
+    rect7 br;
+    if (quest_card) { hide_card(0); quest_card = 0; }
+    show(win_of(QUEST_PREFIX, "ItemHighlight"), item != 0);
+    if (!item) { quest_lift(0); return; }
+    copy(w, sizeof w, "ItemBkg", 0); w[7] = (char)('1' + quest_reward); w[8] = 0;
+    bkg = win_of(QUEST_PREFIX, w);
+    quest_lift(bkg);
+    read_prop(bkg, "UnifiedPosition", r, sizeof r);
+    prop(win_of(QUEST_PREFIX, "ItemHighlight"), "UnifiedPosition", r);
+    if (!rect_of) rect_of = (pixel_rect_fn7)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    h = fill_card(0, item, 0, 0);
+    if (h > 0) quest_card = 1;
+    if (h > 0 && bkg && rect_of) {
+        /* Where the 360 puts it (the recomp agent's run, rewards-r1: 103Base at (863.9, 463.4) of
+         * 720 rows for ItemBkg1 at (600.8, 586)): its left 263.0 rows right of the box's, its top
+         * at the box's, pushed up to end 36 rows above the screen's bottom (as the inventory's
+         * card: there 1026 of 1080). */
+        RECT cr;
+        HWND hw = active_window();
+        float rows = 0, y;
+        if (hw && GetClientRect(hw, &cr)) rows = (float)cr.bottom / 720.0f;
+        fresh_rects(bkg);
+        rect_of(bkg, 0, &br);
+        y = br.top;
+        if (rows > 0 && y + h > 684.0f * rows) y = 684.0f * rows - h;
+        place_card(0, br.left + 263.0f * (rows > 0 ? rows : k * 768.0f / 720.0f), 0, y);
+        move_to_front(card_root(0), 0);
+    }
 }
 
 static void quest_fill(void) {
@@ -4742,8 +4951,53 @@ static void quest_fill(void) {
             text(win_of(QUEST_PREFIX, reward_text[r]), buf);
             if (v) any = 1;
         }
+        for (r = 0; r < 3; r++) {
+            unsigned char *item = (unsigned char *)quest_reward_item(q, r);
+            char w[24];
+            int sockets = item ? (int)*(unsigned *)(item + 0x39c) : 0, k2;
+            copy(w, sizeof w, "ItemBkg", 0); w[7] = (char)('1' + r); w[8] = 0;
+            show(win_of(QUEST_PREFIX, w), item != 0);
+            copy(w, sizeof w, "ItemSlot", 0); w[8] = (char)('1' + r); w[9] = 0;
+            if (item) item_icon(item, buf, sizeof buf); else buf[0] = 0;
+            {
+                /* The icon in a window of its own over ItemSlot's frame (the 360 puts the item's
+                 * icon window in a slot of its own there, at the slot's size, sub_8237F310), kept
+                 * square as the quest dialog's (the owner's capture of the 360's dialog): as wide
+                 * as the slot, its middle at the slot's. */
+                void *sw = win_of(QUEST_PREFIX, w), *icon;
+                char iname[32], rr[128];
+                float qv[8], wdt, hgt;
+                copy(iname, sizeof iname, "icon_", w);
+                icon = win_of(QUEST_PREFIX, iname);
+                if (!icon && sw && (icon = create_window(QUEST_PREFIX, iname, "ceguiWidget/StaticImage")) != 0) {
+                    add_child(sw, 0, icon);
+                    prop(icon, "MousePassThroughEnabled", "True");
+                    read_prop(sw, "UnifiedAreaRect", rr, sizeof rr);
+                    if (parse_rect(rr, qv) && (wdt = qv[5] - qv[1]) > 0 && (hgt = qv[7] - qv[3]) > 0) {
+                        float side = wdt < hgt ? wdt : hgt;
+                        qv[0] = qv[2] = qv[4] = qv[6] = 0;
+                        qv[1] = (wdt - side) * 0.5f; qv[5] = qv[1] + side;
+                        qv[3] = (hgt - side) * 0.5f; qv[7] = qv[3] + side;
+                        write_rect(rr, qv);
+                        prop(icon, "UnifiedAreaRect", rr);
+                    }
+                }
+                prop(icon, "Image", buf);
+                show(icon, buf[0] != 0);
+                if (item && !buf[0]) x360_log("x360 quest: a reward item without an icon\r\n");
+            }
+            for (k2 = 0; k2 < 2; k2++) {
+                copy(w, sizeof w, "EmptySocket", 0);
+                w[11] = (char)('1' + r); w[12] = '_'; w[13] = (char)('0' + k2); w[14] = 0;
+                show(win_of(QUEST_PREFIX, w), sockets > k2);
+            }
+            if (item) any = 1;
+        }
         show(win_of(QUEST_PREFIX, "rewards"), any);
+        quest_reward_focus(q);
     } else {
+        quest_reward = -1;
+        quest_reward_focus(0);
         text(win_of(QUEST_PREFIX, "questtitle"), "");
         text(win_of(QUEST_PREFIX, "questdetails"), "");
         show(win_of(QUEST_PREFIX, "rewards"), 0);
@@ -4770,13 +5024,28 @@ static void quest_load(void) {
     }
 }
 
-static void quest_pad(unsigned pressed, int ly) {
-    static int held;
-    int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
+static void quest_pad(unsigned pressed, int lx, int ly) {
+    static int held, held_x;
+    /* The left stick only: the 360's codes 17 to 20 come from LTHUMB (sub_822DF308's table at
+     * 0x822DF334); the d-pad's 1 to 4 fall to sub_8237EF90's default and do nothing. */
+    int dir = ly > 500 && !held ? -1 : ly < -500 && !held ? 1 : 0;
+    int dx = lx < -500 && !held_x ? -1 : lx > 500 && !held_x ? 1 : 0;
     void *quests[64];
     int n = quest_list(quests, 64);
     held = ly > 500 || ly < -500;
-    if (dir && quest_sel + dir >= 0 && quest_sel + dir < n) { quest_sel += dir; quest_fill(); }
+    held_x = lx > 500 || lx < -500;
+    if (dir && quest_sel + dir >= 0 && quest_sel + dir < n) { quest_sel += dir; quest_reward = -1; quest_fill(); }
+    if (dx && n > 0 && quest_sel < n) {
+        int count = 0;
+        while (count < 3 && quest_reward_item(quests[quest_sel], count)) count++;
+        if (count > 0) {
+            quest_reward += dx;
+            if (quest_reward < -1) quest_reward = count - 1;
+            if (quest_reward >= count) quest_reward = -1;
+            quest_reward_focus(quests[quest_sel]);
+            x360_log("x360 quest: reward "); x360_log_num(quest_reward); x360_log("\r\n");
+        }
+    }
 }
 
 /* The page shown: the inventory's bags, or the Stats page's two columns; the character's column
@@ -4799,7 +5068,7 @@ static void set_page(int p) {
         hide_info();
         sk_spells = 0; sk_tab = 0; sk_row = 0; sk_col = 0;
         if (!skill_at(0, 0, 0)) skills_move(1, 0); else skills_fill();
-    } else if (page == 3) { hide_info(); quest_fill(); }
+    } else if (page == 3) { hide_info(); quest_reward = -1; quest_card = 0; quest_fill(); }
     else update_info();
 }
 
@@ -5696,7 +5965,7 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     }
     if (page == 1) { stats_pad(pressed, ly); return; }
     if (page == 2) { skills_pad(pressed, lx, ly); return; }
-    if (page == 3) { quest_pad(pressed, ly); return; }
+    if (page == 3) { quest_pad(pressed, lx, ly); return; }
     if ((pressed & 0x0010) && !shop) { petcmd_show(1); return; }     /* Start: the pet's commands */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
@@ -6348,6 +6617,9 @@ void x360_hud_tick(void) {
  * +1608); the anchor below (interact_prompt). */
 /* A world point on the screen, in the window's pixels, by Ogre's camera (the client's +0x10, its
  * +8, as proxy/pad.c reads it): its projection and view matrices; 0 behind the camera. */
+static int world_to_screen(const float *p, float sw, float sh, float *x, float *y);
+/* For proxy/pad.c: the pad's aim point on the screen (its virtual cursor while X or a skill aims). */
+int x360_world_to_screen(const float *p, float sw, float sh, float *x, float *y) { return world_to_screen(p, sw, sh, x, y); }
 static int world_to_screen(const float *p, float sw, float sh, float *x, float *y) {
     typedef const float *(__fastcall *mat_fn)(const void *self, void *edx);
     static mat_fn view, proj;
@@ -9344,6 +9616,269 @@ static void swap_checkbox_tick(const char *prefix) {
     }
 }
 
+/* ---- The 360's brightness and contrast (doc section 45) ----
+ * The 360's two graphics sliders (settingsmenu_xenon's Brightness and Contrast) on the 360's scale,
+ * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8), the
+ * 360's defaults 290 and 210 the ramp's reference. The 360's ramp (sub_82577F08): for i = 0..255, the same for
+ * red, green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), applied when the values change
+ * (sub_821F9DA8). PC draws its image brighter than the 360 draws its own (the recomp agent's captures
+ * of the same place: a mean of 30 on GOG against 20 on the recomp, both with no ramp), and the 360's
+ * default ramp brightens the 360's; given as such, GOG at 290/210 was much brighter than the recomp
+ * at its defaults (54 against 39; the owner saw it). So the ramp is applied relative to PC's image:
+ * each level i is taken back through the 360's default ramp (PC's image standing for the 360's at its
+ * defaults), then through the ramp of the sliders' values, so the defaults give the recomp's look (a
+ * simulation on the same capture: 39.6 against its 39.0, the blacks raised as the 360's) and a slider
+ * moves the image as much as on the 360 (the owner, 2026-10-30). The start is X360_START_*. */
+#define X360_DEFAULT_BRIGHTNESS 290   /* the 360's defaults: the ramp's reference */
+#define X360_DEFAULT_CONTRAST 210
+/* The start (also in setup.c): the 360's defaults, PC's own look under the relative ramp; the slider
+ * stops on them when passing. */
+#define X360_START_BRIGHTNESS 290
+#define X360_START_CONTRAST 210
+int x360_brightness_setting(void);
+int x360_contrast_setting(void);
+void x360_gamma_setting_write(int brightness, int contrast);
+static int gamma_b = -1, gamma_c, gamma_applied_b = -1, gamma_applied_c = -1, gamma_dirty;   /* -1: set at the start */
+/* PC's IDirect3DDevice9: the custom attribute D3DDEVICE (a virtual of RenderTarget, its slot found in
+ * RenderTarget's exported vtable) of Ogre's auto-created window, or, as Torchlight makes its own,
+ * of the game camera's viewport target; 0 under another render system. */
+static int gamma_device_fresh;   /* set: look the device up again (its window or device may be new) */
+static int gamma_last_b = -1, gamma_last_c = -1;   /* the sliders' values shown; -1: set them again */
+static void *gamma_device(void) {
+    typedef void *(__cdecl *root_fn)(void);
+    typedef void *(__fastcall *window_fn)(void *root, void *edx);
+    typedef void (__fastcall *attribute_fn)(void *self, void *edx, const void *name, void *out);
+    typedef void (__fastcall *std_ctor_fn)(void *self, void *edx, const char *s);
+    typedef void (__fastcall *std_dtor_fn)(void *self, void *edx);
+    static void *device;
+    static int tried;   /* 1: looked up; 2: no window yet */
+    static unsigned not_yet;
+    if (gamma_device_fresh) { gamma_device_fresh = 0; device = 0; tried = 0; }
+    void *ogre, *msvcp;
+    root_fn root;
+    window_fn auto_window;
+    void **target_vt, *base, *window, **window_vt;
+    std_ctor_fn std_ctor;
+    std_dtor_fn std_dtor;
+    int slot = -1, i;
+    object name;
+    if (device || tried == 1) return device;
+    if (tried == 2 && ++not_yet % 60) return 0;   /* no window yet (before play): asked every 60 frames */
+    tried = 1;
+    ogre = GetModuleHandleA("OgreMain.dll");
+    msvcp = GetModuleHandleA("msvcp90.dll");
+    if (!ogre || !msvcp) return 0;
+    root = (root_fn)GetProcAddress(ogre, "?getSingleton@Root@Ogre@@SAAAV12@XZ");
+    auto_window = (window_fn)GetProcAddress(ogre, "?getAutoCreatedWindow@Root@Ogre@@QAEPAVRenderWindow@2@XZ");
+    target_vt = (void **)GetProcAddress(ogre, "??_7RenderTarget@Ogre@@6B@");
+    base = (void *)GetProcAddress(ogre, "?getCustomAttribute@RenderTarget@Ogre@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAX@Z");
+    std_ctor = (std_ctor_fn)GetProcAddress(msvcp, "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@PBD@Z");
+    std_dtor = (std_dtor_fn)GetProcAddress(msvcp, "??1?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ");
+    if (!root || !auto_window || !target_vt || !base || !std_ctor || !std_dtor) { x360_log("x360 gamma: Ogre's names not found\r\n"); return 0; }
+    for (i = 0; i < 80; i++) if (target_vt[i] == base) { slot = i; break; }
+    if (slot < 0) { x360_log("x360 gamma: getCustomAttribute's slot not found\r\n"); return 0; }
+    window = auto_window(root(), 0);
+    if (!window) {
+        /* Torchlight makes its window itself (no auto-created one): the target of the game's camera's
+         * viewport (the client's +0x10, its +8, as world_to_screen reads it), once in play. */
+        typedef void *(__fastcall *get_fn)(const void *self, void *edx);
+        get_fn viewport_of = (get_fn)GetProcAddress(ogre, "?getViewport@Camera@Ogre@@QBEPAVViewport@2@XZ");
+        get_fn target_of = (get_fn)GetProcAddress(ogre, "?getTarget@Viewport@Ogre@@QBEPAVRenderTarget@2@XZ");
+        unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+        void *cam = ctl ? *(void **)(ctl + 8) : 0, *vp = cam && viewport_of ? viewport_of(cam, 0) : 0;
+        window = vp && target_of ? target_of(vp, 0) : 0;
+    }
+    if (!window) { tried = 2; return 0; }   /* not made yet: asked again */
+    window_vt = *(void ***)window;
+    std_ctor(&name, 0, "D3DDEVICE");
+    __try { ((attribute_fn)window_vt[slot])(window, 0, &name, &device); }
+    __except (1) { device = 0; x360_log("x360 gamma: getCustomAttribute threw\r\n"); }
+    std_dtor(&name, 0);
+    {
+        static void *said;   /* logged once per device (looked up every 2 s) */
+        if (device != said || !device) {
+            said = device;
+            x360_log(device ? "x360 gamma: PC's D3D9 device found\r\n" : "x360 gamma: no D3D9 device (another render system)\r\n");
+        }
+    }
+    return device;
+}
+/* The 360's ramp for (b, c), set on PC's device (IDirect3DDevice9::SetGammaRamp, its slot 21,
+ * swap chain 0, D3DSGR_NO_CALIBRATION). */
+static void gamma_apply(int b, int c) {
+    typedef void (__stdcall *set_ramp_fn)(void *device, unsigned swap_chain, unsigned long flags, const void *ramp);
+    unsigned short ramp[3][256];
+    void *device = gamma_device();
+    int i;
+    if (!device) return;   /* asked again next frame (the window's target is there in play) */
+    gamma_applied_b = b;
+    gamma_applied_c = c;
+    for (i = 0; i < 256; i++) {
+        /* PC's level i taken back through the 360's default ramp (its 16-bit output i*257), then
+         * through the sliders' ramp. */
+        const float d = (float)X360_DEFAULT_BRIGHTNESS, dc = (float)X360_DEFAULT_CONTRAST;
+        /* Not clamped to 0..255: the default ramp's line continued past its ends, so at the
+         * defaults the ramp is exactly the identity (PC's look, the darkest levels kept apart; the
+         * owner, 2026-10-30) and the sliders move the image from there as on the 360. */
+        float j = 128.0f + ((float)i * 257.0f - d * 128.0f) / (d * dc / 256.0f), v;
+        v = (float)b * 128.0f + (j - 128.0f) * (float)b * (float)c / 256.0f;
+        if (v < 0.0f) v = 0.0f;
+        if (v > 65535.0f) v = 65535.0f;
+        ramp[0][i] = ramp[1][i] = ramp[2][i] = (unsigned short)v;
+    }
+    __try { ((set_ramp_fn)(*(void ***)device)[21])(device, 0, 0, ramp); x360_log("x360 gamma: the ramp set\r\n"); }
+    __except (1) { x360_log("x360 gamma: SetGammaRamp threw\r\n"); }
+}
+/* Each frame: the values from the settings file at start, then the sliders'; applied on a change,
+ * saved once PC's settings screen has closed. */
+/* Keep or cancel, as the 360's (sub_823807E8 saves the values at the screen's opening, sub_821FF750
+ * puts them back at its closing unless the menu's +265 is set): here the values at the opening are
+ * put back when PC's settings screen closes with its Apply not under the cursor (Cancel, Escape),
+ * PC's own Apply and Cancel being how its screen closes. Every 2 s the device is looked up again
+ * and the ramp set anew if it changed (a resolution or window change may make a new one). */
+static void gamma_frame(int settings_up, const char *prefix) {
+    typedef unsigned char (__fastcall *hover_fn)(const void *self, void *edx);
+    static hover_fn hovering;
+    static int was_up, open_b, open_c, apply_hovered;
+    static unsigned frames;
+    if (gamma_b < 0) {
+        gamma_b = x360_brightness_setting(); gamma_c = x360_contrast_setting();
+        x360_log("x360 gamma: brightness "); x360_log_num(gamma_b); x360_log(" contrast "); x360_log_num(gamma_c); x360_log(" from the settings\r\n");
+    }
+    if (!hovering) hovering = (hover_fn)need("?isHovering@ButtonBase@CEGUI@@QBE_NXZ");
+    if (settings_up && !was_up) { open_b = gamma_b; open_c = gamma_c; gamma_last_b = gamma_last_c = -1; }
+    if (settings_up && prefix && hovering) {
+        void *apply = win_of(prefix, "Apply");
+        apply_hovered = apply && hovering(apply, 0);
+    }
+    if (!settings_up && was_up && !apply_hovered && (gamma_b != open_b || gamma_c != open_c)) {
+        gamma_b = open_b; gamma_c = open_c; gamma_dirty = 0;
+        x360_log("x360 gamma: the settings closed without Apply: the values at their opening put back\r\n");
+    }
+    /* At any closing the sliders are marked to be set again from the values: PC's settings window
+     * stays made, its sliders where they were left, and at the next opening the sliders' tick runs
+     * before this: it read the old position as a change, which became the opening's value and was
+     * saved (the owner: after a Cancel, the screen opened again and closed kept the moved value). */
+    if (!settings_up && was_up) gamma_last_b = gamma_last_c = -1;
+    was_up = settings_up;
+    if (++frames % 120 == 0 && gamma_applied_b >= 0) {
+        static void *last_device;
+        void *d;
+        gamma_device_fresh = 1;
+        d = gamma_device();
+        if (d && d != last_device) { last_device = d; gamma_applied_b = gamma_applied_c = -1; }
+    }
+    if (gamma_b != gamma_applied_b || gamma_c != gamma_applied_c) gamma_apply(gamma_b, gamma_c);
+    if (!settings_up && gamma_dirty) { gamma_dirty = 0; x360_gamma_setting_write(gamma_b, gamma_c); }
+}
+static void gamma_header(void *header, const char *label, int value, int pc, int x360) {
+    char s[64], digits[8];
+    unsigned at = 0, k;
+    int n = value, d = 0;
+    for (k = 0; label[k]; k++) s[at++] = label[k];
+    s[at++] = ' ';
+    do { digits[d++] = (char)('0' + n % 10); n /= 10; } while (n && d < 7);
+    while (d) s[at++] = digits[--d];
+    (void)pc; (void)x360;   /* no default's tag (the owner, 2026-10-30) */
+    s[at] = 0;
+    text(header, s);
+}
+/* One slider and its header in PC's settings screen, `top` pixels under the window `below` (its
+ * column), the slider holding the 360's value less 100 out of `range`. Returns the value shown;
+ * *last is -1 for a new screen. */
+static int gamma_slider(const char *prefix, const char *name, const char *header_name, const char *below,
+                        const char *label, int value, float top, float range, float step, int pc, int x360, int *last) {
+    typedef void *(__fastcall *parent_fn)(const void *self, void *edx);
+    typedef float (__fastcall *getf_fn)(const void *self, void *edx);
+    typedef void (__fastcall *setf_fn)(void *self, void *edx, float v);
+    static parent_fn parent_of;
+    static getf_fn get_cur;
+    static setf_fn set_max, set_cur, set_step;
+    void *slider = win_of(prefix, name), *header = win_of(prefix, header_name), *anchor = win_of(prefix, below);
+    int now;
+    if (!parent_of) {
+        parent_of = (parent_fn)need("?getParent@Window@CEGUI@@QBEPAV12@XZ");
+        get_cur = (getf_fn)need("?getCurrentValue@Slider@CEGUI@@QBEMXZ");
+        set_max = (setf_fn)need("?setMaxValue@Slider@CEGUI@@QAEXM@Z");
+        set_cur = (setf_fn)need("?setCurrentValue@Slider@CEGUI@@QAEXM@Z");
+        set_step = (setf_fn)need("?setClickStep@Slider@CEGUI@@QAEXM@Z");
+    }
+    if (!parent_of || !get_cur || !set_max || !set_cur || !set_step || !anchor) return value;
+    if (!slider || !header) {
+        char r[160];
+        float v[8];
+        void *parent = parent_of(anchor, 0);
+        if (!parent || (!slider && !(slider = create_window(prefix, name, "GuiLook/Slider"))) ||
+            (!header && !(header = create_window(prefix, header_name, "GuiLook/StaticText")))) {
+            x360_log("x360 gamma: a slider not made\r\n");
+            return value;
+        }
+        add_child(parent, 0, header);
+        add_child(parent, 0, slider);
+        read_prop(anchor, "UnifiedAreaRect", r, sizeof r);
+        if (parse_rect(r, v)) {
+            /* The header 20 px tall and the slider 255 by 25 under it (PC's MusicHeader and
+             * MusicVolume's sizes), at the anchor's left; the header `top` below the anchor's top,
+             * 80 as PC's own (settingsmenu.layout: each header 80 under the control above's top,
+             * MusicHeader -70 under ResolutionDropdown -150, SoundHeader 30 under MusicVolume -50;
+             * 50 was too close, the owner). */
+            v[4] = v[0]; v[5] = v[1] + 255.0f;
+            v[6] = v[2]; v[3] += top; v[7] = v[3] + 20.0f;
+            write_rect(r, v);
+            prop(header, "UnifiedAreaRect", r);
+            v[3] += 20.0f; v[7] = v[3] + 25.0f;
+            write_rect(r, v);
+            prop(slider, "UnifiedAreaRect", r);
+        }
+        x360_log("x360 gamma: a slider made in PC's settings\r\n");
+        *last = -1;
+        if (name[4] == 'C') {   /* x360Contrast, the lower one: made once per settings window */
+            /* Cancel and Apply moved down by what the sliders add under the last row (the slider's
+             * bottom against ShowBlood's), so they keep PC's own gap under it: at PC's 80 the
+             * sliders reached the buttons (the owner's capture). */
+            void *apply = win_of(prefix, "Apply"), *cancel = win_of(prefix, "Cancel"), *row = win_of(prefix, "ShowBlood");
+            float vs[8], vr[8];
+            read_prop(slider, "UnifiedAreaRect", r, sizeof r);
+            if (apply && cancel && row && parse_rect(r, vs)) {
+                read_prop(row, "UnifiedAreaRect", r, sizeof r);
+                if (parse_rect(r, vr) && vs[7] > vr[7]) {
+                    move_by(apply, 0, vs[7] - vr[7]);
+                    move_by(cancel, 0, vs[7] - vr[7]);
+                }
+            }
+        }
+    }
+    if (*last < 0) {
+        set_max(slider, 0, range);
+        set_step(slider, 0, step);
+        set_cur(slider, 0, (float)(value - 100));
+        *last = value;
+        gamma_header(header, label, value, pc, x360);
+        return value;
+    }
+    now = 100 + (int)(get_cur(slider, 0) + 0.5f);
+    if (now == *last) return now;
+    if ((*last < pc && now > pc) || (*last > pc && now < pc)) now = pc;   /* passing a default stops on it */
+    else if ((*last < x360 && now > x360) || (*last > x360 && now < x360)) now = x360;
+    set_cur(slider, 0, (float)(now - 100));
+    *last = now;
+    gamma_header(header, label, now, pc, x360);
+    return now;
+}
+static void gamma_sliders_tick(const char *prefix) {
+#define last_b gamma_last_b
+#define last_c gamma_last_c
+    int b, c;
+    if (gamma_b < 0) return;
+    b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
+                     gamma_b, 80.0f, 500.0f, 10.0f, X360_START_BRIGHTNESS, X360_START_BRIGHTNESS, &last_b);
+    c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
+                     gamma_c, 80.0f, 300.0f, 5.0f, X360_START_CONTRAST, X360_START_CONTRAST, &last_c);
+    if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
+}
+#undef last_b
+#undef last_c
+
 static void nav_collect(void *w, int depth, int only_under_pause) {
     typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
     typedef unsigned char (__fastcall *vis_fn)(const void *self, void *edx, unsigned char local);
@@ -9538,6 +10073,8 @@ static void pc_menus_nav_tick(void) {
     x360_pc_die_up = die || wp;
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
+    if (settings) __try { gamma_sliders_tick(settings_prefix); } __except (1) { x360_log("x360 gamma: exception in the settings' sliders\r\n"); }
+    __try { gamma_frame(settings, settings_prefix); } __except (1) { x360_log("x360 gamma: exception applying the ramp\r\n"); }
     cursor_hook_install();
     if (nav_cursor_off != !(settings || create)) {
         nav_cursor_off = !(settings || create);
