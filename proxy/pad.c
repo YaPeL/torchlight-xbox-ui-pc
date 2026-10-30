@@ -2033,8 +2033,14 @@ static void missile_aim_install(void) {
  * push ebx; mov ebx, [esp+8]: 5 bytes) to a trampoline that may clear the argument. */
 #define GOG_UI_SET_HOVER_UNIT 0x0040f930
 #define GOG_UI_SET_HOVER_ITEM 0x0054d390
+static unsigned hover_cleared;   /* pad_log=1: how many the mouse-over had while aiming */
 static void __cdecl hover_filter(void **slot) {
-    if (direct && *slot && aiming(GetTickCount())) *slot = 0;
+    if (direct && *slot && aiming(GetTickCount())) {
+        *slot = 0;
+        if (verbose && (++hover_cleared & 63) == 1) {
+            x360_log("pad: PC's mouse-over left empty while aiming, times "); x360_log_num((long)hover_cleared); x360_log("\r\n");
+        }
+    }
 }
 static void hover_patch(unsigned addr, const unsigned char *want, int len) {
     unsigned char *at = (unsigned char *)addr, *t;
