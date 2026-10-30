@@ -4243,7 +4243,7 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
 - **Other ranged weapons on PC (2026-10-29, measured).** The recomp agent's weapon runs (the bench
   save with the bow's record swapped by its GUID and name, the same pad script) replayed on GOG with
   the 30-degree cone: the pistol's attacks go through the cone search (0x4a5b6e reached), as the
-  bow's; the wand's, the crossbow's and the staff's never reach it (0 of 22, 23 and 25 attacks).
+  bow's; the wand's never reach it (0 of 22 entries of 0x4a5880).
   **[read, PC]** Before the cone, 0x4a5a04-0x4a5a23 hands a missile weapon the unit's +0x290 target
   (0x48de30, then 0x4b9240) and returns: with X and the stick the target is clear, so the missile
   flies along the facing. **[measured, 360; the recomp agent]** The wand and the crossbow launch a
@@ -4251,12 +4251,13 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   In the automated runs the crossbow and the staff never attacked (the hero's attack, 0x4a6804,
   not reached; the test character lacks the crossbow's dexterity, the owner); the wand did.
   **[port]** At PC's launcher (0x4b9240), for the hero with no target, the target is the unit the
-  360's first search finds (`unit_in_view`, 30 degrees, out to 21). Measured (2026-10-30): the wand
+  360's first search finds (`unit_in_view`, 30 degrees, out to 21), only while the pad's X is down
+  (a mouse player's click is left to PC) and for a weapon with a missile (+0x3c4). Measured (2026-10-30): the wand
   in an automated run, 8 of 18 shots aimed at a cone unit (-21 to +24 degrees); played by the owner,
   the crossbow 13 of 23. The staff is a melee weapon on PC (the owner: only blows, nothing ranged):
   its attacks enter 0x4b9240, which launches nothing for it (the hook's count, 16 of 19, is of
   entries, not shots). The 360's is melee too (the recomp agent: base_staff's RANGE 0.8 and
-  STRIKERANGE 1.3 on both builds; with a Vanquisher its hits within 3.44); the far hits (to 9.3)
+  STRIKERANGE 1.3 on both builds; with another class its hits within 3.44); the far hits (to 9.3)
   measured with the test character's swapped save came from the bow's attack data the swapped
   record kept (the reach the same as the pistol's there), an artifact of the swap. The pistol and the bow
   go through the 30-degree cone (above).

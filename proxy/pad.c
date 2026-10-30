@@ -1888,19 +1888,22 @@ static void attack_log_install(void) {
  * pool+1628) and hands the unit found to its launcher (sub_822BAB50 at 0x82291CA4), which aims the
  * missile at it, else along the facing (the recomp agent's reading and runs: the wand and the
  * crossbow, a unit at 23.4 degrees, the missile at 25.5). PC's attack (0x4a5880) launches first,
- * with the unit's +0x290 target (0x4a5a04-0x4a5a23: 0x4b9240(attacker, target) on the weapon) and
- * searches after, so its wand, crossbow and staff flew along the facing (measured: none reached
- * the cone). At the launcher's entry, for the hero with no target, the target argument becomes the
- * unit the 360's search would find (unit_in_view: the enemy pass, 30 degrees, out to 21). */
+ * with the unit's +0x290 target (0x4a5a04-0x4a5a23: a skill weapon's 0x48de30, then 0x4b9240(attacker,
+ * target) on the weapon) and searches after, so its wand and crossbow flew along the facing. At the
+ * launcher's entry, for the hero with no target while the pad's X is down (not a mouse player's
+ * click) and a weapon with a missile (+0x3c4, which the launcher tests first), the target argument
+ * becomes the unit the 360's search would find (unit_in_view: the enemy pass, 30 degrees, out to
+ * 21). */
 #define GOG_LAUNCH_MISSILE 0x004b9240
 #define MISSILE_AIM_RANGE 21.0f
-static void __cdecl missile_aim(unsigned char *attacker, void **target) {
+static void __cdecl missile_aim(unsigned char *attacker, void **target, unsigned char *weapon) {
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
     unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
     unsigned char *level = client ? *(unsigned char **)(client + 0x38) : 0;
     float m[16];
     void *u;
     if (*target || !level || attacker != *(unsigned char **)(client + 0x2c)) return;
+    if (!(buttons & 0x4000) || !weapon || !*(void **)(weapon + 0x3c4)) return;
     hero_matrix(attacker, m);
     u = unit_in_view(attacker, level, m, ALIGN_ENEMY, MISSILE_AIM_RANGE);
     if (!u) return;
@@ -1919,11 +1922,12 @@ static void missile_aim_install(void) {
     t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
     if (!t) return;
     t[n++] = 0x60;                                                    /* pushad */
-    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x28;       /* lea eax, [esp+40]: the target's slot */
+    t[n++] = 0x51;                                                    /* push ecx: the weapon */
+    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x2c;       /* lea eax, [esp+44]: the target's slot */
     t[n++] = 0x50;                                                    /* push eax */
-    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the attacker */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x2c;       /* push [esp+44]: the attacker */
     t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)missile_aim - (t + n + 5)); n += 5;
-    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x0c;                      /* add esp, 12 */
     t[n++] = 0x61;                                                    /* popad */
     for (i = 0; i < 7; i++) t[n++] = at[i];
     t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;
