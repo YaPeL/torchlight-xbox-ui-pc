@@ -4146,7 +4146,13 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   pixels fall). The recomp agent's same pair on the recomp (F9 captures replayed at 1920x1080):
   within 0.53 (median of 217 levels; every level but pure black within about 1). The sliders seen
   in PC's settings screen, their headers "Brightness N" and "Contrast N" with "(PC)" or "(360)" at
-  the defaults (a longer tag was clipped).
+  the defaults (a longer tag was clipped). Keep or cancel as the 360's: the values at the screen's
+  opening are put back when it closes with its Apply not under the cursor (Cancel, Escape); seen in a
+  run (moved and Cancel: put back; moved and Apply: saved). The device is looked up again every 2 s
+  and the ramp set anew on a new one (a resolution change may make one). Measured under Proton with
+  DXVK only, which applies the ramp in its own presenter (gone with the game); on Windows' own D3D9
+  a windowed game's ramp is normally ignored (D3DCAPS2_FULLSCREENGAMMA) and a fullscreen one sets the
+  display's: not tried.
 
 ## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
 

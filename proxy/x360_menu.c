@@ -9364,8 +9364,11 @@ int x360_brightness_setting(void);
 int x360_contrast_setting(void);
 void x360_gamma_setting_write(int brightness, int contrast);
 static int gamma_b = -1, gamma_c, gamma_applied_b = X360_PC_BRIGHTNESS, gamma_applied_c = X360_PC_CONTRAST, gamma_dirty;
-/* PC's IDirect3DDevice9: Ogre's auto-created window's custom attribute D3DDEVICE (a virtual of
- * RenderTarget, its slot found in RenderTarget's exported vtable); 0 under another render system. */
+/* PC's IDirect3DDevice9: the custom attribute D3DDEVICE (a virtual of RenderTarget, its slot found in
+ * RenderTarget's exported vtable) of Ogre's auto-created window, or, as Torchlight makes its own,
+ * of the game camera's viewport target; 0 under another render system. */
+static int gamma_device_fresh;   /* set: look the device up again (its window or device may be new) */
+static int gamma_last_b = -1, gamma_last_c = -1;   /* the sliders' values shown; -1: set them again */
 static void *gamma_device(void) {
     typedef void *(__cdecl *root_fn)(void);
     typedef void *(__fastcall *window_fn)(void *root, void *edx);
@@ -9374,6 +9377,7 @@ static void *gamma_device(void) {
     typedef void (__fastcall *std_dtor_fn)(void *self, void *edx);
     static void *device;
     static int tried;
+    if (gamma_device_fresh) { gamma_device_fresh = 0; device = 0; tried = 0; }
     void *ogre, *msvcp;
     root_fn root;
     window_fn auto_window;
@@ -9413,7 +9417,13 @@ static void *gamma_device(void) {
     __try { ((attribute_fn)window_vt[slot])(window, 0, &name, &device); }
     __except (1) { device = 0; x360_log("x360 gamma: getCustomAttribute threw\r\n"); }
     std_dtor(&name, 0);
-    x360_log(device ? "x360 gamma: PC's D3D9 device found\r\n" : "x360 gamma: no D3D9 device (another render system)\r\n");
+    {
+        static void *said;   /* logged once per device (looked up every 2 s) */
+        if (device != said || !device) {
+            said = device;
+            x360_log(device ? "x360 gamma: PC's D3D9 device found\r\n" : "x360 gamma: no D3D9 device (another render system)\r\n");
+        }
+    }
     return device;
 }
 /* The 360's ramp for (b, c), set on PC's device (IDirect3DDevice9::SetGammaRamp, its slot 21,
@@ -9437,10 +9447,37 @@ static void gamma_apply(int b, int c) {
 }
 /* Each frame: the values from the settings file at start, then the sliders'; applied on a change,
  * saved once PC's settings screen has closed. */
-static void gamma_frame(int settings_up) {
+/* Keep or cancel, as the 360's (sub_823807E8 saves the values at the screen's opening, sub_821FF750
+ * puts them back at its closing unless the menu's +265 is set): here the values at the opening are
+ * put back when PC's settings screen closes with its Apply not under the cursor (Cancel, Escape),
+ * PC's own Apply and Cancel being how its screen closes. Every 2 s the device is looked up again
+ * and the ramp set anew if it changed (a resolution or window change may make a new one). */
+static void gamma_frame(int settings_up, const char *prefix) {
+    typedef unsigned char (__fastcall *hover_fn)(const void *self, void *edx);
+    static hover_fn hovering;
+    static int was_up, open_b, open_c, apply_hovered;
+    static unsigned frames;
     if (gamma_b < 0) {
         gamma_b = x360_brightness_setting(); gamma_c = x360_contrast_setting();
         x360_log("x360 gamma: brightness "); x360_log_num(gamma_b); x360_log(" contrast "); x360_log_num(gamma_c); x360_log(" from the settings\r\n");
+    }
+    if (!hovering) hovering = (hover_fn)need("?isHovering@ButtonBase@CEGUI@@QBE_NXZ");
+    if (settings_up && !was_up) { open_b = gamma_b; open_c = gamma_c; gamma_last_b = gamma_last_c = -1; }
+    if (settings_up && prefix && hovering) {
+        void *apply = win_of(prefix, "Apply");
+        apply_hovered = apply && hovering(apply, 0);
+    }
+    if (!settings_up && was_up && !apply_hovered && (gamma_b != open_b || gamma_c != open_c)) {
+        gamma_b = open_b; gamma_c = open_c; gamma_dirty = 0;
+        x360_log("x360 gamma: the settings closed without Apply: the values at their opening put back\r\n");
+    }
+    was_up = settings_up;
+    if (++frames % 120 == 0 && (gamma_applied_b != X360_PC_BRIGHTNESS || gamma_applied_c != X360_PC_CONTRAST)) {
+        static void *last_device;
+        void *d;
+        gamma_device_fresh = 1;
+        d = gamma_device();
+        if (d && d != last_device) { last_device = d; gamma_applied_b = gamma_applied_c = -1; }
     }
     if (gamma_b != gamma_applied_b || gamma_c != gamma_applied_c) gamma_apply(gamma_b, gamma_c);
     if (!settings_up && gamma_dirty) { gamma_dirty = 0; x360_gamma_setting_write(gamma_b, gamma_c); }
@@ -9525,7 +9562,8 @@ static int gamma_slider(const char *prefix, const char *name, const char *header
     return now;
 }
 static void gamma_sliders_tick(const char *prefix) {
-    static int last_b = -1, last_c = -1;
+#define last_b gamma_last_b
+#define last_c gamma_last_c
     int b, c;
     if (gamma_b < 0) return;
     b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
@@ -9534,6 +9572,8 @@ static void gamma_sliders_tick(const char *prefix) {
                      gamma_c, 50.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
 }
+#undef last_b
+#undef last_c
 
 static void nav_collect(void *w, int depth, int only_under_pause) {
     typedef const void *(__fastcall *str_fn)(const void *self, void *edx);
@@ -9730,7 +9770,7 @@ static void pc_menus_nav_tick(void) {
     x360_pc_settings_up = settings;
     if (settings) __try { swap_checkbox_tick(settings_prefix); } __except (1) { x360_log("x360 prompts: exception in the settings' checkbox\r\n"); }
     if (settings) __try { gamma_sliders_tick(settings_prefix); } __except (1) { x360_log("x360 gamma: exception in the settings' sliders\r\n"); }
-    __try { gamma_frame(settings); } __except (1) { x360_log("x360 gamma: exception applying the ramp\r\n"); }
+    __try { gamma_frame(settings, settings_prefix); } __except (1) { x360_log("x360 gamma: exception applying the ramp\r\n"); }
     cursor_hook_install();
     if (nav_cursor_off != !(settings || create)) {
         nav_cursor_off = !(settings || create);
