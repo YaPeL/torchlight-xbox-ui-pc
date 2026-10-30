@@ -4225,10 +4225,14 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   first argument, 1.5, not read), hostile units (`sub_822A49D0`), and aims the shot at the unit
   found (0x82292058: its position, the height by both units' +348; a sight test may cut it;
   no homing). **[port]** While X is held with the stick out, the same cone from the stick's way
-  (`unit_in_view`, the enemy pass, out to `target_range`: 10 with the test bow) and the aim point
-  becomes the unit's position. Differences: the hero turns to the unit (the 360's turns to the
-  stick and only the shot goes to it), and the reach is the weapon's +0x78 plus 2, not the 360's
-  formula. Not played yet.
+  (`unit_in_view`, the enemy pass, out to `target_range`: 10 with the test bow); the virtual
+  cursor goes to the unit, the hold turn still faces the stick's point, and after that turn
+  (0x4af410) +0x1cc and +0x1d8 are put back to the unit's point and way for the shot. Played
+  (2026-10-29): the shot hits an enemy 15 degrees off as the recomp's; the first version turned the
+  hero to the unit (the owner: the recomp's hero shoots a little sideways), now it faces the stick
+  (not played yet). The reach is the weapon's +0x78 plus 2, not the 360's formula. While aiming,
+  the candidate's highlight is set again each frame: PC's mouse-over (0x41520d) cleared it when the
+  cursor left the unit (the owner saw it flicker).
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).

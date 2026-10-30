@@ -166,6 +166,8 @@ static int aiming(unsigned now) { return aim_until && (int)(now - aim_until) < 0
 static int aim_lx = 0, aim_ly = 1000;       /* the stick's last direction, on screen */
 static float aim_point[3];                  /* the 360's aim point in the world (order(), while aiming) */
 static int aim_point_ok;
+static float shot_point[3];                  /* the shot's assist: the unit's position (order()) */
+static int shot_point_ok;
 int x360_world_to_screen(const float *p, float sw, float sh, float *x, float *y);   /* proxy/x360_menu.c */
 static unsigned prev_buttons;
 void x360_inventory_toggle(void);
@@ -854,9 +856,9 @@ static BOOL __stdcall pad_get_cursor_pos(POINT *p) {
         float px = 0.0f, py = 0.0f;
         int projected = 0;
         float on_plane[3];
-        on_plane[0] = aim_point[0];
+        on_plane[0] = shot_point_ok ? shot_point[0] : aim_point[0];
         on_plane[1] = aim_plane_y();
-        on_plane[2] = aim_point[2];
+        on_plane[2] = shot_point_ok ? shot_point[2] : aim_point[2];
         if (direct && aim_point_ok && aiming(GetTickCount()) &&
             x360_world_to_screen(on_plane, (float)(rc.right - rc.left), (float)(rc.bottom - rc.top), &px, &py)) {
             /* Aiming (X held, a skill's key): the 360's point itself, 2 units from the hero along the
@@ -1811,6 +1813,48 @@ static void hold_turn_install(void) {
     x360_log("pad: X's turn faces the 360's point (0x491b60)\r\n");
 }
 
+/* After the update's hold turn (0x4af410, the return of its call to 0x491b60): the hero turned to
+ * the stick's point; with the shot's assist on a unit, +0x1cc and +0x1d8 go back to that unit's
+ * point and way, so the shot the attack fires after it goes there (the 360's sub_822919A8 aims the
+ * shot, not the hero). A jump over the 7-byte fld [esp+0x9c] to a trampoline. */
+static void __cdecl shot_restore(unsigned char *unit) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    float pos[3], dx, dz, len;
+    if (!shot_point_ok || !client || unit != *(unsigned char **)(client + 0x2c)) return;
+    if (!unit[GOG_HOLD_POSITION] || !(buttons & 0x4000) || !aiming(GetTickCount())) return;
+    ((get_position_fn)GOG_GET_POSITION)(unit, 0, pos, 1);
+    dx = shot_point[0] - pos[0];
+    dz = shot_point[2] - pos[2];
+    len = root(dx * dx + dz * dz);
+    if (len < 1e-3f) return;
+    *(float *)(unit + 0x1cc) = shot_point[0];
+    *(float *)(unit + 0x1d4) = shot_point[2];
+    *(float *)(unit + 0x1d8) = dx / len;
+    *(float *)(unit + 0x1dc) = 0.0f;
+    *(float *)(unit + 0x1e0) = dz / len;
+}
+static void shot_restore_install(void) {
+    static const unsigned char want[7] = {0xd9, 0x84, 0x24, 0x9c, 0x00, 0x00, 0x00};   /* fld dword [esp+0x9c] */
+    unsigned char *at = (unsigned char *)GOG_UPDATE_HOLD_TURN_RET, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < 7; i++)
+        if (at[i] != want[i]) { x360_log("pad: the hold turn's return not as read: no shot assist\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x56;                                                    /* push esi: the unit */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)shot_restore - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x04;                      /* add esp, 4 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 7; i++) t[n++] = at[i];
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 7, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
+    VirtualProtect(at, 7, old, &old);
+}
+
 /* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
  * expanded nodes (sub_82217DA8 after sub_822F6B70: hero+512's +68 = 200; the pet's 800), PC at 800
  * (GOG 0x416d40: push 0x320, then 0x486130 writes [hero+0x20c]+0x44; the pet's 800 at 0x416e92 and
@@ -2138,8 +2182,11 @@ static void order(void) {
              * to the weapon's reach plus 1 (sub_822F8128, 0x82291DD0), and aims at the unit found
              * (0x82292058; no homing). Here the same cone from the stick's way, out to
              * target_range (the weapon's +0x78 plus 2: 10 with the test bow against the 360's
-             * 10.45), and the point becomes the unit's: the hero turns to it too, where the
-             * 360's turns to the stick and only the shot goes to the unit. */
+             * 10.45), and the shot's point (shot_point) is the unit's: the virtual cursor goes
+             * there, so PC's client and attack take it; the hero still turns to the stick (the
+             * hold turn's point is aim_point, then shot_restore puts the unit's back for the
+             * shot, as the 360's turns to the stick and only the shot goes to the unit). */
+            shot_point_ok = 0;
             if ((buttons & 0x4000) && stick_active() && level) {
                 float c[16];
                 void *u;
@@ -2150,8 +2197,10 @@ static void order(void) {
                 if (u) {
                     float t[3];
                     ((get_position_fn)GOG_GET_POSITION)(u, 0, t, 1);
-                    aim_point[0] = t[0];
-                    aim_point[2] = t[2];
+                    shot_point[0] = t[0];
+                    shot_point[1] = t[1];
+                    shot_point[2] = t[2];
+                    shot_point_ok = 1;
                     if (verbose && now - assist_logged >= 200) {
                         assist_logged = now;
                         x360_log("pad: X's shot assist on "); x360_log_num((long)u); log_rel(c, u); x360_log("\r\n");
@@ -2379,7 +2428,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) hold_turn_install();
+    if (x360_pad_running) { hold_turn_install(); shot_restore_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
