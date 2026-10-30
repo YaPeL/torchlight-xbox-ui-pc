@@ -2042,14 +2042,14 @@ static void __cdecl hover_filter(void **slot) {
         }
     }
 }
-static void hover_patch(unsigned addr, const unsigned char *want, int len) {
+static int hover_patch(unsigned addr, const unsigned char *want, int len) {
     unsigned char *at = (unsigned char *)addr, *t;
     DWORD old;
     int i, n = 0;
     for (i = 0; i < len; i++)
-        if (at[i] != want[i]) { x360_log("pad: a mouse-over setter not as read: left to PC\r\n"); return; }
+        if (at[i] != want[i]) { x360_log("pad: a mouse-over setter not as read: left to PC\r\n"); return 0; }
     t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
-    if (!t) return;
+    if (!t) return 0;
     t[n++] = 0x60;                                                    /* pushad */
     t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x24;       /* lea eax, [esp+36]: the argument's slot */
     t[n++] = 0x50;                                                    /* push eax */
@@ -2058,17 +2058,18 @@ static void hover_patch(unsigned addr, const unsigned char *want, int len) {
     t[n++] = 0x61;                                                    /* popad */
     for (i = 0; i < len; i++) t[n++] = at[i];
     t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + len) - (t + n + 5)); n += 5;
-    if (!VirtualProtect(at, len, 0x40, &old)) return;
+    if (!VirtualProtect(at, len, 0x40, &old)) return 0;
     at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5));
     for (i = 5; i < len; i++) at[i] = 0x90;
     VirtualProtect(at, len, old, &old);
+    return 1;
 }
 static void hover_install(void) {
     static const unsigned char unit_entry[6] = {0x56, 0x8d, 0x71, 0x2c, 0x8b, 0x0e};
     static const unsigned char item_entry[5] = {0x53, 0x8b, 0x5c, 0x24, 0x08};
-    hover_patch(GOG_UI_SET_HOVER_UNIT, unit_entry, 6);
-    hover_patch(GOG_UI_SET_HOVER_ITEM, item_entry, 5);
-    x360_log("pad: PC's mouse-over left empty while the pad aims (0x40f930, 0x54d390)\r\n");
+    int u = hover_patch(GOG_UI_SET_HOVER_UNIT, unit_entry, 6), i = hover_patch(GOG_UI_SET_HOVER_ITEM, item_entry, 5);
+    if (u && i) x360_log("pad: PC's mouse-over left empty while the pad aims (0x40f930, 0x54d390)\r\n");
+    else if (u || i) x360_log(u ? "pad: PC's mouse-over: only the unit's left empty while aiming\r\n" : "pad: PC's mouse-over: only the item's left empty while aiming\r\n");
 }
 
 /* ---- The attack's search: a unit within 1.5 at any angle, as the 360's ----
