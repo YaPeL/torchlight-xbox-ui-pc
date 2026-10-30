@@ -70,6 +70,9 @@ add `| Out-Host` to a command to wait for it and see its output there. `notices`
 and the third-party notices it carries; their sources are in the release's
 `sources-and-notices.zip`.
 
+To update from an earlier version, run the new installer and reinstall: it converts the 360's
+interface again (the skill tree's third column, for one, comes with that conversion).
+
 ### From this repository
 
 Python 3 and `python3 tools/install.py` (nothing else: the package is
@@ -152,6 +155,9 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - NPC dialogs, quest dialogs, tips and messages, as the 360's.
 - Fishing, with the 360's ring.
 - Labels on the floor's items near the hero, as on the 360.
+- X's attack as the 360's: its target, its aim with the stick, barrels broken in front of the hero.
+- The 360's brightness and contrast sliders, in PC's settings screen.
+- PC's classes with three columns of skills (the Alchemist, for one) show all three in the skill tree.
 
 ## Known limitations
 
