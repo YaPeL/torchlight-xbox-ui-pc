@@ -1882,6 +1882,57 @@ static void attack_log_install(void) {
     }
 }
 
+/* ---- A missile weapon's aim: the 360's cone before the launch ----
+ * The 360's sub_822919A8, when the hero has no target (+644, +652: X with the stick), searches first
+ * (0x82291BD8: sub_822F8128 from the hero's transform, 30 degrees, out to 21, pool+944 and
+ * pool+1628) and hands the unit found to its launcher (sub_822BAB50 at 0x82291CA4), which aims the
+ * missile at it, else along the facing (the recomp agent's reading and runs: the wand and the
+ * crossbow, a unit at 23.4 degrees, the missile at 25.5). PC's attack (0x4a5880) launches first,
+ * with the unit's +0x290 target (0x4a5a04-0x4a5a23: 0x4b9240(attacker, target) on the weapon) and
+ * searches after, so its wand, crossbow and staff flew along the facing (measured: none reached
+ * the cone). At the launcher's entry, for the hero with no target, the target argument becomes the
+ * unit the 360's search would find (unit_in_view: the enemy pass, 30 degrees, out to 21). */
+#define GOG_LAUNCH_MISSILE 0x004b9240
+#define MISSILE_AIM_RANGE 21.0f
+static void __cdecl missile_aim(unsigned char *attacker, void **target) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    unsigned char *level = client ? *(unsigned char **)(client + 0x38) : 0;
+    float m[16];
+    void *u;
+    if (*target || !level || attacker != *(unsigned char **)(client + 0x2c)) return;
+    hero_matrix(attacker, m);
+    u = unit_in_view(attacker, level, m, ALIGN_ENEMY, MISSILE_AIM_RANGE);
+    if (!u) return;
+    *target = u;
+    if (verbose && turn_logged < 4000) {
+        turn_logged++;
+        x360_log("pad: the missile aimed at "); x360_log_num((long)u); log_rel(m, u); x360_log("\r\n");
+    }
+}
+static void missile_aim_install(void) {
+    unsigned char *at = (unsigned char *)GOG_LAUNCH_MISSILE, *t;
+    DWORD old;
+    int i, n = 0;
+    /* The entry: push -1; push imm32 (the SEH handler), 7 bytes. */
+    if (at[0] != 0x6a || at[1] != 0xff || at[2] != 0x68) { x360_log("pad: the missile launcher not as read: its aim left to PC\r\n"); return; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x28;       /* lea eax, [esp+40]: the target's slot */
+    t[n++] = 0x50;                                                    /* push eax */
+    t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the attacker */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)missile_aim - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < 7; i++) t[n++] = at[i];
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, 7, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
+    VirtualProtect(at, 7, old, &old);
+    x360_log("pad: a missile weapon aims at the 360's cone unit (0x4b9240)\r\n");
+}
+
 /* ---- The attack's cone with a ranged weapon: the 360's 30 degrees ----
  * PC's attack (0x4a5880), as the 360's sub_822919A8, searches a cone from the attacker's transform
  * when it has no target (0x5006c0 at 0x4a5b07: a unit within the reach whose |atan2(x, z)| from
@@ -2450,7 +2501,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); }
+    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); missile_aim_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
