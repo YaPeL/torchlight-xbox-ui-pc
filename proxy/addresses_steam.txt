@@ -336,7 +336,7 @@
 0x00a85fdc 0x00a5d010 verified   code    import, refs x7
 0x00a85fe0 0x00a5d014 verified   code    import, refs x7
 0x00a8ec04 0x00a65c54 verified   code    refs x12; content equal (4 bytes)
-0x00a8ec08 0x00a65c58 verified   comment refs x12, content equal
+0x00a8ec08 0x00a65c58 verified   comment refs, content equal
 0x00a91ce4 0x00a68d34 verified   comment refs x2, content equal
 0x00aa75f4 0x00a7e734 verified   code    refs x4; content equal (4 bytes)
 0x00ab2150 0x00a892a0 single     comment refs; content equal (4 bytes)

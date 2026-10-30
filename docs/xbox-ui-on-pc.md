@@ -4217,7 +4217,7 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   (fz, 0, -fx), as PC's `unit_in_view` computes it (lx = fz*dx - fx*dz): the recomp's own atan2
   arguments and the same formula on world positions agree to 0.01 degrees with the same sign, so
   the tie rule's "5 degrees past the best" favours the same side on both.
-- **The shot's assist: PC's own cone, at 10 degrees (2026-10-29, read and measured).** The owner
+- **The shot's assist: PC's cone at 10 degrees, the 360's at 30 (2026-10-29, read and measured).** The owner
   found the recomp's bow hitting an enemy about 15 degrees off the stick, and the port's not.
   **[read and measured, 360; the recomp agent]** The attack execution `sub_822919A8`, with no target
   (+644, +652 clear: X with the stick past 0.1), searches a cone from the hero's transform (its
@@ -4230,8 +4230,11 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   0x500a50. The angle is 60 for a melee weapon and 10 for a ranged one (type 0x23: 0x4a5a4a loads
   0xa8ec08). In the owner's run the units PC's attacks found were all within 7 degrees, and those
   15-25 degrees off were not found. **[port]** The fld's operand at 0x4a5a4a points at 30, for
-  every unit's ranged attack (the 360's routine passes the same constant for any attacker, read,
-  not measured for monsters). An earlier assist of the port's own (the cursor on the cone's unit,
+  every unit's ranged attack with no target (the 360's routine passes the same constant for any
+  attacker: read, not measured for monsters), and for a mouse player's too (Shift and a click with
+  no unit under the cursor). The angle is one stack slot that the fallback search 0x500a50 reads
+  too (0x4a5b59): with a ranged weapon it now searches 30 degrees as well (the 360's second search's
+  angle not read). An earlier assist of the port's own (the cursor on the cone's unit,
   the shot's point put back after the hold turn) is gone: it turned the hero to the unit, or made
   the turn jerky. While aiming, the candidate's highlight is set again each frame: PC's mouse-over
   (0x41520d) cleared it when the cursor left a unit (the owner saw it flicker). Played by the owner

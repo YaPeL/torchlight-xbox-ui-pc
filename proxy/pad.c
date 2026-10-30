@@ -1890,7 +1890,9 @@ static void attack_log_install(void) {
  * the pistol, the staff, the wand and the crossbow passes 30 (pool+944; the recomp agent's runs: hits
  * within +-29.8 degrees). With 10, a shot with the stick 15 degrees off an enemy missed where the
  * 360's hits (the owner; the log: PC's units found within 7 degrees). The fld's operand points at 30
- * for every unit's ranged attack: the 360's search is the same for its monsters (sub_822919A8). */
+ * for every unit's ranged attack with no target, the mouse player's too: the 360's search is the
+ * same for any attacker (sub_822919A8, read). The fallback search 0x500a50 reads the same angle
+ * (0x4a5b59) and widens to 30 with it. */
 #define GOG_ATTACK_RANGED_CONE 0x004a5a4a
 static float ranged_cone = 30.0f;
 static void attack_cone_install(void) {
@@ -2414,7 +2416,7 @@ static void order(void) {
      * PC's own mouse-over clears a unit's highlight when the cursor leaves it (its UI's +0x2c, the
      * client at 0x41520d), the candidate's too, and highlight() above sets it again only when the
      * candidate changes: the owner saw it flicker (with an earlier assist that put the cursor on
-     * the unit). Each frame while aiming, set again. */
+     * the unit; now only when the cursor happens to cross one). Each frame while aiming, set again. */
     if (highlighted && aiming(now) && in_list(level, GOG_LEVEL_UNITS, highlighted)) {
         typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
         ((set_bool_fn)(*(void ***)highlighted)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted, 0, 1);
