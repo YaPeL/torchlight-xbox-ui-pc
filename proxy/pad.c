@@ -141,6 +141,7 @@ typedef void(__fastcall *float_ptr_fn)(void *hero, void *edx, float f, void *p);
 
 /* Diagnostics: what our own code did since the last search. */
 static unsigned dest_calls, drop_calls, log_until;
+static unsigned x_pressed_at;   /* X's last press: a tap's attack runs after the release */
 typedef void *(__fastcall *find_character_fn)(void *level, void *edx, const float *matrix, int alignment,
                                              float min, float half_angle, float range, int best,
                                              void *exclude, void *skill);
@@ -1473,7 +1474,7 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
     };
     unsigned i;
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
-    if (pressed & 0x4000) log_until = GetTickCount() + 3000;
+    if (pressed & 0x4000) { log_until = GetTickCount() + 3000; x_pressed_at = GetTickCount(); }
     /* With the stick past 0.1 the 360's X drops the target (sub_8221B8E8); the attack goes toward
      * the stick, by the walk's setDestination with the hold byte set. */
     if ((pressed & 0x4000) && !stick_active()) {
@@ -1831,16 +1832,94 @@ static void __cdecl attack_entry_log(unsigned char *unit, unsigned ret, unsigned
     x360_log(" target "); x360_log_num((long)*(void **)(unit + 0x290)); log_rel(m, *(void **)(unit + 0x290));
     x360_log("\r\n");
 }
-static void __cdecl attack_found_log(unsigned char *unit, void *found) {
+/* The 360's barrels (#89 b; the recomp agent's runs barrel-bow2 and barrel-staff2, the reading of
+ * sub_822919A8): when its unit searches find nothing, X's attack searches the level's props
+ * (sub_822F8500 at 0x82291E28: [level+96]'s list, those with +412, +353, the virtual +32 and the
+ * kind 29), takes the FIRST one within 30 degrees of the facing and the weapon's reach plus 1, or
+ * within 1.5 at any angle (0x820AA2C0+196), in sight (sub_822F25A8), and calls its virtual +308 on
+ * the hero (0x822926B0: CBreakable::interact, sub_822824C0), which breaks it at once (no hit, no
+ * missile; a barrel at 0.93 with the bow, 0.89 with the staff). Then the hero turns to it. PC has
+ * the same search (0x500a50, the same filters: +0x19c, +0x161, the virtual +0x20, the kind 0x1d)
+ * without the 1.5 rule, and its attack keeps the prop to strike it later ([esp+0x40]): a bow's
+ * arrow, or the swing's hit. Here, after PC's searches (0x4a5b6e), for the hero while the pad's X
+ * is down and no unit was found: the 360's prop is interacted with (CBreakable::interact, the
+ * virtual 79, GOG 0x484340), the hero given the event 11 and turned to it, as the 360 does; the
+ * attack's skill or weapon flags are not looked at (a skill cast with X held searches too). frame: the
+ * trampoline's pushad (ebx at [4]); the function's esp 32 bytes above it. The prop's slot is the
+ * found point's flags slot less 0x118 ([esp+0x40] and 0x158 on GOG, 0x3c and 0x154 on Steam). */
+static unsigned prop_slot;
+#define GOG_UNIT_EVENT 0x00486450         /* the unit's event (thiscall: the event, on; ret 8) */
+#define GOG_BREAKABLE_INTERACT_SLOT 79    /* CItem's interact(CCharacter*) +0x13c: CBreakable's 0x484340 */
+typedef unsigned char(__fastcall *is_kind_fn)(void *item, void *edx, int kind);
+typedef unsigned char(__fastcall *item_bool_fn)(void *item, void *edx);
+typedef unsigned char(__fastcall *interact_fn)(void *item, void *edx, void *character);
+static void *prop_360(unsigned char *level, const float *m, float range, float *out_d, float *out_a) {
+    void **node = *(void ***)*(void **)(level + GOG_LEVEL_ITEMS);
+    int n = 0;
+    for (; node && n < 100000; node = (void **)node[1], n++) {
+        unsigned char *it = (unsigned char *)node[0];
+        float p[3], dx, dz, d, a, from[3], to[3];
+        if (!it || !it[0x19c] || !it[0x161]) continue;
+        if (!((item_bool_fn)(*(void ***)it)[0x20 / 4])(it, 0)) continue;
+        if (!((is_kind_fn)GOG_ISA)(it, 0, 0x1d)) continue;
+        ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
+        dx = p[0] - m[3];
+        dz = p[2] - m[11];
+        d = root(dx * dx + dz * dz);
+        a = angle_deg(m[10] * dx - m[2] * dz, m[2] * dx + m[10] * dz);
+        if (d > 1.5f && (d > range || a > 30.0f || a < -30.0f)) continue;
+        from[0] = m[3]; from[1] = m[7] + 5.0f; from[2] = m[11];
+        to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
+        if (!((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0)) continue;
+        *out_d = d; *out_a = a;
+        return it;
+    }
+    return 0;
+}
+static void __cdecl attack_found(unsigned char *unit, unsigned *frame) {
+    typedef void(__fastcall *event_fn)(void *unit, void *edx, int event, int on);
     unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
     unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
-    float m[16];
-    if (!client || unit != *(unsigned char **)(client + 0x2c) || turn_logged >= 4000) return;
-    turn_logged++;
+    unsigned char *level = client ? *(unsigned char **)(client + 0x38) : 0;
+    unsigned char *esp0 = (unsigned char *)frame + 32, *wd;
+    void *found = (void *)frame[4], *prop = 0;
+    float m[16], d = 0, a = 0, range = 0;
+    int broke = 0;
+    if (!client || unit != *(unsigned char **)(client + 0x2c)) return;
     hero_matrix(unit, m);
-    x360_log("pad: performAttack unit "); x360_log_num((long)found); log_rel(m, found);
-    x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
-    x360_log("\r\n");
+    /* With X down (or pressed within 1 s: a tap's attack comes after the release), no unit found and no item target of the hero's own (+0x298, PC's 0x4a5a77): the
+     * 360's prop replaces what PC's search (60 degrees) kept. The reach is PC's for that search
+     * (0x4a5b1a): (+0x450 * +0x84 + the attack's weapon data's +0x78 + 0.2) * +0x44c + 1, the weapon
+     * data the slot 0x1c below the prop's. */
+    if (level && !found && prop_slot && ((buttons & 0x4000) || (x_pressed_at && GetTickCount() - x_pressed_at < 1000)) &&
+        !*(void **)(unit + 0x298) &&
+        (wd = *(unsigned char **)(esp0 + prop_slot - 0x1c)) != 0) {
+        range = (*(float *)(unit + 0x450) * *(float *)(unit + 0x84) + *(float *)(wd + 0x78) + 0.2f) *
+                *(float *)(unit + 0x44c) + 1.0f;
+        prop = prop_360(level, m, range, &d, &a);
+        *(void **)(esp0 + prop_slot) = prop;
+        if (prop && derives_from(prop, ".?AVCBreakable@@")) {
+            float p[3];
+            /* 0x822926B0: the interact, the event 11 (PC's own strike of a prop does the same,
+             * 0x4a63e4: the virtual +0x13c, then 0x486450(11, 1)), and the hero turned to it. PC's
+             * attack then finds the prop gone (+0x19c, 0x4a6385) and ends: no arrow, no swing. */
+            broke = ((interact_fn)(*(void ***)prop)[GOG_BREAKABLE_INTERACT_SLOT])(prop, 0, unit) & 0xff;
+            ((event_fn)GOG_UNIT_EVENT)(unit, 0, 11, 1);
+            ((get_position_fn)GOG_GET_POSITION)(prop, 0, p, 1);
+            ((set_dir_fn)GOG_SET_TARGET_DIRECTION)(unit, 0, p[0], p[2]);
+        }
+    }
+    if (prop || (verbose && turn_logged < 4000)) {
+        turn_logged++;
+        x360_log("pad: performAttack unit "); x360_log_num((long)found); log_rel(m, found);
+        if (prop) {
+            x360_log(" prop "); x360_log(class_of(prop));
+            x360_log(" d*1000 "); x360_log_num((long)(d * 1000)); x360_log(" a "); x360_log_num((long)a);
+            x360_log(" range*1000 "); x360_log_num((long)(range * 1000)); x360_log(broke ? " broken" : " not broken");
+        }
+        x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+        x360_log("\r\n");
+    }
 }
 static void attack_log_install(void) {
     unsigned char *at = (unsigned char *)GOG_PERFORM_ATTACK, *t;
@@ -1863,14 +1942,21 @@ static void attack_log_install(void) {
             VirtualProtect(at, 7, old, &old);
         }
     }
-    at = (unsigned char *)GOG_PERFORM_ATTACK_FOUND;
-    n = 0;
+}
+static void attack_found_install(void) {
+    unsigned char *at = (unsigned char *)GOG_PERFORM_ATTACK_FOUND, *t;
+    DWORD old;
+    int i, n = 0;
     /* After the searches: test byte [esp+X], 4 (8 bytes; X 0x158 on GOG). */
-    if (at[0] == 0xf6 && at[1] == 0x84 && at[2] == 0x24 && at[7] == 0x04 && (t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40)) != 0) {
+    if (!(at[0] == 0xf6 && at[1] == 0x84 && at[2] == 0x24 && at[7] == 0x04)) { x360_log("pad: the attack's found point not as read: the 360's barrels not ported\r\n"); return; }
+    if (*(unsigned *)(at + 3) < 0x140 || *(unsigned *)(at + 3) > 0x170) { x360_log("pad: the attack's frame not as read: the 360's barrels not ported\r\n"); return; }
+    prop_slot = *(unsigned *)(at + 3) - 0x118;
+    if ((t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40)) != 0) {
         t[n++] = 0x60;                                                    /* pushad */
-        t[n++] = 0x53;                                                    /* push ebx: the unit attacked */
+        t[n++] = 0x8b; t[n++] = 0xc4;                                     /* mov eax, esp: the frame */
+        t[n++] = 0x50;                                                    /* push eax */
         t[n++] = 0x55;                                                    /* push ebp: the attacker */
-        t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)attack_found_log - (t + n + 5)); n += 5;
+        t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)attack_found - (t + n + 5)); n += 5;
         t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
         t[n++] = 0x61;                                                    /* popad */
         for (i = 0; i < 8; i++) t[n++] = at[i];
@@ -1935,6 +2021,55 @@ static void missile_aim_install(void) {
     at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
     VirtualProtect(at, 7, old, &old);
     x360_log("pad: a missile weapon aims at the 360's cone unit (0x4b9240)\r\n");
+}
+
+/* ---- PC's mouse-over while the pad aims: none, as the 360's ----
+ * PC's client sets the unit and the item under the cursor each frame (0x41b832: its UI's
+ * setHoverUnit 0x40f930, +0x2c; 0x41b83d: setHoverItem 0x54d390, +0x34), which PC highlights and
+ * its target bar shows. While the pad aims, the virtual cursor sits 2 units ahead of the hero
+ * (the 360's point): a barrel or a unit there was highlighted by PC's mouse-over (the owner),
+ * where the 360, which has no cursor, highlights only its candidate. While aiming, both setters
+ * get no unit. A jump at each entry (push esi; lea esi, [ecx+0x2c]; mov ecx, [esi]: 6 bytes;
+ * push ebx; mov ebx, [esp+8]: 5 bytes) to a trampoline that may clear the argument. */
+#define GOG_UI_SET_HOVER_UNIT 0x0040f930
+#define GOG_UI_SET_HOVER_ITEM 0x0054d390
+static unsigned hover_cleared;   /* pad_log=1: how many the mouse-over had while aiming */
+static void __cdecl hover_filter(void **slot) {
+    if (direct && *slot && aiming(GetTickCount())) {
+        *slot = 0;
+        if (verbose && (++hover_cleared & 63) == 1) {
+            x360_log("pad: PC's mouse-over left empty while aiming, times "); x360_log_num((long)hover_cleared); x360_log("\r\n");
+        }
+    }
+}
+static int hover_patch(unsigned addr, const unsigned char *want, int len) {
+    unsigned char *at = (unsigned char *)addr, *t;
+    DWORD old;
+    int i, n = 0;
+    for (i = 0; i < len; i++)
+        if (at[i] != want[i]) { x360_log("pad: a mouse-over setter not as read: left to PC\r\n"); return 0; }
+    t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
+    if (!t) return 0;
+    t[n++] = 0x60;                                                    /* pushad */
+    t[n++] = 0x8d; t[n++] = 0x44; t[n++] = 0x24; t[n++] = 0x24;       /* lea eax, [esp+36]: the argument's slot */
+    t[n++] = 0x50;                                                    /* push eax */
+    t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)hover_filter - (t + n + 5)); n += 5;
+    t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x04;                      /* add esp, 4 */
+    t[n++] = 0x61;                                                    /* popad */
+    for (i = 0; i < len; i++) t[n++] = at[i];
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + len) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, len, 0x40, &old)) return 0;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5));
+    for (i = 5; i < len; i++) at[i] = 0x90;
+    VirtualProtect(at, len, old, &old);
+    return 1;
+}
+static void hover_install(void) {
+    static const unsigned char unit_entry[6] = {0x56, 0x8d, 0x71, 0x2c, 0x8b, 0x0e};
+    static const unsigned char item_entry[5] = {0x53, 0x8b, 0x5c, 0x24, 0x08};
+    int u = hover_patch(GOG_UI_SET_HOVER_UNIT, unit_entry, 6), i = hover_patch(GOG_UI_SET_HOVER_ITEM, item_entry, 5);
+    if (u && i) x360_log("pad: PC's mouse-over left empty while the pad aims (0x40f930, 0x54d390)\r\n");
+    else if (u || i) x360_log(u ? "pad: PC's mouse-over: only the unit's left empty while aiming\r\n" : "pad: PC's mouse-over: only the item's left empty while aiming\r\n");
 }
 
 /* ---- The attack's search: a unit within 1.5 at any angle, as the 360's ----
@@ -2532,7 +2667,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         (get_async_key_state_fn)patch_import("user32.dll", "GetAsyncKeyState", (void *)pad_get_async_key_state);
     x360_pad_running = real_get_cursor_pos != 0 && direct;   /* order() runs in direct mode only */
     if (x360_pad_running) walk_patch_install();
-    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); attack_near_install(); missile_aim_install(); }
+    if (x360_pad_running) { hold_turn_install(); attack_cone_install(); attack_near_install(); missile_aim_install(); attack_found_install(); hover_install(); }
     if (x360_pad_running && verbose) {
         turn_patch_install();
         site_patch_install(GOG_ATTACK_BEFORE_PATH, 0);
