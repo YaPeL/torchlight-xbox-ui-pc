@@ -4166,6 +4166,27 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   a windowed game's ramp is normally ignored (D3DCAPS2_FULLSCREENGAMMA) and a fullscreen one sets the
   display's: not tried.
 
+- **Relative to PC's image (2026-10-30).** **[the owner]** At 290/210 GOG looked much brighter than
+  the recomp at its defaults. **[measured]** The same view with no ramp: GOG's mean 30, the recomp's
+  20 (PC draws its image brighter than the 360 draws its own). At 290/210: GOG 54, the recomp 39.
+  The ramp had been checked against each build's own image only. **[port]**
+  - Each PC level i is taken back through the 360's default ramp, then through the sliders' ramp,
+    so PC's image stands for the 360's at its defaults.
+  - The inverse is the default ramp's line continued past its ends (not clamped), so at the
+    360's defaults, the start, the ramp is exactly the identity: PC's own look, its darkest levels
+    kept apart. A clamped inverse merged every level under 26 into one grey at any setting; the
+    owner tried 290/210 with it (the recomp's look, the blacks raised) and 310/230 (the nearest to
+    PC's), and chose PC's look at the start, with the sliders moving the image from there as on
+    the 360.
+  - The headers carry no "(PC)" or "(360)" tag.
+  - A slider stops on the default when passing it.
+  **[measured]** With the clamped inverse, GOG at 290/210 against the recomp at its defaults, the
+  same view unattended: a mean of 41.1 against 39.6 (54 with the absolute ramp). Steam UNCHANGED.
+- **The settings screen's spacing (2026-10-30).** The sliders' headers sit 80 under the control
+  above's top, as PC's own (settingsmenu.layout: each header 80 under the control above). Cancel
+  and Apply move down by what the sliders add under ShowBlood, so they keep PC's gap; at 80 the
+  sliders reached them (the owner's capture).
+
 ## 46. Aiming against the 360: X's target and the skills' point (issue #89, 2026-10-29)
 
 A player reported that enemies more than half the screen away are never X's target, and that

@@ -9618,21 +9618,27 @@ static void swap_checkbox_tick(const char *prefix) {
 
 /* ---- The 360's brightness and contrast (doc section 45) ----
  * The 360's two graphics sliders (settingsmenu_xenon's Brightness and Contrast) on the 360's scale,
- * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8).
- * The value goes to the display as the 360's ramp (sub_82577F08): for i = 0..255, the same for red,
- * green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), given here to D3D9's SetGammaRamp and
- * applied when the values change (sub_821F9DA8 compares them with its cache each update). PC's
- * look is the start (the owner's choice, 2026-10-29): 257 and 256 make the ramp the identity, so
- * nothing is set until a slider moves; the 360's defaults are 290 and 210. A slider passing either
- * default stops on it, and its header says which (the owner). */
-#define X360_PC_BRIGHTNESS 257   /* also in setup.c */
-#define X360_PC_CONTRAST 256
-#define X360_360_BRIGHTNESS 290
-#define X360_360_CONTRAST 210
+ * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8), the
+ * 360's defaults 290 and 210 the ramp's reference. The 360's ramp (sub_82577F08): for i = 0..255, the same for
+ * red, green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), applied when the values change
+ * (sub_821F9DA8). PC draws its image brighter than the 360 draws its own (the recomp agent's captures
+ * of the same place: a mean of 30 on GOG against 20 on the recomp, both with no ramp), and the 360's
+ * default ramp brightens the 360's; given as such, GOG at 290/210 was much brighter than the recomp
+ * at its defaults (54 against 39; the owner saw it). So the ramp is applied relative to PC's image:
+ * each level i is taken back through the 360's default ramp (PC's image standing for the 360's at its
+ * defaults), then through the ramp of the sliders' values, so the defaults give the recomp's look (a
+ * simulation on the same capture: 39.6 against its 39.0, the blacks raised as the 360's) and a slider
+ * moves the image as much as on the 360 (the owner, 2026-10-30). The start is X360_START_*. */
+#define X360_DEFAULT_BRIGHTNESS 290   /* the 360's defaults: the ramp's reference */
+#define X360_DEFAULT_CONTRAST 210
+/* The start (also in setup.c): the 360's defaults, PC's own look under the relative ramp; the slider
+ * stops on them when passing. */
+#define X360_START_BRIGHTNESS 290
+#define X360_START_CONTRAST 210
 int x360_brightness_setting(void);
 int x360_contrast_setting(void);
 void x360_gamma_setting_write(int brightness, int contrast);
-static int gamma_b = -1, gamma_c, gamma_applied_b = X360_PC_BRIGHTNESS, gamma_applied_c = X360_PC_CONTRAST, gamma_dirty;
+static int gamma_b = -1, gamma_c, gamma_applied_b = -1, gamma_applied_c = -1, gamma_dirty;   /* -1: set at the start */
 /* PC's IDirect3DDevice9: the custom attribute D3DDEVICE (a virtual of RenderTarget, its slot found in
  * RenderTarget's exported vtable) of Ogre's auto-created window, or, as Torchlight makes its own,
  * of the game camera's viewport target; 0 under another render system. */
@@ -9645,7 +9651,8 @@ static void *gamma_device(void) {
     typedef void (__fastcall *std_ctor_fn)(void *self, void *edx, const char *s);
     typedef void (__fastcall *std_dtor_fn)(void *self, void *edx);
     static void *device;
-    static int tried;
+    static int tried;   /* 1: looked up; 2: no window yet */
+    static unsigned not_yet;
     if (gamma_device_fresh) { gamma_device_fresh = 0; device = 0; tried = 0; }
     void *ogre, *msvcp;
     root_fn root;
@@ -9655,7 +9662,8 @@ static void *gamma_device(void) {
     std_dtor_fn std_dtor;
     int slot = -1, i;
     object name;
-    if (device || tried) return device;
+    if (device || tried == 1) return device;
+    if (tried == 2 && ++not_yet % 60) return 0;   /* no window yet (before play): asked every 60 frames */
     tried = 1;
     ogre = GetModuleHandleA("OgreMain.dll");
     msvcp = GetModuleHandleA("msvcp90.dll");
@@ -9680,7 +9688,7 @@ static void *gamma_device(void) {
         void *cam = ctl ? *(void **)(ctl + 8) : 0, *vp = cam && viewport_of ? viewport_of(cam, 0) : 0;
         window = vp && target_of ? target_of(vp, 0) : 0;
     }
-    if (!window) { tried = 0; return 0; }   /* not made yet: asked again */
+    if (!window) { tried = 2; return 0; }   /* not made yet: asked again */
     window_vt = *(void ***)window;
     std_ctor(&name, 0, "D3DDEVICE");
     __try { ((attribute_fn)window_vt[slot])(window, 0, &name, &device); }
@@ -9706,7 +9714,14 @@ static void gamma_apply(int b, int c) {
     gamma_applied_b = b;
     gamma_applied_c = c;
     for (i = 0; i < 256; i++) {
-        float v = (float)b * 128.0f + (float)(i - 128) * (float)b * (float)c / 256.0f;
+        /* PC's level i taken back through the 360's default ramp (its 16-bit output i*257), then
+         * through the sliders' ramp. */
+        const float d = (float)X360_DEFAULT_BRIGHTNESS, dc = (float)X360_DEFAULT_CONTRAST;
+        /* Not clamped to 0..255: the default ramp's line continued past its ends, so at the
+         * defaults the ramp is exactly the identity (PC's look, the darkest levels kept apart; the
+         * owner, 2026-10-30) and the sliders move the image from there as on the 360. */
+        float j = 128.0f + ((float)i * 257.0f - d * 128.0f) / (d * dc / 256.0f), v;
+        v = (float)b * 128.0f + (j - 128.0f) * (float)b * (float)c / 256.0f;
         if (v < 0.0f) v = 0.0f;
         if (v > 65535.0f) v = 65535.0f;
         ramp[0][i] = ramp[1][i] = ramp[2][i] = (unsigned short)v;
@@ -9740,8 +9755,13 @@ static void gamma_frame(int settings_up, const char *prefix) {
         gamma_b = open_b; gamma_c = open_c; gamma_dirty = 0;
         x360_log("x360 gamma: the settings closed without Apply: the values at their opening put back\r\n");
     }
+    /* At any closing the sliders are marked to be set again from the values: PC's settings window
+     * stays made, its sliders where they were left, and at the next opening the sliders' tick runs
+     * before this: it read the old position as a change, which became the opening's value and was
+     * saved (the owner: after a Cancel, the screen opened again and closed kept the moved value). */
+    if (!settings_up && was_up) gamma_last_b = gamma_last_c = -1;
     was_up = settings_up;
-    if (++frames % 120 == 0 && (gamma_applied_b != X360_PC_BRIGHTNESS || gamma_applied_c != X360_PC_CONTRAST)) {
+    if (++frames % 120 == 0 && gamma_applied_b >= 0) {
         static void *last_device;
         void *d;
         gamma_device_fresh = 1;
@@ -9759,10 +9779,7 @@ static void gamma_header(void *header, const char *label, int value, int pc, int
     s[at++] = ' ';
     do { digits[d++] = (char)('0' + n % 10); n /= 10; } while (n && d < 7);
     while (d) s[at++] = digits[--d];
-    if (value == pc || value == x360) {
-        const char *tag = value == pc ? " (PC)" : " (360)";   /* the defaults; longer was clipped (the run) */
-        for (k = 0; tag[k]; k++) s[at++] = tag[k];
-    }
+    (void)pc; (void)x360;   /* no default's tag (the owner, 2026-10-30) */
     s[at] = 0;
     text(header, s);
 }
@@ -9801,7 +9818,10 @@ static int gamma_slider(const char *prefix, const char *name, const char *header
         read_prop(anchor, "UnifiedAreaRect", r, sizeof r);
         if (parse_rect(r, v)) {
             /* The header 20 px tall and the slider 255 by 25 under it (PC's MusicHeader and
-             * MusicVolume's sizes), at the anchor's left. */
+             * MusicVolume's sizes), at the anchor's left; the header `top` below the anchor's top,
+             * 80 as PC's own (settingsmenu.layout: each header 80 under the control above's top,
+             * MusicHeader -70 under ResolutionDropdown -150, SoundHeader 30 under MusicVolume -50;
+             * 50 was too close, the owner). */
             v[4] = v[0]; v[5] = v[1] + 255.0f;
             v[6] = v[2]; v[3] += top; v[7] = v[3] + 20.0f;
             write_rect(r, v);
@@ -9812,6 +9832,21 @@ static int gamma_slider(const char *prefix, const char *name, const char *header
         }
         x360_log("x360 gamma: a slider made in PC's settings\r\n");
         *last = -1;
+        if (name[4] == 'C') {   /* x360Contrast, the lower one: made once per settings window */
+            /* Cancel and Apply moved down by what the sliders add under the last row (the slider's
+             * bottom against ShowBlood's), so they keep PC's own gap under it: at PC's 80 the
+             * sliders reached the buttons (the owner's capture). */
+            void *apply = win_of(prefix, "Apply"), *cancel = win_of(prefix, "Cancel"), *row = win_of(prefix, "ShowBlood");
+            float vs[8], vr[8];
+            read_prop(slider, "UnifiedAreaRect", r, sizeof r);
+            if (apply && cancel && row && parse_rect(r, vs)) {
+                read_prop(row, "UnifiedAreaRect", r, sizeof r);
+                if (parse_rect(r, vr) && vs[7] > vr[7]) {
+                    move_by(apply, 0, vs[7] - vr[7]);
+                    move_by(cancel, 0, vs[7] - vr[7]);
+                }
+            }
+        }
     }
     if (*last < 0) {
         set_max(slider, 0, range);
@@ -9836,9 +9871,9 @@ static void gamma_sliders_tick(const char *prefix) {
     int b, c;
     if (gamma_b < 0) return;
     b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
-                     gamma_b, 50.0f, 500.0f, 10.0f, X360_PC_BRIGHTNESS, X360_360_BRIGHTNESS, &last_b);
+                     gamma_b, 80.0f, 500.0f, 10.0f, X360_START_BRIGHTNESS, X360_START_BRIGHTNESS, &last_b);
     c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
-                     gamma_c, 50.0f, 300.0f, 5.0f, X360_PC_CONTRAST, X360_360_CONTRAST, &last_c);
+                     gamma_c, 80.0f, 300.0f, 5.0f, X360_START_CONTRAST, X360_START_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
 }
 #undef last_b
