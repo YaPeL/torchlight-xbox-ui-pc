@@ -9397,6 +9397,16 @@ static void *gamma_device(void) {
     for (i = 0; i < 80; i++) if (target_vt[i] == base) { slot = i; break; }
     if (slot < 0) { x360_log("x360 gamma: getCustomAttribute's slot not found\r\n"); return 0; }
     window = auto_window(root(), 0);
+    if (!window) {
+        /* Torchlight makes its window itself (no auto-created one): the target of the game's camera's
+         * viewport (the client's +0x10, its +8, as world_to_screen reads it), once in play. */
+        typedef void *(__fastcall *get_fn)(const void *self, void *edx);
+        get_fn viewport_of = (get_fn)GetProcAddress(ogre, "?getViewport@Camera@Ogre@@QBEPAVViewport@2@XZ");
+        get_fn target_of = (get_fn)GetProcAddress(ogre, "?getTarget@Viewport@Ogre@@QBEPAVRenderTarget@2@XZ");
+        unsigned char *ctl = the_client ? *(unsigned char **)(the_client + 0x10) : 0;
+        void *cam = ctl ? *(void **)(ctl + 8) : 0, *vp = cam && viewport_of ? viewport_of(cam, 0) : 0;
+        window = vp && target_of ? target_of(vp, 0) : 0;
+    }
     if (!window) { tried = 0; return 0; }   /* not made yet: asked again */
     window_vt = *(void ***)window;
     std_ctor(&name, 0, "D3DDEVICE");
@@ -9413,9 +9423,9 @@ static void gamma_apply(int b, int c) {
     unsigned short ramp[3][256];
     void *device = gamma_device();
     int i;
-    gamma_applied_b = b;   /* asked once per change, found or not */
+    if (!device) return;   /* asked again next frame (the window's target is there in play) */
+    gamma_applied_b = b;
     gamma_applied_c = c;
-    if (!device) return;
     for (i = 0; i < 256; i++) {
         float v = (float)b * 128.0f + (float)(i - 128) * (float)b * (float)c / 256.0f;
         if (v < 0.0f) v = 0.0f;
@@ -9428,7 +9438,10 @@ static void gamma_apply(int b, int c) {
 /* Each frame: the values from the settings file at start, then the sliders'; applied on a change,
  * saved once PC's settings screen has closed. */
 static void gamma_frame(int settings_up) {
-    if (gamma_b < 0) { gamma_b = x360_brightness_setting(); gamma_c = x360_contrast_setting(); }
+    if (gamma_b < 0) {
+        gamma_b = x360_brightness_setting(); gamma_c = x360_contrast_setting();
+        x360_log("x360 gamma: brightness "); x360_log_num(gamma_b); x360_log(" contrast "); x360_log_num(gamma_c); x360_log(" from the settings\r\n");
+    }
     if (gamma_b != gamma_applied_b || gamma_c != gamma_applied_c) gamma_apply(gamma_b, gamma_c);
     if (!settings_up && gamma_dirty) { gamma_dirty = 0; x360_gamma_setting_write(gamma_b, gamma_c); }
 }
