@@ -9631,11 +9631,10 @@ static void swap_checkbox_tick(const char *prefix) {
  * moves the image as much as on the 360 (the owner, 2026-10-30). The start is X360_START_*. */
 #define X360_DEFAULT_BRIGHTNESS 290   /* the 360's defaults: the ramp's reference */
 #define X360_DEFAULT_CONTRAST 210
-/* The start (also in setup.c): the values nearest PC's own look under the relative ramp (fitted on a
- * capture of the mines, weighted by its levels: 310/230; the darkest levels stay one grey, at 16 of
- * 255), the owner's choice (2026-10-30); the slider stops on them when passing. */
-#define X360_START_BRIGHTNESS 310
-#define X360_START_CONTRAST 230
+/* The start (also in setup.c): the 360's defaults, PC's own look under the relative ramp; the slider
+ * stops on them when passing. */
+#define X360_START_BRIGHTNESS 290
+#define X360_START_CONTRAST 210
 int x360_brightness_setting(void);
 int x360_contrast_setting(void);
 void x360_gamma_setting_write(int brightness, int contrast);
@@ -9718,9 +9717,10 @@ static void gamma_apply(int b, int c) {
         /* PC's level i taken back through the 360's default ramp (its 16-bit output i*257), then
          * through the sliders' ramp. */
         const float d = (float)X360_DEFAULT_BRIGHTNESS, dc = (float)X360_DEFAULT_CONTRAST;
+        /* Not clamped to 0..255: the default ramp's line continued past its ends, so at the
+         * defaults the ramp is exactly the identity (PC's look, the darkest levels kept apart; the
+         * owner, 2026-10-30) and the sliders move the image from there as on the 360. */
         float j = 128.0f + ((float)i * 257.0f - d * 128.0f) / (d * dc / 256.0f), v;
-        if (j < 0.0f) j = 0.0f;
-        if (j > 255.0f) j = 255.0f;
         v = (float)b * 128.0f + (j - 128.0f) * (float)b * (float)c / 256.0f;
         if (v < 0.0f) v = 0.0f;
         if (v > 65535.0f) v = 65535.0f;

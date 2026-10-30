@@ -4172,14 +4172,16 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   The ramp had been checked against each build's own image only. **[port]**
   - Each PC level i is taken back through the 360's default ramp, then through the sliders' ramp,
     so PC's image stands for the 360's at its defaults.
-  - The start: 310/230, the values nearest PC's own look under the relative ramp (fitted on the
-    mines' capture, weighted by its levels). The darkest levels stay one grey, 16 of 255, because
-    the 360's default ramp never goes below 26. The owner chose it over the 360's 290/210.
+  - The inverse is the default ramp's line continued past its ends (not clamped), so at the
+    360's defaults, the start, the ramp is exactly the identity: PC's own look, its darkest levels
+    kept apart. A clamped inverse merged every level under 26 into one grey at any setting; the
+    owner tried 290/210 with it (the recomp's look, the blacks raised) and 310/230 (the nearest to
+    PC's), and chose PC's look at the start, with the sliders moving the image from there as on
+    the 360.
   - The headers carry no "(PC)" or "(360)" tag.
   - A slider stops on the default when passing it.
-  **[measured]** GOG at the start (290/210) against the recomp at its defaults, the same view
-  unattended: a mean of 41.1 against 39.6 (54 before); the blacks raised as the 360's. Steam
-  UNCHANGED.
+  **[measured]** With the clamped inverse, GOG at 290/210 against the recomp at its defaults, the
+  same view unattended: a mean of 41.1 against 39.6 (54 with the absolute ramp). Steam UNCHANGED.
 - **The settings screen's spacing (2026-10-30).** The sliders' headers sit 80 under the control
   above's top, as PC's own (settingsmenu.layout: each header 80 under the control above). Cancel
   and Apply move down by what the sliders add under ShowBlood, so they keep PC's gap; at 80 the
