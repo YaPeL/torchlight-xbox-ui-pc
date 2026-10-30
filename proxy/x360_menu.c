@@ -9822,15 +9822,23 @@ static int gamma_slider(const char *prefix, const char *name, const char *header
              * 80 as PC's own (settingsmenu.layout: each header 80 under the control above's top,
              * MusicHeader -70 under ResolutionDropdown -150, SoundHeader 30 under MusicVolume -50;
              * 50 was too close, the owner). */
-            v[4] = v[0]; v[5] = v[1] + 255.0f;
-            v[6] = v[2]; v[3] += top; v[7] = v[3] + 20.0f;
+            /* In PC's layout's units, scaled as PC scaled the anchor for the screen (its 50 wide,
+             * settingsmenu.layout: at 1080 rows about 1.4): the first version used them as pixels,
+             * small next to PC's own at a higher resolution (the owner's run on Windows). */
+            float sc = (v[5] - v[1]) / 50.0f;
+            if (sc < 0.5f || sc > 8.0f) sc = 1.0f;
+            v[4] = v[0]; v[5] = v[1] + 255.0f * sc;
+            v[6] = v[2]; v[3] += top * sc; v[7] = v[3] + 20.0f * sc;
             write_rect(r, v);
             prop(header, "UnifiedAreaRect", r);
-            v[3] += 20.0f; v[7] = v[3] + 25.0f;
+            v[3] += 20.0f * sc; v[7] = v[3] + 25.0f * sc;
             write_rect(r, v);
             prop(slider, "UnifiedAreaRect", r);
         }
-        x360_log("x360 gamma: a slider made in PC's settings\r\n");
+        x360_log("x360 gamma: a slider made in PC's settings, scale x1000 ");
+        read_prop(anchor, "UnifiedAreaRect", r, sizeof r);
+        if (parse_rect(r, v)) x360_log_num((long)((v[5] - v[1]) / 50.0f * 1000.0f));
+        x360_log("\r\n");
         *last = -1;
         if (name[4] == 'C') {   /* x360Contrast, the lower one: made once per settings window */
             /* Cancel and Apply moved down by what the sliders add under the last row (the slider's
