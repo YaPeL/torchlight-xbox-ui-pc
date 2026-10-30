@@ -9749,6 +9749,11 @@ static void gamma_frame(int settings_up, const char *prefix) {
         gamma_b = open_b; gamma_c = open_c; gamma_dirty = 0;
         x360_log("x360 gamma: the settings closed without Apply: the values at their opening put back\r\n");
     }
+    /* At any closing the sliders are marked to be set again from the values: PC's settings window
+     * stays made, its sliders where they were left, and at the next opening the sliders' tick runs
+     * before this: it read the old position as a change, which became the opening's value and was
+     * saved (the owner: after a Cancel, the screen opened again and closed kept the moved value). */
+    if (!settings_up && was_up) gamma_last_b = gamma_last_c = -1;
     was_up = settings_up;
     if (++frames % 120 == 0 && gamma_applied_b >= 0) {
         static void *last_device;
