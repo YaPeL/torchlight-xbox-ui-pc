@@ -3418,6 +3418,7 @@ static void stats_load(void);
 static void stats_commit(void);
 static void skills_load(void);
 static void quest_load(void);
+static int quest_reward, quest_card;   /* the Quest page's reward cursor and its card (below) */
 static void *skills_root, *quest_root;
 static void *skillmap_root;   /* the Skills page's mapping overlay, and whether it is open */
 static int sk_map;
@@ -3642,7 +3643,7 @@ void x360_inventory_toggle(void) {
     if (!inventory_open && shop) pc_ui_back_at = (GetTickCount() + 600) | 1;
     else { pc_ui_back_at = 0; hide_pc_ui(inventory_open); }
     if (character_root) show_doll(inventory_open && !shop);
-    if (!inventory_open) { hide_info(); if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); if (sr_open) sr_finish(0); }
+    if (!inventory_open) { hide_info(); quest_reward = -1; quest_card = 0; if (petcmd_open) petcmd_show(0); if (sock_open) sock_show(0); if (sr_open) sr_finish(0); }
     /* The 360's inventory asks for TIP_INVENTORY (index 0 in both games' CONTEXTTIPS) when it
      * opens (CInventoryMenuXenon's virtual +28, sub_8236F700 -> sub_82337A10(0): the hero's seen
      * byte +2471 and the setting, as PC's 0x55f570). PC asks for it when its own inventory opens
@@ -4784,8 +4785,19 @@ static void skills_load(void) {
  * questdetails its details (GOG 0x5ea120, the 360's sub_823C7FE8), the reward boxes for XP, gold
  * and fame shown when not 0 ("XP:" N; GOG 0x5e8750, 0x5e8730, 0x5e8770, the quest's +0x150's
  * +0xc, +0x10, +0x14 as the 360's sub_823CBE88, BE28, BEE8). Up and down choose the quest. */
+/* The reward items (the recomp agent's reading, 2026-10-30): sub_8237E688 takes the selected quest's
+ * rewards (+0x150; their items' list as sub_823D32B8 prepares it, GOG's getRewardItems 0x5f4760
+ * *(OT)*: the data, the count at +4, the capacity at +8) and for n = 0..2 shows ItemBkg{n+1} only for
+ * an item, filling it (sub_8237F310): the item's icon in ItemSlot{n+1}, EmptySocket{n+1}_0 and _1 for
+ * the item's sockets (+916 on the 360, GOG's +0x39c) at 1 and 2. Its input (sub_8237EF90): codes 17
+ * and 18 the quest (the page refreshed, the reward cursor reset), 19 and 20 (the left stick's left
+ * and right) the reward cursor +276 from -1 (none) to the last, wrapping (sub_8237E4D8), which puts
+ * ItemHighlight at ItemBkg{n+1}'s position and the item's card at that box (sub_82344B90), or hides
+ * both at -1. Not ported: the stack count's text and the rarity background the 360 makes at the
+ * page's build (their images unread). */
 #define QUEST_PREFIX "x360qu_"
 #define GOG_QUEST_MANAGER 0x7b4
+static int quest_reward = -1, quest_card;   /* the reward cursor (+276); the card shown for it */
 typedef void *(__fastcall *quest_text_fn)(void *quest, void *edx, void *out);
 typedef unsigned char (__fastcall *quest_complete_fn)(void *quest, void *edx, unsigned char flag);
 static int quest_sel, quest_top;
@@ -4817,6 +4829,71 @@ static int quest_list(void **out, int max) {
         out[count++] = data[i];
     }
     return count;
+}
+
+/* The quest's reward item i, 0 if none (its rewards +0x150, getRewardItems 0x5f4760 *(OT)*). */
+static void *quest_reward_item(void *quest, int i) {
+    typedef unsigned char *(__fastcall *list_fn)(void *self, void *edx);
+    void *found = 0;
+    __try {
+        unsigned char *rw = quest ? *(unsigned char **)((unsigned char *)quest + 0x150) : 0;
+        unsigned char *list = rw ? ((list_fn)0x005f4760)(rw, 0) : 0;
+        if (list && i >= 0 && i < *(int *)(list + 4) && (unsigned)i < *(unsigned *)(list + 8)) found = (*(void ***)list)[i];
+    } __except (1) { found = 0; }
+    return found;
+}
+
+/* The reward cursor's highlight and card (sub_8237E4D8): ItemHighlight at ItemBkg{n+1}'s position and
+ * the item's card at that box (placed as the quest dialog's: its right edge 6 % into the box, its
+ * middle at the box's), none at -1. */
+/* The selected box drawn over the highlight, as the quest dialog's (qd_lift: the rollover image's
+ * centre is opaque; the box comes in front with its own background off, given back after). */
+static void *quest_lifted;
+static char quest_lifted_image[96];
+static void quest_lift(void *bkg) {
+    if (quest_lifted == bkg) return;
+    if (quest_lifted) prop(quest_lifted, "Image", quest_lifted_image);
+    quest_lifted = bkg;
+    if (!bkg) return;
+    read_prop(bkg, "Image", quest_lifted_image, sizeof quest_lifted_image);
+    prop(bkg, "Image", "");
+    move_to_front(bkg, 0);
+}
+static void quest_reward_focus(void *quest) {
+    typedef struct { float top, bottom, left, right; } rect7;
+    typedef rect7 *(__fastcall *pixel_rect_fn7)(const void *self, void *edx, rect7 *out);
+    static pixel_rect_fn7 rect_of;
+    void *item = quest && quest_reward >= 0 ? quest_reward_item(quest, quest_reward) : 0, *bkg;
+    char w[16], r[128];
+    float h;
+    rect7 br;
+    if (quest_card) { hide_card(0); quest_card = 0; }
+    show(win_of(QUEST_PREFIX, "ItemHighlight"), item != 0);
+    if (!item) { quest_lift(0); return; }
+    copy(w, sizeof w, "ItemBkg", 0); w[7] = (char)('1' + quest_reward); w[8] = 0;
+    bkg = win_of(QUEST_PREFIX, w);
+    quest_lift(bkg);
+    read_prop(bkg, "UnifiedPosition", r, sizeof r);
+    prop(win_of(QUEST_PREFIX, "ItemHighlight"), "UnifiedPosition", r);
+    if (!rect_of) rect_of = (pixel_rect_fn7)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
+    h = fill_card(0, item, 0, 0);
+    if (h > 0) quest_card = 1;
+    if (h > 0 && bkg && rect_of) {
+        /* Where the 360 puts it (the recomp agent's run, rewards-r1: 103Base at (863.9, 463.4) of
+         * 720 rows for ItemBkg1 at (600.8, 586)): its left 263.0 rows right of the box's, its top
+         * at the box's, pushed up to end 36 rows above the screen's bottom (as the inventory's
+         * card: there 1026 of 1080). */
+        RECT cr;
+        HWND hw = active_window();
+        float rows = 0, y;
+        if (hw && GetClientRect(hw, &cr)) rows = (float)cr.bottom / 720.0f;
+        fresh_rects(bkg);
+        rect_of(bkg, 0, &br);
+        y = br.top;
+        if (rows > 0 && y + h > 684.0f * rows) y = 684.0f * rows - h;
+        place_card(0, br.left + 263.0f * (rows > 0 ? rows : k * 768.0f / 720.0f), 0, y);
+        move_to_front(card_root(0), 0);
+    }
 }
 
 static void quest_fill(void) {
@@ -4874,8 +4951,53 @@ static void quest_fill(void) {
             text(win_of(QUEST_PREFIX, reward_text[r]), buf);
             if (v) any = 1;
         }
+        for (r = 0; r < 3; r++) {
+            unsigned char *item = (unsigned char *)quest_reward_item(q, r);
+            char w[24];
+            int sockets = item ? (int)*(unsigned *)(item + 0x39c) : 0, k2;
+            copy(w, sizeof w, "ItemBkg", 0); w[7] = (char)('1' + r); w[8] = 0;
+            show(win_of(QUEST_PREFIX, w), item != 0);
+            copy(w, sizeof w, "ItemSlot", 0); w[8] = (char)('1' + r); w[9] = 0;
+            if (item) item_icon(item, buf, sizeof buf); else buf[0] = 0;
+            {
+                /* The icon in a window of its own over ItemSlot's frame (the 360 puts the item's
+                 * icon window in a slot of its own there, at the slot's size, sub_8237F310), kept
+                 * square as the quest dialog's (the owner's capture of the 360's dialog): as wide
+                 * as the slot, its middle at the slot's. */
+                void *sw = win_of(QUEST_PREFIX, w), *icon;
+                char iname[32], rr[128];
+                float qv[8], wdt, hgt;
+                copy(iname, sizeof iname, "icon_", w);
+                icon = win_of(QUEST_PREFIX, iname);
+                if (!icon && sw && (icon = create_window(QUEST_PREFIX, iname, "ceguiWidget/StaticImage")) != 0) {
+                    add_child(sw, 0, icon);
+                    prop(icon, "MousePassThroughEnabled", "True");
+                    read_prop(sw, "UnifiedAreaRect", rr, sizeof rr);
+                    if (parse_rect(rr, qv) && (wdt = qv[5] - qv[1]) > 0 && (hgt = qv[7] - qv[3]) > 0) {
+                        float side = wdt < hgt ? wdt : hgt;
+                        qv[0] = qv[2] = qv[4] = qv[6] = 0;
+                        qv[1] = (wdt - side) * 0.5f; qv[5] = qv[1] + side;
+                        qv[3] = (hgt - side) * 0.5f; qv[7] = qv[3] + side;
+                        write_rect(rr, qv);
+                        prop(icon, "UnifiedAreaRect", rr);
+                    }
+                }
+                prop(icon, "Image", buf);
+                show(icon, buf[0] != 0);
+                if (item && !buf[0]) x360_log("x360 quest: a reward item without an icon\r\n");
+            }
+            for (k2 = 0; k2 < 2; k2++) {
+                copy(w, sizeof w, "EmptySocket", 0);
+                w[11] = (char)('1' + r); w[12] = '_'; w[13] = (char)('0' + k2); w[14] = 0;
+                show(win_of(QUEST_PREFIX, w), sockets > k2);
+            }
+            if (item) any = 1;
+        }
         show(win_of(QUEST_PREFIX, "rewards"), any);
+        quest_reward_focus(q);
     } else {
+        quest_reward = -1;
+        quest_reward_focus(0);
         text(win_of(QUEST_PREFIX, "questtitle"), "");
         text(win_of(QUEST_PREFIX, "questdetails"), "");
         show(win_of(QUEST_PREFIX, "rewards"), 0);
@@ -4902,13 +5024,28 @@ static void quest_load(void) {
     }
 }
 
-static void quest_pad(unsigned pressed, int ly) {
-    static int held;
-    int dir = (pressed & 0x0001) || (ly > 500 && !held) ? -1 : (pressed & 0x0002) || (ly < -500 && !held) ? 1 : 0;
+static void quest_pad(unsigned pressed, int lx, int ly) {
+    static int held, held_x;
+    /* The left stick only: the 360's codes 17 to 20 come from LTHUMB (sub_822DF308's table at
+     * 0x822DF334); the d-pad's 1 to 4 fall to sub_8237EF90's default and do nothing. */
+    int dir = ly > 500 && !held ? -1 : ly < -500 && !held ? 1 : 0;
+    int dx = lx < -500 && !held_x ? -1 : lx > 500 && !held_x ? 1 : 0;
     void *quests[64];
     int n = quest_list(quests, 64);
     held = ly > 500 || ly < -500;
-    if (dir && quest_sel + dir >= 0 && quest_sel + dir < n) { quest_sel += dir; quest_fill(); }
+    held_x = lx > 500 || lx < -500;
+    if (dir && quest_sel + dir >= 0 && quest_sel + dir < n) { quest_sel += dir; quest_reward = -1; quest_fill(); }
+    if (dx && n > 0 && quest_sel < n) {
+        int count = 0;
+        while (count < 3 && quest_reward_item(quests[quest_sel], count)) count++;
+        if (count > 0) {
+            quest_reward += dx;
+            if (quest_reward < -1) quest_reward = count - 1;
+            if (quest_reward >= count) quest_reward = -1;
+            quest_reward_focus(quests[quest_sel]);
+            x360_log("x360 quest: reward "); x360_log_num(quest_reward); x360_log("\r\n");
+        }
+    }
 }
 
 /* The page shown: the inventory's bags, or the Stats page's two columns; the character's column
@@ -4931,7 +5068,7 @@ static void set_page(int p) {
         hide_info();
         sk_spells = 0; sk_tab = 0; sk_row = 0; sk_col = 0;
         if (!skill_at(0, 0, 0)) skills_move(1, 0); else skills_fill();
-    } else if (page == 3) { hide_info(); quest_fill(); }
+    } else if (page == 3) { hide_info(); quest_reward = -1; quest_card = 0; quest_fill(); }
     else update_info();
 }
 
@@ -5828,7 +5965,7 @@ static void inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly) {
     }
     if (page == 1) { stats_pad(pressed, ly); return; }
     if (page == 2) { skills_pad(pressed, lx, ly); return; }
-    if (page == 3) { quest_pad(pressed, ly); return; }
+    if (page == 3) { quest_pad(pressed, lx, ly); return; }
     if ((pressed & 0x0010) && !shop) { petcmd_show(1); return; }     /* Start: the pet's commands */
     if (now - last_check >= 100) {
         unsigned print = fingerprint();
