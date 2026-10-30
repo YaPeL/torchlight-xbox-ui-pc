@@ -9619,7 +9619,7 @@ static void swap_checkbox_tick(const char *prefix) {
 /* ---- The 360's brightness and contrast (doc section 45) ----
  * The 360's two graphics sliders (settingsmenu_xenon's Brightness and Contrast) on the 360's scale,
  * brightness 100-600 a step of 10 and contrast 100-400 a step of 5 (sub_8237FD30, sub_82380CA8), the
- * 360's defaults 290 and 210 at the start. The 360's ramp (sub_82577F08): for i = 0..255, the same for
+ * 360's defaults 290 and 210 the ramp's reference. The 360's ramp (sub_82577F08): for i = 0..255, the same for
  * red, green and blue, clamp(B*128 + (i-128)*B*C/256, 0, 65535), applied when the values change
  * (sub_821F9DA8). PC draws its image brighter than the 360 draws its own (the recomp agent's captures
  * of the same place: a mean of 30 on GOG against 20 on the recomp, both with no ramp), and the 360's
@@ -9628,10 +9628,14 @@ static void swap_checkbox_tick(const char *prefix) {
  * each level i is taken back through the 360's default ramp (PC's image standing for the 360's at its
  * defaults), then through the ramp of the sliders' values, so the defaults give the recomp's look (a
  * simulation on the same capture: 39.6 against its 39.0, the blacks raised as the 360's) and a slider
- * moves the image as much as on the 360 (the owner, 2026-10-30). A slider passing the default stops
- * on it. */
-#define X360_DEFAULT_BRIGHTNESS 290   /* also in setup.c */
+ * moves the image as much as on the 360 (the owner, 2026-10-30). The start is X360_START_*. */
+#define X360_DEFAULT_BRIGHTNESS 290   /* the 360's defaults: the ramp's reference */
 #define X360_DEFAULT_CONTRAST 210
+/* The start (also in setup.c): the values nearest PC's own look under the relative ramp (fitted on a
+ * capture of the mines, weighted by its levels: 310/230; the darkest levels stay one grey, at 16 of
+ * 255), the owner's choice (2026-10-30); the slider stops on them when passing. */
+#define X360_START_BRIGHTNESS 310
+#define X360_START_CONTRAST 230
 int x360_brightness_setting(void);
 int x360_contrast_setting(void);
 void x360_gamma_setting_write(int brightness, int contrast);
@@ -9850,9 +9854,9 @@ static void gamma_sliders_tick(const char *prefix) {
     int b, c;
     if (gamma_b < 0) return;
     b = gamma_slider(prefix, "x360Brightness", "x360BrightnessHeader", "NetbookMode", "Brightness",
-                     gamma_b, 80.0f, 500.0f, 10.0f, X360_DEFAULT_BRIGHTNESS, X360_DEFAULT_BRIGHTNESS, &last_b);
+                     gamma_b, 80.0f, 500.0f, 10.0f, X360_START_BRIGHTNESS, X360_START_BRIGHTNESS, &last_b);
     c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
-                     gamma_c, 80.0f, 300.0f, 5.0f, X360_DEFAULT_CONTRAST, X360_DEFAULT_CONTRAST, &last_c);
+                     gamma_c, 80.0f, 300.0f, 5.0f, X360_START_CONTRAST, X360_START_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
     {
         /* Cancel and Apply moved down by what the sliders add under the last row (the contrast

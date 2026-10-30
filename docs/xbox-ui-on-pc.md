@@ -4172,7 +4172,9 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   The ramp had been checked against each build's own image only. **[port]**
   - Each PC level i is taken back through the 360's default ramp, then through the sliders' ramp,
     so PC's image stands for the 360's at its defaults.
-  - The defaults, 290/210, are the start.
+  - The start: 310/230, the values nearest PC's own look under the relative ramp (fitted on the
+    mines' capture, weighted by its levels). The darkest levels stay one grey, 16 of 255, because
+    the 360's default ramp never goes below 26. The owner chose it over the 360's 290/210.
   - The headers carry no "(PC)" or "(360)" tag.
   - A slider stops on the default when passing it.
   **[measured]** GOG at the start (290/210) against the recomp at its defaults, the same view

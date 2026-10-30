@@ -119,11 +119,11 @@ int x360_swap_active;
 static int swap_setting = -1;
 HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition);   /* cegui_proxy.c */
 DWORD x360_read_text(HANDLE f, char *buf, DWORD size, int *full);   /* cegui_proxy.c: line ends made LF */
-#define X360_DEFAULT_BRIGHTNESS 290   /* also in x360_menu.c */
-#define X360_DEFAULT_CONTRAST 210
-/* The 360's brightness and contrast (doc section 45), on the 360's scale: 100-600 and 100-400, the
- * 360's defaults 290 and 210 (applied relative to PC's image: the owner, 2026-10-30). */
-static int brightness_setting = X360_DEFAULT_BRIGHTNESS, contrast_setting = X360_DEFAULT_CONTRAST;
+#define X360_START_BRIGHTNESS 310   /* also in x360_menu.c */
+#define X360_START_CONTRAST 230
+/* The 360's brightness and contrast (doc section 45), on the 360's scale: 100-600 and 100-400, at the
+ * start the values nearest PC's look under the relative ramp (the owner, 2026-10-30). */
+static int brightness_setting = X360_START_BRIGHTNESS, contrast_setting = X360_START_CONTRAST;
 /* key=N in text, or fallback (a number of up to 4 digits). */
 static int setting_number(const char *text, const char *key, int fallback) {
     unsigned i, j, k = len(key);
@@ -148,11 +148,11 @@ static void settings_load(void) {
         x360_read_text(f, text, sizeof text, 0);
         CloseHandle(f);
         swap_setting = has(text, "swap_confirm_cancel=1");
-        brightness_setting = setting_number(text, "brightness=", X360_DEFAULT_BRIGHTNESS);
-        contrast_setting = setting_number(text, "contrast=", X360_DEFAULT_CONTRAST);
+        brightness_setting = setting_number(text, "brightness=", X360_START_BRIGHTNESS);
+        contrast_setting = setting_number(text, "contrast=", X360_START_CONTRAST);
     }
-    if (brightness_setting < 100 || brightness_setting > 600) brightness_setting = X360_DEFAULT_BRIGHTNESS;
-    if (contrast_setting < 100 || contrast_setting > 400) contrast_setting = X360_DEFAULT_CONTRAST;
+    if (brightness_setting < 100 || brightness_setting > 600) brightness_setting = X360_START_BRIGHTNESS;
+    if (contrast_setting < 100 || contrast_setting > 400) contrast_setting = X360_START_CONTRAST;
 }
 static void put_number(char *out, unsigned *at, int n) {
     char digits[8];
