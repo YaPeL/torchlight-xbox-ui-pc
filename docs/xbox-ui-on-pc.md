@@ -4385,3 +4385,33 @@ A class without one keeps the layout (torchlight-achievements: `AddSkillColumn`,
   again") and the page keeps 2 columns.
 **[run]** An Alchemist copy in the test root (unattended): "PC's three columns" in the log, with 3
 cells per row in each pane. The right moves crossed column 2. Steam UNCHANGED.
+
+## 48. The Quest page's reward items (2026-10-30)
+
+**[the owner]** The Quest page's reward boxes stayed empty; the port filled only the XP, gold and fame
+boxes.
+**[read, 360; the recomp agent]**
+- `sub_8237E688` takes the selected quest's rewards (+0x150; their items' list, GOG's
+  `getRewardItems` 0x5f4760 *(OT)*). For n = 0..2 it shows `ItemBkg{n+1}` only for an item.
+  `sub_8237F310` puts the item's icon window in a slot over `ItemSlot{n+1}`, at the slot's size,
+  and shows `EmptySocket{n+1}_0` and `_1` for the item's sockets (+916; GOG's +0x39c).
+- Input (`sub_8237EF90`):
+  - the left stick only: the d-pad's codes 1 to 4 fall to the default;
+  - up and down (17, 18) change the quest;
+  - left and right (19, 20) move a reward cursor from -1 (none) to the last, wrapping
+    (`sub_8237E4D8`), which shows `ItemHighlight` at the box and the item's card (`sub_82344B90`).
+**[measured, 360]** The recomp agent's run (rewards-r0..r3) with The Gleaming Ember: right, then
+right, then left gave the reward, none, the reward. The card's root was at (863.9, 463.4) of 720
+rows for `ItemBkg1` at (600.8, 586), its bottom at 684.
+**[port]**
+- The boxes, the icon in a window of its own over `ItemSlot`'s frame (square, as the quest
+  dialog's), and the sockets.
+- The stick's cursor: the highlight with the box drawn over it, as the quest dialog's.
+- The card 263 rows right of the box's left, at the box's top, pushed up to end 36 rows above the
+  screen's bottom.
+- The page's d-pad up and down removed, as on the 360.
+- Not ported: the stack count's text and the rarity background the 360 makes at the page's build
+  (their images unread).
+**[run]** Unattended, an Alchemist with The Gleaming Ember: the gem's box with its icon; the cursor
+went 0, -1, 0 as on the 360; the card at about x 1272 of 1920 (the 360's 1296) and ending at 1026.
+Steam UNCHANGED. The icon is drawn larger than the 360's (it fills the slot's width).
