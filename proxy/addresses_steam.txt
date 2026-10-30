@@ -61,9 +61,6 @@
 0x0048d390 0x0048b450 verified   code    window 16, body +0x8,+0x18,+0x30, callers x2
 0x0048d690 0x0048b750 verified   comment body, callers x6
 0x0048de30 0x0048bef0 verified   comment window, body, callers
-0x0048dfcb 0x0048c08b verified   comment window 24, local in 0x48de30->0x48bef0
-0x0048dfd5 0x0048c095 verified   code    window 16, local in 0x48de30->0x48bef0
-0x0048dfdb 0x0048c09b verified   comment window 16, local in 0x48de30->0x48bef0
 0x0048ec4b 0x0048cccb verified   comment window, local
 0x0048ef80 0x0048d000 verified   comment window, body, callers x2
 0x0048ffe0 0x0048e060 verified   code    window, callers x5
@@ -99,7 +96,6 @@
 0x004a2220 0x004a0040 verified   code    callers x3
 0x004a5880 0x004a3640 verified   code    body, callers x6
 0x004a5a04 0x004a37b6 verified   comment window 16, local in 0x4a5880->0x4a3640
-0x004a5a0b 0x004a37bd verified   comment window 16, local in 0x4a5880->0x4a3640
 0x004a5a23 0x004a37d5 verified   comment local loose in 0x4a5880->0x4a3640
 0x004a5a4a 0x004a37fc verified   code    local loose in 0x4a5880->0x4a3640
 0x004a5b07 0x004a38b9 verified   comment local loose in 0x4a5880->0x4a3640
