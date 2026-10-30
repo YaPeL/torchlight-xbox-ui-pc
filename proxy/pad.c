@@ -2342,6 +2342,14 @@ static void order(void) {
             highlight_item(level, item_candidate);
         }
     }
+    /* While the pad aims, the virtual cursor crosses units (the shot's assist puts it on one):
+     * PC's own mouse-over clears a unit's highlight when the cursor leaves it (its UI's +0x2c, the
+     * client at 0x41520d), the candidate's too, and highlight() above sets it again only when the
+     * candidate changes: the owner saw it flicker. Each frame while aiming, set again. */
+    if (highlighted && aiming(now) && in_list(level, GOG_LEVEL_UNITS, highlighted)) {
+        typedef void(__fastcall *set_bool_fn)(void *self, void *edx, int on);
+        ((set_bool_fn)(*(void ***)highlighted)[GOG_SET_HIGHLIGHTED_SLOT])(highlighted, 0, 1);
+    }
     if (pressed) buttons_pressed(hero, pressed);
     if ((buttons & 0x4000) && !(pressed & 0x4000) && !stick_active() && now - last_order >= 100) {
         /* X held: search again and keep attacking, as holding PC's button repeats the click. */
