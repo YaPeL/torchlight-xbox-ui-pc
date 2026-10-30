@@ -1855,6 +1855,77 @@ static void shot_restore_install(void) {
     VirtualProtect(at, 7, old, &old);
 }
 
+/* pad_log=1: PC's attack (0x4a5880, the 360's sub_822919A8: with no target it searches a cone from
+ * the unit's transform, 0x5006c0 at 0x4a5b07, then 0x500a50) for the hero: at its entry the caller,
+ * the weapon argument, the flags and the target +0x290; after the searches (0x4a5b6e) the unit it
+ * attacks (ebx), its distance and angle from the facing. The owner's bow shots missed where the
+ * recomp's hit; which of these differs. */
+#define GOG_PERFORM_ATTACK 0x004a5880
+#define GOG_PERFORM_ATTACK_FOUND 0x004a5b6e
+static void __cdecl attack_entry_log(unsigned char *unit, unsigned ret, unsigned weapon, unsigned flags) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    float m[16];
+    if (!client || unit != *(unsigned char **)(client + 0x2c) || turn_logged >= 4000) return;
+    turn_logged++;
+    hero_matrix(unit, m);
+    x360_log("pad: performAttack from "); x360_log_num((long)ret);
+    x360_log(" weapon "); x360_log_num((long)weapon); x360_log(" flags "); x360_log_num((long)flags);
+    x360_log(" X "); x360_log_num((buttons & 0x4000) != 0); x360_log(" stick "); x360_log_num(lx); x360_log(" "); x360_log_num(ly);
+    x360_log(" target "); x360_log_num((long)*(void **)(unit + 0x290)); log_rel(m, *(void **)(unit + 0x290));
+    x360_log("\r\n");
+}
+static void __cdecl attack_found_log(unsigned char *unit, void *found) {
+    unsigned char *app = *(unsigned char **)GOG_APP_GLOBAL;
+    unsigned char *client = app ? *(unsigned char **)(app + 0x64) : 0;
+    float m[16];
+    if (!client || unit != *(unsigned char **)(client + 0x2c) || turn_logged >= 4000) return;
+    turn_logged++;
+    hero_matrix(unit, m);
+    x360_log("pad: performAttack unit "); x360_log_num((long)found); log_rel(m, found);
+    x360_log(" facing "); x360_log_num((long)(m[2] * 1000)); x360_log(" "); x360_log_num((long)(m[10] * 1000));
+    x360_log("\r\n");
+}
+static void attack_log_install(void) {
+    unsigned char *at = (unsigned char *)GOG_PERFORM_ATTACK, *t;
+    DWORD old;
+    int i, n = 0;
+    /* The entry: push -1; push imm32 (the SEH handler, another value on Steam), 7 bytes. */
+    if (at[0] == 0x6a && at[1] == 0xff && at[2] == 0x68 && (t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40)) != 0) {
+        t[n++] = 0x60;                                                    /* pushad */
+        t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: flags */
+        t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the weapon */
+        t[n++] = 0xff; t[n++] = 0x74; t[n++] = 0x24; t[n++] = 0x28;       /* push [esp+40]: the return address */
+        t[n++] = 0x51;                                                    /* push ecx: the unit */
+        t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)attack_entry_log - (t + n + 5)); n += 5;
+        t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x10;                      /* add esp, 16 */
+        t[n++] = 0x61;                                                    /* popad */
+        for (i = 0; i < 7; i++) t[n++] = at[i];
+        t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;
+        if (VirtualProtect(at, 7, 0x40, &old)) {
+            at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
+            VirtualProtect(at, 7, old, &old);
+        }
+    }
+    at = (unsigned char *)GOG_PERFORM_ATTACK_FOUND;
+    n = 0;
+    /* After the searches: test byte [esp+X], 4 (8 bytes; X 0x158 on GOG). */
+    if (at[0] == 0xf6 && at[1] == 0x84 && at[2] == 0x24 && at[7] == 0x04 && (t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40)) != 0) {
+        t[n++] = 0x60;                                                    /* pushad */
+        t[n++] = 0x53;                                                    /* push ebx: the unit attacked */
+        t[n++] = 0x55;                                                    /* push ebp: the attacker */
+        t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)attack_found_log - (t + n + 5)); n += 5;
+        t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x08;                      /* add esp, 8 */
+        t[n++] = 0x61;                                                    /* popad */
+        for (i = 0; i < 8; i++) t[n++] = at[i];
+        t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 8) - (t + n + 5)); n += 5;
+        if (VirtualProtect(at, 8, 0x40, &old)) {
+            at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90; at[7] = 0x90;
+            VirtualProtect(at, 8, old, &old);
+        }
+    }
+}
+
 /* The hero's path search: as the 360's. Placing the hero in a level, the 360 caps its A* at 200
  * expanded nodes (sub_82217DA8 after sub_822F6B70: hero+512's +68 = 200; the pet's 800), PC at 800
  * (GOG 0x416d40: push 0x320, then 0x486130 writes [hero+0x20c]+0x44; the pet's 800 at 0x416e92 and
@@ -2435,6 +2506,7 @@ void x360_pad_start(const char *file, int by_message, int direct_mode, int face,
         site_patch_install(GOG_ATTACK_AFTER_PATH, 1);
         site_patch_install(GOG_DEST_PATH_STEP, 2);
         dest_patch_install();
+        attack_log_install();
     }
     if (x360_pad_running) path_cap_patch();
     x360_log(real_get_cursor_pos && real_get_async_key_state ? "pad: imports patched" : "pad: imports NOT patched");

@@ -93,6 +93,9 @@
 0x0049f88f 0x0049d6f3 verified   code    window, local
 0x0049f8ee 0x0049d752 verified   code    window, local
 0x004a2220 0x004a0040 verified   code    callers x3
+0x004a5880 0x004a3640 verified   code    body, callers x6
+0x004a5b07 0x004a38b9 verified   comment local loose in 0x4a5880->0x4a3640
+0x004a5b6e 0x004a3920 verified   code    local loose in 0x4a5880->0x4a3640
 0x004a6930 0x004a46c0 verified   comment vtable .?AVCCharacter@@+0x150, vtable .?AVCMonster@@+0x150, body +0x58,+0x68,+0x78, callers 0x4dc691
 0x004a8062 0x004a5dd8 verified   code    window 48, local 0+24 in 0x4a6930->0x4a46c0
 0x004acd4b 0x004aaae5 checked    code    the loader loop's call of 0x4e6ce0 (Steam's 0x4e9480) before its push 0x7f test, in 0x4aa580 (0x4ac7c0's twin), read in Steam's disassembly
