@@ -4183,7 +4183,7 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   **[measured]** With the clamped inverse, GOG at 290/210 against the recomp at its defaults, the
   same view unattended: a mean of 41.1 against 39.6 (54 with the absolute ramp). Steam UNCHANGED.
 - **Played on Windows (2026-10-30).** **[the owner]** v0.6.6 on GOG's, Epic's and Steam's builds on
-  Windows: everything as under Proton, the sliders included (after #100 scaled them as PC's own).
+  Windows and Steam's on the Steam Deck: everything as under Proton, the sliders included (after #100 scaled them as PC's own).
 - **The settings screen's spacing (2026-10-30).** The sliders' headers sit 80 under the control
   above's top, as PC's own (settingsmenu.layout: each header 80 under the control above). Cancel
   and Apply move down by what the sliders add under ShowBlood, so they keep PC's gap; at 80 the
