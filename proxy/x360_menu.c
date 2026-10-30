@@ -9652,7 +9652,8 @@ static void *gamma_device(void) {
     typedef void (__fastcall *std_ctor_fn)(void *self, void *edx, const char *s);
     typedef void (__fastcall *std_dtor_fn)(void *self, void *edx);
     static void *device;
-    static int tried;
+    static int tried;   /* 1: looked up; 2: no window yet */
+    static unsigned not_yet;
     if (gamma_device_fresh) { gamma_device_fresh = 0; device = 0; tried = 0; }
     void *ogre, *msvcp;
     root_fn root;
@@ -9662,7 +9663,8 @@ static void *gamma_device(void) {
     std_dtor_fn std_dtor;
     int slot = -1, i;
     object name;
-    if (device || tried) return device;
+    if (device || tried == 1) return device;
+    if (tried == 2 && ++not_yet % 60) return 0;   /* no window yet (before play): asked every 60 frames */
     tried = 1;
     ogre = GetModuleHandleA("OgreMain.dll");
     msvcp = GetModuleHandleA("msvcp90.dll");
@@ -9687,7 +9689,7 @@ static void *gamma_device(void) {
         void *cam = ctl ? *(void **)(ctl + 8) : 0, *vp = cam && viewport_of ? viewport_of(cam, 0) : 0;
         window = vp && target_of ? target_of(vp, 0) : 0;
     }
-    if (!window) { tried = 0; return 0; }   /* not made yet: asked again */
+    if (!window) { tried = 2; return 0; }   /* not made yet: asked again */
     window_vt = *(void ***)window;
     std_ctor(&name, 0, "D3DDEVICE");
     __try { ((attribute_fn)window_vt[slot])(window, 0, &name, &device); }
@@ -9830,6 +9832,21 @@ static int gamma_slider(const char *prefix, const char *name, const char *header
         }
         x360_log("x360 gamma: a slider made in PC's settings\r\n");
         *last = -1;
+        if (name[4] == 'C') {   /* x360Contrast, the lower one: made once per settings window */
+            /* Cancel and Apply moved down by what the sliders add under the last row (the slider's
+             * bottom against ShowBlood's), so they keep PC's own gap under it: at PC's 80 the
+             * sliders reached the buttons (the owner's capture). */
+            void *apply = win_of(prefix, "Apply"), *cancel = win_of(prefix, "Cancel"), *row = win_of(prefix, "ShowBlood");
+            float vs[8], vr[8];
+            read_prop(slider, "UnifiedAreaRect", r, sizeof r);
+            if (apply && cancel && row && parse_rect(r, vs)) {
+                read_prop(row, "UnifiedAreaRect", r, sizeof r);
+                if (parse_rect(r, vr) && vs[7] > vr[7]) {
+                    move_by(apply, 0, vs[7] - vr[7]);
+                    move_by(cancel, 0, vs[7] - vr[7]);
+                }
+            }
+        }
     }
     if (*last < 0) {
         set_max(slider, 0, range);
@@ -9858,27 +9875,6 @@ static void gamma_sliders_tick(const char *prefix) {
     c = gamma_slider(prefix, "x360Contrast", "x360ContrastHeader", "ShowBlood", "Contrast",
                      gamma_c, 80.0f, 300.0f, 5.0f, X360_START_CONTRAST, X360_START_CONTRAST, &last_c);
     if (b != gamma_b || c != gamma_c) { gamma_b = b; gamma_c = c; gamma_dirty = 1; }
-    {
-        /* Cancel and Apply moved down by what the sliders add under the last row (the contrast
-         * slider's bottom against ShowBlood's), so they keep PC's own gap under it: at PC's 80 the
-         * sliders reached the buttons (the owner's capture). Once per settings window. */
-        static void *moved_for;
-        void *apply = win_of(prefix, "Apply"), *cancel = win_of(prefix, "Cancel");
-        void *slider = win_of(prefix, "x360Contrast"), *row = win_of(prefix, "ShowBlood");
-        char r[160];
-        float vs[8], vr[8];
-        if (apply && cancel && slider && row && moved_for != apply) {
-            read_prop(slider, "UnifiedAreaRect", r, sizeof r);
-            if (parse_rect(r, vs)) {
-                read_prop(row, "UnifiedAreaRect", r, sizeof r);
-                if (parse_rect(r, vr) && vs[7] > vr[7]) {
-                    move_by(apply, 0, vs[7] - vr[7]);
-                    move_by(cancel, 0, vs[7] - vr[7]);
-                    moved_for = apply;
-                }
-            }
-        }
-    }
 }
 #undef last_b
 #undef last_c
