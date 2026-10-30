@@ -4234,7 +4234,9 @@ bow, a mines floor saved on arrival).** **[the runs; read]**
   not measured for monsters). An earlier assist of the port's own (the cursor on the cone's unit,
   the shot's point put back after the hold turn) is gone: it turned the hero to the unit, or made
   the turn jerky. While aiming, the candidate's highlight is set again each frame: PC's mouse-over
-  (0x41520d) cleared it when the cursor left a unit (the owner saw it flicker). Not played yet.
+  (0x41520d) cleared it when the cursor left a unit (the owner saw it flicker). Played by the owner
+  (2026-10-29): the shots hit as the recomp's; the units PC's attacks found were from -25 to +20
+  degrees (17 of 22 attacks found one).
 - **Left open.** With X held, B, Y, LT and RT post their keys with Shift down: if PC treats a
   Shift-held hotbar key otherwise, a skill with X held may differ (not seen in the owner's run, not
   measured).
