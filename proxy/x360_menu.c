@@ -761,7 +761,9 @@ static int sock_open;                        /* the gem's item select is open */
 /* The transmuter (CCombineMenu, CGameUI's +0x2e0): its four places are slots of the hero's own
  * inventory, their numbers at the menu's +0x7c (read when it opens; GOG 0x569663). */
 static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
-static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x19/0x1a gems) */
+static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x16 shrine, 0x19/0x1a gems) */
+static unsigned char *shop;                   /* (defined below, with the shops) */
+#define SHRINE_USABLE 0x19c                 /* the shrine's byte its use tests (CTriggerUnit +0x13c, 0x4e1cf8; the 360's +412) */
 static int tm_slot[4], tm_known;
 static int tm_from[4] = {-1, -1, -1, -1};   /* where X took the item in each place from, or -1 */
 static void *tm_from_inv[4];                /* and from which bag (the hero's, the pet's) */
@@ -774,6 +776,7 @@ static int is_tm_slot(int slot) {
 static void *owner_bag(unsigned char *owner) {
     if (!owner) return 0;
     if (at_transmute && owner == tm_shop) owner = hero;
+    if (at_enchant == 0x16 && owner == shop) return 0;   /* a shrine: a prop, no bag (its +0x404 is not one: the first run's exception) */
     if (isa(owner, 170)) return *(unsigned char **)GOG_SHARED_STASH ? *(void **)(*(unsigned char **)GOG_SHARED_STASH + 8) : 0;
     return *(void **)(owner + GOG_INVENTORY);
 }
@@ -1688,7 +1691,7 @@ static void refresh(void) {
             } else if (at_enchant) {
                 /* At the enchanter (town/06): A act.enchant for an item he can enchant, nothing
                  * else (the pressbutton's rule, sub_82360EC0). */
-                a = at_enchant == 0x15 && can_enchant(item) ? x360_text("act.enchant")
+                a = (at_enchant == 0x15 || (at_enchant == 0x16 && shop[SHRINE_USABLE])) && can_enchant(item) ? x360_text("act.enchant")
                     : at_enchant == 0x1b && can_retire(item) && !panels[active_panel].is_pet ? x360_text("act.retire") : ""; x = ""; y = "";   /* none at the gem pages (town/02, 03) */
             } else if (at_transmute) {
                 /* At the transmuter (sub_8236C8D0, mode 5), in every column: X swaps; Y is the
@@ -2351,8 +2354,14 @@ static void ench_fill(unsigned char *item) {
     show(win_of(ENCH_PREFIX, "getsocket"), 0);
     show(win_of(ENCH_PREFIX, "destroysocket"), 0);
     show(win_of(ENCH_PREFIX, "retire"), 0);
-    show(win_of(ENCH_PREFIX, "enchantshrine"), 0);
-    text(win_of(ENCH_PREFIX, "title"), x360_text("title.enchanter"));
+    /* A shrine (the 360's mode 1, sub_82360808 with no unit: loc_82360BB4) has the enchanter's
+     * page with its own title, the shrine's paragraph shown and the price hidden. */
+    show(win_of(ENCH_PREFIX, "enchantshrine"), at_enchant == 0x16);
+    show(win_of(ENCH_PREFIX, "sellprice"), at_enchant != 0x16);
+    {
+        const char *t = at_enchant == 0x16 ? x360_text("title.enchantshrine") : "";
+        text(win_of(ENCH_PREFIX, "title"), *t ? t : x360_text("title.enchanter"));   /* an install from before the key: the enchanter's */
+    }
     /* The result, yellow in the layout, under the disenchant chance until the next A (in-game/22-24). */
     text(win_of(ENCH_PREFIX, "resultofenchant"), ench_result);
     {
@@ -2400,7 +2409,8 @@ static void ench_fill(unsigned char *item) {
     p = put_int(buf + length(buf), (int)(disenchant_chance(item) + 0.5f));
     *p++ = '%'; *p = 0;
     text(win_of(ENCH_PREFIX, "disenchantChance"), buf);
-    show(win_of(ENCH_PREFIX, "pressbutton"), 1);
+    /* A used shrine: no prompt (the 360's 0x82361DB8 reads the shrine's +412). */
+    show(win_of(ENCH_PREFIX, "pressbutton"), at_enchant != 0x16 || shop[SHRINE_USABLE]);
 }
 
 static void refresh_all(void) {
@@ -2907,6 +2917,7 @@ static void stash_swap(void) {
  * price checked and taken, the enchantment or the disenchant, PC's sounds. */
 #define GOG_ENCHANT_MENU 0x2dc
 #define ENCHANT_OWNER 0x2c
+#define ENCHANT_SHRINE 0x34                 /* the shrine for 0x16 (0x575250 stores it, the owner zeroed) */
 #define ENCHANT_OPEN 0x38
 #define ENCHANT_MODE 0x90
 #define ENCHANT_SLOT 14
@@ -3089,7 +3100,9 @@ static void enchant(void) {
     if (!m || !bag || !from || !list_count) return;
     item = (unsigned char *)list[selected[filter]];
     slot = list_slot[selected[filter]];
-    if (at_enchant == 0x15 ? !can_enchant(item) : !has_gems(item)) { refuse(); x360_log("x360 enchanter: A: not for this item\r\n"); return; }
+    if (at_enchant == 0x15 || at_enchant == 0x16 ? !can_enchant(item) : !has_gems(item)) { refuse(); x360_log("x360 enchanter: A: not for this item\r\n"); return; }
+    /* The 360's sub_8236B348: a shrine once used takes no A (its +412). */
+    if (at_enchant == 0x16 && !shop[SHRINE_USABLE]) { refuse(); x360_log("x360 enchanter: A: the shrine is used\r\n"); return; }
     if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, ENCHANT_SLOT)) { x360_log("x360 enchanter: A: slot 14 is taken\r\n"); return; }
     move_out(from, item, slot);
     ((put_at_fn)GOG_PUT_AT_SLOT)(bag, 0, item, ENCHANT_SLOT, 1);
@@ -3118,7 +3131,19 @@ static void enchant(void) {
         move_done();
     }
     /* PC's act itself takes the item out of slot 14 and puts it back in the bag (0x4e9ca0 and
-     * 0x4e9a30, at 0x57b619; dropped at the hero by 0x4f5960 only with the bag full). */
+     * 0x4e9a30, at 0x57b619; dropped at the hero by 0x4f5960 only with the bag full). The 360
+     * enchants the selected item where it is (sub_82361C78): one taken from elsewhere, an
+     * equipped one (the shrine's run: the sword left the hand for the bag), goes back there. */
+    if (!got && ((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot) != item && !((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot)) {
+        int k, n = *(long *)((unsigned char *)bag + INV_SLOTS);
+        for (k = 0; k < n; k++) if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, k) == item) break;
+        if (k < n) {
+            move_out(bag, item, k);
+            if (!give_back(from, slot, item) && !give_back(bag, k, item)) move_lost(item);
+            move_done();
+            x360_log("x360 enchanter: A: the item put back in its place\r\n");
+        } else x360_log("x360 enchanter: A: the item not in the bag after PC's act (dropped at the hero? the bag full)\r\n");
+    }
     x360_log(got ? "x360 enchanter: A: done, the item moved back from slot 14\r\n" : "x360 enchanter: A: done\r\n");
 }
 
@@ -5831,15 +5856,19 @@ void x360_shop_tick(void) {
     st = *(unsigned char **)(ui + GOG_STASH_MENU);
     tm = *(unsigned char **)(ui + GOG_COMBINE_MENU);
     en = *(unsigned char **)(ui + GOG_ENCHANT_MENU);
-    if (!shop && en && en[ENCHANT_OPEN] && *(unsigned char **)(en + ENCHANT_OWNER)) {
+    /* An enchant shrine (PC's interaction 0x16, 0x557ec9) has no owner: the menu holds the shrine
+     * at +0x34 instead (the 360's sub_821A83C8 state 22: the prop at menu+244, sub_82360CD0 mode 1). */
+    if (!shop && en && en[ENCHANT_OPEN] && (*(unsigned char **)(en + ENCHANT_OWNER)
+                                           || (*(int *)(en + ENCHANT_MODE) == 0x16 && *(unsigned char **)(en + ENCHANT_SHRINE)))) {
         static int logged_mode;
         int mode = *(int *)(en + ENCHANT_MODE);
-        if (mode == 0x15 || mode == 0x19 || mode == 0x1a || mode == 0x1b) {
+        if (mode == 0x15 || mode == 0x16 || mode == 0x19 || mode == 0x1a || mode == 0x1b) {
             if (inventory_open) x360_inventory_toggle();
-            shop = *(unsigned char **)(en + ENCHANT_OWNER);
+            shop = *(unsigned char **)(en + (mode == 0x16 ? ENCHANT_SHRINE : ENCHANT_OWNER));
             at_enchant = mode;
             ench_result[0] = 0;
             x360_log(mode == 0x15 ? "x360 shop: PC's enchant menu opened (the enchanter)\r\n"
+                     : mode == 0x16 ? "x360 shop: PC's enchant menu opened (an enchant shrine)\r\n"
                      : mode == 0x1b ? "x360 shop: PC's enchant menu opened (the retirement NPC)\r\n"
                      : "x360 shop: PC's enchant menu opened (a gem goblin)\r\n");
             x360_inventory_toggle();
