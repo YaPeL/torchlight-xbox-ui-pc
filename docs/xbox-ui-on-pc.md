@@ -4489,8 +4489,9 @@ d-pad only moved the cursor and the port had one set.
 - The swap, `sub_8221ACD8(client, set)`: in play from the frame update (`sub_821EBA48`, the d-pad's
   keys `G` up, set 1, and `L` down, set 2); on the Skills page from its input (`sub_823827F8`,
   codes 1 and 2; left and right, 3 and 4, do nothing; both sticks move the cursor).
-  - It returns at once with no player or while `sub_821ECA78` is true (an entry of the player's
-    `+6056` with `+24` set; read as "a skill under way", not verified).
+  - It returns at once with no player or while `sub_821ECA78` is true: an entry of the UI's
+    `+6056` list shown (`+24`): options, settings, the full game and trial menus, leaderboards,
+    death, waypoints, the NPC dialog, cinematic, modal, tip (built by `sub_823392E8`).
   - To another set, `sub_8233ED28(player, set)`: true if the set has a skill in one of its slots
     (or the player's `+984` test, not identified). False: the sound 35, no swap. True: the sound
     30, `+5220` stored and the keymap rebound (`sub_822DF5F0`, which first sends LT, RT, B, Y up
@@ -4503,11 +4504,15 @@ d-pad only moved the cursor and the port had one set.
 - PC's slots, by the owner's choice (as set 1's): set 1 B, Y, LT, RT on PC's keys 3 to 6 (slots 2
   to 5), set 2 on its keys 7, 8, 9, 0 (slots 6 to 9). PC's hero keeps the slots' skill GUIDs at
   `+0x860 + 8 * slot` (GOG `0x40c8f0`, Steam `0x40c7c0`, the same offsets).
-- In play, d-pad up and down swap as `sub_8221ACD8`: an empty set refused with the sound 35, else
-  the sound 30. On the page and over the mapping, the swap with the set empty too; the page's
+- In play, d-pad up and down swap as `sub_8221ACD8`: an empty set refused with the error sound,
+  else the assign sound. The 360's ids are the client's sound slots, filled by name at its init
+  (`sub_82219A98`): 30 `ASSIGNSKILL`, 35 `ERROR`, the same `UI.DAT` entries as PC's. PC's CGameUI
+  fills its own slots (`+0x13f8`, GOG `0x55f84c`-`0x55f927`): `ASSIGNSKILL` 0x1e, `ERROR` 0x18.
+  pad.c sends the d-pad only in play, past the proxy's overlays, the pause and the inventory, which
+  stands for `sub_821ECA78`'s test. On the page and over the mapping, the swap with the set empty too; the page's
   cursor moves with the left stick only.
 - The HUD mirrors PC's `SkillSlot7`-`10` into the 360's set-2 slots; the HUD, the page and the
   mapping show the active set.
 - The keys the pad posts are a press and a release at once, so none stays held across a swap.
-- Not ported: the "skill under way" test, and the player's `+984` test.
-- To check: the sound 35 on PC (the 360's id; the 30 matched PC's own `0x1e`).
+- Not ported: the player's `+984` test; PC's own menus outside the proxy's (its waypoint list)
+  not checked against `sub_821ECA78`.

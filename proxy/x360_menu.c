@@ -4411,8 +4411,16 @@ static void skills_columns(void) {
  * (the keys 3 to 6, proxy/pad.c), set 2 on its slots 6, 7, 8, 9 (the keys 7, 8, 9, 0). PC's
  * hero keeps its slots' skill GUIDs at +0x860 + 8 * slot (GOG 0x40c8f0 writes them; -1 empty).
  * The keys pad.c posts are a press and a release at once: none stays held across a swap.
- * Not ported: sub_8221ACD8's early return while sub_821ECA78 is true (a skill under way, by the
- * recomp agent's reading; not verified). */
+ * sub_8233ED28 reads the skills' GUIDs only (a slot's item is PC's +0x8b0, the 360's +2192): a set
+ * with items and no skill is refused, as there, unless its player+984 test (not identified) says
+ * otherwise. Where the 360 resets +5220 (a new hero, a load) was not read: the set is kept.
+ * The 360's sound ids are the client's slots, filled by name at its init (sub_82219A98, the
+ * recomp agent's reading): 30 "ASSIGNSKILL", 35 "ERROR". PC's CGameUI fills its own (+0x13f8,
+ * GOG 0x55f84c-0x55f927): ASSIGNSKILL in 0x1e, ERROR in 0x18 (the shops' refusal).
+ * sub_8221ACD8 also returns at once while sub_821ECA78 is true: one of the UI's modal or full
+ * screen menus shown (its +6056 list: options, settings, death, waypoints, NPC dialog, cinematic,
+ * modal, tip). Here pad.c sends the d-pad only in play, past the proxy's own overlays, the pause
+ * and the inventory. */
 #define GOG_HERO_SKILL_SLOTS 0x860
 int x360_skill_set;                 /* 0 or 1: the 360's client+5220 */
 static const int set_slots[2][4] = {{2, 3, 4, 5}, {6, 7, 8, 9}};   /* B, Y, LT, RT */
@@ -4435,11 +4443,11 @@ static void ui_sound(int id) {
 static void skill_set_swap(int set, int any) {
     if (!find_world() || !hero || set == x360_skill_set) return;
     if (!any && !skill_set_has_skill(hero, set)) {
-        ui_sound(35);
-        x360_log("x360 skills: the set is empty (the sound 35)\r\n");
+        ui_sound(0x18);   /* ERROR */
+        x360_log("x360 skills: the set is empty (the error sound)\r\n");
         return;
     }
-    ui_sound(30);
+    ui_sound(0x1e);   /* ASSIGNSKILL */
     x360_skill_set = set;
     x360_log(set ? "x360 skills: set 2\r\n" : "x360 skills: set 1\r\n");
 }
@@ -4794,7 +4802,9 @@ static void skills_set_pad(unsigned pressed) {
     int was = x360_skill_set;
     if (pressed & 0x0001) skill_set_swap(0, 1);
     else if (pressed & 0x0002) skill_set_swap(1, 1);
-    if (x360_skill_set != was) { skills_fill(); if (sk_map) skillmap_fill(); }
+    if (x360_skill_set == was) return;
+    if (sk_map) skillmap_show(1);   /* the page and the overlay, the help box kept hidden */
+    else skills_fill();
 }
 
 /* With the overlay open: B, Y, LT, RT on their release, to the set's slots; X closes. Returns 1
