@@ -176,6 +176,8 @@ void x360_inventory_pad(unsigned pressed, unsigned buttons, int lx, int ly);
 int x360_overlay_open(void);
 int x360_pause_open(void);
 void x360_pause_pad(unsigned pressed, int ly);
+void x360_skill_set_pad(unsigned pressed);   /* the d-pad's skill-set swap (#88) */
+extern int x360_skill_set;
 void x360_hud_tick(void);
 void x360_shop_tick(void);
 void x360_hud_attacked(void *unit);
@@ -1466,13 +1468,16 @@ static void post_key(unsigned vk) {
 }
 
 /* The buttons, on their press (the 360's scheme, section 9a): X attacks the candidate, A picks up
- * the item or talks to the candidate, LB/RB and B, Y, LT, RT press the hotbar's keys 1 to 6. */
+ * the item or talks to the candidate, LB/RB press the hotbar's keys 1 and 2, and B, Y, LT, RT its
+ * keys 3 to 6, or 7, 8, 9, 0 with the skill set 2 (x360_menu.c, the skill sets); the d-pad's up
+ * and down swap the set. */
 static void buttons_pressed(unsigned char *hero, unsigned pressed) {
-    static const struct { unsigned bit; unsigned key; const char *name; } keys[] = {
-        {0x0100, '1', "LB"}, {0x0200, '2', "RB"}, {0x2000, '3', "B"}, {0x8000, '4', "Y"},
-        {BUTTON_LT, '5', "LT"}, {BUTTON_RT, '6', "RT"},
+    static const struct { unsigned bit; unsigned key, key2; const char *name; } keys[] = {
+        {0x0100, '1', '1', "LB"}, {0x0200, '2', '2', "RB"}, {0x2000, '3', '7', "B"}, {0x8000, '4', '8', "Y"},
+        {BUTTON_LT, '5', '9', "LT"}, {BUTTON_RT, '6', '0', "RT"},
     };
     unsigned i;
+    if (pressed & 0x0003) x360_skill_set_pad(pressed);
     if ((pressed & 0x4000) && !candidate && diag_level) diagnose(hero);
     if (pressed & 0x4000) { log_until = GetTickCount() + 3000; x_pressed_at = GetTickCount(); }
     /* With the stick past 0.1 the 360's X drops the target (sub_8221B8E8); the attack goes toward
@@ -1550,7 +1555,7 @@ static void buttons_pressed(unsigned char *hero, unsigned pressed) {
             x360_log(keys[i].name);
             x360_log(": hotbar key\r\n");
             aim_until = GetTickCount() + 400;
-            post_key(keys[i].key);
+            post_key(x360_skill_set ? keys[i].key2 : keys[i].key);
         }
 }
 

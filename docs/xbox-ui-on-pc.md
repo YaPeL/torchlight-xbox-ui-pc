@@ -1484,7 +1484,9 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
     360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
     and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
     RT (7) (a `StaticImage` of ours made in each with `WindowManager::createWindow`, given the
-    image of PC's icon). The 360's second set (`SkillSet2`) is hidden.
+    image of PC's icon). The 360's second set (`SkillSet2`: Y `SkillSlot3`, B 8, LT 9, RT 10)
+    shows PC's `SkillSlot7`-`10` (B 7, Y 8, LT 9, RT 0); the active set's window is shown
+    (section 49).
   - Hidden as not done: `TargetInteractHover` (the 360's "A Interact"), the skill slots' texts.
 - **Runs** (`~/torchlight-gog/screens/t31-hud.png`, `t32-lb.png`, `t32-inv-hud.png`): the HUD
   where the 360's is, the health and mana potions with "2" over LB and RB, LB drank one ("1"),
@@ -1774,11 +1776,12 @@ handler, `sub_82382C58`, takes `GamepadButtonUp` (both subscribed in `sub_823812
   `SkillSlotN` has the ID N-1 (`0x562953`), the slot index.
 
 **Written** (`skills_pad`, `skillmap_pad` in `proxy/x360_menu.c`): X opens `skillsmap_xenon` over
-the page for a skill that passes, with `MapSkillSet1` shown and `MapSkillSet2` hidden (this port
-has one set). Its `MapSkillSlot4..7` get the HUD's icons, as the page's `SkillSet1` does: that
-fill is ours, the 360's fill of these slots was not read. B, Y, LT and RT on their release call
-`0x40c8f0` with the slot the pad fires for that button (`pad.c`: B 2, Y 3, LT 4, RT 5, PC's keys
-3-6), not the 360's numbers, so that the button then casts the skill. Then the sound 30 and the
+the page for a skill that passes, with the active set's `MapSkillSet1` or `2` shown (section 49).
+Its `MapSkillSlot`s get the HUD's icons, as the page's sets do: that fill is ours, the 360's fill
+of these slots was not read. B, Y, LT and RT on their release call `0x40c8f0` with the slot the
+pad fires for that button in the active set (`pad.c`: B 2, Y 3, LT 4, RT 5, PC's keys 3-6; set 2
+B 6, Y 7, LT 8, RT 9, PC's keys 7, 8, 9, 0), not the 360's numbers, so that the button then casts
+the skill. Then the sound 30 and the
 overlay closes; X, Start or Back close it too. To check in the QA: the overlay's place, and that
 the skill on B/Y/LT/RT fires from that button in play.
 
@@ -4472,3 +4475,51 @@ rows for `ItemBkg1` at (600.8, 586), its bottom at 684.
 **[run]** Unattended, an Alchemist with the same quest taken: the gem's box with its icon; the cursor
 went 0, -1, 0 as on the 360; the card at about x 1272 of 1920 (the 360's 1296) and ending at 1026.
 Steam UNCHANGED. The icon is drawn larger than the 360's (it fills the slot's width).
+
+## 49. The skill sets (issue #88, 2026-10-31)
+
+**[the owner, a user's issue]** The Skills page shows the d-pad's "skill sets" prompt, but the
+d-pad only moved the cursor and the port had one set.
+**[read and measured, 360; the recomp agent]**
+- One pool of 10 hotbar slots (`hero+2112`, a u64 skill id each, -1 empty) and two keymaps over it
+  (`0x8355BCE4`, `0x8355BCF4`, looked up by `sub_822DF2B8`). The client's mapper turns the pad's
+  buttons into key messages: LB `1`, RB `2` in both sets; Y, B, LT, RT `4`, `5`, `6`, `7` with set
+  1 (slots 3 to 6) and `3`, `8`, `9`, `0` with set 2 (slots 2, 7, 8, 9). The set is the client's
+  byte `+5220`.
+- The swap, `sub_8221ACD8(client, set)`: in play from the frame update (`sub_821EBA48`, the d-pad's
+  keys `G` up, set 1, and `L` down, set 2); on the Skills page from its input (`sub_823827F8`,
+  codes 1 and 2; left and right, 3 and 4, do nothing; both sticks move the cursor).
+  - It returns at once with no player or while `sub_821ECA78` is true: an entry of the UI's
+    `+6056` list shown (`+24`): options, settings, the full game and trial menus, leaderboards,
+    death, waypoints, the NPC dialog, cinematic, modal, tip (built by `sub_823392E8`).
+  - To another set, `sub_8233ED28(player, set)`: true if the set has a skill in one of its slots
+    (or the player's `+984` test, not identified). False: the sound 35, no swap. True: the sound
+    30, `+5220` stored and the keymap rebound (`sub_822DF5F0`, which first sends LT, RT, B, Y up
+    and down so no key stays held).
+  - Measured: in play, down with an empty set 2 did not swap; on the page, down swapped with the
+    set empty.
+- The HUD's `SkillSet1`/`2`, the page's `SkillSet1`/`2` and the mapping's `MapSkillSet1`/`2` show
+  the set's windows. The set stays after the page closes.
+**[port]** (`proxy/x360_menu.c`, the skill sets; `proxy/pad.c`, `buttons_pressed`)
+- PC's slots, by the owner's choice (as set 1's): set 1 B, Y, LT, RT on PC's keys 3 to 6 (slots 2
+  to 5), set 2 on its keys 7, 8, 9, 0 (slots 6 to 9). PC's hero keeps the slots' skill GUIDs at
+  `+0x860 + 8 * slot` (GOG `0x40c8f0`, Steam `0x40c7c0`, the same offsets).
+- In play, d-pad up and down swap as `sub_8221ACD8`: an empty set refused with the error sound,
+  else the assign sound. The 360's ids are the client's sound slots, filled by name at its init
+  (`sub_82219A98`): 30 `ASSIGNSKILL`, 35 `ERROR`, the same `UI.DAT` entries as PC's. PC's CGameUI
+  fills its own slots (`+0x13f8`, GOG `0x55f84c`-`0x55f927`): `ASSIGNSKILL` 0x1e, `ERROR` 0x18.
+  pad.c sends the d-pad only in play, past the proxy's overlays, the pause and the inventory, which
+  stands for `sub_821ECA78`'s test. On the page and over the mapping, the swap with the set empty too; the page's
+  cursor moves with the left stick only.
+- The HUD mirrors PC's `SkillSlot7`-`10` into the 360's set-2 slots; the HUD, the page and the
+  mapping show the active set.
+- The keys the pad posts are a press and a release at once, so none stays held across a swap.
+- A skill just mapped shows its own icon in its slot on the page and the mapping (`mapped_or_hud`)
+  until the HUD's icon there changes: the page copies the HUD's icons, which mirror PC's hotbar,
+  and PC redraws its hotbar only after the menu closes (the first run kept the old icon).
+- **[run]** (2026-10-31, GOG, the bench save, `~/torchlight-gog/card-run/skillset.sh`): d-pad down
+  in play refused (set 2 held only two scrolls, no skill); on the page down showed `-Skill Set 2-`,
+  X and B mapped Slash Attack to set 2's B, its icon at once; in play B pressed PC's key 7 and the
+  HUD showed set 2; up went to set 1 and down to set 2 again (now with a skill). Steam UNCHANGED.
+- Not ported: the player's `+984` test; PC's own menus outside the proxy's (its waypoint list)
+  not checked against `sub_821ECA78`.
