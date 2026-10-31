@@ -2001,8 +2001,8 @@ of the brazier (`MERCHANT_ENCHANTER`).
 - **PC's side.** CGameUI's `+0x2dc` is PC's `CEnchantMenu` (made at `0x562fb0`, vtable
   `0xab6c0c`). Its owner is at `+0x2c`, the character at `+0x30`, the open flag at `+0x38` and the
   mode at `+0x90`. CGameUI opens it with PC's inventory, in the mode of the interaction: 0x15 is
-  the enchanter (`0x557e23`); 0x16, 0x19, 0x1a and 0x1b are its gem, shrine and heirloom pages,
-  left to PC for now and logged. Its command 9 (`0x57c900` → `0x57a800`) does the mode's work on
+  the enchanter (`0x557e23`); 0x16 is an enchant shrine, 0x19 and 0x1a the gem pages and 0x1b
+  the heirloom page (each below). Its command 9 (`0x57c900` → `0x57a800`) does the mode's work on
   the item in the hero's slot 14 (`0x57aea4`): the price checked and taken, the enchantment or
   the disenchant, and PC's sounds.
 - **The look** (`enchantermenu_xenon`, its 15 windows named by the table at `0x83385300`): the
@@ -2055,6 +2055,23 @@ Ok was not clicked again after the fix (the guide NPC walked off).
 - **Tested** (GOG, run 13): both pages match the catalog window for window
   (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no
   socketed item with gems.
+
+**The enchant shrine** (issue #104; the 360's mode 1). **[read; run below]**
+- **PC.** The shrine is a prop (`CTriggerUnit`, `ENCHANTSHRINE`). Its interaction 0x16
+  (`0x557ec9`) opens CEnchantMenu in mode 0x16 with no owner: `0x575250` zeroes `+0x2c` and
+  keeps the shrine at `+0x34`. Before the fix the proxy took the menu only with an owner, so PC's
+  menu stayed open behind the 360's interface, its board hidden, and the pad could not leave it.
+  PC's command 9 enchants for free in that mode (the act's case 1, `0x57b71a`) and then calls the
+  shrine's virtual `+0x13c` (`0x4e1cc0`), whose use tests the shrine's byte `+0x19c`.
+- **The 360** (the recomp agent's reading and run shrine3). The hero's state 22 (`sub_821A83C8`)
+  opens CEnchantMenuXenon in mode 1 with the shrine at `menu+244`. Its setup (`sub_82360808`
+  with no unit, `loc_82360BB4`) titles the page `title.enchantshrine` (`0x820D056C`), hides the
+  price (`sellprice`) and shows `enchantshrine`, the shrine's paragraph. The rest is the
+  enchanter's page: the same tests for the prompt and the red "cannot"/"maximum" lines, and the
+  result written after each A. A needs the shrine's `+412` (`sub_8236B348`), the same offset as
+  PC's `+0x19c`; a used shrine hides the prompt (`0x82361DB8`). The menu stays open after A.
+- **The port** takes mode 0x16 as the enchanter's with those differences. A used shrine refuses A.
+  The title needs the installer run again; with an older install the page keeps the enchanter's.
 
 **Socketing a gem** (A on a gem in the bag; the 360's `CMessageItemSelectXenon`). **[read; not run]**
 - **The 360.** A on a gem (`sub_8236AA48` -> `sub_8236B240`, for a gem in the hero's or the pet's
