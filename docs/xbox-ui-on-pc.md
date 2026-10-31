@@ -1484,7 +1484,9 @@ the pet's portrait and bars bottom left. **[the screenshots; the runs]**
     360's slots show PC's: `POTIONCOUNT` and `MANACOUNT` the texts PC writes on its slots 1 and 2,
     and the icons of PC's `SkillSlot1`-`6` in the 360's LB, RB, B (`SkillSlot5`), Y (4), LT (6),
     RT (7) (a `StaticImage` of ours made in each with `WindowManager::createWindow`, given the
-    image of PC's icon). The 360's second set (`SkillSet2`) is hidden.
+    image of PC's icon). The 360's second set (`SkillSet2`: Y `SkillSlot3`, B 8, LT 9, RT 10)
+    shows PC's `SkillSlot7`-`10` (B 7, Y 8, LT 9, RT 0); the active set's window is shown
+    (section 49).
   - Hidden as not done: `TargetInteractHover` (the 360's "A Interact"), the skill slots' texts.
 - **Runs** (`~/torchlight-gog/screens/t31-hud.png`, `t32-lb.png`, `t32-inv-hud.png`): the HUD
   where the 360's is, the health and mana potions with "2" over LB and RB, LB drank one ("1"),
@@ -1774,11 +1776,12 @@ handler, `sub_82382C58`, takes `GamepadButtonUp` (both subscribed in `sub_823812
   `SkillSlotN` has the ID N-1 (`0x562953`), the slot index.
 
 **Written** (`skills_pad`, `skillmap_pad` in `proxy/x360_menu.c`): X opens `skillsmap_xenon` over
-the page for a skill that passes, with `MapSkillSet1` shown and `MapSkillSet2` hidden (this port
-has one set). Its `MapSkillSlot4..7` get the HUD's icons, as the page's `SkillSet1` does: that
-fill is ours, the 360's fill of these slots was not read. B, Y, LT and RT on their release call
-`0x40c8f0` with the slot the pad fires for that button (`pad.c`: B 2, Y 3, LT 4, RT 5, PC's keys
-3-6), not the 360's numbers, so that the button then casts the skill. Then the sound 30 and the
+the page for a skill that passes, with the active set's `MapSkillSet1` or `2` shown (section 49).
+Its `MapSkillSlot`s get the HUD's icons, as the page's sets do: that fill is ours, the 360's fill
+of these slots was not read. B, Y, LT and RT on their release call `0x40c8f0` with the slot the
+pad fires for that button in the active set (`pad.c`: B 2, Y 3, LT 4, RT 5, PC's keys 3-6; set 2
+B 6, Y 7, LT 8, RT 9, PC's keys 7, 8, 9, 0), not the 360's numbers, so that the button then casts
+the skill. Then the sound 30 and the
 overlay closes; X, Start or Back close it too. To check in the QA: the overlay's place, and that
 the skill on B/Y/LT/RT fires from that button in play.
 
@@ -2001,8 +2004,8 @@ of the brazier (`MERCHANT_ENCHANTER`).
 - **PC's side.** CGameUI's `+0x2dc` is PC's `CEnchantMenu` (made at `0x562fb0`, vtable
   `0xab6c0c`). Its owner is at `+0x2c`, the character at `+0x30`, the open flag at `+0x38` and the
   mode at `+0x90`. CGameUI opens it with PC's inventory, in the mode of the interaction: 0x15 is
-  the enchanter (`0x557e23`); 0x16, 0x19, 0x1a and 0x1b are its gem, shrine and heirloom pages,
-  left to PC for now and logged. Its command 9 (`0x57c900` → `0x57a800`) does the mode's work on
+  the enchanter (`0x557e23`); 0x16 is an enchant shrine, 0x19 and 0x1a the gem pages and 0x1b
+  the heirloom page (each below). Its command 9 (`0x57c900` → `0x57a800`) does the mode's work on
   the item in the hero's slot 14 (`0x57aea4`): the price checked and taken, the enchantment or
   the disenchant, and PC's sounds.
 - **The look** (`enchantermenu_xenon`, its 15 windows named by the table at `0x83385300`): the
@@ -2023,7 +2026,7 @@ of the brazier (`MERCHANT_ENCHANTER`).
     the window's TextColour instead (first run: "FFFF0000300" on screen).
 - **The bar and A**: A `act.enchant` (`0x820CF118`) for an item that can be enchanted. A puts the
   item into slot 14, runs PC's command and puts the result back in its place, an equipped slot
-  too.
+  too (PC's command leaves it in the bag; the proxy moves it back, see the enchant shrine).
 - **Tested** (GOG, runs 7-9): the frame, the red price (300 over 100 gold) and "Cannot enchant
   item" red for a scroll (`screens/gog/enchanter-1`, `enchanter-cannot-1`). An enchantment
   itself is untested (not enough gold). The card's item name is in the 360's SerifBig now (PC's
@@ -2055,6 +2058,36 @@ Ok was not clicked again after the fix (the guide NPC walked off).
 - **Tested** (GOG, run 13): both pages match the catalog window for window
   (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no
   socketed item with gems.
+
+**The enchant shrine** (issue #104; the 360's mode 1).
+- **PC.** The shrine is a prop (`CTriggerUnit`, `ENCHANTSHRINE`). Its interaction 0x16
+  (`0x557ec9`) opens CEnchantMenu in mode 0x16 with no owner: `0x575250` zeroes `+0x2c` and
+  keeps the shrine at `+0x34`. Before the fix the proxy took the menu only with an owner, so PC's
+  menu stayed open behind the 360's interface, its board hidden, and the pad could not leave it.
+  PC's command 9 enchants for free in that mode (the act's case 1, `0x57b71a`) and then calls the
+  shrine's virtual `+0x13c` (`0x4e1cc0`), whose use tests the shrine's byte `+0x19c`.
+- **The 360** (the recomp agent's reading and run shrine3). The hero's state 22 (`sub_821A83C8`)
+  opens CEnchantMenuXenon in mode 1 with the shrine at `menu+244`. Its setup (`sub_82360808`
+  with no unit, `loc_82360BB4`) titles the page `title.enchantshrine` (`0x820D056C`), hides the
+  price (`sellprice`) and shows `enchantshrine`, the shrine's paragraph. The rest is the
+  enchanter's page: the same tests for the prompt and the red "cannot"/"maximum" lines, and the
+  result written after each A. A needs the shrine's `+412` (`sub_8236B348`), the same offset as
+  PC's `+0x19c`; a used shrine hides the prompt (`0x82361DB8`). The menu stays open after A.
+- **The port** takes mode 0x16 as the enchanter's with those differences. A used shrine refuses A.
+  The title needs the installer run again; with an older install the page keeps the enchanter's.
+  The shrine is a prop with no bag: the proxy's bag lookup gives none for it (the first run read
+  its `+0x404` as a bag and threw in the menu's input, so A and B did nothing).
+- **The item's place.** PC's act puts the item from slot 14 back into the bag, so an equipped
+  item left the hand. The 360 enchants the selected item where it is (`sub_82361C78`), so the
+  proxy puts it back in its place after the act. This is also the enchanter's path, which no
+  run had exercised (the bench hero lacked the gold). **Open:** with the bag full, PC drops the
+  item at the hero instead (`0x4f5960`); an equipped item enchanted then lands on the ground
+  (logged, not handled; not run).
+- **Tested** (GOG, 2026-10-31, the recomp agent's synthetic save: a level-46 Destroyer next to an
+  unused shrine on Orden Mines floor 1): a step and A open the page with the title, the
+  paragraph and no price. A on the equipped sword enchanted it ("Freezing", DPS 24 to 82), the
+  result in yellow, the sword still equipped and the bag still 4/50. The prompt is then hidden, a
+  second A is refused ("the shrine is used") and B closes the page. Steam is built, not run.
 
 **Socketing a gem** (A on a gem in the bag; the 360's `CMessageItemSelectXenon`). **[read; not run]**
 - **The 360.** A on a gem (`sub_8236AA48` -> `sub_8236B240`, for a gem in the hero's or the pet's
@@ -2593,7 +2626,8 @@ inventory (section 13), so each run's batch is one.
     rectangle is the 360's. No parchment on the 360: the parchment with chains in run B2's photos
     stood at the gem goblins' stall in the world (its chains show above the shop's frame too), to
     be confirmed by the UI dump now taken 0.5 s after each modal shows (`modal-N`). The 360 also
-    shows black bars top and bottom (0-108, 972-1080) while it is up: not ported.
+    shows black bars top and bottom (0-108, 972-1080) while it is up: ported since (the bars below;
+    the owner compared them with the recomp's on 2026-10-31: the same).
   - The card: at the selected row's top, pushed up from row 5 on so that it ends 36 rows (of 720)
     above the screen's bottom (1026 of 1080), past the frame's bottom (in-game/17, 18). Ported.
 - The bars at the screen's top and bottom (in-game/16, town/04): the 360's `CInteractiveMenu`
@@ -4442,3 +4476,51 @@ rows for `ItemBkg1` at (600.8, 586), its bottom at 684.
 **[run]** Unattended, an Alchemist with the same quest taken: the gem's box with its icon; the cursor
 went 0, -1, 0 as on the 360; the card at about x 1272 of 1920 (the 360's 1296) and ending at 1026.
 Steam UNCHANGED. The icon is drawn larger than the 360's (it fills the slot's width).
+
+## 49. The skill sets (issue #88, 2026-10-31)
+
+**[the owner, a user's issue]** The Skills page shows the d-pad's "skill sets" prompt, but the
+d-pad only moved the cursor and the port had one set.
+**[read and measured, 360; the recomp agent]**
+- One pool of 10 hotbar slots (`hero+2112`, a u64 skill id each, -1 empty) and two keymaps over it
+  (`0x8355BCE4`, `0x8355BCF4`, looked up by `sub_822DF2B8`). The client's mapper turns the pad's
+  buttons into key messages: LB `1`, RB `2` in both sets; Y, B, LT, RT `4`, `5`, `6`, `7` with set
+  1 (slots 3 to 6) and `3`, `8`, `9`, `0` with set 2 (slots 2, 7, 8, 9). The set is the client's
+  byte `+5220`.
+- The swap, `sub_8221ACD8(client, set)`: in play from the frame update (`sub_821EBA48`, the d-pad's
+  keys `G` up, set 1, and `L` down, set 2); on the Skills page from its input (`sub_823827F8`,
+  codes 1 and 2; left and right, 3 and 4, do nothing; both sticks move the cursor).
+  - It returns at once with no player or while `sub_821ECA78` is true: an entry of the UI's
+    `+6056` list shown (`+24`): options, settings, the full game and trial menus, leaderboards,
+    death, waypoints, the NPC dialog, cinematic, modal, tip (built by `sub_823392E8`).
+  - To another set, `sub_8233ED28(player, set)`: true if the set has a skill in one of its slots
+    (or the player's `+984` test, not identified). False: the sound 35, no swap. True: the sound
+    30, `+5220` stored and the keymap rebound (`sub_822DF5F0`, which first sends LT, RT, B, Y up
+    and down so no key stays held).
+  - Measured: in play, down with an empty set 2 did not swap; on the page, down swapped with the
+    set empty.
+- The HUD's `SkillSet1`/`2`, the page's `SkillSet1`/`2` and the mapping's `MapSkillSet1`/`2` show
+  the set's windows. The set stays after the page closes.
+**[port]** (`proxy/x360_menu.c`, the skill sets; `proxy/pad.c`, `buttons_pressed`)
+- PC's slots, by the owner's choice (as set 1's): set 1 B, Y, LT, RT on PC's keys 3 to 6 (slots 2
+  to 5), set 2 on its keys 7, 8, 9, 0 (slots 6 to 9). PC's hero keeps the slots' skill GUIDs at
+  `+0x860 + 8 * slot` (GOG `0x40c8f0`, Steam `0x40c7c0`, the same offsets).
+- In play, d-pad up and down swap as `sub_8221ACD8`: an empty set refused with the error sound,
+  else the assign sound. The 360's ids are the client's sound slots, filled by name at its init
+  (`sub_82219A98`): 30 `ASSIGNSKILL`, 35 `ERROR`, the same `UI.DAT` entries as PC's. PC's CGameUI
+  fills its own slots (`+0x13f8`, GOG `0x55f84c`-`0x55f927`): `ASSIGNSKILL` 0x1e, `ERROR` 0x18.
+  pad.c sends the d-pad only in play, past the proxy's overlays, the pause and the inventory, which
+  stands for `sub_821ECA78`'s test. On the page and over the mapping, the swap with the set empty too; the page's
+  cursor moves with the left stick only.
+- The HUD mirrors PC's `SkillSlot7`-`10` into the 360's set-2 slots; the HUD, the page and the
+  mapping show the active set.
+- The keys the pad posts are a press and a release at once, so none stays held across a swap.
+- A skill just mapped shows its own icon in its slot on the page and the mapping (`mapped_or_hud`)
+  until the HUD's icon there changes: the page copies the HUD's icons, which mirror PC's hotbar,
+  and PC redraws its hotbar only after the menu closes (the first run kept the old icon).
+- **[run]** (2026-10-31, GOG, the bench save, `~/torchlight-gog/card-run/skillset.sh`): d-pad down
+  in play refused (set 2 held only two scrolls, no skill); on the page down showed `-Skill Set 2-`,
+  X and B mapped Slash Attack to set 2's B, its icon at once; in play B pressed PC's key 7 and the
+  HUD showed set 2; up went to set 1 and down to set 2 again (now with a skill). Steam UNCHANGED.
+- Not ported: the player's `+984` test; PC's own menus outside the proxy's (its waypoint list)
+  not checked against `sub_821ECA78`.

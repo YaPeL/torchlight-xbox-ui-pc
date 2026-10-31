@@ -8,8 +8,8 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Alpha:** v0.6.6 played with GOG's, Epic's and Steam's builds on Windows, Steam's on the Steam
-> Deck, and GOG's under Proton on Linux. Report problems in
-> [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
+> Deck, and GOG's under Proton on Linux; v0.6.9's fixes played on GOG's under Proton. Report
+> problems in [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
 version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
@@ -151,13 +151,15 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - The inventory: the hero's bag, the pet's, the character sheet, skills, the pet sheet and its
   commands, using and equipping items, identifying them.
 - Shops: the merchant (buy and sell), the stash, the transmuter, the enchanter and both gem
-  goblins, with the 360's pages and results.
+  goblins, with the 360's pages and results; the enchant shrines in the levels.
 - NPC dialogs, quest dialogs, tips and messages, as the 360's.
 - Fishing, with the 360's ring.
 - Labels on the floor's items near the hero, as on the 360.
 - X's attack as the 360's: its target, its aim with the stick, barrels broken in front of the hero.
 - The 360's brightness and contrast sliders, in PC's settings screen.
 - PC's classes with three columns of skills (the Alchemist, for one) show all three in the skill tree.
+- The 360's two skill sets: the d-pad's up and down switch B, Y, LT and RT between PC's hotbar keys
+  3-6 and 7-0.
 
 ## Known limitations
 
@@ -170,7 +172,6 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
   the death screens, normal and hardcore; the waypoint portals. The story mode's page screen is
   PC's page in the 360's frame (its text box, its bar, A to go on).
 - **Not as on the 360 yet:**
-  - the black bars shown with the zoom do not look like the 360's;
   - the loading screens are PC's, not the 360's.
   - the item card shown for a quest's reward is narrower than the 360's (the 360's card laid out
     at PC's width, so its text wraps into more lines and the card is taller).
