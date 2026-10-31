@@ -4396,6 +4396,60 @@ static void skills_columns(void) {
     if (sk_col >= sk_cols) sk_col = sk_cols - 1;
 }
 
+/* ---- The skill sets (issue #88) ----
+ * The 360 has one pool of 10 hotbar slots (hero+2112, a u64 skill id each, -1 empty) and two
+ * keymaps over it (0x8355BCE4, 0x8355BCF4): Y, B, LT, RT press its slots 3, 4, 5, 6 with set 1
+ * and 2, 7, 8, 9 with set 2; LB and RB are slots 0 and 1 in both. The set is the client's byte
+ * +5220. Its swap (sub_8221ACD8, the client and the set): d-pad up (set 1) and down (set 2), in
+ * play (sub_821EBA48) and on the Skills page (sub_823827F8, codes 1 and 2). To another set it asks
+ * sub_8233ED28 whether the set has a skill in its slots: no, the sound 35 and no swap; yes, the
+ * sound 30, the set stored and the keymap rebound (sub_822DF5F0, which first sends the up/down
+ * pair for LT, RT, B, Y so no key stays held). On the page the swap is done with the set empty
+ * too (the recomp agent's runs). The HUD (2_SkillSet1/2), the page (14_SkillSet1/2) and the
+ * mapping (13_MapSkillSet1/2) show the set's windows; the set stays after the page closes.
+ * The port keeps PC's slots (the owner's choice): set 1 B, Y, LT, RT on PC's slots 2, 3, 4, 5
+ * (the keys 3 to 6, proxy/pad.c), set 2 on its slots 6, 7, 8, 9 (the keys 7, 8, 9, 0). PC's
+ * hero keeps its slots' skill GUIDs at +0x860 + 8 * slot (GOG 0x40c8f0 writes them; -1 empty).
+ * The keys pad.c posts are a press and a release at once: none stays held across a swap.
+ * Not ported: sub_8221ACD8's early return while sub_821ECA78 is true (a skill under way, by the
+ * recomp agent's reading; not verified). */
+#define GOG_HERO_SKILL_SLOTS 0x860
+int x360_skill_set;                 /* 0 or 1: the 360's client+5220 */
+static const int set_slots[2][4] = {{2, 3, 4, 5}, {6, 7, 8, 9}};   /* B, Y, LT, RT */
+
+static int skill_set_has_skill(unsigned char *h, int set) {
+    int j;
+    for (j = 0; j < 4; j++) {
+        unsigned *g = (unsigned *)(h + GOG_HERO_SKILL_SLOTS + 8 * set_slots[set][j]);
+        if ((g[0] & g[1]) != 0xffffffffu) return 1;
+    }
+    return 0;
+}
+
+static void ui_sound(int id) {
+    if (ui && *(void **)(ui + GOG_UI_SOUNDS))
+        ((play_sound_at_fn)GOG_PLAY_SOUND_AT)(*(void **)(ui + GOG_UI_SOUNDS), 0, id, 0, 0.0f, 0.0f, 0);
+}
+
+/* sub_8221ACD8: `any` is the page's swap, done with the set empty too. */
+static void skill_set_swap(int set, int any) {
+    if (!find_world() || !hero || set == x360_skill_set) return;
+    if (!any && !skill_set_has_skill(hero, set)) {
+        ui_sound(35);
+        x360_log("x360 skills: the set is empty (the sound 35)\r\n");
+        return;
+    }
+    ui_sound(30);
+    x360_skill_set = set;
+    x360_log(set ? "x360 skills: set 2\r\n" : "x360 skills: set 1\r\n");
+}
+
+/* pad.c: the d-pad in play. */
+void x360_skill_set_pad(unsigned pressed) {
+    if (pressed & 0x0001) skill_set_swap(0, 0);
+    else if (pressed & 0x0002) skill_set_swap(1, 0);
+}
+
 static void skills_fill(void) {
     unsigned n, i;
     void **list = skill_list(&n);
@@ -4531,11 +4585,15 @@ static void skills_fill(void) {
             rich_text(win_of(SKILLS_PREFIX, "SkillDescriptionTextNext"), SKILLS_PREFIX, "SkillDescriptionTextNext", desc);
         }
     }
-    /* The skill set's slots: the icons the HUD's same slots show (its SkillSlot4 to 7). */
+    /* The skill sets' slots: the icons the HUD's same slots show (set 1 its SkillSlot4 to 7, set 2
+     * its SkillSlot3 and 8 to 10); the active set's shown. */
+    show(win_of(SKILLS_PREFIX, "SkillSet1"), x360_skill_set == 0);
+    show(win_of(SKILLS_PREFIX, "SkillSet2"), x360_skill_set == 1);
     {
-        static const char *const slot[4] = {"SkillSlot4", "SkillSlot5", "SkillSlot6", "SkillSlot7"};
+        static const char *const slot[8] = {"SkillSlot4", "SkillSlot5", "SkillSlot6", "SkillSlot7",
+                                            "SkillSlot3", "SkillSlot8", "SkillSlot9", "SkillSlot10"};
         int j;
-        for (j = 0; j < 4; j++) {
+        for (j = 0; j < 8; j++) {
             char hudname[32], image[128];
             void *src, *dst, *icon;
             copy(hudname, sizeof hudname, "icon_", slot[j]);
@@ -4669,8 +4727,9 @@ static void skills_move(int dx, int dy) {
  * overlay closes; if the skill cannot go, the overlay stays. PC's own placing (GOG 0x540601, the
  * same tests and the sound 0x1e) is called: 0x40c8f0 with the slot. The slots are those the pad
  * fires (proxy/pad.c: B the hotbar key 3, Y 4, LT 5, RT 6; PC's SkillSlotN has the ID N-1,
- * GOG 0x562953); the 360's are B 4, Y 3, LT 5, RT 6, or 7, 2, 8, 9 with its second set, which
- * this port does not have. The overlay's slots show the HUD's icons, as the page's SkillSet1. */
+ * GOG 0x562953), set 2's B 7, Y 8, LT 9, RT 0 (the skill sets above); the 360's are B 4, Y 3,
+ * LT 5, RT 6, or 7, 2, 8, 9 with its second set. The overlay's slots show the HUD's icons, as the
+ * page's sets; the d-pad swaps the set there too (the overlay's own prompt, the recomp's capture). */
 #define SKILLMAP_PREFIX "x360skm_"
 #define GOG_SET_SKILL_HOTKEY 0x0040c8f0   /* thiscall (the player), slot, GUID low, high; ret 0xc */
 #define GOG_SKILL_RANK_NOW 0x005d7d40     /* the skill's effective rank, into its +0xa8 */
@@ -4684,9 +4743,12 @@ static int skill_mappable(unsigned char *sk) {
 }
 
 static void skillmap_fill(void) {
-    static const char *const slot[4] = {"SkillSlot4", "SkillSlot5", "SkillSlot6", "SkillSlot7"};
+    static const char *const slot[8] = {"SkillSlot4", "SkillSlot5", "SkillSlot6", "SkillSlot7",
+                                        "SkillSlot3", "SkillSlot8", "SkillSlot9", "SkillSlot10"};
     int j;
-    for (j = 0; j < 4; j++) {
+    show(win_of(SKILLMAP_PREFIX, "MapSkillSet1"), x360_skill_set == 0);
+    show(win_of(SKILLMAP_PREFIX, "MapSkillSet2"), x360_skill_set == 1);
+    for (j = 0; j < 8; j++) {
         char name[32], image[128];
         void *src, *dst, *icon;
         copy(name, sizeof name, "icon_", slot[j]);
@@ -4710,8 +4772,6 @@ static void skillmap_show(int on) {
     sk_map = on && skillmap_root;
     if (!skillmap_root) return;
     show(skillmap_root, sk_map);
-    show(win_of(SKILLMAP_PREFIX, "MapSkillSet1"), 1);
-    show(win_of(SKILLMAP_PREFIX, "MapSkillSet2"), 0);
     skills_fill();
     if (sk_map) { skillmap_fill(); show(win_of(SKILLS_PREFIX, "HelpSkillDialog"), 0); }
 }
@@ -4720,8 +4780,7 @@ static int skillmap_assign(int slot) {
     unsigned char *sk = (unsigned char *)selected_skill();
     if (!skill_mappable(sk) || *(sk + 0x43) || !*(sk + 0x45)) return 0;
     ((set_hotkey_fn)GOG_SET_SKILL_HOTKEY)(hero, 0, slot, *(unsigned *)(sk + 0x180), *(unsigned *)(sk + 0x184));
-    if (ui && *(void **)(ui + GOG_UI_SOUNDS))
-        ((play_sound_at_fn)GOG_PLAY_SOUND_AT)(*(void **)(ui + GOG_UI_SOUNDS), 0, 0x1e, 0, 0.0f, 0.0f, 0);
+    ui_sound(0x1e);
     /* PC then marks its hotbar changed (GOG 0x540623, CGameUI's +0x13d0), which redraws its
      * slots; the 360 redraws the page at once (sub_82382720, its +1920's slot 8). The HUD mirrors
      * PC's slots, and the page's set is filled again once they have the new icon. */
@@ -4730,11 +4789,18 @@ static int skillmap_assign(int slot) {
     return 1;
 }
 
-/* With the overlay open: B, Y, LT, RT on their release; X closes. Returns 1 while it is open. */
+/* The page's d-pad: up set 1, down set 2, with the set empty too; left and right nothing. */
+static void skills_set_pad(unsigned pressed) {
+    int was = x360_skill_set;
+    if (pressed & 0x0001) skill_set_swap(0, 1);
+    else if (pressed & 0x0002) skill_set_swap(1, 1);
+    if (x360_skill_set != was) { skills_fill(); if (sk_map) skillmap_fill(); }
+}
+
+/* With the overlay open: B, Y, LT, RT on their release, to the set's slots; X closes. Returns 1
+ * while it is open. */
 static int skillmap_pad(unsigned pressed, unsigned buttons) {
-    static const struct { unsigned bit; int slot; } keys[] = {
-        {0x2000, 2}, {0x8000, 3}, {0x10000, 4}, {0x20000, 5},
-    };
+    static const unsigned bits[4] = {0x2000, 0x8000, 0x10000, 0x20000};   /* B, Y, LT, RT */
     static unsigned last;
     unsigned released = last & ~buttons, i;
     last = buttons;
@@ -4742,19 +4808,22 @@ static int skillmap_pad(unsigned pressed, unsigned buttons) {
     if (!sk_map) return 0;
     if (pressed & 0x4000) { skillmap_show(0); return 1; }
     if (pressed & 0x0030) { skillmap_show(0); return 0; }      /* Start, Back: as without it */
+    skills_set_pad(pressed);
     for (i = 0; i < 4; i++) {
-        if (pressed & keys[i].bit) skills_fill();        /* the 360's press: the help box redrawn */
-        if ((released & keys[i].bit) && skillmap_assign(keys[i].slot)) { skillmap_show(0); break; }
+        if (pressed & bits[i]) skills_fill();        /* the 360's press: the help box redrawn */
+        if ((released & bits[i]) && skillmap_assign(set_slots[x360_skill_set][i])) { skillmap_show(0); break; }
     }
     return 1;
 }
 
+/* The cursor moves with the stick only (the 360's codes 17-24); the d-pad swaps the sets. */
 static void skills_pad(unsigned pressed, int lx, int ly) {
     static int held;
-    int dx = (pressed & 0x0008) || (lx > 500 && !held) ? 1 : (pressed & 0x0004) || (lx < -500 && !held) ? -1 : 0;
-    int dy = (pressed & 0x0002) || (ly < -500 && !held) ? 1 : (pressed & 0x0001) || (ly > 500 && !held) ? -1 : 0;
+    int dx = lx > 500 && !held ? 1 : lx < -500 && !held ? -1 : 0;
+    int dy = ly < -500 && !held ? 1 : ly > 500 && !held ? -1 : 0;
     held = lx > 500 || lx < -500 || ly > 500 || ly < -500;
     if (dx || dy) skills_move(dx, dy);
+    skills_set_pad(pressed);
     if (pressed & 0x1000) {                                              /* A: learn */
         unsigned char *sk = (unsigned char *)selected_skill();
         if (sk && skill_learnable(sk) && ((use_point_fn)0x488430)(hero, 0) & 0xff) {
@@ -4788,10 +4857,10 @@ static void skills_load(void) {
     }
     read_prop(win_of(SKILLS_PREFIX, "HelpSkillDialog"), "UnifiedAreaRect", value, sizeof value);
     if (parse_rect(value, v)) help_width = v[5] - v[1];
-    /* What the 360's page keeps hidden (the catalog's menus/11): the second skill set and the
-     * mapping's sets, the stat bonuses' lines (shown by its fill for a skill with them). */
+    /* What the 360's page keeps hidden (the catalog's menus/11): the stat bonuses' lines (shown by
+     * its fill for a skill with them); the sets' windows are shown by the fill, the active one. */
     {
-        static const char *const hidden[] = {"SkillSet2", "MapSkillSet1", "MapSkillSet2", "SkillTypeStr", "SkillTypeDex",
+        static const char *const hidden[] = {"SkillTypeStr", "SkillTypeDex",
                                              "SkillTypeMag", "SkillTypeDef", "skillBonuses", "NextLevelHeader",
                                              "CurrentPassiveSkillFrame"};
         unsigned i;
@@ -6834,15 +6903,21 @@ static void hud_tick(void) {
     hud_stage = "interact";
     interact_prompt();
     /* The icons on the pad's buttons, from the hotbar keys proxy/pad.c presses for them: LB 1,
-     * RB 2, B 3, Y 4, LT 5, RT 6. The 360's first set (SkillSet1: Y SkillSlot4, B 5, LT 6, RT 7);
-     * its second set (SkillSet2, the same places) hidden. */
+     * RB 2, B 3, Y 4, LT 5, RT 6, or with set 2 B 7, Y 8, LT 9, RT 0. The 360's first set
+     * (SkillSet1: Y SkillSlot4, B 5, LT 6, RT 7), its second (SkillSet2: Y SkillSlot3, B 8,
+     * LT 9, RT 10, at the same places); the active set's shown (the skill sets, #88). */
     mirror_icon("SkillSlot1", "SkillSlot1");
     mirror_icon("SkillSlot2", "SkillSlot2");
     mirror_icon("SkillSlot5", "SkillSlot3");
     mirror_icon("SkillSlot4", "SkillSlot4");
     mirror_icon("SkillSlot6", "SkillSlot5");
     mirror_icon("SkillSlot7", "SkillSlot6");
-    show(win_of(HUD_PREFIX, "SkillSet2"), 0);
+    mirror_icon("SkillSlot8", "SkillSlot7");
+    mirror_icon("SkillSlot3", "SkillSlot8");
+    mirror_icon("SkillSlot9", "SkillSlot9");
+    mirror_icon("SkillSlot10", "SkillSlot10");
+    show(win_of(HUD_PREFIX, "SkillSet1"), x360_skill_set == 0);
+    show(win_of(HUD_PREFIX, "SkillSet2"), x360_skill_set == 1);
     {
         static const char *const texts[] = {"SkillText3", "SkillText4", "SkillText5", "SkillText6", "SkillText7",
                                             "SkillText8", "SkillText9", "SkillText10", 0};
