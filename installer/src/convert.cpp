@@ -675,6 +675,109 @@ U32 frames_scaled(const U32& text) {
   return text.substr(0, size_t(shared)) + look + text.substr(size_t(end));
 }
 
+// ---- the skill tree's third column (convert_x360_ui.add_skill_column, issue #88) ----
+// ASCII classes only: Python's \d and \b also take other scripts' digits and letters, which the
+// skills page's names never hold; a character past ASCII counts as a word character for \b.
+namespace {
+bool is_digit(char32_t c) { return c >= U'0' && c <= U'9'; }
+bool is_alpha(char32_t c) { return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z'); }
+bool is_word(char32_t c) { return is_alpha(c) || is_digit(c) || c == U'_' || c >= 0x80; }
+
+// re's <Window\b[^>]*?(/?)> at i: the index of its '>', or npos.
+size_t window_tag_end(const U32& t, size_t i) {
+  static const U32 open = U"<Window";
+  if (t.compare(i, open.size(), open) != 0) return U32::npos;
+  const size_t j = i + open.size();
+  if (j < t.size() && is_word(t[j])) return U32::npos;
+  return t.find(U'>', j);
+}
+
+// Name="skillbg<d>_<d>_<last>" at k (just past `Name="skillbg`).
+bool cell_name_at(const U32& t, size_t k, size_t end, char32_t last) {
+  return k + 6 <= end && is_digit(t[k]) && t[k + 1] == U'_' && is_digit(t[k + 2]) && t[k + 3] == U'_' &&
+         t[k + 4] == last && t[k + 5] == U'"';
+}
+
+// The tag t[a, b) names a second-column cell: its last such name (re's greedy [^>]*), its digits.
+bool second_column_cell(const U32& t, size_t a, size_t b, char32_t& pane, char32_t& row) {
+  static const U32 head = U"Name=\"skillbg";
+  bool found = false;
+  for (size_t at = t.find(head, a); at != U32::npos && at < b; at = t.find(head, at + 1))
+    if (cell_name_at(t, at + head.size(), b, U'1')) { pane = t[at + head.size()]; row = t[at + head.size() + 2]; found = true; }
+  return found;
+}
+
+bool has_third_column(const U32& t) {
+  static const U32 head = U"Name=\"skillbg";
+  for (size_t at = t.find(head); at != U32::npos; at = t.find(head, at + 1))
+    if (cell_name_at(t, at + head.size(), t.size(), U'2')) return true;
+  return false;
+}
+
+// re.sub(r'(Name="[A-Za-z]+' + suffix + r')1"', r'\g<1>2"', cell)
+U32 second_to_third(const U32& cell, const U32& suffix) {
+  static const U32 head = U"Name=\"";
+  U32 out;
+  size_t i = 0;
+  for (size_t at = cell.find(head); at != U32::npos; at = cell.find(head, at + 1)) {
+    if (at < i) continue;
+    size_t k = at + head.size();
+    const size_t letters = k;
+    while (k < cell.size() && is_alpha(cell[k])) k++;
+    if (k == letters || cell.compare(k, suffix.size(), suffix) != 0) continue;
+    k += suffix.size();
+    if (k + 2 > cell.size() || cell[k] != U'1' || cell[k + 1] != U'"') continue;
+    out += cell.substr(i, k - i) + U"2\"";
+    i = k + 2;
+  }
+  return out + cell.substr(i);
+}
+}  // namespace
+
+U32 add_skill_column(const U32& text) {
+  if (has_third_column(text)) return text;
+  U32 out;
+  size_t done = 0;
+  for (size_t i = text.find(U"<Window"); i != U32::npos; i = text.find(U"<Window", i + 1)) {
+    const size_t tag_end = window_tag_end(text, i);
+    char32_t pane = 0, row = 0;
+    if (tag_end == U32::npos || !second_column_cell(text, i, tag_end, pane, row)) continue;
+    // The cell's end: where the depth of <Window> (not self-closing) and </Window> tags is 0 again.
+    int depth = 0;
+    size_t end = U32::npos;
+    for (size_t p = i;;) {
+      const size_t lt = text.find(U'<', p);
+      if (lt == U32::npos) break;
+      if (text.compare(lt, 9, U"</Window>") == 0) {
+        depth--;
+        p = lt + 9;
+      } else {
+        const size_t e = window_tag_end(text, lt);
+        if (e == U32::npos) { p = lt + 1; continue; }
+        if (text[e - 1] != U'/') depth++;
+        p = e + 1;
+      }
+      if (depth == 0) { end = p; break; }
+    }
+    if (end == U32::npos) return text;
+    U32 cell = second_to_third(text.substr(i, end - i), U32(1, pane) + U"_" + U32(1, row) + U"_");
+    const size_t first = cell.find(U'>');
+    if (first + 1 == cell.size() && cell[first - 1] == U'/') {   // a self-closing cell
+      U32 head = cell.substr(0, cell.size() - 2);
+      while (!head.empty() && (head.back() == U' ' || (head.back() >= U'\t' && head.back() <= U'\r'))) head.pop_back();
+      cell = head + U" >\n<Property Name=\"Visible\" Value=\"False\" />\n</Window>";
+    } else {
+      cell = cell.substr(0, first + 1) + U"\n<Property Name=\"Visible\" Value=\"False\" />" + cell.substr(first + 1);
+    }
+    // As Python's loop: the next search from this tag's end, the text up to the cell's end kept.
+    if (end > done) out += text.substr(done, end - done);
+    out += U"\n" + cell;
+    done = end;
+    i = tag_end;
+  }
+  return out + (done < text.size() ? text.substr(done) : U32());
+}
+
 std::vector<std::string> convert_ui(const ConvertOptions& opt) {
   std::vector<std::string> said;
   if (!is_style(opt.style)) throw Error("unknown prompt style " + opt.style);
@@ -827,6 +930,7 @@ std::vector<std::string> convert_ui(const ConvertOptions& opt) {
     text = rename_fonts(text, fonts);
     const std::string b = basename(path);
     const std::string name = ends_with(path, ".uilayout") ? b.substr(0, b.size() - 9) + ".layout" : lower_path(b);
+    if (lower_path(name) == "skillsmenu_xenon.layout") text = add_skill_column(text);
     put(name, encode(text, d.codec));
     Json entry = Json::dict();
     entry["windows"] = Json::num((long long)count_window_tags(text));
