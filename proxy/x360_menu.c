@@ -3142,7 +3142,7 @@ static void enchant(void) {
             if (!give_back(from, slot, item) && !give_back(bag, k, item)) move_lost(item);
             move_done();
             x360_log("x360 enchanter: A: the item put back in its place\r\n");
-        }
+        } else x360_log("x360 enchanter: A: the item not in the bag after PC's act (dropped at the hero? the bag full)\r\n");
     }
     x360_log(got ? "x360 enchanter: A: done, the item moved back from slot 14\r\n" : "x360 enchanter: A: done\r\n");
 }

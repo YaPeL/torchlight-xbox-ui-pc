@@ -2077,7 +2077,9 @@ Ok was not clicked again after the fix (the guide NPC walked off).
 - **The item's place.** PC's act puts the item from slot 14 back into the bag, so an equipped
   item left the hand. The 360 enchants the selected item where it is (`sub_82361C78`), so the
   proxy puts it back in its place after the act. This is also the enchanter's path, which no
-  run had exercised (the bench hero lacked the gold).
+  run had exercised (the bench hero lacked the gold). **Open:** with the bag full, PC drops the
+  item at the hero instead (`0x4f5960`); an equipped item enchanted then lands on the ground
+  (logged, not handled; not run).
 - **Tested** (GOG, 2026-10-31, the recomp agent's synthetic save: a level-46 Destroyer next to an
   unused shrine on Orden Mines floor 1): a step and A open the page with the title, the
   paragraph and no price. A on the equipped sword enchanted it ("Freezing", DPS 24 to 82), the
