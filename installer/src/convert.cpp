@@ -676,19 +676,21 @@ U32 frames_scaled(const U32& text) {
 }
 
 // ---- the skill tree's third column (convert_x360_ui.add_skill_column, issue #88) ----
-// ASCII classes only: Python's \d and \b also take other scripts' digits and letters, which the
-// skills page's names never hold; a character past ASCII counts as a word character for \b.
+// Python's \d and \b take other scripts' digits and letters too: where one decides on a character
+// outside ASCII the conversion stops (NonAscii), as py_isword does.
 namespace {
-bool is_digit(char32_t c) { return c >= U'0' && c <= U'9'; }
+bool is_digit(char32_t c) {
+  if (c >= 0x80) throw NonAscii("re's \\d decided on a character outside ASCII");
+  return c >= U'0' && c <= U'9';
+}
 bool is_alpha(char32_t c) { return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z'); }
-bool is_word(char32_t c) { return is_alpha(c) || is_digit(c) || c == U'_' || c >= 0x80; }
 
 // re's <Window\b[^>]*?(/?)> at i: the index of its '>', or npos.
 size_t window_tag_end(const U32& t, size_t i) {
   static const U32 open = U"<Window";
   if (t.compare(i, open.size(), open) != 0) return U32::npos;
   const size_t j = i + open.size();
-  if (j < t.size() && is_word(t[j])) return U32::npos;
+  if (j < t.size() && py_isword(t[j])) return U32::npos;
   return t.find(U'>', j);
 }
 
@@ -764,7 +766,7 @@ U32 add_skill_column(const U32& text) {
     const size_t first = cell.find(U'>');
     if (first + 1 == cell.size() && cell[first - 1] == U'/') {   // a self-closing cell
       U32 head = cell.substr(0, cell.size() - 2);
-      while (!head.empty() && (head.back() == U' ' || (head.back() >= U'\t' && head.back() <= U'\r'))) head.pop_back();
+      while (!head.empty() && py_isspace(head.back())) head.pop_back();
       cell = head + U" >\n<Property Name=\"Visible\" Value=\"False\" />\n</Window>";
     } else {
       cell = cell.substr(0, first + 1) + U"\n<Property Name=\"Visible\" Value=\"False\" />" + cell.substr(first + 1);
