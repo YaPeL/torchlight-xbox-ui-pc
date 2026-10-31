@@ -4514,5 +4514,12 @@ d-pad only moved the cursor and the port had one set.
 - The HUD mirrors PC's `SkillSlot7`-`10` into the 360's set-2 slots; the HUD, the page and the
   mapping show the active set.
 - The keys the pad posts are a press and a release at once, so none stays held across a swap.
+- A skill just mapped shows its own icon in its slot on the page and the mapping (`mapped_or_hud`)
+  until the HUD's icon there changes: the page copies the HUD's icons, which mirror PC's hotbar,
+  and PC redraws its hotbar only after the menu closes (the first run kept the old icon).
+- **[run]** (2026-10-31, GOG, the bench save, `~/torchlight-gog/card-run/skillset.sh`): d-pad down
+  in play refused (set 2 held only two scrolls, no skill); on the page down showed `-Skill Set 2-`,
+  X and B mapped Slash Attack to set 2's B, its icon at once; in play B pressed PC's key 7 and the
+  HUD showed set 2; up went to set 1 and down to set 2 again (now with a skill). Steam UNCHANGED.
 - Not ported: the player's `+984` test; PC's own menus outside the proxy's (its waypoint list)
   not checked against `sub_821ECA78`.

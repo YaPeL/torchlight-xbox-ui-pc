@@ -4425,6 +4425,22 @@ static void skills_columns(void) {
 int x360_skill_set;                 /* 0 or 1: the 360's client+5220 */
 static const int set_slots[2][4] = {{2, 3, 4, 5}, {6, 7, 8, 9}};   /* B, Y, LT, RT */
 
+/* The page's and the mapping's set slots copy the HUD's icons, which mirror PC's hotbar, and PC
+ * redraws its hotbar only once the menu is closed (the run of 2026-10-31: the page kept the old
+ * icon after a mapping). A skill just mapped shows its own icon in its slot until the HUD's icon
+ * there changes. The slots in the fills' order: set 1 Y, B, LT, RT (the 360's SkillSlot4 to 7),
+ * set 2 Y, B, LT, RT (SkillSlot3, 8, 9, 10). */
+static struct { char image[128], was[128]; } mapped_icon[8];
+static const int set_fill_index[2][4] = {{1, 0, 2, 3}, {5, 4, 6, 7}};   /* B, Y, LT, RT */
+static void mapped_or_hud(int j, char *image, unsigned size) {
+    unsigned i;
+    if (!mapped_icon[j].image[0]) return;
+    for (i = 0; image[i] && image[i] == mapped_icon[j].was[i]; i++) {}
+    if (image[i] != mapped_icon[j].was[i]) { mapped_icon[j].image[0] = 0; return; }   /* the HUD has it now */
+    for (i = 0; i + 1 < size && mapped_icon[j].image[i]; i++) image[i] = mapped_icon[j].image[i];
+    image[i] = 0;
+}
+
 static int skill_set_has_skill(unsigned char *h, int set) {
     int j;
     for (j = 0; j < 4; j++) {
@@ -4616,6 +4632,7 @@ static void skills_fill(void) {
             }
             image[0] = 0;
             if (src) read_prop(src, "Image", image, sizeof image);
+            mapped_or_hud(j, image, sizeof image);
             if (icon) {
                 char area[128];
                 prop(icon, "Image", image);
@@ -4772,6 +4789,7 @@ static void skillmap_fill(void) {
         }
         image[0] = 0;
         if (src) read_prop(src, "Image", image, sizeof image);
+        mapped_or_hud(j, image, sizeof image);
         if (icon) { prop(icon, "Image", image); show(icon, image[0] != 0); }
     }
 }
@@ -4784,9 +4802,16 @@ static void skillmap_show(int on) {
     if (sk_map) { skillmap_fill(); show(win_of(SKILLS_PREFIX, "HelpSkillDialog"), 0); }
 }
 
-static int skillmap_assign(int slot) {
+static int skillmap_assign(int button) {
+    static const char *const hud_slot[8] = {"icon_SkillSlot4", "icon_SkillSlot5", "icon_SkillSlot6", "icon_SkillSlot7",
+                                            "icon_SkillSlot3", "icon_SkillSlot8", "icon_SkillSlot9", "icon_SkillSlot10"};
     unsigned char *sk = (unsigned char *)selected_skill();
+    int slot = set_slots[x360_skill_set][button], j = set_fill_index[x360_skill_set][button];
+    void *src = win_of(HUD_PREFIX_SK, hud_slot[j]);
     if (!skill_mappable(sk) || *(sk + 0x43) || !*(sk + 0x45)) return 0;
+    mapped_icon[j].was[0] = 0;
+    if (src) read_prop(src, "Image", mapped_icon[j].was, sizeof mapped_icon[j].was);
+    skill_icon(sk, 0x5d5930, mapped_icon[j].image, sizeof mapped_icon[j].image);
     ((set_hotkey_fn)GOG_SET_SKILL_HOTKEY)(hero, 0, slot, *(unsigned *)(sk + 0x180), *(unsigned *)(sk + 0x184));
     ui_sound(0x1e);
     /* PC then marks its hotbar changed (GOG 0x540623, CGameUI's +0x13d0), which redraws its
@@ -4821,7 +4846,7 @@ static int skillmap_pad(unsigned pressed, unsigned buttons) {
     skills_set_pad(pressed);
     for (i = 0; i < 4; i++) {
         if (pressed & bits[i]) skills_fill();        /* the 360's press: the help box redrawn */
-        if ((released & bits[i]) && skillmap_assign(set_slots[x360_skill_set][i])) { skillmap_show(0); break; }
+        if ((released & bits[i]) && skillmap_assign((int)i)) { skillmap_show(0); break; }
     }
     return 1;
 }
