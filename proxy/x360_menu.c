@@ -3588,6 +3588,7 @@ static void set_page(int p);
  * camera kept turning behind the inventory (the owner's run), PC's pause showing its world so. */
 #define GOG_CLIENT_PAUSED 0x1017
 static int inventory_paused;
+static void mapped_icons_forget(void);
 static void inventory_pause(int on) {
     if (!the_client) return;
     if (on && !the_client[GOG_CLIENT_PAUSED]) { the_client[GOG_CLIENT_PAUSED] = 1; inventory_paused = 1; x360_log("x360 menu: the world paused under the inventory\r\n"); }
@@ -3625,6 +3626,7 @@ void x360_inventory_toggle(void) {
     if (journal_root) set_visible(journal_root, 0, inventory_open && page == 1);
     if (skills_root) set_visible(skills_root, 0, inventory_open && page == 2);
     if (sk_map && !(inventory_open && page == 2)) { sk_map = 0; show(skillmap_root, 0); }
+    if (!inventory_open) mapped_icons_forget();   /* PC's hotbar is redrawn once the menu closes */
     if (quest_root) set_visible(quest_root, 0, inventory_open && page == 3);
     if (panels[1].root) set_visible(panels[1].root, 0, inventory_open);
     /* The columns' places by the menu: the inventory's 299 and 602; a stash's 0, 303 and 606
@@ -4429,8 +4431,13 @@ static const int set_slots[2][4] = {{2, 3, 4, 5}, {6, 7, 8, 9}};   /* B, Y, LT, 
  * redraws its hotbar only once the menu is closed (the run of 2026-10-31: the page kept the old
  * icon after a mapping). A skill just mapped shows its own icon in its slot until the HUD's icon
  * there changes. The slots in the fills' order: set 1 Y, B, LT, RT (the 360's SkillSlot4 to 7),
- * set 2 Y, B, LT, RT (SkillSlot3, 8, 9, 10). */
+ * set 2 Y, B, LT, RT (SkillSlot3, 8, 9, 10). Forgotten when the menu closes (the review: a slot
+ * given its old skill back, or another hero, kept the mapped icon). */
 static struct { char image[128], was[128]; } mapped_icon[8];
+static void mapped_icons_forget(void) {
+    int j;
+    for (j = 0; j < 8; j++) mapped_icon[j].image[0] = 0;
+}
 static const int set_fill_index[2][4] = {{1, 0, 2, 3}, {5, 4, 6, 7}};   /* B, Y, LT, RT */
 static void mapped_or_hud(int j, char *image, unsigned size) {
     unsigned i;
@@ -6414,6 +6421,7 @@ static void mirror_icon(const char *slot, const char *pc_slot) {
         if (w != p) read_prop(w, "Image", image, sizeof image);
         for (c = 0; c < nc && sp < 16; c++) stack[sp++] = child_at(w, 0, c);
     }
+    if (!image[0] && icon) prop(icon, "Image", "");   /* an emptied slot: no old image left for the page to copy */
     if (image[0]) {
         float w, h, side = 36.0f * k;   /* the 360's icon side (its CGameUI +0x384): the slot's 36 */
         prop(icon, "Image", image);
