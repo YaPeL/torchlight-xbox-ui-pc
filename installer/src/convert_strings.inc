@@ -12,6 +12,7 @@
     {"title.transmuter", 0x820D0EAC},
     {"filter.transmute", 0x820D0C40},
     {"title.enchanter", 0x820D058C},
+    {"title.enchantshrine", 0x820D056C},
     {"title.enchanting", 0x820D17E4},
     {"title.destroygems", 0x820D1044},
     {"title.recovergems", 0x820D1028},
