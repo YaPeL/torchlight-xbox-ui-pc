@@ -2023,7 +2023,7 @@ of the brazier (`MERCHANT_ENCHANTER`).
     the window's TextColour instead (first run: "FFFF0000300" on screen).
 - **The bar and A**: A `act.enchant` (`0x820CF118`) for an item that can be enchanted. A puts the
   item into slot 14, runs PC's command and puts the result back in its place, an equipped slot
-  too.
+  too (PC's command leaves it in the bag; the proxy moves it back, see the enchant shrine).
 - **Tested** (GOG, runs 7-9): the frame, the red price (300 over 100 gold) and "Cannot enchant
   item" red for a scroll (`screens/gog/enchanter-1`, `enchanter-cannot-1`). An enchantment
   itself is untested (not enough gold). The card's item name is in the 360's SerifBig now (PC's
@@ -2056,7 +2056,7 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   (`screens/gog/destroy-gems-1`, `recover-gems-1`). Removing gems is untested: the save has no
   socketed item with gems.
 
-**The enchant shrine** (issue #104; the 360's mode 1). **[read; run below]**
+**The enchant shrine** (issue #104; the 360's mode 1).
 - **PC.** The shrine is a prop (`CTriggerUnit`, `ENCHANTSHRINE`). Its interaction 0x16
   (`0x557ec9`) opens CEnchantMenu in mode 0x16 with no owner: `0x575250` zeroes `+0x2c` and
   keeps the shrine at `+0x34`. Before the fix the proxy took the menu only with an owner, so PC's
@@ -2072,6 +2072,17 @@ Ok was not clicked again after the fix (the guide NPC walked off).
   PC's `+0x19c`; a used shrine hides the prompt (`0x82361DB8`). The menu stays open after A.
 - **The port** takes mode 0x16 as the enchanter's with those differences. A used shrine refuses A.
   The title needs the installer run again; with an older install the page keeps the enchanter's.
+  The shrine is a prop with no bag: the proxy's bag lookup gives none for it (the first run read
+  its `+0x404` as a bag and threw in the menu's input, so A and B did nothing).
+- **The item's place.** PC's act puts the item from slot 14 back into the bag, so an equipped
+  item left the hand. The 360 enchants the selected item where it is (`sub_82361C78`), so the
+  proxy puts it back in its place after the act. This is also the enchanter's path, which no
+  run had exercised (the bench hero lacked the gold).
+- **Tested** (GOG, 2026-10-31, the recomp agent's synthetic save: a level-46 Destroyer next to an
+  unused shrine on Orden Mines floor 1): a step and A open the page with the title, the
+  paragraph and no price. A on the equipped sword enchanted it ("Freezing", DPS 24 to 82), the
+  result in yellow, the sword still equipped and the bag still 4/50. The prompt is then hidden, a
+  second A is refused ("the shrine is used") and B closes the page. Steam is built, not run.
 
 **Socketing a gem** (A on a gem in the bag; the 360's `CMessageItemSelectXenon`). **[read; not run]**
 - **The 360.** A on a gem (`sub_8236AA48` -> `sub_8236B240`, for a gem in the hero's or the pet's

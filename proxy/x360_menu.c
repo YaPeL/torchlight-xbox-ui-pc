@@ -762,6 +762,7 @@ static int sock_open;                        /* the gem's item select is open */
  * inventory, their numbers at the menu's +0x7c (read when it opens; GOG 0x569663). */
 static int at_transmute;                     /* PC's transmuter menu is open (shop: the transmuter) */
 static int at_enchant;                       /* PC's enchant menu is open: its mode (0x15 enchanter, 0x16 shrine, 0x19/0x1a gems) */
+static unsigned char *shop;                   /* (defined below, with the shops) */
 #define SHRINE_USABLE 0x19c                 /* the shrine's byte its use tests (CTriggerUnit +0x13c, 0x4e1cf8; the 360's +412) */
 static int tm_slot[4], tm_known;
 static int tm_from[4] = {-1, -1, -1, -1};   /* where X took the item in each place from, or -1 */
@@ -775,6 +776,7 @@ static int is_tm_slot(int slot) {
 static void *owner_bag(unsigned char *owner) {
     if (!owner) return 0;
     if (at_transmute && owner == tm_shop) owner = hero;
+    if (at_enchant == 0x16 && owner == shop) return 0;   /* a shrine: a prop, no bag (its +0x404 is not one: the first run's exception) */
     if (isa(owner, 170)) return *(unsigned char **)GOG_SHARED_STASH ? *(void **)(*(unsigned char **)GOG_SHARED_STASH + 8) : 0;
     return *(void **)(owner + GOG_INVENTORY);
 }
@@ -3129,7 +3131,19 @@ static void enchant(void) {
         move_done();
     }
     /* PC's act itself takes the item out of slot 14 and puts it back in the bag (0x4e9ca0 and
-     * 0x4e9a30, at 0x57b619; dropped at the hero by 0x4f5960 only with the bag full). */
+     * 0x4e9a30, at 0x57b619; dropped at the hero by 0x4f5960 only with the bag full). The 360
+     * enchants the selected item where it is (sub_82361C78): one taken from elsewhere, an
+     * equipped one (the shrine's run: the sword left the hand for the bag), goes back there. */
+    if (!got && ((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot) != item && !((item_at_fn)GOG_ITEM_AT_SLOT)(from, 0, slot)) {
+        int k, n = *(long *)((unsigned char *)bag + INV_SLOTS);
+        for (k = 0; k < n; k++) if (((item_at_fn)GOG_ITEM_AT_SLOT)(bag, 0, k) == item) break;
+        if (k < n) {
+            move_out(bag, item, k);
+            if (!give_back(from, slot, item) && !give_back(bag, k, item)) move_lost(item);
+            move_done();
+            x360_log("x360 enchanter: A: the item put back in its place\r\n");
+        }
+    }
     x360_log(got ? "x360 enchanter: A: done, the item moved back from slot 14\r\n" : "x360 enchanter: A: done\r\n");
 }
 
