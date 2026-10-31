@@ -2626,7 +2626,8 @@ inventory (section 13), so each run's batch is one.
     rectangle is the 360's. No parchment on the 360: the parchment with chains in run B2's photos
     stood at the gem goblins' stall in the world (its chains show above the shop's frame too), to
     be confirmed by the UI dump now taken 0.5 s after each modal shows (`modal-N`). The 360 also
-    shows black bars top and bottom (0-108, 972-1080) while it is up: not ported.
+    shows black bars top and bottom (0-108, 972-1080) while it is up: ported since (the bars below;
+    the owner compared them with the recomp's on 2026-10-31: the same).
   - The card: at the selected row's top, pushed up from row 5 on so that it ends 36 rows (of 720)
     above the screen's bottom (1026 of 1080), past the frame's bottom (in-game/17, 18). Ported.
 - The bars at the screen's top and bottom (in-game/16, town/04): the 360's `CInteractiveMenu`

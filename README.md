@@ -170,7 +170,6 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
   the death screens, normal and hardcore; the waypoint portals. The story mode's page screen is
   PC's page in the 360's frame (its text box, its bar, A to go on).
 - **Not as on the 360 yet:**
-  - the black bars shown with the zoom do not look like the 360's;
   - the loading screens are PC's, not the 360's.
   - the item card shown for a quest's reward is narrower than the 360's (the 360's card laid out
     at PC's width, so its text wraps into more lines and the card is taller).
