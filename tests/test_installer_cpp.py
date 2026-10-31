@@ -219,6 +219,18 @@ class ConvertCppTest(unittest.TestCase):
         files["media/units/items/a.adm"] = unit("Sword", "The 360's line")
         files["media/units/items/b.adm"] = unit("Same", "Same text")
         files["media/sharedtextures/automapoverlay.dds"] = b"DDS overlay"
+        # The skill tree's third column (add_skill_column): cells with children, a self-closing one
+        # with spaces before its "/>", names of other cells and columns left alone.
+        files["media/UI/skillsmenu_xenon.uilayout"] = (
+            '<GUILayout><Window Type="a" Name="pane">'
+            '<Window Type="i" Name="skillbg0_1_0" ><Window Type="i" Name="skillicon0_1_0" /></Window>'
+            '<Window Type="i" Name="skillbg0_1_1" ><Property Name="X" Value="1" />'
+            '<Window Type="i" Name="skillicon0_1_1" ></Window><Window Type="t" Name="skilllvl0_1_1" />'
+            '<Window Type="t" Name="other0_1_1x" /><Window Type="t" Name="skilllvl0_2_1" /></Window>'
+            '<Windows Name="skillbg2_0_1" />'
+            '<Window Type="i" Name="skillbg1_2_1"   />'
+            '<Window Type="i" Name="skillbg2_5_1" ><Window Type="i" Name="frame2_5_1" /></Window>'
+            '</Window></GUILayout>')
         pak = os.path.join(root, "pak.zip")
         with __import__("zipfile").ZipFile(pak, "w") as z:
             for name, data in files.items():
@@ -256,6 +268,10 @@ class ConvertCppTest(unittest.TestCase):
                 strings = f.read()
             self.assertIn("tip.TIP_WELCOME=Hello  there", strings)
             self.assertIn("desc.Sword=~The 360's line", strings)
+            with open(os.path.join(root, "cpp-xbox", "media", "ui", "x360", "skillsmenu_xenon.layout"), encoding="utf-8") as f:
+                skills = f.read()
+            self.assertIn('Name="skillbg0_1_2" >\n<Property Name="Visible" Value="False" />', skills)   # #88's column
+            self.assertIn('Name="skillbg1_2_2" >\n<Property Name="Visible" Value="False" />\n</Window>', skills)
 
     def test_strings_table_as_python(self):
         sys.path.insert(0, TOOLS)

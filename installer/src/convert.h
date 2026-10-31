@@ -40,5 +40,6 @@ std::vector<std::pair<std::string, uint32_t>> strings_table();
 U32 label_button_relative(const U32& text);
 U32 label_frame_relative(const U32& text);
 U32 frames_scaled(const U32& text);
+U32 add_skill_column(const U32& text);
 
 }  // namespace x360ui
