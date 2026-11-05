@@ -4549,3 +4549,16 @@ launcher (0x4b6cb0) starts `mov eax, fs:[0]; push -1` (8 bytes, its `push imm32`
 Steam's relocations move), so on Steam the hook was never set (a player's log, issue #88: "the
 missile launcher not as read"): a wand or crossbow flew along the facing, not at the 360's cone
 unit. The hook now takes either entry.
+## 52. The hero's spell-replacing menu (issue #114, 2026-11-05)
+
+A player found no way to forget a spell, and a fifth one did nothing. **[read, 360; the recomp
+agent]** The 360 has no forgetting of its own: the only caller of its forget (`sub_82284FD0(unit,
+slot)`) is the replacing flow. A on a spell (`sub_8236BD80`, ISA 129) checks it
+(`sub_822B9CA0`), then `sub_8236BB70` counts the known spells (`sub_821FD868`, i < 4) and, with the
+places full (four, two for a unit of ISA 87, 0x8236BBDC-0x8236BC0C), opens
+`CMessageSpellRemoveXenon` (`spellremove_xenon.layout`, rows 0-3 or 0-1) for the hero as for the pet;
+its row kept by A is forgotten on closing (`sub_8236ECC0`, 0x8236ED3C-0x8236ED60) and the new
+spell learned; B forgets nothing. **[port]** The pet's menu (section on #77) now opens for the
+hero too, with four rows: A on a spell the hero can take with four known; the kept row forgotten
+(0x489a30) and the new one learned by PC's use, as A with a free place. To check in a run: the
+menu's four rows and its names, A replacing the chosen one, B keeping all four and the scroll.
