@@ -4560,3 +4560,8 @@ item can be used now (`usable_now`: for each of the item's skills the user's vir
 (+0x230, 0x490971-0x490993) before saying no. **[port]** The emitter is left empty during the
 question (the branch tests it and skips the voice), the answer unchanged. To check in a run: no
 voice on the misc tab's selection; A on an item that cannot be used still does nothing.
+- **Open (the review, read in PC's code):** the same case of that virtual, with the level's
+  `+0x15c` -> `+0x88` flag set, calls 0x486450(13, 1) and says yes: for the player, a count of its
+  statistic 13 (0x4d90f0, case 13 at 0x4d9137, with an achievement checked at 100000), so each
+  selection of such an item would count once. Not identified: the flag and the statistic; the
+  360's own question (`sub_822B9DA8`) not compared.
