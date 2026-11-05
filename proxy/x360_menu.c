@@ -5526,6 +5526,10 @@ static void sr_finish(int keep) {
         x360_log("x360 menu: the owner or its scroll gone: nothing forgotten\r\n");
         sel = -1;
     }
+    if (sel >= 0 && item && owner == hero && !(ui && usable_now(item, owner))) {
+        x360_log("x360 menu: the hero's scroll not usable now: nothing forgotten\r\n");   /* before, so no spell is lost for it */
+        sel = -1;
+    }
     if (sel >= 0 && item && owner) {
         sr_log_places("before", owner, sel);
         __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); }
