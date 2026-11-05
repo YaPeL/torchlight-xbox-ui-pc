@@ -4549,3 +4549,14 @@ launcher (0x4b6cb0) starts `mov eax, fs:[0]; push -1` (8 bytes, its `push imm32`
 Steam's relocations move), so on Steam the hook was never set (a player's log, issue #88: "the
 missile launcher not as read"): a wand or crossbow flew along the facing, not at the 360's cone
 unit. The hook now takes either entry.
+## 51. "Cannot cast" in the misc tab (issue #113, 2026-11-05)
+
+A player heard the hero refuse aloud ("cannot cast") on each item the stick selected in the
+bag's misc tab. **[read, 360; the recomp agent]** The 360's inventory key handler
+(`sub_8236A810`, codes 3-8) reaches a use only from A (`sub_8236AA48` -> `sub_8236BD80`); moving
+the selection uses nothing. **[read, PC]** The port's bar asks, for each selection, whether the
+item can be used now (`usable_now`: for each of the item's skills the user's virtual +0x118, GOG
+0x4907e0), and that virtual, in one of its cases, plays the voice 0x33 on the unit's emitter
+(+0x230, 0x490971-0x490993) before saying no. **[port]** The emitter is left empty during the
+question (the branch tests it and skips the voice), the answer unchanged. To check in a run: no
+voice on the misc tab's selection; A on an item that cannot be used still does nothing.
