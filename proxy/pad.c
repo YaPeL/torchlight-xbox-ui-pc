@@ -2007,9 +2007,12 @@ static void __cdecl missile_aim(unsigned char *attacker, void **target, unsigned
 static void missile_aim_install(void) {
     unsigned char *at = (unsigned char *)GOG_LAUNCH_MISSILE, *t;
     DWORD old;
-    int i, n = 0;
-    /* The entry: push -1; push imm32 (the SEH handler), 7 bytes. */
-    if (at[0] != 0x6a || at[1] != 0xff || at[2] != 0x68) { x360_log("pad: the missile launcher not as read: its aim left to PC\r\n"); return; }
+    int i, n = 0, len;
+    /* The entry: push -1; push imm32 (the SEH handler), 7 bytes on GOG; Steam's starts with
+     * mov eax, fs:[0]; push -1 (8 bytes, before its push imm32, which its relocations move). */
+    if (at[0] == 0x6a && at[1] == 0xff && at[2] == 0x68) len = 7;
+    else if (at[0] == 0x64 && at[1] == 0xa1 && !*(unsigned *)(at + 2) && at[6] == 0x6a && at[7] == 0xff) len = 8;
+    else { x360_log("pad: the missile launcher not as read: its aim left to PC\r\n"); return; }
     t = (unsigned char *)VirtualAlloc(0, 64, 0x3000, 0x40);
     if (!t) return;
     t[n++] = 0x60;                                                    /* pushad */
@@ -2020,11 +2023,12 @@ static void missile_aim_install(void) {
     t[n] = 0xe8; *(long *)(t + n + 1) = (long)((unsigned char *)missile_aim - (t + n + 5)); n += 5;
     t[n++] = 0x83; t[n++] = 0xc4; t[n++] = 0x0c;                      /* add esp, 12 */
     t[n++] = 0x61;                                                    /* popad */
-    for (i = 0; i < 7; i++) t[n++] = at[i];
-    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + 7) - (t + n + 5)); n += 5;
-    if (!VirtualProtect(at, 7, 0x40, &old)) return;
-    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5)); at[5] = 0x90; at[6] = 0x90;
-    VirtualProtect(at, 7, old, &old);
+    for (i = 0; i < len; i++) t[n++] = at[i];
+    t[n] = 0xe9; *(long *)(t + n + 1) = (long)((at + len) - (t + n + 5)); n += 5;
+    if (!VirtualProtect(at, len, 0x40, &old)) return;
+    at[0] = 0xe9; *(long *)(at + 1) = (long)(t - (at + 5));
+    for (i = 5; i < len; i++) at[i] = 0x90;
+    VirtualProtect(at, len, old, &old);
     x360_log("pad: a missile weapon aims at the 360's cone unit (0x4b9240)\r\n");
 }
 

@@ -4524,3 +4524,28 @@ d-pad only moved the cursor and the port had one set.
   HUD showed set 2; up went to set 1 and down to set 2 again (now with a skill). Steam UNCHANGED.
 - Not ported: the player's `+984` test; PC's own menus outside the proxy's (its waypoint list)
   not checked against `sub_821ECA78`.
+
+## 50. X held: no lock on the 360 (issue #89, 2026-11-05)
+
+A player (Embermage, wands) found X's target "barely a suggestion" and asked for it to stay while
+X is held. A code reading suggested the 360 keeps a lock (the client's `+436`, set on X's press by
+`sub_8221B8E8`, 0x8221BA28) for the whole hold; the port tried it, and the owner's run found the
+outline moving while the attacks stayed. **[measured, 360; the recomp agent's probe lock1]** It
+does not: per frame while X was held (two holds, 9.1 s and 5 s, the stick out 0.6 s and back):
+- `+436` lives one frame: the hover update `sub_821E5910` clears it every frame in play (0x821E6640;
+  the client's `+5124` was 1 throughout). The hero's target `+644` stayed 0.
+- The outlined unit (GameUI `+72`, set at 0x821E6874) is the candidate `+444` every frame: the port's
+  highlight of the candidate is the 360's.
+- Each swing searches on its own (`sub_822919A8`: `sub_822F8128`, 30 degrees from the facing, out to
+  21, then reach + 1): X held at rest stays on an enemy only because the facing does not turn. The
+  candidate dying mid-hold: no new lock, no chase; the next swing takes what the cone finds. The
+  stick out and back: the facing turned, no unit to go back to.
+
+So the port's X (the candidate on the press and on each 0.1 s repeat) stays as it was; a lock kept
+for the hold would be PC's addition (after 1.0, as #105).
+
+**The missile hook on Steam.** Its entry check expected GOG's `push -1; push imm32`; Steam's
+launcher (0x4b6cb0) starts `mov eax, fs:[0]; push -1` (8 bytes, its `push imm32` after, which
+Steam's relocations move), so on Steam the hook was never set (a player's log, issue #88: "the
+missile launcher not as read"): a wand or crossbow flew along the facing, not at the 360's cone
+unit. The hook now takes either entry.
