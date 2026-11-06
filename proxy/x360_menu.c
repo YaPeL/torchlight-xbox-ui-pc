@@ -1996,7 +1996,7 @@ static float card_width(int i) {
     return parse_rect(value, v) ? v[5] - v[1] : 0;
 }
 
-static void show_info(void *item, float y, float list_left, float list_right) {
+static void show_info(void *item, float y, float list_left) {
     typedef struct { float top, bottom, left, right; } rect6;   /* CEGUI 0.6's Rect */
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
     static pixel_rect_fn6 rect_of;
@@ -2029,11 +2029,13 @@ static void show_info(void *item, float y, float list_left, float list_right) {
      * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends
      * at 1026 of 1080, past the frame's bottom). */
     if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom - 36.0f * (float)cr.bottom / 720.0f;
-    /* The pet's bag (issue #112): the 360 places every list's card by the selected cell, not by a
-     * column (the lists' tick, sub_821994F8, calls sub_82344B90 with the cell's right edge - 20 and
-     * its top, of 720; sub_8233F318 places it there, kept on the screen), its comparison cards to
-     * its left; our columns' rule leaves it no column (the recomp agent, 2026-11-06). */
-    if (last) x = list_right - 20.0f * 768.0f / 720.0f * k;
+    /* The pet's bag (issue #112): the 360 places every list's card by the selected cell (the
+     * lists' tick, sub_821994F8, calls sub_82344B90 with the cell's left - 20 and its top;
+     * sub_8233F318 places it), right of the cell where it fits, else left of it: on the pet's bag
+     * its right edge 24.6 (of 720) left of the cell's, at the cell's top, over My Bag, and the
+     * comparison card's right edge 52.4 left of its left (the recomp agent's capture, 2026-11-06:
+     * the cell at 795.8, the card 599.2-771.2, the comparison 396.8-546.8). Our columns' rule
+     * leaves it no column. */
     /* Compared with the hero's equipped items whatever the bag: the 360's sub_822E0AF0 reads the
      * player unit's inventory (GameUI+56, set only by sub_8233DA90 from the level-state code),
      * the pet's bag's owner going only to the card (GameUI+20; the recomp agent, 2026-11-06). */
@@ -2043,8 +2045,10 @@ static void show_info(void *item, float y, float list_left, float list_right) {
     if (second == item) second = 0;
     h0 = fill_card(0, item, 0, 0);
     if (!h0) return;
-    if (last && bottom > 0 && x + card_width(0) > (float)cr.right) x = (float)cr.right - card_width(0);
-    if (last) list_left = x + 16.0f * k;   /* its comparison cards left of it, not of the list */
+    if (last) {
+        x = list_left - 24.6f * 768.0f / 720.0f * k - card_width(0);
+        list_left = x - 52.4f * 768.0f / 720.0f * k + 16.0f * k;   /* its comparison cards 52.4 left of it */
+    }
     if (first) h1 = fill_card(1, first, card(0), 0); else hide_card(1);
     if (second) h2 = fill_card(2, second, card(0), card(1)); else hide_card(2);
     /* only the screen's bottom keeps them up */
@@ -2241,7 +2245,7 @@ static void update_info(void) {
     if (!tray || !rect_of) return;
     fresh_rects(win("TopFrame"));
     rect_of(tray, 0, &r);
-    show_info(list[selected[filter]], r.top, r.left, r.right);
+    show_info(list[selected[filter]], r.top, r.left);
 }
 
 /* Both bags, the focused one last (it stays selected for the actions). The pet's bag shows the
