@@ -8,8 +8,9 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Alpha:** v0.6.6 played with GOG's, Epic's and Steam's builds on Windows, Steam's on the Steam
-> Deck, and GOG's under Proton on Linux; v0.6.9's fixes played on GOG's under Proton. Report
-> problems in [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues).
+> Deck, and GOG's under Proton on Linux; v0.6.9's and v0.6.13's fixes played on GOG's under
+> Proton. Report problems in [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues), with
+> the mod's log attached: `x360_ui.log`, in `%LOCALAPPDATA%\x360ui`.
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
 version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
