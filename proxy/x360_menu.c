@@ -2550,15 +2550,22 @@ static int unit_named(unsigned char *item, const char *text_key) {
  * stack, +0x1f0 the charges, -9999 endless) and asks the user, for each of the item's skills
  * (+0x17c: entries +0x28, count +0x2c, each one's skill +0x40), whether it can (the unit's virtual
  * +0x118 with the target, the skill and the entry): no, while a potion recharges (in-game/29).
- * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30). */
+ * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30).
+ * That virtual (GOG 0x4907e0, CPlayer's and CCharacter's) says no aloud in one case: the voice
+ * 0x33 on the unit's emitter (+0x230, 0x490971-0x490993), which the bar's question on every
+ * selection in the misc tab played (issue #113; the 360's selection reaches no use path, the
+ * recomp agent): the emitter is left empty during the question, the answer the same. */
 static int usable_now(unsigned char *item, unsigned char *user) {
     typedef unsigned char (__fastcall *can_fn)(void *unit, void *edx, void *target, void *skill, void *entry);
     unsigned char *skills;
+    void *emitter;
     unsigned i, n;
     int ok = 1;
     if (!item || !user || !((item_bool_fn)GOG_IS_USEABLE)(item, 0)) return 0;
     if (unit_named(item, "item.identify")) return 0;
     if (*(int *)(item + 0x1e4) <= 1 && *(int *)(item + 0x1f0) <= 0 && *(int *)(item + 0x1f0) != -9999) return 0;
+    emitter = *(void **)(user + GOG_UNIT_EMITTER);
+    *(void **)(user + GOG_UNIT_EMITTER) = 0;
     __try {
         skills = *(unsigned char **)(item + 0x17c);
         n = skills ? *(unsigned *)(skills + 0x2c) : 0;
@@ -2568,6 +2575,7 @@ static int usable_now(unsigned char *item, unsigned char *user) {
             if (skill && !((can_fn)(*(void ***)user)[0x118 / 4])(user, 0, user, skill, entry)) ok = 0;
         }
     } __except (1) { ok = 1; }
+    *(void **)(user + GOG_UNIT_EMITTER) = emitter;
     return ok;
 }
 
