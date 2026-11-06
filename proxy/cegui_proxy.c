@@ -163,7 +163,7 @@ HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposi
     return create && path[0] ? create(path, access, share, 0, disposition, 0x80, 0) : INVALID_HANDLE;
 }
 
-/* The mod's version (build_proxy.py: the release's tag, or git's description of the tree). */
+/* The mod's version (build_proxy.py: the release's tag, or "dev-" and the commit). */
 #ifndef X360_VERSION
 #define X360_VERSION "unknown"
 #endif
@@ -230,7 +230,8 @@ static void put_where(void *address) {
     DWORD n, i;
     put_hex((unsigned long)address);
     if (!from || !from(6, address, &m) || !m) return;   /* FROM_ADDRESS | UNCHANGED_REFCOUNT */
-    n = GetModuleFileNameA(m, name, sizeof name);
+    n = GetModuleFileNameA(m, name, sizeof name - 1);
+    name[n < sizeof name ? n : sizeof name - 1] = 0;
     for (i = n; i && name[i - 1] != '\\' && name[i - 1] != '/'; i--) {}
     put(" ("); put(n ? name + i : "?"); put("+"); put_hex((unsigned long)address - (unsigned long)m); put(")");
 }

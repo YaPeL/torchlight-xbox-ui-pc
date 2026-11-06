@@ -3066,7 +3066,9 @@ one, fails CI, as does a `.def` or `.lib`.
 - The installer checks the game's real `CEGUIBase.dll` against the list before anything else
   (`install.check_real_dll`). A DLL that differs would leave the game calling into exports the
   proxy does not forward.
-- The link is reproducible (`lld-link /timestamp:0`): two builds give the same bytes. The proxy
+- The link is reproducible (`lld-link /timestamp:0`): two builds give the same bytes, given the
+  same version string (`X360_VERSION`, which the log's first line names: a release's tag, else
+  `dev-` and the commit; set it to compare a local build with a release's). The proxy
   built from the list is the one built from GOG's DLL, and differs from the one installed for
   the last runs only in the PE timestamp's four bytes.
 - CI's `proxy` job builds both targets from the list with LLVM 21 (apt.llvm.org's) and prints
@@ -4607,3 +4609,22 @@ left of the cell's left edge, the comparison 52.4 left of the card; compared wit
 merchant and the stash too, which compared with their own bags). No card while the pet is away.
 **[capture, GOG, 2026-11-06]** At 1080 the drawn frames within about 10 px of the 360's (the main
 card 888-1182 against 877-1185, the gap 30 against 29); the widths differ with the items.
+
+## 54. What the log tells about a report (2026-11-06)
+
+#88's log could not say why a player saw PC's minimap overlay. Now `x360_ui.log` also has the
+following, all local (nothing is sent anywhere):
+- **The version:** in the first line, a release's tag or `dev-` and the commit (`+dirty` with
+  changes not committed). `build_proxy.py` sets it (`X360_VERSION`).
+- **The start and the system:** the local date and time; Windows' version (`RtlGetVersion`); and
+  under Wine or Proton, Wine's version and the host's system and release
+  (`wine_get_version`, `wine_get_host_version`).
+- **The ini:** each line of `x360_ui.ini` (`ini: ...`), as the player has it.
+- **The converted folder** (after the prompts' choice): whether the 360's scheme and
+  `automapoverlay.dds` are there, and the count of its layouts.
+- **The window:** the game window's client size, again whenever it changes.
+- **A crash:** with the unhandled-exception filter set when the 360's scheme loads (after the
+  game set its own, which it then calls), the exception's code, the module and offset where it
+  happened, and for an access violation the address read or written.
+- **The end:** "the game closed" when the process ends normally. A log without it ended in a kill
+  or a crash.

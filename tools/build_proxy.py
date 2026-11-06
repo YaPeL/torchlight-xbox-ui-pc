@@ -38,7 +38,9 @@ LLVM = "/usr/lib/llvm-21/bin"
 
 def mod_version():
     """The version the log names: a release's tag (a tag's workflow, or X360_VERSION), else "dev"
-    and the commit (git's, or the workflow's), else "dev"."""
+    and the commit (git's, "+dirty" with changes not committed; or the workflow's), else "dev".
+    The DLL holds it, so two builds have the same bytes only with the same version: set
+    X360_VERSION to the release's tag to compare a local build with a release's."""
     v = os.environ.get("X360_VERSION")
     if not v and os.environ.get("GITHUB_REF_TYPE") == "tag":
         v = os.environ.get("GITHUB_REF_NAME")
@@ -46,6 +48,9 @@ def mod_version():
         try:
             sha = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=os.path.dirname(os.path.abspath(__file__)),
                                  capture_output=True, text=True, check=True).stdout.strip()
+            if subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=os.path.dirname(os.path.abspath(__file__)),
+                              capture_output=True, text=True, check=True).stdout.strip():
+                sha += "+dirty"
         except (OSError, subprocess.CalledProcessError):
             sha = os.environ.get("GITHUB_SHA", "")[:12]
         v = f"dev-{sha}" if sha else "dev"
