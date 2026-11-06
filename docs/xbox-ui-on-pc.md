@@ -4560,5 +4560,14 @@ places full (four, two for a unit of ISA 87, 0x8236BBDC-0x8236BC0C), opens
 its row kept by A is forgotten on closing (`sub_8236ECC0`, 0x8236ED3C-0x8236ED60) and the new
 spell learned; B forgets nothing. **[port]** The pet's menu (section on #77) now opens for the
 hero too, with four rows: A on a spell the hero can take with four known; the kept row forgotten
-(0x489a30) and the new one learned by PC's use, as A with a free place. To check in a run: the
-menu's four rows and its names, A replacing the chosen one, B keeping all four and the scroll.
+(0x489a30) and the new one learned by PC's use, as A with a free place. Whether the scroll can be
+used is asked only after the forgetting: with four known PC's own check (the virtual +0x118) says
+no, which refused every replacement in the first run.
+- **The order (read, 360; the recomp agent, 2026-11-06).** The forget (`sub_82285060`) moves the
+  later places down (the names at +744, stride 28, and +856, 0x822851D8) and clears the last; the
+  learning (`sub_8236BB70` again, no row passed) takes the free place, the last. So the new spell
+  goes at the end, not in the chosen row, as the port's run gives (Frost, Fireball, Heal All, Charm
+  with Heal All replaced by Haste: Frost, Fireball, Charm, Haste). Before the shift the forgotten
+  skill's assignments (hero+720/+728/+736 by its 64-bit id, +708/+712 by pointer) are cleared; the
+  others' are ids, so not remapped. **[run, the owner, 2026-11-06]** The menu, B and the
+  replacement as above.
