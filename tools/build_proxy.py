@@ -36,6 +36,27 @@ REAL = "CEGUIBase_orig"
 LLVM = "/usr/lib/llvm-21/bin"
 
 
+def mod_version():
+    """The version the log names: a release's tag (a tag's workflow, or X360_VERSION), else "dev"
+    and the commit (git's, "+dirty" with changes not committed; or the workflow's), else "dev".
+    The DLL holds it, so two builds have the same bytes only with the same version: set
+    X360_VERSION to the release's tag to compare a local build with a release's."""
+    v = os.environ.get("X360_VERSION")
+    if not v and os.environ.get("GITHUB_REF_TYPE") == "tag":
+        v = os.environ.get("GITHUB_REF_NAME")
+    if not v:
+        try:
+            sha = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=os.path.dirname(os.path.abspath(__file__)),
+                                 capture_output=True, text=True, check=True).stdout.strip()
+            if subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=os.path.dirname(os.path.abspath(__file__)),
+                              capture_output=True, text=True, check=True).stdout.strip():
+                sha += "+dirty"
+        except (OSError, subprocess.CalledProcessError):
+            sha = os.environ.get("GITHUB_SHA", "")[:12]
+        v = f"dev-{sha}" if sha else "dev"
+    return re.sub(r"[^A-Za-z0-9._+-]", "_", v)[:40]
+
+
 def llvm(tool):
     """An LLVM tool: version 21's on PATH (Debian and Ubuntu name it with the suffix), else the one on
     PATH, else LLVM 21's folder."""
@@ -264,6 +285,7 @@ def build(real_dll, out, target="gog", exports_list=cegui_exports.LIST):
     cc = [llvm("clang-cl"), "--target=i686-pc-windows-msvc", "/c", "/O2", "/GS-", "/W3", "/clang:-ffreestanding"]
     if target != "gog":
         cc.append(f"/DX360_TARGET_{target.upper()}")
+    cc.append(f'/DX360_VERSION="{mod_version()}"')
     steps = [
         [llvm("llvm-dlltool"), "-m", "i386", "-k", "-d", "kernel32.def", "-l", "kernel32.lib"],
         [llvm("llvm-dlltool"), "-m", "i386", "-d", "msvcr90.def", "-l", "msvcr90.lib"],

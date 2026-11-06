@@ -19,7 +19,8 @@ jobs:
         run: python3 -m unittest discover -s tests -v
   proxy:
     # The proxy built from proxy/cegui_exports.txt alone, without the game's DLL, with the LLVM the
-    # project builds with (the link is reproducible: the same bytes as a local build).
+    # project builds with (the link is reproducible: the same bytes as a local build of the same
+    # version string, X360_VERSION).
     runs-on: ubuntu-24.04
     # Ubuntu 26.04's LLVM 21 (the owner's machine's): the proxies' bytes the same as a local build.
     container: ubuntu:26.04
