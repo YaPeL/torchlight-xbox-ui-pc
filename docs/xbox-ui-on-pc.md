@@ -4566,8 +4566,8 @@ no, which refused every replacement in the first run.
 - **The order (read, 360; the recomp agent, 2026-11-06).** The forget (`sub_82285060`) moves the
   later places down (the names at +744, stride 28, and +856, 0x822851D8) and clears the last; the
   learning (`sub_8236BB70` again, no row passed) takes the free place, the last. So the new spell
-  goes at the end, not in the chosen row, as the port's run gives (Frost, Fireball, Heal All, Charm
-  with Heal All replaced by Haste: Frost, Fireball, Charm, Haste). Before the shift the forgotten
+  goes at the end, not in the chosen row, as the port's run gives (A, B, C, D with C replaced by
+  E: A, B, D, E). Before the shift the forgotten
   skill's assignments (hero+720/+728/+736 by its 64-bit id, +708/+712 by pointer) are cleared; the
   others' are ids, so not remapped. **[run, the owner, 2026-11-06]** The menu, B and the
   replacement as above.
