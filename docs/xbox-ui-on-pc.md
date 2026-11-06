@@ -4558,8 +4558,8 @@ the selection uses nothing. **[read, PC]** The port's bar asks, for each selecti
 item can be used now (`usable_now`: for each of the item's skills the user's virtual +0x118, GOG
 0x4907e0), and that virtual, in one of its cases, plays the voice 0x33 on the unit's emitter
 (+0x230, 0x490971-0x490993) before saying no. **[port]** The emitter is left empty during the
-question (the branch tests it and skips the voice), the answer unchanged. To check in a run: no
-voice on the misc tab's selection; A on an item that cannot be used still does nothing.
+question (the branch tests it and skips the voice), the answer unchanged. **[run, the owner,
+2026-11-06]** No voice on the misc tab's selection (none in the log).
 - **Open (the review, read in PC's code):** the same case of that virtual, with the level's
   `+0x15c` -> `+0x88` flag set, calls 0x486450(13, 1) and says yes: for the player, a count of its
   statistic 13 (0x4d90f0, case 13 at 0x4d9137, with an achievement checked at 100000), so each
