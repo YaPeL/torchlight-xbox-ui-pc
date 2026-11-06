@@ -4549,6 +4549,45 @@ launcher (0x4b6cb0) starts `mov eax, fs:[0]; push -1` (8 bytes, its `push imm32`
 Steam's relocations move), so on Steam the hook was never set (a player's log, issue #88: "the
 missile launcher not as read"): a wand or crossbow flew along the facing, not at the 360's cone
 unit. The hook now takes either entry.
+## 51. The hero's refusal voice in the misc tab (issue #113, 2026-11-05)
+
+A player heard the hero refuse aloud on each item the stick selected in the
+bag's misc tab. **[read, 360; the recomp agent]** The 360's inventory key handler
+(`sub_8236A810`, codes 3-8) reaches a use only from A (`sub_8236AA48` -> `sub_8236BD80`); moving
+the selection uses nothing. **[read, PC]** The port's bar asks, for each selection, whether the
+item can be used now (`usable_now`: for each of the item's skills the user's virtual +0x118, GOG
+0x4907e0), and that virtual, in one of its cases, plays the voice 0x33 on the unit's emitter
+(+0x230, 0x490971-0x490993) before saying no. **[port]** The emitter is left empty during the
+question (the branch tests it and skips the voice), the answer unchanged. **[run, the owner,
+2026-11-06]** No voice on the misc tab's selection (none in the log).
+- **Open (the review, read in PC's code):** the same case of that virtual, with the level's
+  `+0x15c` -> `+0x88` flag set, calls 0x486450(13, 1) and says yes: for the player, a count of its
+  statistic 13 (0x4d90f0, case 13 at 0x4d9137, with an achievement checked at 100000), so each
+  selection of such an item would count once. Not identified: the flag and the statistic; the
+  360's own question (`sub_822B9DA8`) not compared.
+
+## 52. The hero's spell-replacing menu (issue #114, 2026-11-05)
+
+A player found no way to forget a spell, and a fifth one did nothing. **[read, 360; the recomp
+agent]** The 360 has no forgetting of its own: the only caller of its forget (`sub_82284FD0(unit,
+slot)`) is the replacing flow. A on a spell (`sub_8236BD80`, ISA 129) checks it
+(`sub_822B9CA0`), then `sub_8236BB70` counts the known spells (`sub_821FD868`, i < 4) and, with the
+places full (four, two for a unit of ISA 87, 0x8236BBDC-0x8236BC0C), opens
+`CMessageSpellRemoveXenon` (`spellremove_xenon.layout`, rows 0-3 or 0-1) for the hero as for the pet;
+its row kept by A is forgotten on closing (`sub_8236ECC0`, 0x8236ED3C-0x8236ED60) and the new
+spell learned; B forgets nothing. **[port]** The pet's menu (section on #77) now opens for the
+hero too, with four rows: A on a spell the hero can take with four known; the kept row forgotten
+(0x489a30) and the new one learned by PC's use, as A with a free place. Whether the scroll can be
+used is asked only after the forgetting: with four known PC's own check (the virtual +0x118) says
+no, which refused every replacement in the first run.
+- **The order (read, 360; the recomp agent, 2026-11-06).** The forget (`sub_82285060`) moves the
+  later places down (the names at +744, stride 28, and +856, 0x822851D8) and clears the last; the
+  learning (`sub_8236BB70` again, no row passed) takes the free place, the last. So the new spell
+  goes at the end, not in the chosen row, as the port's run gives (A, B, C, D with C replaced by
+  E: A, B, D, E). Before the shift the forgotten
+  skill's assignments (hero+720/+728/+736 by its 64-bit id, +708/+712 by pointer) are cleared; the
+  others' are ids, so not remapped. **[run, the owner, 2026-11-06]** The menu, B and the
+  replacement as above.
 
 ## 53. The item card on the pet's bag (issue #112, 2026-11-06)
 

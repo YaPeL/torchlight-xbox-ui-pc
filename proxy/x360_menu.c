@@ -2565,15 +2565,22 @@ static int unit_named(unsigned char *item, const char *text_key) {
  * stack, +0x1f0 the charges, -9999 endless) and asks the user, for each of the item's skills
  * (+0x17c: entries +0x28, count +0x2c, each one's skill +0x40), whether it can (the unit's virtual
  * +0x118 with the target, the skill and the entry): no, while a potion recharges (in-game/29).
- * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30). */
+ * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30).
+ * That virtual (GOG 0x4907e0, CPlayer's and CCharacter's) says no aloud in one case: the voice
+ * 0x33 on the unit's emitter (+0x230, 0x490971-0x490993), which the bar's question on every
+ * selection in the misc tab played (issue #113; the 360's selection reaches no use path, the
+ * recomp agent): the emitter is left empty during the question, the answer the same. */
 static int usable_now(unsigned char *item, unsigned char *user) {
     typedef unsigned char (__fastcall *can_fn)(void *unit, void *edx, void *target, void *skill, void *entry);
     unsigned char *skills;
+    void *emitter;
     unsigned i, n;
     int ok = 1;
     if (!item || !user || !((item_bool_fn)GOG_IS_USEABLE)(item, 0)) return 0;
     if (unit_named(item, "item.identify")) return 0;
     if (*(int *)(item + 0x1e4) <= 1 && *(int *)(item + 0x1f0) <= 0 && *(int *)(item + 0x1f0) != -9999) return 0;
+    emitter = *(void **)(user + GOG_UNIT_EMITTER);
+    *(void **)(user + GOG_UNIT_EMITTER) = 0;
     __try {
         skills = *(unsigned char **)(item + 0x17c);
         n = skills ? *(unsigned *)(skills + 0x2c) : 0;
@@ -2583,6 +2590,7 @@ static int usable_now(unsigned char *item, unsigned char *user) {
             if (skill && !((can_fn)(*(void ***)user)[0x118 / 4])(user, 0, user, skill, entry)) ok = 0;
         }
     } __except (1) { ok = 1; }
+    *(void **)(user + GOG_UNIT_EMITTER) = emitter;
     return ok;
 }
 
@@ -2659,6 +2667,22 @@ static void act(void) {
     if (!is_pet && isa(item, 129) && !can_take_spell(item, owner)) {
         x360_log("x360 inv: A: the hero cannot take that spell (no A on the 360)\r\n");
         return;
+    }
+    /* One it can take with its four places full: the spell-replacing menu, as the pet's with two
+     * (the 360's sub_8236BB70, 0x8236BBDC-0x8236BC0C: four places, two for a unit of ISA 87; the
+     * recomp agent's reading, issue #114). PC has no such menu: its use refused it. */
+    if (!is_pet && isa(item, 129)) {
+        int known = 0, i;
+        for (i = 0; i < 4; i++) {
+            void *sp = 0;
+            __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
+            if (sp) known++;
+        }
+        if (known >= 4) {
+            x360_log("x360 inv: A: the hero knows four spells: the replacing menu\r\n");
+            sr_begin(item, owner);
+            return;
+        }
     }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
         /* The pet uses nothing and wears only what fits it (PC's canEquip for the pet). */
@@ -5506,7 +5530,7 @@ static void sr_log_places(const char *when, unsigned char *owner, int sel) {
     char name[96];
     int i;
     x360_log("x360 menu: places "); x360_log(when); x360_log(":");
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < (isa(owner, 87) ? 2 : 4); i++) {
         const unsigned char *known = owner + 0x2f8 + i * 0x1c;
         x360_log(i == sel ? " [" : " ");
         x360_log(*(unsigned *)(known + 0x14) && wstring_utf8(known, name, sizeof name) ? name : "-");
@@ -5521,18 +5545,23 @@ static void sr_finish(int keep) {
     int sel = keep ? sr_sel : -1;
     sr_show(0);
     sr_item = sr_owner = 0; sr_sel = -1;
-    if (sel >= 0 && item && owner && (owner != the_pet() || !in_bag(owner, item))) {
-        x360_log("x360 menu: the pet or its scroll gone: nothing forgotten\r\n");
+    if (sel >= 0 && item && owner && ((owner != the_pet() && owner != hero) || !in_bag(owner, item))) {
+        x360_log("x360 menu: the owner or its scroll gone: nothing forgotten\r\n");
         sel = -1;
     }
     if (sel >= 0 && item && owner) {
         sr_log_places("before", owner, sel);
         __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); }
         __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
-        x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
+        x360_log(owner == hero ? "x360 menu: the hero forgets a spell for the new one\r\n" : "x360 menu: the pet forgets a spell for the new one\r\n");
         /* Then the new one (sub_8236BB70 again). Refused there, the 360 gives nothing back and
-         * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept). */
-        if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
+         * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept).
+         * The hero's by PC's own use, as A with a free place (act). */
+        if (owner == hero) {
+            /* Asked only now: with four places full PC's own check (the virtual +0x118) says no. */
+            if (ui && usable_now(item, owner)) { ((use_item_fn)GOG_USE_ITEM)(ui, 0, level, item); hide_info(); }
+            else x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
+        } else if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
         sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
     }
     refresh_all();
