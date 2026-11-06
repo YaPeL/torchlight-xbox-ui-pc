@@ -4549,3 +4549,19 @@ launcher (0x4b6cb0) starts `mov eax, fs:[0]; push -1` (8 bytes, its `push imm32`
 Steam's relocations move), so on Steam the hook was never set (a player's log, issue #88: "the
 missile launcher not as read"): a wand or crossbow flew along the facing, not at the 360's cone
 unit. The hook now takes either entry.
+## 51. The hero's refusal voice in the misc tab (issue #113, 2026-11-05)
+
+A player heard the hero refuse aloud on each item the stick selected in the
+bag's misc tab. **[read, 360; the recomp agent]** The 360's inventory key handler
+(`sub_8236A810`, codes 3-8) reaches a use only from A (`sub_8236AA48` -> `sub_8236BD80`); moving
+the selection uses nothing. **[read, PC]** The port's bar asks, for each selection, whether the
+item can be used now (`usable_now`: for each of the item's skills the user's virtual +0x118, GOG
+0x4907e0), and that virtual, in one of its cases, plays the voice 0x33 on the unit's emitter
+(+0x230, 0x490971-0x490993) before saying no. **[port]** The emitter is left empty during the
+question (the branch tests it and skips the voice), the answer unchanged. **[run, the owner,
+2026-11-06]** No voice on the misc tab's selection (none in the log).
+- **Open (the review, read in PC's code):** the same case of that virtual, with the level's
+  `+0x15c` -> `+0x88` flag set, calls 0x486450(13, 1) and says yes: for the player, a count of its
+  statistic 13 (0x4d90f0, case 13 at 0x4d9137, with an achievement checked at 100000), so each
+  selection of such an item would count once. Not identified: the flag and the statistic; the
+  360's own question (`sub_822B9DA8`) not compared.
