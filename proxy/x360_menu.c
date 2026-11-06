@@ -2032,7 +2032,7 @@ static void show_info(void *item, float y, float list_left) {
     /* The pet's bag (issue #112): the 360 places every list's card by the selected cell (the
      * lists' tick, sub_821994F8, calls sub_82344B90 with the cell's left - 20 and its top;
      * sub_8233F318 places it), right of the cell where it fits, else left of it: on the pet's bag
-     * its right edge 24.6 (of 720) left of the cell's, at the cell's top, over My Bag, and the
+     * its right edge 24.6 (of 720) left of the cell's left edge, at its top, over the hero's bag, and the
      * comparison card's right edge 52.4 left of its left (the recomp agent's capture, 2026-11-06:
      * the cell at 795.8, the card 599.2-771.2, the comparison 396.8-546.8). Our columns' rule
      * leaves it no column. */

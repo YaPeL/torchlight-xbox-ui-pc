@@ -4564,7 +4564,7 @@ with the **hero's** equipped ones, the pet going only to the card's owner (GameU
 **[capture, 360; the recomp agent]** On the pet's bag (1280x720): the cell at 795.8, the card's
 window 599.2-771.2 at the cell's top, the comparison's 396.8-546.8, same top; on the hero's bag the
 card right of the cell, 28.7 apart. **[port]** On the pet's bag the card's right edge 24.6 (of 720)
-left of the cell, the comparison 52.4 left of the card; compared with the hero's items (at the
+left of the cell's left edge, the comparison 52.4 left of the card; compared with the hero's items (at the
 merchant and the stash too, which compared with their own bags). No card while the pet is away.
 **[capture, GOG, 2026-11-06]** At 1080 the drawn frames within about 10 px of the 360's (the main
 card 888-1182 against 877-1185, the gap 30 against 29); the widths differ with the items.
