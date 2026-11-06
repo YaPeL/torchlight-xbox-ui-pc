@@ -5526,10 +5526,6 @@ static void sr_finish(int keep) {
         x360_log("x360 menu: the owner or its scroll gone: nothing forgotten\r\n");
         sel = -1;
     }
-    if (sel >= 0 && item && owner == hero && !(ui && usable_now(item, owner))) {
-        x360_log("x360 menu: the hero's scroll not usable now: nothing forgotten\r\n");   /* before, so no spell is lost for it */
-        sel = -1;
-    }
     if (sel >= 0 && item && owner) {
         sr_log_places("before", owner, sel);
         __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); }
@@ -5539,6 +5535,7 @@ static void sr_finish(int keep) {
          * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept).
          * The hero's by PC's own use, as A with a free place (act). */
         if (owner == hero) {
+            /* Asked only now: with four places full PC's own check (the virtual +0x118) says no. */
             if (ui && usable_now(item, owner)) { ((use_item_fn)GOG_USE_ITEM)(ui, 0, level, item); hide_info(); }
             else x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
         } else if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
