@@ -4565,3 +4565,26 @@ question (the branch tests it and skips the voice), the answer unchanged. **[run
   statistic 13 (0x4d90f0, case 13 at 0x4d9137, with an achievement checked at 100000), so each
   selection of such an item would count once. Not identified: the flag and the statistic; the
   360's own question (`sub_822B9DA8`) not compared.
+
+## 52. The hero's spell-replacing menu (issue #114, 2026-11-05)
+
+A player found no way to forget a spell, and a fifth one did nothing. **[read, 360; the recomp
+agent]** The 360 has no forgetting of its own: the only caller of its forget (`sub_82284FD0(unit,
+slot)`) is the replacing flow. A on a spell (`sub_8236BD80`, ISA 129) checks it
+(`sub_822B9CA0`), then `sub_8236BB70` counts the known spells (`sub_821FD868`, i < 4) and, with the
+places full (four, two for a unit of ISA 87, 0x8236BBDC-0x8236BC0C), opens
+`CMessageSpellRemoveXenon` (`spellremove_xenon.layout`, rows 0-3 or 0-1) for the hero as for the pet;
+its row kept by A is forgotten on closing (`sub_8236ECC0`, 0x8236ED3C-0x8236ED60) and the new
+spell learned; B forgets nothing. **[port]** The pet's menu (section on #77) now opens for the
+hero too, with four rows: A on a spell the hero can take with four known; the kept row forgotten
+(0x489a30) and the new one learned by PC's use, as A with a free place. Whether the scroll can be
+used is asked only after the forgetting: with four known PC's own check (the virtual +0x118) says
+no, which refused every replacement in the first run.
+- **The order (read, 360; the recomp agent, 2026-11-06).** The forget (`sub_82285060`) moves the
+  later places down (the names at +744, stride 28, and +856, 0x822851D8) and clears the last; the
+  learning (`sub_8236BB70` again, no row passed) takes the free place, the last. So the new spell
+  goes at the end, not in the chosen row, as the port's run gives (A, B, C, D with C replaced by
+  E: A, B, D, E). Before the shift the forgotten
+  skill's assignments (hero+720/+728/+736 by its 64-bit id, +708/+712 by pointer) are cleared; the
+  others' are ids, so not remapped. **[run, the owner, 2026-11-06]** The menu, B and the
+  replacement as above.
