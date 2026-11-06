@@ -2002,8 +2002,9 @@ static void show_info(void *item, float y, float list_left) {
     static pixel_rect_fn6 rect_of;
     /* The card goes over the column right of the focused one (the catalog: the bag's over the
      * pet's column, menus/08; the merchant's over the bag, town/07). */
-    void *pet_top = win_of(panels[column_panel(panel_column(focus_panel) + 1)].prefix, "TopFrame");
-    void *inv = inventory(), *first = 0, *second = 0;
+    int last = panel_column(focus_panel) + 1 >= columns();   /* the pet's bag: no column right of it */
+    void *pet_top = last ? 0 : win_of(panels[column_panel(panel_column(focus_panel) + 1)].prefix, "TopFrame");
+    void *inv = hero ? owner_bag(hero) : 0, *first = 0, *second = 0;
     float x = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, bottom = 0, w, y1;
     RECT cr;
     HWND hw = active_window();
@@ -2028,12 +2029,26 @@ static void show_info(void *item, float y, float list_left) {
      * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends
      * at 1026 of 1080, past the frame's bottom). */
     if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom - 36.0f * (float)cr.bottom / 720.0f;
+    /* The pet's bag (issue #112): the 360 places every list's card by the selected cell (the
+     * lists' tick, sub_821994F8, calls sub_82344B90 with the cell's left - 20 and its top;
+     * sub_8233F318 places it), right of the cell where it fits, else left of it: on the pet's bag
+     * its right edge 24.6 (of 720) left of the cell's left edge, at its top, over the hero's bag, and the
+     * comparison card's right edge 52.4 left of its left (the recomp agent's capture, 2026-11-06:
+     * the cell at 795.8, the card 599.2-771.2, the comparison 396.8-546.8). Our columns' rule
+     * leaves it no column. */
+    /* Compared with the hero's equipped items whatever the bag: the 360's sub_822E0AF0 reads the
+     * player unit's inventory (GameUI+56, set only by sub_8233DA90 from the level-state code),
+     * the pet's bag's owner going only to the card (GameUI+20; the recomp agent, 2026-11-06). */
     if (compare_on && inv && list_slot[selected[filter]] >= EQUIPPED_SLOTS)
         ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
     if (first == item) first = 0;
     if (second == item) second = 0;
     h0 = fill_card(0, item, 0, 0);
     if (!h0) return;
+    if (last) {
+        x = list_left - 24.6f * 768.0f / 720.0f * k - card_width(0);
+        list_left = x - 52.4f * 768.0f / 720.0f * k + 16.0f * k;   /* its comparison cards 52.4 left of it */
+    }
     if (first) h1 = fill_card(1, first, card(0), 0); else hide_card(1);
     if (second) h2 = fill_card(2, second, card(0), card(1)); else hide_card(2);
     /* only the screen's bottom keeps them up */
@@ -2215,7 +2230,7 @@ static void fill_character(void) {
     }
 }
 
-/* The Info card for the hero's selected item, at its row's height. */
+/* The Info card for the selected item of the focused bag, the pet's too, at its row's height. */
 static void update_info(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -2223,7 +2238,7 @@ static void update_info(void) {
     char name[48];
     void *tray;
     rect6 r;
-    if (!inventory_open || panels[focus_panel].is_pet || !list_count || sock_open) { hide_info(); return; }
+    if (!inventory_open || !list_count || sock_open || !cur_owner) { hide_info(); return; }   /* none: the pet away */
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     row_name(name, "ItemTray", selected[filter] - top[filter]);
     tray = win(name);

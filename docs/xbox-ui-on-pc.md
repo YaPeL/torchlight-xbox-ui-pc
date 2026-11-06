@@ -4588,3 +4588,22 @@ no, which refused every replacement in the first run.
   skill's assignments (hero+720/+728/+736 by its 64-bit id, +708/+712 by pointer) are cleared; the
   others' are ids, so not remapped. **[run, the owner, 2026-11-06]** The menu, B and the
   replacement as above.
+
+## 53. The item card on the pet's bag (issue #112, 2026-11-06)
+
+A player found no item card, and so no comparison, on the pet's bag. **[port, before]** The card
+went over the column right of the focused one, and the pet's bag, the last column, had none: no
+card was shown there (since the inventory's first commit). **[read, 360; the recomp agent]** Every
+list's card is placed by its selected cell, not by a column: the lists' tick (`sub_821994F8`) calls
+`sub_82344B90(GameUI, list+192, item, cell left - 20, cell top)`, and `sub_8233F318` places the card
+right of the cell where it fits, else left of it (the branch from 0x8233FAA0 not decoded). The
+comparison (`sub_822E0AF0`) reads the player unit's inventory (GameUI+56, written only by
+`sub_8233DA90` from the level-state code), whatever the bag: the pet's bag's items are compared
+with the **hero's** equipped ones, the pet going only to the card's owner (GameUI+20).
+**[capture, 360; the recomp agent]** On the pet's bag (1280x720): the cell at 795.8, the card's
+window 599.2-771.2 at the cell's top, the comparison's 396.8-546.8, same top; on the hero's bag the
+card right of the cell, 28.7 apart. **[port]** On the pet's bag the card's right edge 24.6 (of 720)
+left of the cell's left edge, the comparison 52.4 left of the card; compared with the hero's items (at the
+merchant and the stash too, which compared with their own bags). No card while the pet is away.
+**[capture, GOG, 2026-11-06]** At 1080 the drawn frames within about 10 px of the 360's (the main
+card 888-1182 against 877-1185, the gap 30 against 29); the widths differ with the items.
