@@ -2043,7 +2043,7 @@ static void show_info(void *item, float y, float list_left, float list_right) {
     if (second == item) second = 0;
     h0 = fill_card(0, item, 0, 0);
     if (!h0) return;
-    if (last && hw && cr.right > 0 && x + card_width(0) > (float)cr.right) x = (float)cr.right - card_width(0);
+    if (last && bottom > 0 && x + card_width(0) > (float)cr.right) x = (float)cr.right - card_width(0);
     if (last) list_left = x + 16.0f * k;   /* its comparison cards left of it, not of the list */
     if (first) h1 = fill_card(1, first, card(0), 0); else hide_card(1);
     if (second) h2 = fill_card(2, second, card(0), card(1)); else hide_card(2);
@@ -2234,7 +2234,7 @@ static void update_info(void) {
     char name[48];
     void *tray;
     rect6 r;
-    if (!inventory_open || !list_count || sock_open) { hide_info(); return; }
+    if (!inventory_open || !list_count || sock_open || !cur_owner) { hide_info(); return; }   /* none: the pet away */
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     row_name(name, "ItemTray", selected[filter] - top[filter]);
     tray = win(name);
