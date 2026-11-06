@@ -73,6 +73,9 @@
 0x004901b0 0x0048e230 verified   code    window, body, callers
 0x004901e0 0x0048e260 verified   code    window, body, callers x6
 0x00490330 0x0048e3b0 verified   code    window, body, callers x6
+0x004907e0 0x0048e880 verified   comment vtable .?AVCCharacter@@/.?AVCMonster@@/.?AVCPlayer@@+0x118 (port_addresses)
+0x00490971 0x0048ea02 verified   comment window 48, local 0+16 in 0x490800->0x48e880 (port_addresses)
+0x00490993 0x0048ea24 verified   comment window 16, local 0+16 in 0x490800->0x48e880 (port_addresses)
 0x00491b60 0x0048fb70 verified   code    window 16, body +0x8,+0x18,+0x28, callers x5
 0x00491bc0 0x0048fbd0 verified   code    body, callers x4
 0x00492160 0x00490180 verified   code    window, body, callers x6

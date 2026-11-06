@@ -2002,8 +2002,9 @@ static void show_info(void *item, float y, float list_left) {
     static pixel_rect_fn6 rect_of;
     /* The card goes over the column right of the focused one (the catalog: the bag's over the
      * pet's column, menus/08; the merchant's over the bag, town/07). */
-    void *pet_top = win_of(panels[column_panel(panel_column(focus_panel) + 1)].prefix, "TopFrame");
-    void *inv = inventory(), *first = 0, *second = 0;
+    int last = panel_column(focus_panel) + 1 >= columns();   /* the pet's bag: no column right of it */
+    void *pet_top = last ? 0 : win_of(panels[column_panel(panel_column(focus_panel) + 1)].prefix, "TopFrame");
+    void *inv = hero ? owner_bag(hero) : 0, *first = 0, *second = 0;
     float x = 0, h0, h1 = 0, h2 = 0, gap = 4.0f * k, bottom = 0, w, y1;
     RECT cr;
     HWND hw = active_window();
@@ -2028,12 +2029,26 @@ static void show_info(void *item, float y, float list_left) {
      * (in-game/17, 18: the card at the selected row's top, pushed up from row 5 on so that it ends
      * at 1026 of 1080, past the frame's bottom). */
     if (hw && GetClientRect(hw, &cr)) bottom = (float)cr.bottom - 36.0f * (float)cr.bottom / 720.0f;
+    /* The pet's bag (issue #112): the 360 places every list's card by the selected cell (the
+     * lists' tick, sub_821994F8, calls sub_82344B90 with the cell's left - 20 and its top;
+     * sub_8233F318 places it), right of the cell where it fits, else left of it: on the pet's bag
+     * its right edge 24.6 (of 720) left of the cell's left edge, at its top, over the hero's bag, and the
+     * comparison card's right edge 52.4 left of its left (the recomp agent's capture, 2026-11-06:
+     * the cell at 795.8, the card 599.2-771.2, the comparison 396.8-546.8). Our columns' rule
+     * leaves it no column. */
+    /* Compared with the hero's equipped items whatever the bag: the 360's sub_822E0AF0 reads the
+     * player unit's inventory (GameUI+56, set only by sub_8233DA90 from the level-state code),
+     * the pet's bag's owner going only to the card (GameUI+20; the recomp agent, 2026-11-06). */
     if (compare_on && inv && list_slot[selected[filter]] >= EQUIPPED_SLOTS)
         ((comparison_fn)GOG_COMPARISON_ITEMS)(inv, 0, item, &first, &second);
     if (first == item) first = 0;
     if (second == item) second = 0;
     h0 = fill_card(0, item, 0, 0);
     if (!h0) return;
+    if (last) {
+        x = list_left - 24.6f * 768.0f / 720.0f * k - card_width(0);
+        list_left = x - 52.4f * 768.0f / 720.0f * k + 16.0f * k;   /* its comparison cards 52.4 left of it */
+    }
     if (first) h1 = fill_card(1, first, card(0), 0); else hide_card(1);
     if (second) h2 = fill_card(2, second, card(0), card(1)); else hide_card(2);
     /* only the screen's bottom keeps them up */
@@ -2215,7 +2230,7 @@ static void fill_character(void) {
     }
 }
 
-/* The Info card for the hero's selected item, at its row's height. */
+/* The Info card for the selected item of the focused bag, the pet's too, at its row's height. */
 static void update_info(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -2223,7 +2238,7 @@ static void update_info(void) {
     char name[48];
     void *tray;
     rect6 r;
-    if (!inventory_open || panels[focus_panel].is_pet || !list_count || sock_open) { hide_info(); return; }
+    if (!inventory_open || !list_count || sock_open || !cur_owner) { hide_info(); return; }   /* none: the pet away */
     if (!rect_of) rect_of = (pixel_rect_fn6)need("?getUnclippedPixelRect@Window@CEGUI@@QBE?AVRect@2@XZ");
     row_name(name, "ItemTray", selected[filter] - top[filter]);
     tray = win(name);
@@ -2550,15 +2565,22 @@ static int unit_named(unsigned char *item, const char *text_key) {
  * stack, +0x1f0 the charges, -9999 endless) and asks the user, for each of the item's skills
  * (+0x17c: entries +0x28, count +0x2c, each one's skill +0x40), whether it can (the unit's virtual
  * +0x118 with the target, the skill and the entry): no, while a potion recharges (in-game/29).
- * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30). */
+ * The identify scroll has no Use on the 360 (sub_8236BD80 compares its unit name; in-game/30).
+ * That virtual (GOG 0x4907e0, CPlayer's and CCharacter's) says no aloud in one case: the voice
+ * 0x33 on the unit's emitter (+0x230, 0x490971-0x490993), which the bar's question on every
+ * selection in the misc tab played (issue #113; the 360's selection reaches no use path, the
+ * recomp agent): the emitter is left empty during the question, the answer the same. */
 static int usable_now(unsigned char *item, unsigned char *user) {
     typedef unsigned char (__fastcall *can_fn)(void *unit, void *edx, void *target, void *skill, void *entry);
     unsigned char *skills;
+    void *emitter;
     unsigned i, n;
     int ok = 1;
     if (!item || !user || !((item_bool_fn)GOG_IS_USEABLE)(item, 0)) return 0;
     if (unit_named(item, "item.identify")) return 0;
     if (*(int *)(item + 0x1e4) <= 1 && *(int *)(item + 0x1f0) <= 0 && *(int *)(item + 0x1f0) != -9999) return 0;
+    emitter = *(void **)(user + GOG_UNIT_EMITTER);
+    *(void **)(user + GOG_UNIT_EMITTER) = 0;
     __try {
         skills = *(unsigned char **)(item + 0x17c);
         n = skills ? *(unsigned *)(skills + 0x2c) : 0;
@@ -2568,6 +2590,7 @@ static int usable_now(unsigned char *item, unsigned char *user) {
             if (skill && !((can_fn)(*(void ***)user)[0x118 / 4])(user, 0, user, skill, entry)) ok = 0;
         }
     } __except (1) { ok = 1; }
+    *(void **)(user + GOG_UNIT_EMITTER) = emitter;
     return ok;
 }
 
@@ -2644,6 +2667,22 @@ static void act(void) {
     if (!is_pet && isa(item, 129) && !can_take_spell(item, owner)) {
         x360_log("x360 inv: A: the hero cannot take that spell (no A on the 360)\r\n");
         return;
+    }
+    /* One it can take with its four places full: the spell-replacing menu, as the pet's with two
+     * (the 360's sub_8236BB70, 0x8236BBDC-0x8236BC0C: four places, two for a unit of ISA 87; the
+     * recomp agent's reading, issue #114). PC has no such menu: its use refused it. */
+    if (!is_pet && isa(item, 129)) {
+        int known = 0, i;
+        for (i = 0; i < 4; i++) {
+            void *sp = 0;
+            __try { sp = ((known_spell_fn)0x484ff0)(owner, 0, i); } __except (1) { sp = 0; }
+            if (sp) known++;
+        }
+        if (known >= 4) {
+            x360_log("x360 inv: A: the hero knows four spells: the replacing menu\r\n");
+            sr_begin(item, owner);
+            return;
+        }
     }
     if (is_pet && !((can_equip_fn)(*(void ***)item)[GOG_CAN_EQUIP_SLOT])(item, 0, owner, 1)) {
         /* The pet uses nothing and wears only what fits it (PC's canEquip for the pet). */
@@ -5491,7 +5530,7 @@ static void sr_log_places(const char *when, unsigned char *owner, int sel) {
     char name[96];
     int i;
     x360_log("x360 menu: places "); x360_log(when); x360_log(":");
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < (isa(owner, 87) ? 2 : 4); i++) {
         const unsigned char *known = owner + 0x2f8 + i * 0x1c;
         x360_log(i == sel ? " [" : " ");
         x360_log(*(unsigned *)(known + 0x14) && wstring_utf8(known, name, sizeof name) ? name : "-");
@@ -5506,18 +5545,23 @@ static void sr_finish(int keep) {
     int sel = keep ? sr_sel : -1;
     sr_show(0);
     sr_item = sr_owner = 0; sr_sel = -1;
-    if (sel >= 0 && item && owner && (owner != the_pet() || !in_bag(owner, item))) {
-        x360_log("x360 menu: the pet or its scroll gone: nothing forgotten\r\n");
+    if (sel >= 0 && item && owner && ((owner != the_pet() && owner != hero) || !in_bag(owner, item))) {
+        x360_log("x360 menu: the owner or its scroll gone: nothing forgotten\r\n");
         sel = -1;
     }
     if (sel >= 0 && item && owner) {
         sr_log_places("before", owner, sel);
         __try { ((unlearn_fn)0x00489a30)(owner, 0, sel); }
         __except (1) { x360_log("x360 menu: exception forgetting the spell\r\n"); }
-        x360_log("x360 menu: the pet forgets a spell for the new one\r\n");
+        x360_log(owner == hero ? "x360 menu: the hero forgets a spell for the new one\r\n" : "x360 menu: the pet forgets a spell for the new one\r\n");
         /* Then the new one (sub_8236BB70 again). Refused there, the 360 gives nothing back and
-         * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept). */
-        if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
+         * shows nothing (a recomp run with the refusal forced: the spell lost, the scroll kept).
+         * The hero's by PC's own use, as A with a free place (act). */
+        if (owner == hero) {
+            /* Asked only now: with four places full PC's own check (the virtual +0x118) says no. */
+            if (ui && usable_now(item, owner)) { ((use_item_fn)GOG_USE_ITEM)(ui, 0, level, item); hide_info(); }
+            else x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
+        } else if (pet_learn(item, owner) != 1) x360_log("x360 menu: the new spell not learned after the forgetting\r\n");
         sr_log_places("after", owner, -1);   /* the 360's forgetting moves the later ones down too (sub_82285060, 0x822851D8) */
     }
     refresh_all();
@@ -10417,6 +10461,18 @@ static void pc_menus_nav_tick(void) {
 }
 
 unsigned x360_frames;   /* the game's frames, counted by the frame listener (proxy/pad.c: one destination a frame) */
+/* The game's window size, in the log when it changes (a report's layout question: which size). */
+static void window_size_log(void) {
+    static long last_w, last_h;
+    RECT r;
+    HWND w = active_window();
+    if (!w || !GetClientRect(w, &r) || r.right - r.left <= 0 || r.bottom - r.top <= 0) return;
+    if (r.right - r.left > 16384 || r.bottom - r.top > 16384) return;   /* a run's log: a window not the game's read so */
+    if (r.right - r.left == last_w && r.bottom - r.top == last_h) return;
+    last_w = r.right - r.left; last_h = r.bottom - r.top;
+    x360_log("x360: the game's window "); x360_log_num(last_w); x360_log("x"); x360_log_num(last_h); x360_log("\r\n");
+}
+
 void x360_frame_tick(void) {
     static int logged, preloaded;
     void x360_pad_frame(void);
@@ -10429,6 +10485,7 @@ void x360_frame_tick(void) {
         __try { if (bs_back) set_visible(bs_back, 0, 0); } __except (1) {}   /* never a screen left over the game */
     }
     __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
+    window_size_log();
     if (!find_world()) return;
     minimap_tick();   /* the corner minimap where the 360 draws it, before this frame is drawn */
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the

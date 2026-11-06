@@ -3066,7 +3066,9 @@ one, fails CI, as does a `.def` or `.lib`.
 - The installer checks the game's real `CEGUIBase.dll` against the list before anything else
   (`install.check_real_dll`). A DLL that differs would leave the game calling into exports the
   proxy does not forward.
-- The link is reproducible (`lld-link /timestamp:0`): two builds give the same bytes. The proxy
+- The link is reproducible (`lld-link /timestamp:0`): two builds give the same bytes, given the
+  same version string (`X360_VERSION`, which the log's first line names: a release's tag, else
+  `dev-` and the commit; set it to compare a local build with a release's). The proxy
   built from the list is the one built from GOG's DLL, and differs from the one installed for
   the last runs only in the PE timestamp's four bytes.
 - CI's `proxy` job builds both targets from the list with LLVM 21 (apt.llvm.org's) and prints
@@ -4524,3 +4526,105 @@ d-pad only moved the cursor and the port had one set.
   HUD showed set 2; up went to set 1 and down to set 2 again (now with a skill). Steam UNCHANGED.
 - Not ported: the player's `+984` test; PC's own menus outside the proxy's (its waypoint list)
   not checked against `sub_821ECA78`.
+
+## 50. X held: no lock on the 360 (issue #89, 2026-11-05)
+
+A player (Embermage, wands) found X's target "barely a suggestion" and asked for it to stay while
+X is held. A code reading suggested the 360 keeps a lock (the client's `+436`, set on X's press by
+`sub_8221B8E8`, 0x8221BA28) for the whole hold; the port tried it, and the owner's run found the
+outline moving while the attacks stayed. **[measured, 360; the recomp agent's probe lock1]** It
+does not: per frame while X was held (two holds, 9.1 s and 5 s, the stick out 0.6 s and back):
+- `+436` lives one frame: the hover update `sub_821E5910` clears it every frame in play (0x821E6640;
+  the client's `+5124` was 1 throughout). The hero's target `+644` stayed 0.
+- The outlined unit (GameUI `+72`, set at 0x821E6874) is the candidate `+444` every frame: the port's
+  highlight of the candidate is the 360's.
+- Each swing searches on its own (`sub_822919A8`: `sub_822F8128`, 30 degrees from the facing, out to
+  21, then reach + 1): X held at rest stays on an enemy only because the facing does not turn. The
+  candidate dying mid-hold: no new lock, no chase; the next swing takes what the cone finds. The
+  stick out and back: the facing turned, no unit to go back to.
+
+So the port's X (the candidate on the press and on each 0.1 s repeat) stays as it was; a lock kept
+for the hold would be PC's addition (after 1.0, as #105).
+
+**The missile hook on Steam.** Its entry check expected GOG's `push -1; push imm32`; Steam's
+launcher (0x4b6cb0) starts `mov eax, fs:[0]; push -1` (8 bytes, its `push imm32` after, which
+Steam's relocations move), so on Steam the hook was never set (a player's log, issue #88: "the
+missile launcher not as read"): a wand or crossbow flew along the facing, not at the 360's cone
+unit. The hook now takes either entry.
+## 51. The hero's refusal voice in the misc tab (issue #113, 2026-11-05)
+
+A player heard the hero refuse aloud on each item the stick selected in the
+bag's misc tab. **[read, 360; the recomp agent]** The 360's inventory key handler
+(`sub_8236A810`, codes 3-8) reaches a use only from A (`sub_8236AA48` -> `sub_8236BD80`); moving
+the selection uses nothing. **[read, PC]** The port's bar asks, for each selection, whether the
+item can be used now (`usable_now`: for each of the item's skills the user's virtual +0x118, GOG
+0x4907e0), and that virtual, in one of its cases, plays the voice 0x33 on the unit's emitter
+(+0x230, 0x490971-0x490993) before saying no. **[port]** The emitter is left empty during the
+question (the branch tests it and skips the voice), the answer unchanged. **[run, the owner,
+2026-11-06]** No voice on the misc tab's selection (none in the log).
+- **Open (the review, read in PC's code):** the same case of that virtual, with the level's
+  `+0x15c` -> `+0x88` flag set, calls 0x486450(13, 1) and says yes: for the player, a count of its
+  statistic 13 (0x4d90f0, case 13 at 0x4d9137, with an achievement checked at 100000), so each
+  selection of such an item would count once. Not identified: the flag and the statistic; the
+  360's own question (`sub_822B9DA8`) not compared.
+
+## 52. The hero's spell-replacing menu (issue #114, 2026-11-05)
+
+A player found no way to forget a spell, and a fifth one did nothing. **[read, 360; the recomp
+agent]** The 360 has no forgetting of its own: the only caller of its forget (`sub_82284FD0(unit,
+slot)`) is the replacing flow. A on a spell (`sub_8236BD80`, ISA 129) checks it
+(`sub_822B9CA0`), then `sub_8236BB70` counts the known spells (`sub_821FD868`, i < 4) and, with the
+places full (four, two for a unit of ISA 87, 0x8236BBDC-0x8236BC0C), opens
+`CMessageSpellRemoveXenon` (`spellremove_xenon.layout`, rows 0-3 or 0-1) for the hero as for the pet;
+its row kept by A is forgotten on closing (`sub_8236ECC0`, 0x8236ED3C-0x8236ED60) and the new
+spell learned; B forgets nothing. **[port]** The pet's menu (section on #77) now opens for the
+hero too, with four rows: A on a spell the hero can take with four known; the kept row forgotten
+(0x489a30) and the new one learned by PC's use, as A with a free place. Whether the scroll can be
+used is asked only after the forgetting: with four known PC's own check (the virtual +0x118) says
+no, which refused every replacement in the first run.
+- **The order (read, 360; the recomp agent, 2026-11-06).** The forget (`sub_82285060`) moves the
+  later places down (the names at +744, stride 28, and +856, 0x822851D8) and clears the last; the
+  learning (`sub_8236BB70` again, no row passed) takes the free place, the last. So the new spell
+  goes at the end, not in the chosen row, as the port's run gives (A, B, C, D with C replaced by
+  E: A, B, D, E). Before the shift the forgotten
+  skill's assignments (hero+720/+728/+736 by its 64-bit id, +708/+712 by pointer) are cleared; the
+  others' are ids, so not remapped. **[run, the owner, 2026-11-06]** The menu, B and the
+  replacement as above.
+
+## 53. The item card on the pet's bag (issue #112, 2026-11-06)
+
+A player found no item card, and so no comparison, on the pet's bag. **[port, before]** The card
+went over the column right of the focused one, and the pet's bag, the last column, had none: no
+card was shown there (since the inventory's first commit). **[read, 360; the recomp agent]** Every
+list's card is placed by its selected cell, not by a column: the lists' tick (`sub_821994F8`) calls
+`sub_82344B90(GameUI, list+192, item, cell left - 20, cell top)`, and `sub_8233F318` places the card
+right of the cell where it fits, else left of it (the branch from 0x8233FAA0 not decoded). The
+comparison (`sub_822E0AF0`) reads the player unit's inventory (GameUI+56, written only by
+`sub_8233DA90` from the level-state code), whatever the bag: the pet's bag's items are compared
+with the **hero's** equipped ones, the pet going only to the card's owner (GameUI+20).
+**[capture, 360; the recomp agent]** On the pet's bag (1280x720): the cell at 795.8, the card's
+window 599.2-771.2 at the cell's top, the comparison's 396.8-546.8, same top; on the hero's bag the
+card right of the cell, 28.7 apart. **[port]** On the pet's bag the card's right edge 24.6 (of 720)
+left of the cell's left edge, the comparison 52.4 left of the card; compared with the hero's items (at the
+merchant and the stash too, which compared with their own bags). No card while the pet is away.
+**[capture, GOG, 2026-11-06]** At 1080 the drawn frames within about 10 px of the 360's (the main
+card 888-1182 against 877-1185, the gap 30 against 29); the widths differ with the items.
+
+## 54. What the log tells about a report (2026-11-06)
+
+#88's log could not say why a player saw PC's minimap overlay. Now `x360_ui.log` also has the
+following, all local (nothing is sent anywhere):
+- **The version:** in the first line, a release's tag or `dev-` and the commit (`+dirty` with
+  changes not committed). `build_proxy.py` sets it (`X360_VERSION`).
+- **The start and the system:** the local date and time; Windows' version (`RtlGetVersion`); and
+  under Wine or Proton, Wine's version and the host's system and release
+  (`wine_get_version`, `wine_get_host_version`).
+- **The ini:** each line of `x360_ui.ini` (`ini: ...`), as the player has it.
+- **The converted folder** (after the prompts' choice): whether the 360's scheme and
+  `automapoverlay.dds` are there, and the count of its layouts.
+- **The window:** the game window's client size, again whenever it changes.
+- **A crash:** with the unhandled-exception filter set when the 360's scheme loads (after the
+  game set its own, which it then calls), the exception's code, the module and offset where it
+  happened, and for an access violation the address read or written.
+- **The end:** "the game closed" when the process ends normally. A log without it ended in a kill
+  or a crash.
