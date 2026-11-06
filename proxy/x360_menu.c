@@ -10461,6 +10461,18 @@ static void pc_menus_nav_tick(void) {
 }
 
 unsigned x360_frames;   /* the game's frames, counted by the frame listener (proxy/pad.c: one destination a frame) */
+/* The game's window size, in the log when it changes (a report's layout question: which size). */
+static void window_size_log(void) {
+    static long last_w, last_h;
+    RECT r;
+    HWND w = active_window();
+    if (!w || !GetClientRect(w, &r) || r.right - r.left <= 0 || r.bottom - r.top <= 0) return;
+    if (r.right - r.left > 16384 || r.bottom - r.top > 16384) return;   /* a run's log: a window not the game's read so */
+    if (r.right - r.left == last_w && r.bottom - r.top == last_h) return;
+    last_w = r.right - r.left; last_h = r.bottom - r.top;
+    x360_log("x360: the game's window "); x360_log_num(last_w); x360_log("x"); x360_log_num(last_h); x360_log("\r\n");
+}
+
 void x360_frame_tick(void) {
     static int logged, preloaded;
     void x360_pad_frame(void);
@@ -10473,6 +10485,7 @@ void x360_frame_tick(void) {
         __try { if (bs_back) set_visible(bs_back, 0, 0); } __except (1) {}   /* never a screen left over the game */
     }
     __try { pc_menus_nav_tick(); } __except (1) { x360_log("x360 menu: exception in PC's menus' pad\r\n"); }
+    window_size_log();
     if (!find_world()) return;
     minimap_tick();   /* the corner minimap where the 360 draws it, before this frame is drawn */
     /* The frame's layouts loaded as the game is entered, once the 360's HUD is up (it is on the

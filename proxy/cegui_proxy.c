@@ -163,14 +163,93 @@ HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposi
     return create && path[0] ? create(path, access, share, 0, disposition, 0x80, 0) : INVALID_HANDLE;
 }
 
+/* The mod's version (build_proxy.py: the release's tag, or git's description of the tree). */
+#ifndef X360_VERSION
+#define X360_VERSION "unknown"
+#endif
+
+static void put_dec2(unsigned v) { if (v < 10) put("0"); put_dec(v); }
+
+/* The system a report comes from: Windows' own version (RtlGetVersion, not the compatibility
+ * one GetVersionEx gives), and under Wine or Proton Wine's version and its host's system. */
+static void log_system(void) {
+    typedef struct { DWORD size, major, minor, build, platform; unsigned short csd[128]; } os_version;
+    typedef long (__stdcall *rtl_version_fn)(os_version *v);
+    typedef const char *(__cdecl *wine_version_fn)(void);
+    typedef void (__cdecl *wine_host_fn)(const char **sysname, const char **release);
+    typedef struct { unsigned short year, month, weekday, day, hour, minute, second, ms; } local_time;
+    typedef void (__stdcall *local_time_fn)(local_time *t);
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    rtl_version_fn rtl = nt ? (rtl_version_fn)GetProcAddress(nt, "RtlGetVersion") : 0;
+    wine_version_fn wine = nt ? (wine_version_fn)GetProcAddress(nt, "wine_get_version") : 0;
+    wine_host_fn host = nt ? (wine_host_fn)GetProcAddress(nt, "wine_get_host_version") : 0;
+    local_time_fn now = (local_time_fn)kernel32_proc("GetLocalTime");
+    os_version v;
+    if (now) {
+        local_time t;
+        now(&t);
+        put("started "); put_dec(t.year); put("-"); put_dec2(t.month); put("-"); put_dec2(t.day);
+        put(" "); put_dec2(t.hour); put(":"); put_dec2(t.minute); put("\r\n");
+    }
+    memset(&v, 0, sizeof v);
+    v.size = sizeof v;
+    put("system: Windows ");
+    if (rtl && rtl(&v) == 0) { put_dec(v.major); put("."); put_dec(v.minor); put("."); put_dec(v.build); }
+    else put("?");
+    if (wine) {
+        const char *sys = 0, *rel = 0;
+        put(", Wine "); put(wine());
+        if (host) { host(&sys, &rel); if (sys) { put(" on "); put(sys); } if (rel) { put(" "); put(rel); } }
+    }
+    put("\r\n");
+}
+
 static void open_log(void) {
     int local;
     wchar16 path[600];
     path[0] = 0;
     local = x360_data_path("x360_ui.log", path, 600);
     log_file = x360_data_open("x360_ui.log", GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS);
-    put("x360_ui proxy CEGUIBase.dll: loaded\r\n");
+    put("x360_ui proxy CEGUIBase.dll " X360_VERSION ": loaded\r\n");
     put(local ? "the log in %LOCALAPPDATA%\\x360ui\r\n" : "the log beside the DLL (no LOCALAPPDATA)\r\n");
+    log_system();
+}
+
+/* A crash in the log: the exception, where (the module and its offset), and for an access
+ * violation the address read or written; then the filter that was there (the game's). Set when
+ * the 360's scheme loads (load_x360), after the game's start set its own. */
+typedef struct { DWORD code, flags; void *next; void *address; DWORD count; unsigned long info[15]; } exception_record;
+typedef struct { exception_record *record; void *context; } exception_pointers;
+typedef long (__stdcall *exception_filter_fn)(exception_pointers *p);
+static exception_filter_fn previous_filter;
+static void put_where(void *address) {
+    typedef BOOL (__stdcall *module_from_fn)(DWORD flags, const void *address, HMODULE *out);
+    module_from_fn from = (module_from_fn)kernel32_proc("GetModuleHandleExA");
+    HMODULE m = 0;
+    char name[260];
+    DWORD n, i;
+    put_hex((unsigned long)address);
+    if (!from || !from(6, address, &m) || !m) return;   /* FROM_ADDRESS | UNCHANGED_REFCOUNT */
+    n = GetModuleFileNameA(m, name, sizeof name);
+    for (i = n; i && name[i - 1] != '\\' && name[i - 1] != '/'; i--) {}
+    put(" ("); put(n ? name + i : "?"); put("+"); put_hex((unsigned long)address - (unsigned long)m); put(")");
+}
+static long __stdcall crash_filter(exception_pointers *p) {
+    exception_record *r = p ? p->record : 0;
+    if (r) {
+        put("\r\nthe game stopped on an exception "); put_hex(r->code); put(" at "); put_where(r->address);
+        if (r->code == 0xc0000005 && r->count >= 2) { put(r->info[0] ? ", writing " : ", reading "); put_hex(r->info[1]); }
+        put("\r\n");
+    }
+    return previous_filter ? previous_filter(p) : 0;
+}
+static void crash_log_install(void) {
+    typedef exception_filter_fn (__stdcall *set_filter_fn)(exception_filter_fn f);
+    set_filter_fn set = (set_filter_fn)kernel32_proc("SetUnhandledExceptionFilter");
+    static int done;
+    if (done || !set) return;
+    done = 1;
+    previous_filter = set(crash_filter);
 }
 
 /* For proxy/pad.c. */
@@ -345,6 +424,7 @@ static void read_config(void) {
         char *end = line;
         while (*end && *end != '\r' && *end != '\n') end++;
         if (*end) *end++ = 0;
+        if (*line && *line != ';' && *line != '#') { put("ini: "); put(line); put("\r\n"); }   /* for a report */
         {
             /* The test options (runs on copies): named in a notice on screen (x360_menu.c). */
             static const char *const tests[] = {"save_root=", "hold_saves=", "pad_detect=", "console=", "test_", "pad_replay=", "pad_trace=", "pad_record=", 0};
@@ -479,6 +559,38 @@ static FARPROC sym(const char *dll, const char *name) {
 
 #define STD_STRING "?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@"
 
+/* What the converted folder holds (a report's question: an installer's conversion left half done,
+ * or a file the 360's screens need missing): its key files and the count of its layouts. */
+static void log_folder(void) {
+    typedef struct { DWORD attributes, created[2], accessed[2], written[2], size_high, size_low, r0, r1; char name[260], alt[14]; } find_data;
+    typedef HANDLE (__stdcall *find_first_fn)(const char *pattern, find_data *d);
+    typedef BOOL (__stdcall *find_next_fn)(HANDLE h, find_data *d);
+    typedef BOOL (__stdcall *find_close_fn)(HANDLE h);
+    static const char *const files[] = {"media\\ui\\x360\\ceguiWidgets.scheme", "media\\sharedtextures\\automapoverlay.dds", 0};
+    find_first_fn first = (find_first_fn)kernel32_proc("FindFirstFileA");
+    find_next_fn next = (find_next_fn)kernel32_proc("FindNextFileA");
+    find_close_fn close = (find_close_fn)kernel32_proc("FindClose");
+    char path[600];
+    unsigned n = length(out_dir), i, count = 0;
+    find_data d;
+    HANDLE h;
+    if (!n || n + 64 >= sizeof path) return;
+    memcpy(path, out_dir, n);
+    path[n++] = '\\';
+    put("the converted folder:");
+    for (i = 0; files[i]; i++) {
+        memcpy(path + n, files[i], length(files[i]) + 1);
+        put(" "); put(files[i]); put(GetFileAttributesA(path) == 0xffffffff ? " missing," : " present,");
+    }
+    memcpy(path + n, "media\\ui\\x360\\*.layout", 23);
+    h = first ? first(path, &d) : INVALID_HANDLE;
+    if (h != INVALID_HANDLE) {
+        do count++; while (next && next(h, &d));
+        if (close) close(h);
+    }
+    put(" "); put_dec(count); put(" layouts\r\n");
+}
+
 static void load_x360(void *scheme_manager) {
     ctor_fn std_ctor = (ctor_fn)sym("msvcp90.dll", "??0" STD_STRING "QAE@PBD@Z");
     dtor_fn std_dtor = (dtor_fn)sym("msvcp90.dll", "??1" STD_STRING "QAE@XZ");
@@ -524,6 +636,8 @@ static void load_x360(void *scheme_manager) {
     std_dtor(&probe, 0);
     std_dtor(&filesystem, 0);
     std_dtor(&location, 0);
+    log_folder();
+    crash_log_install();
 
     cegui_ctor(&file, 0, "media/ui/x360/ceguiWidgets.scheme");
     cegui_ctor(&group, 0, "");
@@ -855,6 +969,7 @@ BOOL __stdcall DllMain(HMODULE module, DWORD reason, void *reserved) {
     if (reason == 0) {   /* DLL_PROCESS_DETACH: the measurement's files written to their end */
         void x360_pad_shutdown(void);
         x360_pad_shutdown();
+        put(reserved ? "the game closed\r\n" : "x360_ui unloaded\r\n");   /* reserved: the process ends */
     }
     if (reason == 1) {
         self_module = module;

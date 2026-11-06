@@ -29,7 +29,6 @@ IMPORT HANDLE __stdcall CreateThread(void *security, DWORD stack, DWORD (__stdca
 
 void x360_log(const char *s);
 
-#define X360_VERSION "0.1.0"
 #define UPDATE_HOST L"api.github.com"
 #define UPDATE_PATH L"/repos/YaPeL/torchlight-xbox-ui-pc/releases/latest"
 #define UPDATE_PAGE "https://github.com/YaPeL/torchlight-xbox-ui-pc/releases/latest"
