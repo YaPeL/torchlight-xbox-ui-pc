@@ -169,9 +169,10 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - **The bag.** With PC's bag (the default) the main section holds 21 items; the 360's bag is an
   install option, with its notes on saves (above). A check of the saves in the installer, before
   changing the bag, is still to come.
-- **Screens still PC's** (played with the pad, but PC's look): the main menu and the pause menu;
-  the death screens, normal and hardcore; the waypoint portals. The story mode's page screen is
-  PC's page in the 360's frame (its text box, its bar, A to go on).
+- **Screens still PC's** (played with the pad, but PC's look): the main menu and the pause menu.
+  The story mode's page screen is PC's page in the 360's frame (its text box, its bar, A to go on).
+- **The death and waypoint screens** are the 360's. Not yet tried: the hardcore death's screen,
+  and the waypoint screen, because the pad's A cannot use a waygate yet.
 - **Not as on the 360 yet:**
   - the loading screens are PC's, not the 360's.
   - the item card shown for a quest's reward is narrower than the 360's (the 360's card laid out
