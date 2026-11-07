@@ -1012,7 +1012,9 @@ int do_uninstall(const Args& args) {
           (n.rfind("x360_dump_", 0) == 0 && n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0))
         gone.push_back(it->path());
     }
-    for (const char* n : {"x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt"}) gone.push_back(game / n);
+    for (const char* n : {"x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt",
+                          "x360_ui.write-test"})   // the proxy's write test (deleted on close; a leftover all the same)
+      gone.push_back(game / n);
     for (const fs::path& p : gone) ch.put_aside(p);
     if (std::getenv("X360UI_TEST_FAIL_AFTER_PROXY")) throw Exit("a failure asked for by a test");
     ch.commit();

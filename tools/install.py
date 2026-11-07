@@ -645,7 +645,8 @@ def do_uninstall(args):
             os.path.join(game, "x360ui-work-*")):
         shutil.rmtree(folder, ignore_errors=True)
         shutil.rmtree(folder + ".partial", ignore_errors=True)
-    for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt"] + [
+    for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt",
+                 "x360_ui.write-test"] + [
             os.path.basename(p) for p in glob.glob(os.path.join(game, "x360_dump_*.json"))]:
         try:
             os.remove(os.path.join(game, name))

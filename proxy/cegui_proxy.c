@@ -10,7 +10,7 @@
  * argument has the same convention (this in ecx, edx unused, the callee pops the stack
  * arguments), so the thunks are plain C and need no MSVC C++ ABI. CEGUI::String is only read,
  * through the real DLL's String::c_str(). No CRT: kernel32 only, plus msvcr90's SEH handler.
- * The log is x360_ui.log in %LOCALAPPDATA%\x360ui (x360_data_path). The export table is made by tools/build_proxy.py from
+ * The log is x360_ui.log beside the game, or in %LOCALAPPDATA%\x360ui (x360_data_path). The export table is made by tools/build_proxy.py from
  * the user's own CEGUIBase.dll.
  *
  * x360_ui.ini next to this DLL (optional; without it the proxy only logs):
@@ -111,10 +111,13 @@ static void put_dec(unsigned long v) {
 }
 
 /* ---- the mod's own files (x360_ui.log, x360_settings.ini; x360_stop.txt in x360_menu.c) ----
- * In %LOCALAPPDATA%\x360ui (under Wine or Proton, the prefix's): the game's folder may be Program
- * Files, which the game cannot write and Windows would redirect into VirtualStore, where no
- * uninstaller looks. Beside this DLL only when there is no LOCALAPPDATA or its folder cannot be
- * made. Wide paths (any user name); kernel32's W functions, looked up (no import). */
+ * Beside this DLL, in the game's folder, when the game can write there for real: the mod leaves
+ * nothing elsewhere on the disk, and uninstalling it (or deleting the game) takes them (the owner,
+ * 2026-11-01). Else in %LOCALAPPDATA%\x360ui (under Wine or Proton, the prefix's), where they were
+ * before: the game's folder may be Program Files, which the game cannot write and Windows
+ * redirects into the user's VirtualStore, where no uninstaller looks (so a write that lands there
+ * counts as not writable). The uninstallers remove both. Wide paths (any user name); kernel32's W
+ * functions, looked up (no import). */
 typedef unsigned short wchar16;
 static FARPROC kernel32_proc(const char *name) {
     HMODULE k = GetModuleHandleA("kernel32.dll");
@@ -126,32 +129,132 @@ static void wcat16(wchar16 *d, unsigned size, const char *ascii) {
     while (*ascii && n + 1 < size) d[n++] = (unsigned char)*ascii++;
     d[n] = 0;
 }
-int x360_data_path(const char *name, wchar16 *out, unsigned size) {
-    typedef DWORD (__stdcall *getenv_fn)(const wchar16 *n, wchar16 *o, DWORD s);
-    typedef BOOL (__stdcall *mkdir_fn)(const wchar16 *n, void *sec);
-    typedef DWORD (__stdcall *attr_fn)(const wchar16 *n);
+static void wcatw(wchar16 *d, unsigned size, const wchar16 *w) {
+    unsigned n = 0;
+    while (d[n]) n++;
+    while (*w && n + 1 < size) d[n++] = *w++;
+    d[n] = 0;
+}
+static unsigned length_w(const wchar16 *w) { unsigned n = 0; while (w[n]) n++; return n; }
+typedef DWORD (__stdcall *getenv_w_fn)(const wchar16 *n, wchar16 *o, DWORD s);
+typedef DWORD (__stdcall *attr_w_fn)(const wchar16 *n);
+static const wchar16 localappdata_var[] = {'L','O','C','A','L','A','P','P','D','A','T','A',0};
+/* This DLL's folder, ending in a separator; 0 when unknown. */
+static int dll_folder(wchar16 *out, unsigned size) {
     typedef DWORD (__stdcall *module_fn)(HMODULE m, wchar16 *o, DWORD s);
-    static const wchar16 var[] = {'L','O','C','A','L','A','P','P','D','A','T','A',0};
-    getenv_fn env = (getenv_fn)kernel32_proc("GetEnvironmentVariableW");
-    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryW");
-    attr_fn attr = (attr_fn)kernel32_proc("GetFileAttributesW");
     module_fn mod = (module_fn)kernel32_proc("GetModuleFileNameW");
-    DWORD n = env ? env(var, out, size - 48) : 0;
-    if (n && n < size - 48 && mkdir && attr) {
-        wcat16(out, size, "\\x360ui");
-        mkdir(out, 0);
-        DWORD at = attr(out);
-        if (at != (DWORD)-1 && (at & 0x10)) {   /* FILE_ATTRIBUTE_DIRECTORY */
-            wcat16(out, size, "\\");
+    DWORD n = mod ? mod(self_module, out, size - 48) : 0;
+    if (!n || n >= size - 48) { out[0] = 0; return 0; }
+    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
+    out[n] = 0;
+    return n != 0;
+}
+/* %LOCALAPPDATA%\x360ui, ending in a separator, made if missing (`make`); 0 when there is none. */
+static int local_folder(wchar16 *out, unsigned size, int make) {
+    typedef BOOL (__stdcall *mkdir_fn)(const wchar16 *n, void *sec);
+    getenv_w_fn env = (getenv_w_fn)kernel32_proc("GetEnvironmentVariableW");
+    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryW");
+    attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+    DWORD n = env ? env(localappdata_var, out, size - 48) : 0, at;
+    if (!n || n >= size - 48 || !mkdir || !attr) { out[0] = 0; return 0; }
+    wcat16(out, size, "\\x360ui");
+    if (make) mkdir(out, 0);
+    at = attr(out);
+    if (at == (DWORD)-1 || !(at & 0x10)) { out[0] = 0; return 0; }   /* FILE_ATTRIBUTE_DIRECTORY */
+    wcat16(out, size, "\\");
+    return 1;
+}
+/* Whether the game can write in this DLL's folder for real: a file made there (deleted when its
+ * handle closes, a crash included) that is not in the user's VirtualStore. */
+static int dll_folder_writable(void) {
+    typedef HANDLE (__stdcall *create_fn)(const wchar16 *n, DWORD a, DWORD s, void *sec, DWORD d, DWORD f, HANDLE t);
+    create_fn create = (create_fn)kernel32_proc("CreateFileW");
+    getenv_w_fn env = (getenv_w_fn)kernel32_proc("GetEnvironmentVariableW");
+    attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+    static const char test[] = "x360_ui.write-test";
+    static wchar16 path[600], store[700];   /* static: no __chkstk without the CRT (once, at the start) */
+    HANDLE h;
+    int real = 1;
+    DWORD n;
+    if (!create || !attr || !dll_folder(path, 600)) return 0;
+    wcat16(path, 600, test);
+    /* GENERIC_WRITE, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE */
+    h = create(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0x100 | 0x04000000, 0);
+    if (h == INVALID_HANDLE) return 0;
+    /* Virtualized: the file is %LOCALAPPDATA%\VirtualStore\<the folder without its drive>\<test>. */
+    n = env ? env(localappdata_var, store, 600) : 0;
+    if (n && n < 600 && path[0] && path[1] == ':') {
+        wcat16(store, 700, "\\VirtualStore");
+        wcatw(store, 700, path + 2);
+        if (attr(store) != (DWORD)-1) real = 0;
+    }
+    CloseHandle(h);
+    return real;
+}
+/* 1: beside the DLL; 0: %LOCALAPPDATA%\x360ui; -1: not decided yet (decided once, at the first
+ * file, so every file of a run is in one place). */
+static int data_beside = -1;
+int x360_data_beside(void) {
+    if (data_beside < 0) data_beside = dll_folder_writable();
+    return data_beside;
+}
+/* name's path where the mod keeps its files (`other`: the other place, where an older version or a
+ * fallback may have left it); 1 when that is %LOCALAPPDATA%\x360ui, 0 beside the DLL. */
+int x360_data_path_at(const char *name, wchar16 *out, unsigned size, int other) {
+    const int beside = x360_data_beside() ? !other : other;
+    out[0] = 0;
+    if (!beside) {
+        /* Made only as the place itself: looking in the other one makes nothing. */
+        if (local_folder(out, size, !other)) {
             wcat16(out, size, name);
             return 1;
         }
+        if (other) { out[0] = 0; return 1; }
     }
-    n = mod ? mod(self_module, out, size - 48) : 0;
-    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
-    out[n] = 0;
-    wcat16(out, size, name);
+    if (dll_folder(out, size)) wcat16(out, size, name);
     return 0;
+}
+int x360_data_path(const char *name, wchar16 *out, unsigned size) { return x360_data_path_at(name, out, size, 0); }
+/* Beside the DLL now: what an older version left in %LOCALAPPDATA%\x360ui moves here (the
+ * settings and a stop's text not yet shown, when there is none here), its old log goes, and the
+ * folder too once empty. Called once the log is open; says what it did. */
+/* Whether file a was written after file b (both there). */
+static int newer(const wchar16 *a, const wchar16 *b) {
+    typedef struct { DWORD attributes, created[2], accessed[2], written[2], size_high, size_low; } file_data;
+    typedef BOOL (__stdcall *attr_ex_fn)(const wchar16 *n, int level, file_data *out);
+    attr_ex_fn get = (attr_ex_fn)kernel32_proc("GetFileAttributesExW");
+    file_data fa, fb;
+    if (!get || !get(a, 0, &fa) || !get(b, 0, &fb)) return 0;
+    return fa.written[1] != fb.written[1] ? fa.written[1] > fb.written[1] : fa.written[0] > fb.written[0];
+}
+static void data_migrate(void) {
+    typedef BOOL (__stdcall *move_fn)(const wchar16 *from, const wchar16 *to, DWORD flags);
+    typedef BOOL (__stdcall *delete_fn)(const wchar16 *n);
+    typedef BOOL (__stdcall *rmdir_fn)(const wchar16 *n);
+    static const char *const moved[] = {"x360_settings.ini", "x360_stop.txt", 0};
+    move_fn move = (move_fn)kernel32_proc("MoveFileExW");
+    delete_fn del = (delete_fn)kernel32_proc("DeleteFileW");
+    rmdir_fn rmdir = (rmdir_fn)kernel32_proc("RemoveDirectoryW");
+    attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+    static wchar16 old_dir[600], from[600], to[600];   /* static: no __chkstk (once, at the start) */
+    int i;
+    if (!x360_data_beside() || !move || !del || !rmdir || !attr || !local_folder(old_dir, 600, 0)) return;
+    for (i = 0; moved[i]; i++) {
+        from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, moved[i]);
+        if (attr(from) == (DWORD)-1) continue;
+        x360_data_path(moved[i], to, 600);
+        /* One beside the game already: the newer wins (a version before 2026-10-23 wrote them here,
+         * and its file may be older than the one moved since). */
+        if ((attr(to) == (DWORD)-1 || newer(from, to)) && move(from, to, 2 | 1)) {   /* COPY_ALLOWED | REPLACE_EXISTING */
+            put("moved "); put(moved[i]); put(" from %LOCALAPPDATA%\\x360ui beside the game\r\n");
+        } else if (attr(to) != (DWORD)-1) {
+            del(from);
+        }
+    }
+    from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, "x360_ui.log");
+    del(from);
+    old_dir[length_w(old_dir) - 1] = 0;   /* without its separator */
+    if (rmdir(old_dir)) put("%LOCALAPPDATA%\\x360ui removed (empty)\r\n");
 }
 /* CreateFileW on x360_data_path(name). */
 HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition) {
@@ -211,7 +314,9 @@ static void open_log(void) {
     local = x360_data_path("x360_ui.log", path, 600);
     log_file = x360_data_open("x360_ui.log", GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS);
     put("x360_ui proxy CEGUIBase.dll " X360_VERSION ": loaded\r\n");
-    put(local ? "the log in %LOCALAPPDATA%\\x360ui\r\n" : "the log beside the DLL (no LOCALAPPDATA)\r\n");
+    put(local ? "the log in %LOCALAPPDATA%\\x360ui (the game's folder cannot be written)\r\n"
+              : "the log beside the game (its folder is written)\r\n");
+    data_migrate();
     log_system();
 }
 
