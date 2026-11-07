@@ -9243,7 +9243,7 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * the world is ready without it (the 360's HUD up, then 60 frames, counted, not timed); then, with
  * no pet, the game stops with a message that says so. Nothing is done out of play (the title loads
  * the last character as well, QA run 29: its items were kept aside and placed twice). */
-/* The stop: saves held back at once; the text into x360_stop.txt (stop_path: LOCALAPPDATA\\x360ui) and the log; PC's
+/* The stop: saves held back at once; the text into x360_stop.txt (stop_path: where the mod keeps its files) and the log; PC's
  * own modal opened with it (0x54cad0 on CGameUI, as PC's callers do: its title and text, wide
  * strings by value), which the 360's modal shows (modal_tick) and which takes the pad, keyboard
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
@@ -9394,10 +9394,10 @@ static int write_stop_file(const char *text) {
     unsigned short path[600];
     int i;
     for (i = 0; i < 2; i++)
-        if (stop_path(path, 600, i) && write_text_w(path, text)) {
+        if (stop_path(path, 600, i ? 2 : 0) && write_text_w(path, text)) {   /* 2: the other place, made if missing */
             unsigned k;
             for (k = 0; k < 600 && (stop_file[k] = path[k]) != 0; k++) {}
-            if (i) x360_log("x360 load: x360_stop.txt written beside the game (LOCALAPPDATA could not be written)\r\n");
+            if (i) x360_log("x360 load: x360_stop.txt written in the other place (where the mod keeps its files could not be written)\r\n");
             return 1;
         }
     stop_file[0] = 0;

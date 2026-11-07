@@ -3440,7 +3440,7 @@ boundary, and the folders are the user's own.
 written since 2026-11-07, section 55).** `x360_ui.log` and
 `x360_settings.ini`, like `x360_stop.txt`, are in `%LOCALAPPDATA%\x360ui` (under Wine or
 Proton, the prefix's `users/<user>/AppData/Local/x360ui`), through `x360_data_path` in
-`cegui_proxy.c`; beside the DLL only when LOCALAPPDATA is missing or its folder cannot be made. The game's folder may be Program Files,
+`cegui_proxy.c` (until 2026-11-07; section 55 now). The game's folder may be Program Files,
 which the game (a 32-bit executable without a manifest) cannot write: Windows redirects its
 writes into the user's VirtualStore, where no uninstaller looked. Both uninstallers remove the
 `x360ui` folder, and on Windows the three files an older version left in the VirtualStore copy of
@@ -4633,23 +4633,29 @@ following, all local (nothing is sent anywhere):
 ## 55. The mod's files beside the game (portable, 2026-11-07)
 
 The owner asked for a mod that leaves nothing elsewhere on the disk (2026-11-01). The proxy's own
-files (`x360_ui.log`, `x360_settings.ini`, `x360_stop.txt`, and the pad's development records) now
-go beside `CEGUIBase.dll`, in the game's folder, when the game can write there for real; else, as
+files (`x360_ui.log`, `x360_settings.ini`, `x360_stop.txt`, and the pad's test records) now go
+beside `CEGUIBase.dll`, in the game's folder, when the game can write there for real; else, as
 before, in `%LOCALAPPDATA%\x360ui` (`x360_data_path` in `cegui_proxy.c`).
 - **The test, once per run** (at the first file, the log): a file `x360_ui.write-test` made in the
   folder with delete-on-close (gone when its handle closes, a crash included). Not writable, or
   written into the user's VirtualStore (`%LOCALAPPDATA%\VirtualStore\<the folder without its
   drive>`, where Windows redirects a 32-bit game without a manifest that writes in Program Files):
-  `%LOCALAPPDATA%\x360ui`. GOG's default folder and Steam's libraries are written for real; a game
-  in Program Files keeps the old place. Under Wine or Proton the game's folder is written.
-- **Moving from an older version:** with the files beside the game, `x360_settings.ini` and a stop's
-  text not yet shown move from `%LOCALAPPDATA%\x360ui` when the game's folder has none or an older
-  one (versions before 2026-10-23 wrote the settings beside the game; the newer file wins) (two games
-  sharing that folder, GOG's and Steam's on one Windows: the first one started takes them), the old
-  log is deleted, and the folder is removed once empty. The log says what moved.
+  `%LOCALAPPDATA%\x360ui`, and the empty folders Windows made in the VirtualStore for the test are
+  removed. GOG's default folder and Steam's libraries are written for real; a game in Program
+  Files keeps the old place. Under Wine or Proton the game's folder is written.
+- **Run as administrator:** such a run writes Program Files for real, where a normal run would not
+  find its files. So an elevated run uses the game's folder only when the mod's log is already
+  there (an earlier normal run keeps its files there); else `%LOCALAPPDATA%\x360ui`.
+- **Moving from an older version, once:** at the first run that keeps the files beside the game
+  (no log there yet), `x360_settings.ini` and a stop's text not yet shown move from
+  `%LOCALAPPDATA%\x360ui` when the game's folder has none or an older one (versions before
+  2026-10-23 wrote the settings beside the game; the newer file wins; a move that fails keeps the
+  old file), the old log is deleted, and the folder is removed once empty. The log says what moved.
+  Once only: another copy of the game that keeps its files in `%LOCALAPPDATA%\x360ui` (in Program
+  Files, on the same Windows account) is not taken from at every start.
 - **Where the log is:** its second line says which place, and why.
-- **`x360_stop.txt`:** written where the files are, else in the other place; looked for and removed
-  in both. Looking in `%LOCALAPPDATA%` makes no folder there.
-- **The uninstallers** already remove these files beside the game and the `%LOCALAPPDATA%\x360ui`
-  folder (section on the mod's own files), so nothing changes there.
-
+- **`x360_stop.txt`:** written where the files are, else in the other place (its folder made for
+  that); looked for and removed in both. Looking in `%LOCALAPPDATA%` makes no folder there.
+- **The uninstallers** remove these files beside the game, the pad's test records there
+  (`x360_record-*`, `x360_trace-*`, `x360_frames-*`), the `%LOCALAPPDATA%\x360ui` folder, and in the
+  VirtualStore the three files an older version left and the folders that held only them.

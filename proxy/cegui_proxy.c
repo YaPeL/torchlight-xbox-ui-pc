@@ -189,23 +189,67 @@ static int dll_folder_writable(void) {
         if (attr(store) != (DWORD)-1) real = 0;
     }
     CloseHandle(h);
+    if (!real) {
+        /* The folders Windows made in the VirtualStore for the test go too, while empty (up to the
+         * VirtualStore itself, kept): nothing left there by the test. */
+        typedef BOOL (__stdcall *rmdir_fn)(const wchar16 *n);
+        rmdir_fn rmdir = (rmdir_fn)kernel32_proc("RemoveDirectoryW");
+        unsigned root = n + 13, m = length_w(store);   /* LOCALAPPDATA + "\VirtualStore" */
+        while (rmdir && m > root) {
+            while (m > root && store[m - 1] != '\\') m--;
+            if (m <= root + 1) break;
+            store[m - 1] = 0;
+            m--;
+            if (!rmdir(store)) break;
+        }
+    }
     return real;
 }
+/* Whether the game runs elevated (as administrator): there a Program Files folder is written for
+ * real, and the next normal run would not find its files (they would be virtualized away). */
+static int elevated(void) {
+    typedef BOOL (__stdcall *open_token_fn)(HANDLE process, DWORD access, HANDLE *token);
+    typedef BOOL (__stdcall *token_info_fn)(HANDLE token, int cls, void *out, DWORD size, DWORD *len);
+    typedef HANDLE (__stdcall *current_fn)(void);
+    HMODULE adv = GetModuleHandleA("advapi32.dll");
+    open_token_fn open_token;
+    token_info_fn info;
+    current_fn current = (current_fn)kernel32_proc("GetCurrentProcess");
+    HANDLE token = 0;
+    DWORD value = 0, len = 0;
+    if (!adv) adv = LoadLibraryA("advapi32.dll");
+    open_token = adv ? (open_token_fn)GetProcAddress(adv, "OpenProcessToken") : 0;
+    info = adv ? (token_info_fn)GetProcAddress(adv, "GetTokenInformation") : 0;
+    if (!open_token || !info || !current || !open_token(current(), 8, &token)) return 0;   /* TOKEN_QUERY */
+    if (!info(token, 20, &value, sizeof value, &len)) value = 0;   /* TokenElevation */
+    CloseHandle(token);
+    return value != 0;
+}
 /* 1: beside the DLL; 0: %LOCALAPPDATA%\x360ui; -1: not decided yet (decided once, at the first
- * file, so every file of a run is in one place). */
+ * file, so every file of a run is in one place). An elevated run goes beside the DLL only where an
+ * earlier run already keeps its files (its log there). */
 static int data_beside = -1;
+static int data_beside_new;   /* beside the DLL, and no log there yet: the first such run (data_migrate) */
 int x360_data_beside(void) {
-    if (data_beside < 0) data_beside = dll_folder_writable();
+    if (data_beside < 0) {
+        attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+        static wchar16 log[600];   /* static: no __chkstk (once, at the start) */
+        int had_log = attr && dll_folder(log, 600) && (wcat16(log, 600, "x360_ui.log"), attr(log) != (DWORD)-1);
+        data_beside = dll_folder_writable() && (had_log || !elevated());
+        data_beside_new = data_beside && !had_log;
+    }
     return data_beside;
 }
-/* name's path where the mod keeps its files (`other`: the other place, where an older version or a
- * fallback may have left it); 1 when that is %LOCALAPPDATA%\x360ui, 0 beside the DLL. */
+/* name's path where the mod keeps its files; `other` 1: the other place, only to look in (an older
+ * version or a fallback may have left it there), 2: the other place, to write in (the fallback).
+ * Returns 1 when that is %LOCALAPPDATA%\x360ui, 0 beside the DLL; the path empty when the other
+ * place is a %LOCALAPPDATA%\x360ui that is not there. */
 int x360_data_path_at(const char *name, wchar16 *out, unsigned size, int other) {
-    const int beside = x360_data_beside() ? !other : other;
+    const int beside = x360_data_beside() ? !other : !!other;
     out[0] = 0;
     if (!beside) {
-        /* Made only as the place itself: looking in the other one makes nothing. */
-        if (local_folder(out, size, !other)) {
+        /* Made as the place itself, or for a write: only looking makes nothing. */
+        if (local_folder(out, size, other != 1)) {
             wcat16(out, size, name);
             return 1;
         }
@@ -215,9 +259,6 @@ int x360_data_path_at(const char *name, wchar16 *out, unsigned size, int other) 
     return 0;
 }
 int x360_data_path(const char *name, wchar16 *out, unsigned size) { return x360_data_path_at(name, out, size, 0); }
-/* Beside the DLL now: what an older version left in %LOCALAPPDATA%\x360ui moves here (the
- * settings and a stop's text not yet shown, when there is none here), its old log goes, and the
- * folder too once empty. Called once the log is open; says what it did. */
 /* Whether file a was written after file b (both there). */
 static int newer(const wchar16 *a, const wchar16 *b) {
     typedef struct { DWORD attributes, created[2], accessed[2], written[2], size_high, size_low; } file_data;
@@ -227,6 +268,11 @@ static int newer(const wchar16 *a, const wchar16 *b) {
     if (!get || !get(a, 0, &fa) || !get(b, 0, &fb)) return 0;
     return fa.written[1] != fb.written[1] ? fa.written[1] > fb.written[1] : fa.written[0] > fb.written[0];
 }
+/* Beside the DLL for the first time (no log there before this run): what an older version left in
+ * %LOCALAPPDATA%\x360ui moves here (the settings and a stop's text not yet shown, when there is
+ * none here or an older one), its old log goes, and the folder too once empty. Once only: a game
+ * that keeps its files there (another copy, in Program Files) is not taken from at every start.
+ * Called once the log is open; says what it did. */
 static void data_migrate(void) {
     typedef BOOL (__stdcall *move_fn)(const wchar16 *from, const wchar16 *to, DWORD flags);
     typedef BOOL (__stdcall *delete_fn)(const wchar16 *n);
@@ -238,7 +284,7 @@ static void data_migrate(void) {
     attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
     static wchar16 old_dir[600], from[600], to[600];   /* static: no __chkstk (once, at the start) */
     int i;
-    if (!x360_data_beside() || !move || !del || !rmdir || !attr || !local_folder(old_dir, 600, 0)) return;
+    if (!x360_data_beside() || !data_beside_new || !move || !del || !rmdir || !attr || !local_folder(old_dir, 600, 0)) return;
     for (i = 0; moved[i]; i++) {
         from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, moved[i]);
         if (attr(from) == (DWORD)-1) continue;
@@ -247,8 +293,8 @@ static void data_migrate(void) {
          * and its file may be older than the one moved since). */
         if ((attr(to) == (DWORD)-1 || newer(from, to)) && move(from, to, 2 | 1)) {   /* COPY_ALLOWED | REPLACE_EXISTING */
             put("moved "); put(moved[i]); put(" from %LOCALAPPDATA%\\x360ui beside the game\r\n");
-        } else if (attr(to) != (DWORD)-1) {
-            del(from);
+        } else if (attr(to) != (DWORD)-1 && !newer(from, to)) {
+            del(from);   /* the one here is as new: the old copy goes (a failed move keeps it) */
         }
     }
     from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, "x360_ui.log");
@@ -314,8 +360,9 @@ static void open_log(void) {
     local = x360_data_path("x360_ui.log", path, 600);
     log_file = x360_data_open("x360_ui.log", GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS);
     put("x360_ui proxy CEGUIBase.dll " X360_VERSION ": loaded\r\n");
-    put(local ? "the log in %LOCALAPPDATA%\\x360ui (the game's folder cannot be written)\r\n"
-              : "the log beside the game (its folder is written)\r\n");
+    put(local ? "the log in %LOCALAPPDATA%\\x360ui (the game's folder cannot be written, or runs elevated)\r\n"
+        : x360_data_beside() ? "the log beside the game (its folder is written)\r\n"
+                             : "the log beside the game (its folder may not be written, and LOCALAPPDATA cannot be used)\r\n");
     data_migrate();
     log_system();
 }
