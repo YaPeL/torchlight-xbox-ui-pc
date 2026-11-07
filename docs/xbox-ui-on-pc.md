@@ -4628,3 +4628,47 @@ following, all local (nothing is sent anywhere):
   happened, and for an access violation the address read or written.
 - **The end:** "the game closed" when the process ends normally. A log without it ended in a kill
   or a crash.
+
+## 56. The 360's death and waypoint menus (2026-11-07)
+
+Until now PC's resurrection and waypoint screens were shown with the pad (sections 34, 36). They
+are now the 360's, over PC's, which still do the acts. **[read, 360; the recomp agent]**
+- **CDieMenu** (vtable `0x820012F8`; `diemenu.uilayout`; init `sub_8235EF28`, pad
+  `sub_8235FC90`): opened when the hero's death timer runs out (`sub_821DC980`, 0.5 s after the
+  death). A normal death shows Resurrect1-3 with Choice1-3, always all three, and hides
+  `hardcoretext`. The choices' texts carry the costs: XP and fame (here), gold (the floor's
+  entrance), nothing (the town). Focus is linear over the three by tab order: up or left of the
+  d-pad and both sticks for the previous, down or right for the next; it wraps, skips hidden ones,
+  starts on Resurrect1, and shows as the button's hover. A on a choice takes it (commands 14-16).
+  Y exits to the title (the same write as Options' exit). B and Start do nothing. A hardcore death
+  (hero `+2469`) shows the same menu with Resurrect1-3 hidden and `hardcoretext` shown; Y exits.
+  The menu counts as an interactive menu (`GameUI+5612`), so the bars slide in.
+- **CWaypointMenu** (vtable `0x820011C0`; `waypointmenu.uilayout`; fill `sub_82359130`, pad
+  `sub_82359B80`): Button1-10 with Choice1-10, the hero's waypoints in their stored order (a
+  floor's number after the name where the level has floors), the rest hidden, no paging. Focus
+  works as in the death menu. A travels and B closes; X, Y and Start do nothing. No bars.
+
+**[port]** `die360_tick`, `wp360_tick` and `die360_hardcore_tick` in `x360_menu.c`:
+- **PC's screens are found as before.** The death menu by `Resurrect1`/`ExitGame`; the waypoint
+  menu by `Choice10`/`Cancel`; at a hardcore death, PC's modal (`CModalMenu`, opened by PC's death
+  handling, `0x4e16c5`) with the hero's health (`+0x394`) at 0.
+- **The 360's layout over them.** It is loaded once and scaled. PC's `Frame` is moved off the
+  screen while the 360's shows, and put back for a press.
+- **What is copied from PC's:** the title, the choices' texts (PC's own costs) and which buttons
+  show.
+- **Focus.** The d-pad and the left stick move it, with repeat when held. It is shown as the
+  button's `HoverImage` set as its `NormalImage`.
+- **What the buttons press on PC's:**
+  - in the death menu, A presses PC's `ResurrectN` and Y its `ExitGame`;
+  - in the waypoint menu, A presses `ButtonN` and B `Cancel`;
+  - at a hardcore death, Y presses the modal's `Ok`, and the 360's modal (section on the modal) is
+    not shown.
+- **Bars.** The death menu counts for the bars (`bars_tick`).
+- **Not done:** the right stick, which also moves the 360's focus; the remembered focus on later
+  opens (inferred on the 360).
+- **[run, GOG, 2026-11-07]** A death on the bench hero: console `RESETPLAYERLEVEL;VERYHARD;
+  DISABLEPET` and six `CHAMPION SKELETON`, standing still. The menu showed with the bars and the
+  focus on Resurrect1. The d-pad moved it to Resurrect3, and A resurrected in town. Not yet tried:
+  the hardcore death (no hardcore hero on this machine) and the waypoint menu. Under the death menu
+  PC's HUD orbs and hotbar still show between the bars; whether the 360 hides its HUD there is
+  open (`sub_822E9E00`).
