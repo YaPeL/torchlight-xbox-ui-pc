@@ -4692,3 +4692,17 @@ are now the 360's, over PC's, which still do the acts. **[read, 360; the recomp 
   found either, so the change was left out. Asked of the recomp agent: the origin's sign, the
   distance at which the 360's A takes the town's waygate, and whether that waygate is a
   WAYPOINTNODE.
+- **[read, 360; the recomp agent's answer]**
+  - The origin is 1.5 *behind* the hero (vfunc `+148` is the local +Z, forward, times −1.5), as
+    the port reads it. So the 360 catches a waygate only with the hero on it, or just past it: in
+    its run the town gate was 1.15 behind the hero, in the 0.5 disc.
+  - Prison Stronghold's "Waygate to Town" is not a WAYPOINTNODE. It is an INTERACTABLE trigger
+    (`units/props/ExitTrigger/WAYGATE`), which warps to the town through the layout's logic. The
+    only WAYPOINTNODE is `units/props/TownPortal/WAYGATERETURN`, which the code spawns at the
+    town's `waygate` node; the menu opens only there.
+- **[run, GOG]** The bench hero, resurrected in town, stood on the town gate's platform, and PC's
+  lists held no trigger within 20. The gate unit is not there for this hero: its story has not
+  reached the first boss [inferred].
+  - **Next:** a hero with the town gate active, standing on it. With the mode-3 query over PC's
+    trigger units added (tried, kept out of this branch because no run has confirmed it), its A
+    would use the gate as PC's click does.
