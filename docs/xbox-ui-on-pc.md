@@ -4668,7 +4668,14 @@ are now the 360's, over PC's, which still do the acts. **[read, 360; the recomp 
   opens (inferred on the 360).
 - **[run, GOG, 2026-11-07]** A death on the bench hero: console `RESETPLAYERLEVEL;VERYHARD;
   DISABLEPET` and six `CHAMPION SKELETON`, standing still. The menu showed with the bars and the
-  focus on Resurrect1. The d-pad moved it to Resurrect3, and A resurrected in town. Not yet tried:
-  the hardcore death (no hardcore hero on this machine) and the waypoint menu. Under the death menu
-  PC's HUD orbs and hotbar still show between the bars; whether the 360 hides its HUD there is
-  open (`sub_822E9E00`).
+  focus on Resurrect1. The d-pad moved it to Resurrect3, and A resurrected in town.
+- **[capture, 360; the recomp agent]** The death menu hides the HUD (orbs, hotbar, XP bar) and
+  shows the bars; the waypoint menu keeps the HUD and shows no bars. The port now hides the HUD
+  under the death menu (`hud_tick`'s show, as under the modal). **[run, GOG, again]** The frame,
+  title and buttons within a few pixels of the 360's capture (at 1080: the frame 473-1447 against
+  455-1470 on its drawn shadow, the buttons 760-1160 against 762-1158), the HUD hidden; the left
+  stick moved the focus down twice, and A on Resurrect3 resurrected in town.
+- **Not yet tried:** the hardcore death (no hardcore hero on this machine) and the waypoint menu.
+  On the all-waypoints save (`5-allwp.SVT`) the hero reached Prison Stronghold's waygate (its
+  label shows), but the port's A does nothing there ("A: nothing"): the pad cannot use a waygate
+  yet, a gap of the port's A (open; how the 360's A uses one is asked of the recomp agent).

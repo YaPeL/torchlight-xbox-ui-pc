@@ -6977,7 +6977,12 @@ static void hud_tick(void) {
         if (!faded) { prop(pc_hud_root, "Alpha", "0"); pass_mouse(pc_hud_root); faded = 1; }
     }
     hud_stage = "bars";
-    show(hud_root, !qd_shown && !modal_shown);     /* no HUD under a dialog or a modal (town/13, in-game/16) */
+    {
+        int x360_die_menu_shown(void);
+        /* no HUD under a dialog or a modal (town/13, in-game/16), nor the death menu (the recomp
+         * agent's capture, 2026-11-07: orbs, hotbar and XP bar hidden) */
+        show(hud_root, !qd_shown && !modal_shown && !x360_die_menu_shown());
+    }
     mirror_bar("PlayerHealthBar", "PlayerHealthBarSub", 0, health);
     mirror_bar("PlayerManaBar", "PlayerManaBarSub", 0, mana);
     mirror_bar("ExperienceBar", "ExperienceBarSub", 1, xp);
