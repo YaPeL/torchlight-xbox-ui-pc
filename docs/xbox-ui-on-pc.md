@@ -4678,4 +4678,17 @@ are now the 360's, over PC's, which still do the acts. **[read, 360; the recomp 
 - **Not yet tried:** the hardcore death (no hardcore hero on this machine) and the waypoint menu.
   On the all-waypoints save (`5-allwp.SVT`) the hero reached Prison Stronghold's waygate (its
   label shows), but the port's A does nothing there ("A: nothing"): the pad cannot use a waygate
-  yet, a gap of the port's A (open; how the 360's A uses one is asked of the recomp agent).
+  yet, a gap of the port's A.
+- **The waygate and A (open).** **[read, 360; the recomp agent]** A waygate is a trigger unit
+  (CTriggerUnit, vtable `0x82004894`), found by the hover's second query (`sub_821EB598` ->
+  `sub_821B58C0` mode 3: any targetable unit within 3.5 of an origin moved 1.5 along the facing
+  axis, in the 30-degree cone, in sight). A uses it, through its Use (slot `+308`, `sub_822D8160`
+  -> `sub_822D8548`). That opens the waypoint menu for a WAYPOINTNODE (type 171), warps to the
+  town for a TOWNPORTAL (43), and warps to its level for a MAPPORTAL (173). Where A calls the Use
+  is not traced. **[run, GOG, diagnosis]** PC keeps trigger units in the level's item list. At
+  Prison Stronghold's waygate the hero stops at its foot, the trigger's centre 3.76 ahead, past the
+  port's 3-unit item reach. The 360's mode-3 query over PC's trigger units, with the origin 1.5
+  behind the hero as the port reads it for NPCs, puts the centre at about 5.3, past 3.5: nothing
+  found either, so the change was left out. Asked of the recomp agent: the origin's sign, the
+  distance at which the 360's A takes the town's waygate, and whether that waygate is a
+  WAYPOINTNODE.
