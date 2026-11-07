@@ -8260,6 +8260,7 @@ void x360_dump_after(const char *name, unsigned ms);
 #define MODAL_PREFIX "x360modal_"
 static void *modal_root;
 static char pc_modal_prefix[48];
+static int die_hardcore_shown;   /* the 360's death menu in its hardcore look over PC's modal (die360_hardcore_tick) */
 static int pc_modal_menu_open(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + 0x304) : 0;
     return m && *(unsigned *)m == 0x00ab7d04 && m[0x18];
@@ -8494,7 +8495,7 @@ int x360_modal_take(char *out, unsigned size) {
  * get (sub_823589A0 and sub_82353758 return 1), so proxy/pad.c does not act in the world then. */
 int x360_overlay_open(void) {
     /* The fishing too (QA run 8: B that cancelled it also fired the skill mapped to B). */
-    return tip_shown || modal_shown || qd_shown || fish_shown || GetTickCount() - overlay_closed_at < 300;
+    return tip_shown || modal_shown || qd_shown || fish_shown || die_hardcore_shown || GetTickCount() - overlay_closed_at < 300;
 }
 
 /* A test aid: a UI dump `ms` after a call (proxy/pad.c asks for one after A talks to a unit, to see
@@ -10247,10 +10248,11 @@ struct list_menu {
     unsigned prev, next_repeat;
     char normal[LIST_MAX][96], hover[LIST_MAX][96];   /* each button's images (the focus shows its hover) */
     char kept[128];                                    /* PC's Frame's rect, while it is away */
+    char away_prefix[64];                              /* whose Frame that is (PC's death menu or its modal) */
 };
 static struct list_menu die_menu = {"media/ui/x360/diemenu.layout", DIE_PREFIX, "Resurrect", "Choice", 3};
 static struct list_menu wp_menu = {"media/ui/x360/waypointmenu.layout", WP_PREFIX, "Button", "Choice", 10};
-static int die_hardcore_shown;
+static int pc_die_attached;   /* PC's resurrection screen is up (pc_menus_nav_tick): not a hardcore death */
 static void numbered(char *out, const char *name, int i) {
     unsigned n = 0;
     while (*name && n < 30) out[n++] = *name++;
@@ -10260,9 +10262,17 @@ static void numbered(char *out, const char *name, int i) {
 }
 /* PC's Frame (prefix) off the screen while the 360's menu shows, back for a press and at its end. */
 static void list_frame_away(struct list_menu *m, const char *pc, int away) {
-    void *f = win_of(pc, "Frame");
+    void *f;
     float v[8];
     char moved[128];
+    unsigned i;
+    /* Another screen's Frame away (the death menu's, then the modal's): it comes back first. */
+    if (m->frame_is_away && !same_text_nocase(m->away_prefix, pc)) {
+        void *g = win_of(m->away_prefix, "Frame");
+        if (g) { prop(g, "UnifiedAreaRect", m->kept); fresh_rects(g); }
+        m->frame_is_away = 0;
+    }
+    f = win_of(pc, "Frame");
     if (!f || away == m->frame_is_away) return;
     if (away) {
         read_prop(f, "UnifiedAreaRect", m->kept, sizeof m->kept);
@@ -10270,6 +10280,8 @@ static void list_frame_away(struct list_menu *m, const char *pc, int away) {
         v[1] += 10000.0f; v[5] += 10000.0f;
         write_rect(moved, v);
         prop(f, "UnifiedAreaRect", moved);
+        for (i = 0; pc[i] && i + 1 < sizeof m->away_prefix; i++) m->away_prefix[i] = pc[i];
+        m->away_prefix[i] = 0;
     } else prop(f, "UnifiedAreaRect", m->kept);
     fresh_rects(f);
     m->frame_is_away = away;
@@ -10372,8 +10384,17 @@ static void list_copy(struct list_menu *m, const char *pc, int *shown) {
 static int die360_tick(const char *pc, int up) {
     int shown[LIST_MAX], focus;
     unsigned pressed;
-    if (!up) { if (!die_hardcore_shown) list_close(&die_menu, pc); return 0; }
+    pc_die_attached = up;
+    if (!up) {
+        /* A hardcore death's menu whose modal went (the game left for the title: modal_tick, which
+         * runs only in a world, no longer closes it). */
+        if (die_hardcore_shown && !pc_modal_menu_open()) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal_prefix); }
+        if (!die_hardcore_shown) list_close(&die_menu, pc);
+        return 0;
+    }
+    if (die_hardcore_shown) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal_prefix); }
     if (!list_open(&die_menu, pc)) return 0;
+    list_frame_away(&die_menu, pc, 1);   /* again after a press that left PC's screen up */
     show(win_of(DIE_PREFIX, "hardcoretext"), 0);
     list_copy(&die_menu, pc, shown);
     pressed = list_pad(&die_menu, shown, &focus);
@@ -10394,6 +10415,7 @@ static int wp360_tick(const char *pc, int up) {
     unsigned pressed;
     if (!up) { list_close(&wp_menu, pc); return 0; }
     if (!list_open(&wp_menu, pc)) return 0;
+    list_frame_away(&wp_menu, pc, 1);   /* again after a press that left PC's screen up */
     list_copy(&wp_menu, pc, shown);
     pressed = list_pad(&wp_menu, shown, &focus);
     if ((pressed & 0x1000) && focus >= 0) {   /* A: travel */
@@ -10417,7 +10439,9 @@ static int die360_hardcore_tick(const char *pc_modal, int up) {
         if (die_hardcore_shown) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal); }
         return 0;
     }
+    if (pc_die_attached) return 0;   /* a modal over PC's resurrection screen: a normal death */
     if (!list_open(&die_menu, pc_modal)) return 0;
+    list_frame_away(&die_menu, pc_modal, 1);
     if (!die_hardcore_shown) { die_hardcore_shown = 1; x360_log("x360 menu: the hardcore death as the 360's\r\n"); }
     for (i = 0; i < 3; i++) {
         char b[32];
@@ -10433,6 +10457,7 @@ static int die360_hardcore_tick(const char *pc_modal, int up) {
     buttons = x360_pad_buttons();
     pressed = buttons & ~die_menu.prev;
     die_menu.prev = buttons;
+    if (x360_tip_open()) pressed = 0;   /* a tip over it has the pad (as the modal's) */
     if (pressed & 0x8000) {   /* Y */
         list_frame_away(&die_menu, pc_modal, 0);
         press_pc(pc_modal, "Ok");
