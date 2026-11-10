@@ -379,6 +379,14 @@ def wine_path(path):
     return path if os.name == "nt" else "Z:" + os.path.abspath(path).replace("/", "\\")
 
 
+def ini_out(game, out):
+    """out= for the ini: relative to the game's folder when the converted folder is in it (the proxy
+    takes it from the DLL's folder, so the game's folder can be moved), else the game's own path."""
+    if os.path.normcase(os.path.dirname(os.path.abspath(out))) == os.path.normcase(os.path.abspath(game)):
+        return os.path.basename(os.path.abspath(out))
+    return wine_path(out)
+
+
 def read_ini(game):
     path = os.path.join(game, "x360_ui.ini")
     values = {}
@@ -426,7 +434,7 @@ def write_ini(game, out, bag="pc"):
     # Remembered once the 360's bag was used, until uninstall: a character not yet loaded and saved
     # with PC's bag would lose what does not fit it.
     used = bag == "360" or old.get("bag") == "360" or old.get("bag_360_used") == "1"
-    owned = {"mode": "scheme", "out": wine_path(out), "pad": "1", "pad_mode": "direct", "prompts": "auto",
+    owned = {"mode": "scheme", "out": ini_out(game, out), "pad": "1", "pad_mode": "direct", "prompts": "auto",
              "bag": bag, "bag_360_used": "1" if used else None, "update_check": None}
     lines = []
     if os.path.isfile(path):

@@ -412,7 +412,8 @@ loads, in order, before the main menu (`x360_ui.log`; none returned null):
   replacing it at this point.
 
 **Scheme mode.** `x360_ui.ini` in the game folder:
-`mode=scheme` and `out=Z:\home\<user>\torchlight-gog\x360ui` (the converter's `OUT`). After
+`mode=scheme` and `out=x360ui` (the converter's `OUT`; relative to the DLL's folder, or absolute,
+as installers before v0.8.2 wrote it: `out_resolve`, so a game's folder can be moved). After
 the game's `loadScheme` of `GUILOOKSKIN.SCHEME` returns, the proxy:
 1. adds `OUT` to Ogre's world resource group (`General`) as a recursive `FileSystem` location.
    `OUT`, not `OUT/media/ui/x360`, because the converted files name each other by their own
@@ -3122,6 +3123,9 @@ another type's section with PC's) is lost at load. The owner's plan: placed agai
 folder made DIR (the executable's import of `SHGetSpecialFolderPathW` replaced, found by name;
 the game asks for CSIDL_APPDATA through its one wrapper `0x5cc6c0`), so a test runs on copies in
 DIR's `runic games\torchlight` and the user's own folder is neither read nor written. Not run yet.
+DIR must exist; its `runic games\torchlight` is made when missing (`save_root_folders`): the game
+does not make it, and with DIR empty it closed at startup, an access violation in OgreMain.dll
+before Ogre.log (Windows 11, #124).
 
 **QA run 28 (2026-10-23, the copy of the test hero, its health potion's slot made 70 with the 360's
 bag).** The potion was not in the bag after loading (the HUD's count gone) nor in the file after
@@ -4761,3 +4765,14 @@ are now the 360's, over PC's, which still do the acts. **[read, 360; the recomp 
   gate (the hero put on it by a mouse click; the stick stops it at the step below) A warped to the
   town, and on the town's gate A opened the waypoint menu and B closed it. A normal death on the
   bench save showed the three choices and no hardcore text.
+
+## 57. out= relative to the game's folder (2026-11-10)
+
+The installers wrote `out=` as the converted folder's absolute path. A game's folder moved after
+installing kept the old path: the 360's scheme was not found while the mod's hooks stayed on (and a
+copied folder used the original's converted files until those were removed). **[read, the proxy]**
+Now both installers write `out=x360ui` (`install.ini_out`, `ini_out` in `installer/src/install.cpp`)
+when the converted folder is in the game's folder, and the proxy takes a relative `out=` from the
+DLL's folder (`out_resolve`, in `read_config`). An absolute `out=` (an older ini, `C:\`, `Z:\`,
+`\\server`, `/`) is kept as it is. The log's `mode scheme, out "..."` line shows the resolved path.
+Tests: `OutResolveTest` (the function compiled on the host) and the installer's ini test.

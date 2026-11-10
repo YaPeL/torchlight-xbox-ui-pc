@@ -367,13 +367,23 @@ std::string wine_path(const fs::path& p) {
 #endif
 }
 
+// out= for the ini: relative to the game's folder when the converted folder is in it (the proxy
+// takes it from the DLL's folder, so the game's folder can be moved), else the game's own path
+// (install.ini_out).
+std::string ini_out(const fs::path& game, const fs::path& out) {
+  fs::path o = fs::absolute(out).lexically_normal(), g = fs::absolute(game).lexically_normal();
+  if (!o.has_filename()) o = o.parent_path();   // a trailing separator
+  if (!g.has_filename()) g = g.parent_path();
+  return o.parent_path() == g ? S(o.filename()) : wine_path(out);
+}
+
 Bytes ini_text(const fs::path& game, const fs::path& out, const std::string& bag) {
   // Remembered once the 360's bag was used, until uninstall: a character not yet loaded and saved
   // with PC's bag would lose what does not fit it.
   auto old = read_ini(game);
   const bool used = bag == "360" || old["bag"] == "360" || old["bag_360_used"] == "1";
   std::vector<std::pair<std::string, std::string>> owned = {
-      {"mode", "scheme"}, {"out", wine_path(out)}, {"pad", "1"}, {"pad_mode", "direct"}, {"prompts", "auto"}, {"bag", bag}};
+      {"mode", "scheme"}, {"out", ini_out(game, out)}, {"pad", "1"}, {"pad_mode", "direct"}, {"prompts", "auto"}, {"bag", bag}};
   if (used) owned.push_back({"bag_360_used", "1"});
   std::set<std::string> keys = {"mode", "out", "pad", "pad_mode", "prompts", "bag", "bag_360_used", "update_check"};
   std::vector<U32> kept;

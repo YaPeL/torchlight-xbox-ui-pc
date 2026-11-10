@@ -15,7 +15,8 @@
  *
  * x360_ui.ini next to this DLL (optional; without it the proxy only logs):
  *   mode=scheme                                 after PC loads GuiLookSkin.scheme, load the 360 one
- *   out=Z:\home\me\torchlight-gog\x360ui        the converter's OUT (tools/convert_x360_ui.py)
+ *   out=x360ui                                  the converter's OUT (tools/convert_x360_ui.py), relative
+ *                                               to this DLL's folder or absolute (out_resolve)
  *   trace=1                                     also log, once each, the window names the game's
  *                                               own code (Torchlight.exe) looks up, the properties
  *                                               it reads and the texts it sets
@@ -560,13 +561,30 @@ static int bag_360;
 /* save_root=DIR (a diagnosis for tests on copies, off by default): the folder the game takes as
  * the user's application data (SHGetSpecialFolderPathW with CSIDL_APPDATA, called by the game's
  * one wrapper 0x5cc6c0), so its "Runic Games\Torchlight" (saves, settings) is DIR's and the
- * user's own is not read or written. DIR: a Windows path in ASCII that exists. */
+ * user's own is not read or written. DIR: a Windows path in ASCII that exists; its "runic games\torchlight"
+ * is made when missing (save_root_folders). */
 static char save_root[260];
 void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
 void x360_bag_patch(void);
 void x360_load_hook_install(void);
 
 void x360_test_options_notice(const char *names);
+/* out-relative: begin (tests/test_tools.py compiles this part on the host) */
+/* out= relative to the DLL's folder (the installers write out=x360ui), so the game's folder can be
+ * moved; an absolute one, as older installers wrote ("C:\...", "Z:\...", "\\server\..."), is
+ * kept. folder: the DLL's folder with its separator, n its length. Returns 0 when it does not fit
+ * (out left as it was). */
+static int out_resolve(char *out, unsigned size, const char *folder, unsigned n) {
+    unsigned k = 0, i;
+    if (!out[0] || out[0] == '\\' || out[0] == '/' || out[1] == ':') return 1;
+    while (out[k]) k++;
+    if (n + k + 1 > size) return 0;
+    for (i = k + 1; i-- > 0;) out[n + i] = out[i];
+    for (i = 0; i < n; i++) out[i] = folder[i];
+    return 1;
+}
+/* out-relative: end */
+
 static void read_config(void) {
     static char text[4096];   /* static: over a page on the stack needs __chkstk, which is in the CRT */
     char path[520], *line, test_names[160];
@@ -653,6 +671,7 @@ static void read_config(void) {
     }
     if (test_names[0]) { put("test options on: "); put(test_names); put("\r\n"); }
     if (test_names[0] && mode_scheme) x360_test_options_notice(test_names);
+    if (!out_resolve(out_dir, sizeof out_dir, path, n)) put("out= beside the DLL too long: kept as written\r\n");
     put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"");
     put(trace ? ", trace\r\n" : "\r\n");
 }
@@ -1096,6 +1115,30 @@ static int same_name(const char *a, const char *b) {   /* ASCII, case-insensitiv
     return *a == *b;
 }
 
+/* save-root-folders: begin (tests/test_tools.py compiles this part on the host) */
+/* The game's own folder inside save_root, "runic games\torchlight", made when missing: the game
+ * does not make it, and without it it closes at startup (an access violation in OgreMain.dll
+ * before Ogre.log, Windows 11, #124). make: makes one folder (one already there is no failure). */
+static void save_root_folders(const char *root, int (*make)(const char *path)) {
+    static const char *const parts[] = {"runic games", "torchlight", 0};
+    char path[300];
+    unsigned n = 0, i, k;
+    for (; root[n] && n < 260; n++) path[n] = root[n];
+    if (root[n]) return;
+    for (k = 0; parts[k]; k++) {
+        if (n && path[n - 1] != '\\' && path[n - 1] != '/') path[n++] = '\\';
+        for (i = 0; parts[k][i]; i++) path[n++] = parts[k][i];
+        path[n] = 0;
+        make(path);
+    }
+}
+/* save-root-folders: end */
+static int make_folder(const char *path) {
+    typedef BOOL (__stdcall *mkdir_fn)(const char *n, void *security);
+    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryA");
+    return mkdir && mkdir(path, 0);
+}
+
 /* The executable's import of SHELL32!SHGetSpecialFolderPathW replaced (found in its import table,
  * by name: the same in every build). */
 static void save_root_install(void) {
@@ -1108,6 +1151,7 @@ static void save_root_install(void) {
     }
     save_root_w[i] = 0;
     if (GetFileAttributesA(save_root) == 0xffffffff) { put("save_root: no such folder, not used\r\n"); return; }
+    save_root_folders(save_root, make_folder);
     nt = base + *(DWORD *)(base + 0x3c);
     for (desc = (DWORD *)(base + *(DWORD *)(nt + 0x80)); desc[3]; desc += 5) {
         DWORD *names = (DWORD *)(base + (desc[0] ? desc[0] : desc[4])), *slots = (DWORD *)(base + desc[4]);
