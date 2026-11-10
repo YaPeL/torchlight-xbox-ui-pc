@@ -272,12 +272,13 @@ static int newer(const wchar16 *a, const wchar16 *b) {
  * %LOCALAPPDATA%\x360ui moves here (the settings and a stop's text not yet shown, when there is
  * none here or an older one), its old log goes, and the folder too once empty. Once only: a game
  * that keeps its files there (another copy, in Program Files) is not taken from at every start.
- * Called once the log is open; says what it did. */
+ * Called once the log is open, before its first line; data_migrate_report says what it did. */
+static const char *const migrated[] = {"x360_settings.ini", "x360_stop.txt", 0};
+static int migrate_moved[2], migrate_log_removed, migrate_dir_removed;
 static void data_migrate(void) {
     typedef BOOL (__stdcall *move_fn)(const wchar16 *from, const wchar16 *to, DWORD flags);
     typedef BOOL (__stdcall *delete_fn)(const wchar16 *n);
     typedef BOOL (__stdcall *rmdir_fn)(const wchar16 *n);
-    static const char *const moved[] = {"x360_settings.ini", "x360_stop.txt", 0};
     move_fn move = (move_fn)kernel32_proc("MoveFileExW");
     delete_fn del = (delete_fn)kernel32_proc("DeleteFileW");
     rmdir_fn rmdir = (rmdir_fn)kernel32_proc("RemoveDirectoryW");
@@ -285,22 +286,28 @@ static void data_migrate(void) {
     static wchar16 old_dir[600], from[600], to[600];   /* static: no __chkstk (once, at the start) */
     int i;
     if (!x360_data_beside() || !data_beside_new || !move || !del || !rmdir || !attr || !local_folder(old_dir, 600, 0)) return;
-    for (i = 0; moved[i]; i++) {
-        from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, moved[i]);
+    for (i = 0; migrated[i]; i++) {
+        from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, migrated[i]);
         if (attr(from) == (DWORD)-1) continue;
-        x360_data_path(moved[i], to, 600);
+        x360_data_path(migrated[i], to, 600);
         /* One beside the game already: the newer wins (a version before 2026-10-23 wrote them here,
          * and its file may be older than the one moved since). */
         if ((attr(to) == (DWORD)-1 || newer(from, to)) && move(from, to, 2 | 1)) {   /* COPY_ALLOWED | REPLACE_EXISTING */
-            put("moved "); put(moved[i]); put(" from %LOCALAPPDATA%\\x360ui beside the game\r\n");
+            migrate_moved[i] = 1;
         } else if (attr(to) != (DWORD)-1 && !newer(from, to)) {
             del(from);   /* the one here is as new: the old copy goes (a failed move keeps it) */
         }
     }
     from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, "x360_ui.log");
-    del(from);
+    migrate_log_removed = del(from) != 0;
     old_dir[length_w(old_dir) - 1] = 0;   /* without its separator */
-    if (rmdir(old_dir)) put("%LOCALAPPDATA%\\x360ui removed (empty)\r\n");
+    migrate_dir_removed = rmdir(old_dir) != 0;
+}
+static void data_migrate_report(void) {
+    int i;
+    for (i = 0; migrated[i]; i++)
+        if (migrate_moved[i]) { put("moved "); put(migrated[i]); put(" from %LOCALAPPDATA%\\x360ui beside the game\r\n"); }
+    if (migrate_dir_removed) put("%LOCALAPPDATA%\\x360ui removed (empty)\r\n");
 }
 /* CreateFileW on x360_data_path(name). */
 HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition) {
@@ -359,11 +366,14 @@ static void open_log(void) {
     path[0] = 0;
     local = x360_data_path("x360_ui.log", path, 600);
     log_file = x360_data_open("x360_ui.log", GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS);
-    put("x360_ui proxy CEGUIBase.dll " X360_VERSION ": loaded\r\n");
-    put(local ? "the log in %LOCALAPPDATA%\\x360ui (the game's folder cannot be written, or runs elevated)\r\n"
-        : x360_data_beside() ? "the log beside the game (its folder is written)\r\n"
-                             : "the log beside the game (its folder may not be written, and LOCALAPPDATA cannot be used)\r\n");
     data_migrate();
+    put("x360_ui proxy CEGUIBase.dll " X360_VERSION ": loaded\r\n");
+    put(local ? "the log in %LOCALAPPDATA%\\x360ui (the game's folder cannot be written, or runs elevated)"
+        : x360_data_beside() ? "the log beside the game (its folder is written)"
+                             : "the log beside the game (its folder may not be written, and LOCALAPPDATA cannot be used)");
+    /* Said on this line: whoever looks for the old log learns here where it went. */
+    put(migrate_log_removed ? "; the old log in %LOCALAPPDATA%\\x360ui was removed\r\n" : "\r\n");
+    data_migrate_report();
     log_system();
 }
 

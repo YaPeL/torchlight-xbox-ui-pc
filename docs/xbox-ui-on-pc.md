@@ -4650,7 +4650,8 @@ before, in `%LOCALAPPDATA%\x360ui` (`x360_data_path` in `cegui_proxy.c`).
   (no log there yet), `x360_settings.ini` and a stop's text not yet shown move from
   `%LOCALAPPDATA%\x360ui` when the game's folder has none or an older one (versions before
   2026-10-23 wrote the settings beside the game; the newer file wins; a move that fails keeps the
-  old file), the old log is deleted, and the folder is removed once empty. The log says what moved.
+  old file), the old log is deleted, and the folder is removed once empty. The log says what moved, and its
+  second line says that the old log was removed (whoever looks for it learns where it went).
   Once only: another copy of the game that keeps its files in `%LOCALAPPDATA%\x360ui` (in Program
   Files, on the same Windows account) is not taken from at every start.
 - **Where the log is:** its second line says which place, and why.
