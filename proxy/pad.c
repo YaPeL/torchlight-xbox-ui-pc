@@ -331,7 +331,7 @@ static const char *session_stamp(void) {
 }
 
 /* ---- pad_record: the pad as the player moved it, a replay file of its own ----
- * x360_record-<date>.txt in the mod's folder (%LOCALAPPDATA%\x360ui), in the replay's format with
+ * x360_record-<date>.txt where the mod keeps its files (x360_data_path), in the replay's format with
  * "# start_ms 0": t=0 is the first frame in play, as a replay's is, so pad_replay plays it back by
  * time on this build or on the recompiled 360's whatever their frame rates. A line when the
  * stick, a trigger or a button changed (the buttons as the game's input reads them, after the

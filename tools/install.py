@@ -645,8 +645,12 @@ def do_uninstall(args):
             os.path.join(game, "x360ui-work-*")):
         shutil.rmtree(folder, ignore_errors=True)
         shutil.rmtree(folder + ".partial", ignore_errors=True)
-    for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt"] + [
-            os.path.basename(p) for p in glob.glob(os.path.join(game, "x360_dump_*.json"))]:
+    for name in ["x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt",
+                 "x360_ui.write-test"] + [
+            os.path.basename(p) for p in glob.glob(os.path.join(game, "x360_dump_*.json"))] + [
+            # the pad's test records, beside the game when the proxy keeps its files there
+            os.path.basename(p) for pattern in ("x360_record-*.txt", "x360_trace-*.csv", "x360_frames-*.csv")
+            for p in glob.glob(os.path.join(game, pattern))]:
         try:
             os.remove(os.path.join(game, name))
         except OSError:
@@ -663,6 +667,17 @@ def do_uninstall(args):
                 os.remove(os.path.join(store, name))
             except OSError:
                 pass
+        # And the folders that held only them (the proxy's write test makes the chain too), while
+        # empty, up to the VirtualStore itself.
+        root = os.path.join(os.environ["LOCALAPPDATA"], "VirtualStore")
+        folder = store
+        while os.path.normcase(os.path.abspath(folder)) != os.path.normcase(os.path.abspath(root)) and \
+                len(os.path.abspath(folder)) > len(os.path.abspath(root)):
+            try:
+                os.rmdir(folder)
+            except OSError:
+                break
+            folder = os.path.dirname(folder)
     ask.info(f"Uninstalled from {game}." + (f"\n\nYour saves were backed up:\n" + "\n".join(backups) if backups else ""))
     return 0
 
