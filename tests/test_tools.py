@@ -1,21 +1,21 @@
 """Tests of the tools, on synthetic data only (no game file)."""
-import json
-import math
-import glob
 import os
-import shutil
-import struct
-import subprocess
 import sys
-import tempfile
-import unittest
-import unittest.mock
-import zipfile
-from pathlib import Path
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import user_paths  # noqa: E402
-user_paths.install()   # the user's own folders out of reach, before any tool is imported
+user_paths.install()   # the user's own folders out of reach, before anything else is imported
+import json  # noqa: E402
+import math  # noqa: E402
+import glob  # noqa: E402
+import shutil  # noqa: E402
+import struct  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import unittest  # noqa: E402
+import unittest.mock  # noqa: E402
+import zipfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 import build_proxy  # noqa: E402
 import cegui_exports  # noqa: E402
@@ -612,12 +612,14 @@ class UserPathsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:          # the temporary folder is fine
             write(os.path.join(root, "a.txt"), "x")
 
-    def test_the_installer_finds_no_real_save_folder(self):
+    @unittest.skipUnless(os.name == "nt", "%APPDATA%'s saves: Windows")
+    def test_the_installer_finds_the_temporary_saves(self):
+        saves = os.path.join(os.environ["APPDATA"], "runic games", "torchlight", "save")
+        os.makedirs(saves, exist_ok=True)
         with tempfile.TemporaryDirectory() as root:
             game = os.path.join(root, "game")
             fake_game(game)
-            for folder in install.save_folders(game):
-                self.assertTrue(os.path.realpath(folder).startswith(user_paths.FAKE), folder)
+            self.assertEqual(install.save_folders(game), [os.path.realpath(saves)])
 
 
 class TextLfTest(unittest.TestCase):

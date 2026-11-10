@@ -7,8 +7,12 @@ A test on Windows once backed up the real saves in %APPDATA%\\runic games\\torch
 - writing, removing or moving anything in the real ones fails the test that tried
   (RealUserPathError), except the system's temporary folder and this repository;
 - check() (each test module's tearDownModule) fails when the real game's and mod's folders changed
-  during the run, as a subprocess could do it out of reach of the patches.
+  during the run, as a subprocess could do it out of reach of the patches (on Windows; a game or
+  the mod running at the same time changes them too, so the tests are run without them).
+Before Python 3.11 pathlib kept its own copies of os' functions: the guard needs 3.11 or later for
+pathlib's writes (CI runs 3.12).
 """
+import atexit
 import builtins
 import io
 import os
@@ -17,7 +21,6 @@ import tempfile
 
 REPO = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 TEMP = os.path.realpath(tempfile.gettempdir())
-VARIABLES = ("APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH")
 
 
 class RealUserPathError(AssertionError):
@@ -67,7 +70,7 @@ def guard(path):
     excepted)."""
     if isinstance(path, int) or path is None:
         return
-    p = os.path.realpath(os.fspath(path))
+    p = os.path.realpath(os.fsdecode(path))
     if _inside(p, TEMP) or _inside(p, REPO) or _inside(p, FAKE):
         return
     for folder in REAL:
@@ -114,6 +117,8 @@ def _wrap_os_open():
 
 
 FAKE = os.path.realpath(tempfile.mkdtemp(prefix="x360ui-tests-home-"))
+_rmtree = shutil.rmtree   # the real one: the fake home removed at the end of the run
+atexit.register(lambda: _rmtree(FAKE, ignore_errors=True))
 
 
 def install():
@@ -135,7 +140,7 @@ def install():
     _wrap_open(io)
     _wrap_os_open()
     for name in ("makedirs", "mkdir", "remove", "unlink", "rmdir", "utime", "chmod"):
-        _wrap(os, name)
+        _wrap(os, name, (0,), ("name", "path"))
     for name in ("rename", "replace"):
         _wrap(os, name, (0, 1), ("src", "dst"))
     for name in ("copyfile", "copy", "copy2", "copytree"):
