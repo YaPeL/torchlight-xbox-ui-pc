@@ -1,17 +1,20 @@
 """Tests of the tools, on synthetic data only (no game file)."""
-import json
-import math
-import glob
 import os
-import shutil
-import struct
-import subprocess
 import sys
-import tempfile
-import unittest
-import unittest.mock
-import zipfile
-from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import user_paths  # noqa: E402
+user_paths.install()   # the user's own folders out of reach, before anything else is imported
+import json  # noqa: E402
+import math  # noqa: E402
+import glob  # noqa: E402
+import shutil  # noqa: E402
+import struct  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import unittest  # noqa: E402
+import unittest.mock  # noqa: E402
+import zipfile  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 import build_proxy  # noqa: E402
@@ -587,6 +590,38 @@ int main(int argc, char **argv) {
             self.assertEqual(resolve("x360ui", "D:\\" + "a" * 30 + "\\"), "0 x360ui")   # too long: kept
 
 
+class UserPathsTest(unittest.TestCase):
+    """The user's own folders out of the tests' reach (tests/user_paths.py): a Windows run once
+    backed up the real saves of %APPDATA%."""
+
+    def test_the_variables_point_to_the_temporary_folder(self):
+        for v in ("APPDATA", "LOCALAPPDATA", "USERPROFILE", "HOME"):
+            self.assertTrue(os.path.realpath(os.environ[v]).startswith(user_paths.FAKE), v)
+        self.assertTrue(os.path.realpath(os.path.expanduser("~")).startswith(user_paths.FAKE))
+
+    def test_writing_in_a_real_folder_fails(self):
+        self.assertTrue(user_paths.REAL)
+        target = os.path.join(user_paths.REAL[0], "x360ui-tests-must-not-exist", "a.txt")
+        with self.assertRaises(user_paths.RealUserPathError):
+            open(target, "w")
+        with self.assertRaises(user_paths.RealUserPathError):
+            os.makedirs(os.path.dirname(target))
+        with self.assertRaises(user_paths.RealUserPathError):
+            shutil.copytree(user_paths.REPO + os.sep + "tests", os.path.dirname(target))
+        self.assertFalse(os.path.exists(os.path.dirname(target)))
+        with tempfile.TemporaryDirectory() as root:          # the temporary folder is fine
+            write(os.path.join(root, "a.txt"), "x")
+
+    @unittest.skipUnless(os.name == "nt", "%APPDATA%'s saves: Windows")
+    def test_the_installer_finds_the_temporary_saves(self):
+        saves = os.path.join(os.environ["APPDATA"], "runic games", "torchlight", "save")
+        os.makedirs(saves, exist_ok=True)
+        with tempfile.TemporaryDirectory() as root:
+            game = os.path.join(root, "game")
+            fake_game(game)
+            self.assertEqual(install.save_folders(game), [os.path.realpath(saves)])
+
+
 class TextLfTest(unittest.TestCase):
     """The rule: every text the mod reads tolerates CRLF (docs/regressions.md). The proxy's one
     reader's line-end step (x360_lf, between markers in cegui_proxy.c) compiled on the host: the
@@ -614,10 +649,18 @@ class TextLfTest(unittest.TestCase):
         parse = text[text.index("/* texts-parse: begin */"):text.index("/* texts-parse: end */")]
         main = lf + parse + r"""
 #include <stdio.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 int main(int argc, char **argv) {
     static char buf[8192];
     const char *k[64], *v[64];
-    FILE *f = fopen(argv[1], "rb");
+    FILE *f;
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY);   /* the bytes as they are: no LF made CRLF */
+#endif
+    f = fopen(argv[1], "rb");
     unsigned long n = (unsigned long)fread(buf, 1, sizeof buf - 1, f), m;
     int i, c;
     m = x360_lf(buf, n);
@@ -721,10 +764,11 @@ class SaveGuardTest(unittest.TestCase):
             with self.assertRaises(save_guard.GuardError):   # the game running
                 save_guard.backup(os.path.join(root, "old"), backups, None, "u", lambda: True)
             roaming = os.path.join(compat, "pfx", "drive_c", "users", "steamuser", "AppData", "Roaming")
-            os.makedirs(os.path.join(roaming, "RUNIC GAMES"))
-            with self.assertRaises(save_guard.GuardError):   # two folders differing only in case
-                save_guard.save_folder(compat)
-            os.rmdir(os.path.join(roaming, "RUNIC GAMES"))
+            if not os.path.exists(os.path.join(roaming, "RUNIC GAMES")):   # not on Windows' file system
+                os.makedirs(os.path.join(roaming, "RUNIC GAMES"))
+                with self.assertRaises(save_guard.GuardError):   # two folders differing only in case
+                    save_guard.save_folder(compat)
+                os.rmdir(os.path.join(roaming, "RUNIC GAMES"))
             os.remove(os.path.join(compat, "pfx", "user.reg"))
             with self.assertRaises(save_guard.GuardError):   # no way to tell the folder
                 save_guard.backup(compat, backups, None, "v", lambda: False)
@@ -1708,6 +1752,10 @@ class SaveItemsTest(unittest.TestCase):
             write(pb, b"head" + self.record("Sword", 33, "[ITEM] of the Bear") + self.record("Barrel", -1))
             with unittest.mock.patch("sys.stdout"):
                 self.assertEqual(save_items.main(["compare", pa, pb]), 1)   # the potion lost
+
+
+def tearDownModule():
+    user_paths.check()
 
 
 if __name__ == "__main__":
