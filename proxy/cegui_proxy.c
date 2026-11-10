@@ -15,7 +15,8 @@
  *
  * x360_ui.ini next to this DLL (optional; without it the proxy only logs):
  *   mode=scheme                                 after PC loads GuiLookSkin.scheme, load the 360 one
- *   out=Z:\home\me\torchlight-gog\x360ui        the converter's OUT (tools/convert_x360_ui.py)
+ *   out=x360ui                                  the converter's OUT (tools/convert_x360_ui.py), relative
+ *                                               to this DLL's folder or absolute (out_resolve)
  *   trace=1                                     also log, once each, the window names the game's
  *                                               own code (Torchlight.exe) looks up, the properties
  *                                               it reads and the texts it sets
@@ -568,6 +569,22 @@ void x360_bag_patch(void);
 void x360_load_hook_install(void);
 
 void x360_test_options_notice(const char *names);
+/* out-relative: begin (tests/test_tools.py compiles this part on the host) */
+/* out= relative to the DLL's folder (the installers write out=x360ui), so the game's folder can be
+ * moved; an absolute one, as older installers wrote ("C:\...", "Z:\...", "\\server\..."), is
+ * kept. folder: the DLL's folder with its separator, n its length. Returns 0 when it does not fit
+ * (out left as it was). */
+static int out_resolve(char *out, unsigned size, const char *folder, unsigned n) {
+    unsigned k = 0, i;
+    if (!out[0] || out[0] == '\\' || out[0] == '/' || out[1] == ':') return 1;
+    while (out[k]) k++;
+    if (n + k + 1 > size) return 0;
+    for (i = k + 1; i-- > 0;) out[n + i] = out[i];
+    for (i = 0; i < n; i++) out[i] = folder[i];
+    return 1;
+}
+/* out-relative: end */
+
 static void read_config(void) {
     static char text[4096];   /* static: over a page on the stack needs __chkstk, which is in the CRT */
     char path[520], *line, test_names[160];
@@ -654,6 +671,7 @@ static void read_config(void) {
     }
     if (test_names[0]) { put("test options on: "); put(test_names); put("\r\n"); }
     if (test_names[0] && mode_scheme) x360_test_options_notice(test_names);
+    if (!out_resolve(out_dir, sizeof out_dir, path, n)) put("out= beside the DLL too long: kept as written\r\n");
     put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"");
     put(trace ? ", trace\r\n" : "\r\n");
 }
