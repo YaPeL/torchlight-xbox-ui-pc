@@ -274,7 +274,7 @@ static int newer(const wchar16 *a, const wchar16 *b) {
  * that keeps its files there (another copy, in Program Files) is not taken from at every start.
  * Called once the log is open, before its first line; data_migrate_report says what it did. */
 static const char *const migrated[] = {"x360_settings.ini", "x360_stop.txt", 0};
-static int migrate_moved[2], migrate_log_removed, migrate_dir_removed;
+static int migrate_moved[sizeof migrated / sizeof *migrated - 1], migrate_log_removed, migrate_dir_removed;
 static void data_migrate(void) {
     typedef BOOL (__stdcall *move_fn)(const wchar16 *from, const wchar16 *to, DWORD flags);
     typedef BOOL (__stdcall *delete_fn)(const wchar16 *n);
