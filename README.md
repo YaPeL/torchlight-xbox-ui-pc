@@ -7,11 +7,13 @@
 [![Epic Games Store](https://img.shields.io/badge/Epic%20Games%20Store-supported-313131?logo=epicgames&logoColor=white)](#installing)
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
-> **Alpha:** v0.6.6 played with GOG's, Epic's and Steam's builds on Windows, Steam's on the Steam
-> Deck, and GOG's under Proton on Linux; v0.6.9's and v0.6.13's fixes played on GOG's under
-> Proton. Report problems in [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues), with
-> the mod's log attached: `x360_ui.log`, in the game's folder (or in `%LOCALAPPDATA%\x360ui` when
-> the game is in a folder it cannot write, such as Program Files).
+> **Beta:** v0.6.6 played with GOG's, Epic's and Steam's builds on Windows, Steam's on the Steam
+> Deck, and GOG's under Proton on Linux; v0.6.9's and v0.6.13's fixes and v0.8.2's death and
+> waypoint menus played on GOG's under Proton; v0.8.2's place for the mod's files, a moved game
+> folder and the `save_root=` fix on Windows 11. Report problems in
+> [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues), with the mod's log attached:
+> `x360_ui.log`, in the game's folder (or in `%LOCALAPPDATA%\x360ui` when the game is in a folder
+> it cannot write, such as Program Files).
 
 A mod for the PC version of Torchlight that replaces its mouse interface with the Xbox 360
 version's: the 360's menus, HUD, shops, dialogs and fishing, played with a game pad as on the
@@ -173,7 +175,8 @@ The button prompts follow the connected pad: Xbox, PlayStation 3, 4 or 5, or Nin
 - **Screens still PC's** (played with the pad, but PC's look): the main menu and the pause menu.
   The story mode's page screen is PC's page in the 360's frame (its text box, its bar, A to go on).
 - **The death and waypoint screens** are the 360's, the hardcore death's too. The pad's A uses a
-  waygate with the hero standing on it, as on the 360.
+  waygate with the hero standing on it, as on the 360. On some dungeon waygates, with the stick,
+  the hero may stop on a step short of the waygate; step a bit closer and press A.
 - **Not as on the 360 yet:**
   - the loading screens are PC's, not the 360's.
   - the item card shown for a quest's reward is narrower than the 360's (the 360's card laid out
