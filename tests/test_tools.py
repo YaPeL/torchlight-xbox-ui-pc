@@ -563,8 +563,11 @@ class OutResolveTest(unittest.TestCase):
         main = "#include <stdio.h>\n#include <string.h>\n" + body + r"""
 int main(int argc, char **argv) {
     char out[40];
-    strcpy(out, argv[1]);
-    int ok = out_resolve(out, sizeof out, argv[2], (unsigned)strlen(argv[2]));
+    size_t k = strlen(argv[1]);
+    int ok;
+    if (k >= sizeof out) return 1;
+    memcpy(out, argv[1], k + 1);   /* not strcpy: clang on Windows refuses it (deprecated) */
+    ok = out_resolve(out, sizeof out, argv[2], (unsigned)strlen(argv[2]));
     printf("%d %s\n", ok, out);
     return 0;
 }
