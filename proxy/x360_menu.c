@@ -6977,7 +6977,12 @@ static void hud_tick(void) {
         if (!faded) { prop(pc_hud_root, "Alpha", "0"); pass_mouse(pc_hud_root); faded = 1; }
     }
     hud_stage = "bars";
-    show(hud_root, !qd_shown && !modal_shown);     /* no HUD under a dialog or a modal (town/13, in-game/16) */
+    {
+        int x360_die_menu_shown(void);
+        /* no HUD under a dialog or a modal (town/13, in-game/16), nor the death menu (the recomp
+         * agent's capture, 2026-11-07: orbs, hotbar and XP bar hidden) */
+        show(hud_root, !qd_shown && !modal_shown && !x360_die_menu_shown());
+    }
     mirror_bar("PlayerHealthBar", "PlayerHealthBarSub", 0, health);
     mirror_bar("PlayerManaBar", "PlayerManaBarSub", 0, mana);
     mirror_bar("ExperienceBar", "ExperienceBarSub", 1, xp);
@@ -8260,6 +8265,7 @@ void x360_dump_after(const char *name, unsigned ms);
 #define MODAL_PREFIX "x360modal_"
 static void *modal_root;
 static char pc_modal_prefix[48];
+static int die_hardcore_shown;   /* the 360's death menu in its hardcore look over PC's modal (die360_hardcore_tick) */
 static int pc_modal_menu_open(void) {
     unsigned char *m = ui ? *(unsigned char **)(ui + 0x304) : 0;
     return m && *(unsigned *)m == 0x00ab7d04 && m[0x18];
@@ -8331,6 +8337,7 @@ static void enchant_result_tick(void) {
     if (inventory_open) refresh_all();
 }
 
+static int die360_hardcore_tick(const char *pc_modal, int up);
 static void modal_tick(void) {
     static unsigned last_search, prev;
     static void *pc_modal;
@@ -8349,6 +8356,15 @@ static void modal_tick(void) {
     /* PC's modal only while CGameUI's CModalMenu (+0x304, vtable 0xab7d04, a CMenu: its open
      * byte +0x18) is open: the settings' screen has windows of the same names (QA run 5: the
      * bars over the settings). */
+    /* A hardcore death: the 360 shows its death menu there, not the modal (die360_hardcore_tick). */
+    {
+        int hardcore = pc_attached(pc_modal_prefix, "Frame") && pc_modal_menu_open() && hero &&
+                       *(float *)(hero + GOG_UNIT_HEALTH) <= 0;
+        if (die360_hardcore_tick(pc_modal_prefix, hardcore)) {
+            if (modal_shown) { modal_shown = 0; set_visible(modal_root, 0, 0); }
+            return;
+        }
+    }
     if (!pc_attached(pc_modal_prefix, "Frame") || !pc_modal_menu_open()) {
         if (modal_shown) {
             modal_shown = 0;
@@ -8434,7 +8450,8 @@ static void bars_tick(void) {
     static float t;                              /* the slide's time left, s (the 360's +32) */
     unsigned now = GetTickCount();
     float dt = last ? (float)(now - last) / 1000.0f : 0.0f, q;
-    int want = modal_shown || qd_shown;
+    int x360_die_menu_shown(void);
+    int want = modal_shown || qd_shown || x360_die_menu_shown();   /* the death menu counts too (GameUI+5612) */
     last = now;
     if (failed) return;
     if (want != on) {
@@ -8483,7 +8500,7 @@ int x360_modal_take(char *out, unsigned size) {
  * get (sub_823589A0 and sub_82353758 return 1), so proxy/pad.c does not act in the world then. */
 int x360_overlay_open(void) {
     /* The fishing too (QA run 8: B that cancelled it also fired the skill mapped to B). */
-    return tip_shown || modal_shown || qd_shown || fish_shown || GetTickCount() - overlay_closed_at < 300;
+    return tip_shown || modal_shown || qd_shown || fish_shown || die_hardcore_shown || GetTickCount() - overlay_closed_at < 300;
 }
 
 /* A test aid: a UI dump `ms` after a call (proxy/pad.c asks for one after A talks to a unit, to see
@@ -10186,6 +10203,256 @@ static void cursor_hook_install(void) {
     VirtualProtect(f, 7, old, &old);
     x360_log("x360 menu: PC's cursor hooked\r\n");
 }
+/* ---- the 360's death and waypoint menus (CDieMenu, CWaypointMenu) over PC's ----
+ * The 360's (the recomp agent's reading, 2026-11-07: diemenu.uilayout and waypointmenu.uilayout,
+ * converted to the .layout files of media/ui/x360):
+ * - CDieMenu (vtable 0x820012F8, init sub_8235EF28, pad sub_8235FC90): Resurrect1-3 with
+ *   Choice1-3 always all shown at a normal death, hardcoretext hidden; its focus is linear over
+ *   Resurrect1-3 (tabOrder), previous on up or left and next on down or right of the d-pad and both
+ *   sticks, wrapping and skipping hidden ones (sub_82348DF0, sub_82347870), first Resurrect1, shown
+ *   as the button's hover; A on ResurrectN chooses it (commands 14-16: here, the floor's entrance,
+ *   the town), Y exits (+264, the same write as Options' exit to the title); B and Start nothing.
+ *   At a hardcore death (hero+2469) the same menu, its Resurrects hidden and hardcoretext shown,
+ *   Y exits. It counts as an interactive menu (GameUI+5612): the bars slide in.
+ * - CWaypointMenu (vtable 0x820011C0, fill in sub_82359130, pad sub_82359B80): Button1-10 with
+ *   Choice1-10, the hero's waypoints in their stored order, the rest hidden; the same focus; A on
+ *   ButtonN travels, B closes; X, Y and Start nothing. No bars.
+ * Here, over PC's own screens (diemenu.layout: Resurrect1-3, ExitGame; waypointmenu.layout:
+ * Button1-10, Cancel; at a hardcore death the same death menu, its Resurrects hidden), which do
+ * the acts: their texts are copied (PC's costs are PC's), their shown buttons shown, PC's Frame
+ * moved off the screen while the 360's shows (as the modal's), and the 360's button pressed as
+ * PC's (a click at its centre). */
+#define DIE_PREFIX "x360die_"
+#define WP_PREFIX "x360wp_"
+#define LIST_MAX 10
+struct list_menu {
+    const char *file, *prefix, *button, *choice;   /* the 360's layout, its prefix, its buttons' names */
+    int count;                                     /* buttons (Resurrect1-3, Button1-10) */
+    void *root;
+    int failed, shown, focus, held_dir, frame_is_away;
+    unsigned prev, next_repeat;
+    char normal[LIST_MAX][96], hover[LIST_MAX][96];   /* each button's images (the focus shows its hover) */
+    char kept[128];                                    /* PC's Frame's rect, while it is away */
+    char away_prefix[64];                              /* whose Frame that is (PC's death menu or its modal) */
+};
+static struct list_menu die_menu = {"media/ui/x360/diemenu.layout", DIE_PREFIX, "Resurrect", "Choice", 3};
+static struct list_menu wp_menu = {"media/ui/x360/waypointmenu.layout", WP_PREFIX, "Button", "Choice", 10};
+static int pc_die_attached;   /* PC's resurrection screen is up (pc_menus_nav_tick): not a hardcore death */
+static void numbered(char *out, const char *name, int i) {
+    unsigned n = 0;
+    while (*name && n < 30) out[n++] = *name++;
+    if (i >= 10) out[n++] = (char)('0' + i / 10);
+    out[n++] = (char)('0' + i % 10);
+    out[n] = 0;
+}
+/* PC's Frame (prefix) off the screen while the 360's menu shows, back for a press and at its end. */
+static void list_frame_away(struct list_menu *m, const char *pc, int away) {
+    void *f;
+    float v[8];
+    char moved[128];
+    unsigned i;
+    /* Another screen's Frame away (the death menu's, then the modal's): it comes back first. */
+    if (m->frame_is_away && !same_text_nocase(m->away_prefix, pc)) {
+        void *g = win_of(m->away_prefix, "Frame");
+        if (g) { prop(g, "UnifiedAreaRect", m->kept); fresh_rects(g); }
+        m->frame_is_away = 0;
+    }
+    f = win_of(pc, "Frame");
+    if (!f || away == m->frame_is_away) return;
+    if (away) {
+        read_prop(f, "UnifiedAreaRect", m->kept, sizeof m->kept);
+        if (!parse_rect(m->kept, v)) return;
+        v[1] += 10000.0f; v[5] += 10000.0f;
+        write_rect(moved, v);
+        prop(f, "UnifiedAreaRect", moved);
+        for (i = 0; pc[i] && i + 1 < sizeof m->away_prefix; i++) m->away_prefix[i] = pc[i];
+        m->away_prefix[i] = 0;
+    } else prop(f, "UnifiedAreaRect", m->kept);
+    fresh_rects(f);
+    m->frame_is_away = away;
+}
+static void list_close(struct list_menu *m, const char *pc) {
+    if (!m->shown) return;
+    m->shown = 0;
+    overlay_closed_at = GetTickCount();
+    set_visible(m->root, 0, 0);
+    if (pc && pc[0]) {
+        list_frame_away(m, pc, 0);
+        prop(win_of(pc, "Frame"), "Alpha", "1");
+    }
+    x360_log("x360 menu: the 360's "); x360_log(m->prefix); x360_log(" hidden\r\n");
+}
+/* The 360's menu over PC's (pc: PC's prefix, its Frame moved away); 0 when it cannot load. */
+static int list_open(struct list_menu *m, const char *pc) {
+    int i;
+    if (m->failed) return 0;
+    if (!m->root) {
+        RECT r;
+        HWND hw = active_window();
+        m->root = load(m->file, m->prefix);
+        if (!m->root) { m->failed = 1; return 0; }
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(m->root, k, 0);
+        pass_mouse(m->root);
+        set_visible(m->root, 0, 0);
+        for (i = 0; i < m->count; i++) {
+            char name[32];
+            numbered(name, m->button, i + 1);
+            read_prop(win_of(m->prefix, name), "NormalImage", m->normal[i], sizeof m->normal[i]);
+            read_prop(win_of(m->prefix, name), "HoverImage", m->hover[i], sizeof m->hover[i]);
+        }
+    }
+    if (!m->shown) {
+        m->shown = 1;
+        m->focus = 0;   /* the first (sub_82347870); later opens: the remembered one [inferred] not followed */
+        m->held_dir = 0;
+        m->prev = x360_pad_buttons();
+        set_visible(m->root, 0, 1);
+        if (pc && pc[0]) {
+            prop(win_of(pc, "Frame"), "Alpha", "0");
+            list_frame_away(m, pc, 1);
+        }
+        move_to_front(m->root, 0);
+        x360_log("x360 menu: the 360's "); x360_log(m->prefix); x360_log(" shown\r\n");
+    }
+    return 1;
+}
+/* Its buttons shown as PC's (shown[i]), the focus moved by the pad (linear, wrapping, the hidden
+ * skipped) and shown as its hover; the pad's newly pressed buttons, the focus in *focus (-1: none). */
+static unsigned list_pad(struct list_menu *m, const int *shown, int *focus) {
+    unsigned buttons = x360_pad_buttons(), pressed = buttons & ~m->prev, now = GetTickCount();
+    int ly = x360_pad_ly(), lx = x360_pad_lx(), i, any = 0, dir = 0;
+    int stick = (ly > 500 || ly < -500 || lx > 500 || lx < -500)
+                    ? ((ly < 0 ? -ly : ly) >= (lx < 0 ? -lx : lx) ? (ly > 0 ? -1 : 1) : (lx < 0 ? -1 : 1)) : 0;
+    m->prev = buttons;
+    for (i = 0; i < m->count; i++) any |= shown[i];
+    if (pressed & (0x0001 | 0x0004)) dir = -1;          /* d-pad up or left: previous */
+    else if (pressed & (0x0002 | 0x0008)) dir = 1;      /* down or right: next */
+    else if (stick && (stick != m->held_dir || (int)(now - m->next_repeat) >= 0)) {
+        dir = stick;
+        m->next_repeat = now + (stick != m->held_dir ? 400 : 180);
+    }
+    m->held_dir = stick;
+    if (any && !shown[m->focus]) dir = dir ? dir : 1;   /* on a hidden one: the next shown */
+    if (any && dir) {
+        int n = m->focus;
+        do n = (n + dir + m->count) % m->count; while (!shown[n]);
+        m->focus = n;
+    }
+    for (i = 0; i < m->count; i++) {
+        char name[32];
+        numbered(name, m->button, i + 1);
+        if (m->normal[i][0]) prop(win_of(m->prefix, name), "NormalImage", any && i == m->focus && m->hover[i][0] ? m->hover[i] : m->normal[i]);
+    }
+    *focus = any ? m->focus : -1;
+    return pressed;
+}
+/* The texts and the shown buttons copied from PC's (pc) into the 360's. */
+static void list_copy(struct list_menu *m, const char *pc, int *shown) {
+    char v[512];
+    int i;
+    read_prop(win_of(pc, "Title"), "Text", v, sizeof v);
+    text(win_of(m->prefix, "Title"), v);
+    for (i = 0; i < m->count; i++) {
+        char b[32], c[32];
+        numbered(b, m->button, i + 1);
+        numbered(c, m->choice, i + 1);
+        shown[i] = pc_shown_in(pc, b);
+        show(win_of(m->prefix, b), shown[i]);
+        if (shown[i]) {
+            read_prop(win_of(pc, c), "Text", v, sizeof v);
+            text(win_of(m->prefix, c), v);
+        }
+    }
+}
+/* PC's resurrection screen up (pc: its prefix): the 360's death menu; 1 while it shows. */
+static int die360_tick(const char *pc, int up) {
+    int shown[LIST_MAX], focus;
+    unsigned pressed;
+    pc_die_attached = up;
+    if (!up) {
+        /* A hardcore death's menu whose modal went (the game left for the title: modal_tick, which
+         * runs only in a world, no longer closes it). */
+        if (die_hardcore_shown && !pc_modal_menu_open()) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal_prefix); }
+        if (!die_hardcore_shown) list_close(&die_menu, pc);
+        return 0;
+    }
+    if (die_hardcore_shown) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal_prefix); }
+    if (!list_open(&die_menu, pc)) return 0;
+    list_frame_away(&die_menu, pc, 1);   /* again after a press that left PC's screen up */
+    list_copy(&die_menu, pc, shown);
+    /* A hardcore death: GOG shows this same screen with its Resurrects hidden (a run of 2026-11-09,
+     * no modal), as the 360 hides its own and shows hardcoretext (hero+2469). */
+    show(win_of(DIE_PREFIX, "hardcoretext"), !shown[0] && !shown[1] && !shown[2]);
+    pressed = list_pad(&die_menu, shown, &focus);
+    if ((pressed & 0x1000) && focus >= 0) {   /* A: the focused choice */
+        char b[32];
+        numbered(b, "Resurrect", focus + 1);
+        list_frame_away(&die_menu, pc, 0);
+        press_pc(pc, b);
+    } else if (pressed & 0x8000) {            /* Y: exit (PC's ExitGame) */
+        list_frame_away(&die_menu, pc, 0);
+        press_pc(pc, "ExitGame");
+    }
+    return 1;
+}
+/* PC's waypoint portals up: the 360's waypoint menu; 1 while it shows. */
+static int wp360_tick(const char *pc, int up) {
+    int shown[LIST_MAX], focus;
+    unsigned pressed;
+    if (!up) { list_close(&wp_menu, pc); return 0; }
+    if (!list_open(&wp_menu, pc)) return 0;
+    list_frame_away(&wp_menu, pc, 1);   /* again after a press that left PC's screen up */
+    list_copy(&wp_menu, pc, shown);
+    pressed = list_pad(&wp_menu, shown, &focus);
+    if ((pressed & 0x1000) && focus >= 0) {   /* A: travel */
+        char b[32];
+        numbered(b, "Button", focus + 1);
+        list_frame_away(&wp_menu, pc, 0);
+        press_pc(pc, b);
+    } else if (pressed & 0x2000) {            /* B: close (PC's Cancel) */
+        list_frame_away(&wp_menu, pc, 0);
+        press_pc(pc, "Cancel");
+    }
+    return 1;
+}
+/* PC's modal at a hardcore death (PC's death handling opens it, 0x4e16c5; the hero's health at 0):
+ * the 360's death menu in its hardcore look (its Resurrects hidden, hardcoretext shown); Y presses
+ * PC's Ok. Called from modal_tick, which then shows nothing of its own; 1 while it shows. */
+static int die360_hardcore_tick(const char *pc_modal, int up) {
+    unsigned buttons, pressed;
+    int i;
+    if (!up) {
+        if (die_hardcore_shown) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal); }
+        return 0;
+    }
+    if (pc_die_attached) return 0;   /* a modal over PC's resurrection screen: a normal death */
+    if (!list_open(&die_menu, pc_modal)) return 0;
+    list_frame_away(&die_menu, pc_modal, 1);
+    if (!die_hardcore_shown) { die_hardcore_shown = 1; x360_log("x360 menu: the hardcore death as the 360's\r\n"); }
+    for (i = 0; i < 3; i++) {
+        char b[32];
+        numbered(b, "Resurrect", i + 1);
+        show(win_of(DIE_PREFIX, b), 0);
+    }
+    show(win_of(DIE_PREFIX, "hardcoretext"), 1);
+    {
+        char v[512];
+        read_prop(win_of(pc_modal, "Title"), "Text", v, sizeof v);
+        text(win_of(DIE_PREFIX, "Title"), v);
+    }
+    buttons = x360_pad_buttons();
+    pressed = buttons & ~die_menu.prev;
+    die_menu.prev = buttons;
+    if (x360_tip_open()) pressed = 0;   /* a tip over it has the pad (as the modal's) */
+    if (pressed & 0x8000) {   /* Y */
+        list_frame_away(&die_menu, pc_modal, 0);
+        press_pc(pc_modal, "Ok");
+    }
+    return 1;
+}
+int x360_die_menu_shown(void) { return die_menu.shown; }
+
 static void pc_menus_nav_tick(void) {
     typedef struct { float top, bottom, left, right; } rect6;
     typedef rect6 *(__fastcall *pixel_rect_fn6)(const void *self, void *edx, rect6 *out);
@@ -10266,6 +10533,13 @@ static void pc_menus_nav_tick(void) {
             settings_shown = settings;
             x360_log(settings ? "x360 menu: the mouse shown (PC's settings)\r\n" : "x360 menu: the mouse hidden\r\n");
         }
+    }
+    /* The 360's own death and waypoint menus over PC's (their pad theirs). */
+    {
+        int d = 0, w = 0;
+        __try { d = die360_tick(die_prefix, die); } __except (1) { x360_log("x360 menu: exception in the death menu\r\n"); }
+        __try { w = wp360_tick(wp_prefix, wp); } __except (1) { x360_log("x360 menu: exception in the waypoint menu\r\n"); }
+        if (d || w) { nav_count = 0; return; }
     }
     if (in_play && !pc_pause_open() && !settings && !die && !wp) { nav_count = 0; return; }
     /* Collected every frame: no pointer kept from one frame to the next (the review: a window

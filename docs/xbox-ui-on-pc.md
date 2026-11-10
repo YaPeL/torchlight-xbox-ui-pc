@@ -472,7 +472,8 @@ player's death handling (it goes on to `DESTROY_ON_DEATH`), after a check of a f
 **[read: the disassembly; that it is the hardcore death inferred]** The confirmations met in
 play are other screens' own windows: deleting a character is `characterload.layout`'s
 `DeleteConfirm`; "Exit to Title" and "Quit Game" ask nothing. So the modal is seen in play only
-at that death. *(Corrected 2026-10-21: the fishing's result is this modal too, "Fishing" with
+at that death. *(Corrected 2026-11-09: a hardcore death on GOG does not open it; PC shows its
+resurrection screen with the Resurrects hidden, section 56.)* *(Corrected 2026-10-21: the fishing's result is this modal too, "Fishing" with
 Ok, `screens/gog/fishing-catch.png`; its show path there was not traced.)*
 
 **Input and screenshots under Xwayland.**
@@ -4660,3 +4661,103 @@ before, in `%LOCALAPPDATA%\x360ui` (`x360_data_path` in `cegui_proxy.c`).
 - **The uninstallers** remove these files beside the game, the pad's test records there
   (`x360_record-*`, `x360_trace-*`, `x360_frames-*`), the `%LOCALAPPDATA%\x360ui` folder, and in the
   VirtualStore the three files an older version left and the folders that held only them.
+
+## 56. The 360's death and waypoint menus (2026-11-07)
+
+Until now PC's resurrection and waypoint screens were shown with the pad (sections 34, 36). They
+are now the 360's, over PC's, which still do the acts. **[read, 360; the recomp agent]**
+- **CDieMenu** (vtable `0x820012F8`; `diemenu.uilayout`; init `sub_8235EF28`, pad
+  `sub_8235FC90`): opened when the hero's death timer runs out (`sub_821DC980`, 0.5 s after the
+  death). A normal death shows Resurrect1-3 with Choice1-3, always all three, and hides
+  `hardcoretext`. The choices' texts carry the costs: XP and fame (here), gold (the floor's
+  entrance), nothing (the town). Focus is linear over the three by tab order: up or left of the
+  d-pad and both sticks for the previous, down or right for the next; it wraps, skips hidden ones,
+  starts on Resurrect1, and shows as the button's hover. A on a choice takes it (commands 14-16).
+  Y exits to the title (the same write as Options' exit). B and Start do nothing. A hardcore death
+  (hero `+2469`) shows the same menu with Resurrect1-3 hidden and `hardcoretext` shown; Y exits.
+  The menu counts as an interactive menu (`GameUI+5612`), so the bars slide in.
+- **CWaypointMenu** (vtable `0x820011C0`; `waypointmenu.uilayout`; fill `sub_82359130`, pad
+  `sub_82359B80`): Button1-10 with Choice1-10, the hero's waypoints in their stored order (a
+  floor's number after the name where the level has floors), the rest hidden, no paging. Focus
+  works as in the death menu. A travels and B closes; X, Y and Start do nothing. No bars.
+
+**[port]** `die360_tick`, `wp360_tick` and `die360_hardcore_tick` in `x360_menu.c`:
+- **PC's screens are found as before.** The death menu by `Resurrect1`/`ExitGame`; the waypoint
+  menu by `Choice10`/`Cancel`. A hardcore death is PC's death menu with no `ResurrectN` shown: the
+  360's then hides its Resurrects too and shows `hardcoretext` (the run of 2026-11-09 below).
+  `die360_hardcore_tick` (PC's modal, `CModalMenu`, with the hero's health `+0x394` at 0) was
+  written for the reading of section 8; that run did not open the modal, so it is kept only as a
+  guard.
+- **The 360's layout over them.** It is loaded once and scaled. PC's `Frame` is moved off the
+  screen while the 360's shows, and put back for a press.
+- **What is copied from PC's:** the title, the choices' texts (PC's own costs) and which buttons
+  show.
+- **Focus.** The d-pad and the left stick move it, with repeat when held. It is shown as the
+  button's `HoverImage` set as its `NormalImage`.
+- **What the buttons press on PC's:**
+  - in the death menu, A presses PC's `ResurrectN` and Y its `ExitGame`;
+  - in the waypoint menu, A presses `ButtonN` and B `Cancel`;
+  - at a hardcore death, Y presses PC's `ExitGame`, as at a normal death.
+- **Bars.** The death menu counts for the bars (`bars_tick`).
+- **Not done:** the right stick, which also moves the 360's focus; the remembered focus on later
+  opens (inferred on the 360).
+- **[run, GOG, 2026-11-07]** A death on the bench hero: console `RESETPLAYERLEVEL;VERYHARD;
+  DISABLEPET` and six `CHAMPION SKELETON`, standing still. The menu showed with the bars and the
+  focus on Resurrect1. The d-pad moved it to Resurrect3, and A resurrected in town.
+- **[capture, 360; the recomp agent]** The death menu hides the HUD (orbs, hotbar, XP bar) and
+  shows the bars; the waypoint menu keeps the HUD and shows no bars. The port now hides the HUD
+  under the death menu (`hud_tick`'s show, as under the modal). **[run, GOG, again]** The frame,
+  title and buttons within a few pixels of the 360's capture (at 1080: the frame 473-1447 against
+  455-1470 on its drawn shadow, the buttons 760-1160 against 762-1158), the HUD hidden; the left
+  stick moved the focus down twice, and A on Resurrect3 resurrected in town.
+- **Not yet tried:** the hardcore death (no hardcore hero on this machine) and the waypoint menu.
+  On the all-waypoints save (`5-allwp.SVT`) the hero reached Prison Stronghold's waygate (its
+  label shows), but the port's A does nothing there ("A: nothing"): the pad cannot use a waygate
+  yet, a gap of the port's A.
+- **The waygate and A (open).** **[read, 360; the recomp agent]** A waygate is a trigger unit
+  (CTriggerUnit, vtable `0x82004894`), found by the hover's second query (`sub_821EB598` ->
+  `sub_821B58C0` mode 3: any targetable unit within 3.5 of an origin moved 1.5 along the facing
+  axis, in the 30-degree cone, in sight). A uses it, through its Use (slot `+308`, `sub_822D8160`
+  -> `sub_822D8548`). That opens the waypoint menu for a WAYPOINTNODE (type 171), warps to the
+  town for a TOWNPORTAL (43), and warps to its level for a MAPPORTAL (173). Where A calls the Use
+  is not traced. **[run, GOG, diagnosis]** PC keeps trigger units in the level's item list. At
+  Prison Stronghold's waygate the hero stops at its foot, the trigger's centre 3.76 ahead, past the
+  port's 3-unit item reach. The 360's mode-3 query over PC's trigger units, with the origin 1.5
+  behind the hero as the port reads it for NPCs, puts the centre at about 5.3, past 3.5: nothing
+  found either, so the change was left out. Asked of the recomp agent: the origin's sign, the
+  distance at which the 360's A takes the town's waygate, and whether that waygate is a
+  WAYPOINTNODE.
+- **[read, 360; the recomp agent's answer]**
+  - The origin is 1.5 *behind* the hero (vfunc `+148` is the local +Z, forward, times −1.5), as
+    the port reads it. So the 360 catches a waygate only with the hero on it, or just past it: in
+    its run the town gate was 1.15 behind the hero, in the 0.5 disc.
+  - Prison Stronghold's "Waygate to Town" is not a WAYPOINTNODE. It is an INTERACTABLE trigger
+    (`units/props/ExitTrigger/WAYGATE`), which warps to the town through the layout's logic. The
+    only WAYPOINTNODE is `units/props/TownPortal/WAYGATERETURN`, which the code spawns at the
+    town's `waygate` node; the menu opens only there.
+- **[run, GOG]** The bench hero, resurrected in town, stood on the town gate's platform, and PC's
+  lists held no trigger within 20. The gate unit is not there for this hero: its story has not
+  reached the first boss [inferred].
+  - **Next:** a hero with the town gate active, standing on it. With the mode-3 query over PC's
+    trigger units added (tried, kept out of this branch because no run has confirmed it), its A
+    would use the gate as PC's click does.
+- **[port]** `trigger_in_view` in `pad.c`: the 360's mode-3 query over PC's trigger units (the
+  level's item list, `CTriggerUnit`), from the origin 1.5 behind the hero: within `TARGET_MIN`, or
+  in the 30-degree cone up to 3.5 and in sight; the nearest. It runs with the second unit query,
+  and the nearer of the two to the origin wins, as in the 360's one query. A trigger is A's target
+  when no item is (A works it as PC's click does).
+- **[run, GOG, 2026-11-09]** The all-waypoints save in Prison Stronghold, walked to its waygate:
+  the label showed A, and A warped to the town. On the town's gate (its label with A), A opened the 360's waypoint menu, focus on the first of nine. D-pad down twice and the
+  stick down once moved it, B closed the menu, A opened it again, and A on the first travelled to
+  it. PC's mouse click on a waygate, in the same runs, walked the hero to it but did
+  not warp (three clicks on two gates); not looked into.
+- **[run, GOG, 2026-11-09] The hardcore death.** A new hardcore hero (the hardest difficulty, in an
+  isolated save root), the death recipe above. GOG showed its resurrection screen
+  (`diemenu.layout`), not the modal: its Resurrects hidden, only `ExitGame`. The 360's menu over it
+  showed no choice and no `hardcoretext` (the owner's screenshot). Now `die360_tick` shows
+  `hardcoretext` when PC shows no Resurrect: on a second hero the menu showed the title, the
+  hardcore text and Y's exit, and Y went to the title. The hero was deleted after.
+- **[run, GOG, 2026-11-09, after the review]** The build with the nearer-wins rule: on the dungeon
+  gate (the hero put on it by a mouse click; the stick stops it at the step below) A warped to the
+  town, and on the town's gate A opened the waypoint menu and B closed it. A normal death on the
+  bench save showed the three choices and no hardcore text.
