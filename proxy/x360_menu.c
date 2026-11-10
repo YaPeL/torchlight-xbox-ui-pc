@@ -9243,7 +9243,7 @@ __declspec(dllimport) int __stdcall TerminateProcess(void *process, unsigned cod
  * the world is ready without it (the 360's HUD up, then 60 frames, counted, not timed); then, with
  * no pet, the game stops with a message that says so. Nothing is done out of play (the title loads
  * the last character as well, QA run 29: its items were kept aside and placed twice). */
-/* The stop: saves held back at once; the text into x360_stop.txt (stop_path: LOCALAPPDATA\\x360ui) and the log; PC's
+/* The stop: saves held back at once; the text into x360_stop.txt (stop_path: where the mod keeps its files) and the log; PC's
  * own modal opened with it (0x54cad0 on CGameUI, as PC's callers do: its title and text, wide
  * strings by value), which the 360's modal shows (modal_tick) and which takes the pad, keyboard
  * and mouse as PC's modal does; when it closes (A, Ok), TerminateProcess. A Windows box showed
@@ -9368,35 +9368,14 @@ void x360_test_options_notice(const char *names) {
 /* x360_stop.txt (stop_path): the stop's text, kept until the player has seen it (the stop's
  * modal or black screen closed by them); one left at the next start is shown then, at the title. */
 static char stop_utf8[700];
-/* Its place: %LOCALAPPDATA%\x360ui\x360_stop.txt (the game's folder may be Program Files, which the
- * game may not write and Windows would redirect into VirtualStore); the uninstallers remove the
- * folder. Beside the game when that cannot be written. Wide paths throughout (a user name the ANSI
- * code page cannot hold, the review); kernel32's W functions, looked up. */
-static int stop_path(unsigned short *path, unsigned size, int beside_game) {
-    typedef unsigned long (__stdcall *getenv_fn)(const unsigned short *name, unsigned short *out, unsigned long size);
-    typedef int (__stdcall *mkdir_fn)(const unsigned short *name, void *security);
-    typedef unsigned long (__stdcall *module_fn)(void *module, unsigned short *out, unsigned long size);
-    static const unsigned short var[] = {'L','O','C','A','L','A','P','P','D','A','T','A',0};
-    unsigned long n;
-    path[0] = 0;
-    if (!beside_game) {
-        getenv_fn env = (getenv_fn)kernel32_fn("GetEnvironmentVariableW");
-        mkdir_fn mkdir = (mkdir_fn)kernel32_fn("CreateDirectoryW");
-        n = env ? env(var, path, size - 32) : 0;
-        if (!n || n >= size - 32 || !mkdir) { path[0] = 0; return 0; }
-        wappend(path, size, "\\x360ui");
-        mkdir(path, 0);   /* there already: fine */
-        wappend(path, size, "\\x360_stop.txt");
-        return 1;
-    } else {
-        module_fn mod = (module_fn)kernel32_fn("GetModuleFileNameW");
-        n = mod ? mod(0, path, size - 20) : 0;
-        if (!n) return 0;
-        while (n && path[n - 1] != '\\' && path[n - 1] != '/') n--;
-        path[n] = 0;
-        wappend(path, size, "x360_stop.txt");
-        return 1;
-    }
+/* Its place: where the mod keeps its files (x360_data_path: beside the game when it can write
+ * there, else %LOCALAPPDATA%\x360ui); `other` the other one, where it is written when the first
+ * cannot be and looked for too. Wide paths throughout (a user name the ANSI code page cannot hold,
+ * the review). */
+static int stop_path(unsigned short *path, unsigned size, int other) {
+    int x360_data_path_at(const char *name, unsigned short *out, unsigned size, int other);   /* cegui_proxy.c */
+    x360_data_path_at("x360_stop.txt", path, size, other);
+    return path[0] != 0;
 }
 static int write_text_w(const unsigned short *path, const char *text) {
     typedef void *(__stdcall *create_fn)(const unsigned short *name, unsigned long access, unsigned long share, void *sec,
@@ -9415,10 +9394,10 @@ static int write_stop_file(const char *text) {
     unsigned short path[600];
     int i;
     for (i = 0; i < 2; i++)
-        if (stop_path(path, 600, i) && write_text_w(path, text)) {
+        if (stop_path(path, 600, i ? 2 : 0) && write_text_w(path, text)) {   /* 2: the other place, made if missing */
             unsigned k;
             for (k = 0; k < 600 && (stop_file[k] = path[k]) != 0; k++) {}
-            if (i) x360_log("x360 load: x360_stop.txt written beside the game (LOCALAPPDATA could not be written)\r\n");
+            if (i) x360_log("x360 load: x360_stop.txt written in the other place (where the mod keeps its files could not be written)\r\n");
             return 1;
         }
     stop_file[0] = 0;

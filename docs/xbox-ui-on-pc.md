@@ -36,7 +36,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 | Proton's logs of our runs | `~/torchlight-gog/steam-gogtl.log` |
 | The converter's output (stage 0) | `~/torchlight-gog/x360ui` (`media/ui/x360/`) |
 | The proxy's build | `~/torchlight-gog/build/proxy` (`CEGUIBase.dll`, the generated `.def` files) |
-| The proxy, installed | the game folder: `CEGUIBase.dll` (proxy), `CEGUIBase_orig.dll` (real), `x360_ui.ini`; its log `x360_ui.log` in the prefix's `AppData/Local/x360ui` |
+| The proxy, installed | the game folder: `CEGUIBase.dll` (proxy), `CEGUIBase_orig.dll` (real), `x360_ui.ini`; its log `x360_ui.log` beside them (section 55; before 2026-11-07 in the prefix's `AppData/Local/x360ui`) |
 | Steam snapshot (hashes) | `~/torchlight-gog/hashes/steam-guard.json` (2404 entries, 2026-10-15) |
 | Steam's Torchlight install (read only, for comparisons) | `~/.steam/debian-installation/steamapps/common/Torchlight` |
 | The Xbox game data (read only) | `~/360tools/extracted/extracted` (`pak.zip`) |
@@ -59,7 +59,7 @@ This repository is the whole of this project; the recomp's repository is only a 
 
    Steam need not be open: GOG's executable does not import `steam_api`, so "Failed to connect to
    Steam" in the log is harmless.
-   With the proxy installed (section 7), `x360_ui.log` (in the prefix's `AppData/Local/x360ui`) lists every scheme and
+   With the proxy installed (section 7), `x360_ui.log` (in the game folder, section 55) lists every scheme and
    layout the game asks for (and, with `trace=1`, section 8). `tools/grab_window.py Torchlight
    OUT.png` saves a screenshot; `tools/send_input.py` clicks and types (section 8).
 3. The game opens at 1920x1080 (the desktop's size; `local_settings.txt` has `WINDOW_WIDTH`,
@@ -3209,7 +3209,7 @@ The owner's request, after the recomp's `swap_confirm_cancel` (the mods agent's 
 B swapped, X and Y kept; the prompts follow, from a "nintendo-swapped" set of icons; off by default,
 the bottom button confirming as on the 360; its checkbox greyed for Xbox and PlayStation prompts).
 Here:
-- **The setting:** `x360_settings.ini` in `%LOCALAPPDATA%\x360ui` (beside the DLL before 2026-10-23), `swap_confirm_cancel=1`, the mod's own file
+- **The setting:** `x360_settings.ini` where the mod keeps its files (section 55), `swap_confirm_cancel=1`, the mod's own file
   (not PC's settings), written when the checkbox changes; removed by uninstall.
 - **The checkbox:** made in PC's settings screen when it shows, of PC's own checkbox type, in the
   parent of its last checkbox and one row below it; its text says it needs a restart. Enabled only
@@ -3402,8 +3402,8 @@ the items: a black screen at the title says so before any character is loaded. A
 does not show in 15 s (or that waits two minutes behind another modal) gives its text on the
 proxy's black screen (the converted UI's black image, the text laid out as the dialog's paragraphs,
 A or Enter; the pad its own until A is let go), and only if that cannot show, `x360_stop.txt` in
-Notepad or a Windows box (blank under Proton). `x360_stop.txt` is in `%LOCALAPPDATA%\x360ui`
-(the game's folder may be Program Files: no write, or VirtualStore); it is removed once the player
+Notepad or a Windows box (blank under Proton). `x360_stop.txt` is where the mod keeps its files
+(section 55); it is removed once the player
 has seen the stop, and one left by a game that ended at once is shown at the next start's title.
 More than 64 items kept aside are kept alive and stop the game. PC's loader's puts are logged per
 phase: a level change loads the hero's items again, with the load armed (QA run g1-1).
@@ -3436,10 +3436,11 @@ texts as they are (`--no-markup`: a path with `&` or `<`). Test:
 first run names, which a junction could redirect) stays documented as low: UAC is not a security
 boundary, and the folders are the user's own.
 
-**The mod's own files out of the game's folder (2026-10-23).** `x360_ui.log` and
+**The mod's own files out of the game's folder (2026-10-23; back beside the game when it can be
+written since 2026-11-07, section 55).** `x360_ui.log` and
 `x360_settings.ini`, like `x360_stop.txt`, are in `%LOCALAPPDATA%\x360ui` (under Wine or
 Proton, the prefix's `users/<user>/AppData/Local/x360ui`), through `x360_data_path` in
-`cegui_proxy.c`; beside the DLL only when LOCALAPPDATA is missing or its folder cannot be made. The game's folder may be Program Files,
+`cegui_proxy.c` (until 2026-11-07; section 55 now). The game's folder may be Program Files,
 which the game (a 32-bit executable without a manifest) cannot write: Windows redirects its
 writes into the user's VirtualStore, where no uninstaller looked. Both uninstallers remove the
 `x360ui` folder, and on Windows the three files an older version left in the VirtualStore copy of
@@ -4183,7 +4184,7 @@ recompiled 360 code (`~/torchlight-recomp/generated`, constants from the image; 
   Conversion".
 
 - **The port (2026-10-30).** Two sliders in PC's settings screen (under its own options), on the
-  360's scale, kept in `%LOCALAPPDATA%\x360ui\x360_settings.ini` (`brightness=`, `contrast=`);
+  360's scale, kept in `x360_settings.ini` (`brightness=`, `contrast=`; section 55);
   PC's look at the start (257 and 256, the identity), the 360's defaults (290, 210) marked. The
   ramp, the 360's formula, is given to PC's IDirect3DDevice9::SetGammaRamp (its slot 21); the device
   is the custom attribute D3DDEVICE of the game camera's viewport target (Torchlight makes its window
@@ -4628,3 +4629,34 @@ following, all local (nothing is sent anywhere):
   happened, and for an access violation the address read or written.
 - **The end:** "the game closed" when the process ends normally. A log without it ended in a kill
   or a crash.
+
+## 55. The mod's files beside the game (portable, 2026-11-07)
+
+The owner asked for a mod that leaves nothing elsewhere on the disk (2026-11-01). The proxy's own
+files (`x360_ui.log`, `x360_settings.ini`, `x360_stop.txt`, and the pad's test records) now go
+beside `CEGUIBase.dll`, in the game's folder, when the game can write there for real; else, as
+before, in `%LOCALAPPDATA%\x360ui` (`x360_data_path` in `cegui_proxy.c`).
+- **The test, once per run** (at the first file, the log): a file `x360_ui.write-test` made in the
+  folder with delete-on-close (gone when its handle closes, a crash included). Not writable, or
+  written into the user's VirtualStore (`%LOCALAPPDATA%\VirtualStore\<the folder without its
+  drive>`, where Windows redirects a 32-bit game without a manifest that writes in Program Files):
+  `%LOCALAPPDATA%\x360ui`, and the empty folders Windows made in the VirtualStore for the test are
+  removed. GOG's default folder and Steam's libraries are written for real; a game in Program
+  Files keeps the old place. Under Wine or Proton the game's folder is written.
+- **Run as administrator:** such a run writes Program Files for real, where a normal run would not
+  find its files. So an elevated run uses the game's folder only when the mod's log is already
+  there (an earlier normal run keeps its files there); else `%LOCALAPPDATA%\x360ui`.
+- **Moving from an older version, once:** at the first run that keeps the files beside the game
+  (no log there yet), `x360_settings.ini` and a stop's text not yet shown move from
+  `%LOCALAPPDATA%\x360ui` when the game's folder has none or an older one (versions before
+  2026-10-23 wrote the settings beside the game; the newer file wins; a move that fails keeps the
+  old file), the old log is deleted, and the folder is removed once empty. The log says what moved, and its
+  second line says that the old log was removed (whoever looks for it learns where it went).
+  Once only: another copy of the game that keeps its files in `%LOCALAPPDATA%\x360ui` (in Program
+  Files, on the same Windows account) is not taken from at every start.
+- **Where the log is:** its second line says which place, and why.
+- **`x360_stop.txt`:** written where the files are, else in the other place (its folder made for
+  that); looked for and removed in both. Looking in `%LOCALAPPDATA%` makes no folder there.
+- **The uninstallers** remove these files beside the game, the pad's test records there
+  (`x360_record-*`, `x360_trace-*`, `x360_frames-*`), the `%LOCALAPPDATA%\x360ui` folder, and in the
+  VirtualStore the three files an older version left and the folders that held only them.
