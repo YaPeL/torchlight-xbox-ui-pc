@@ -1098,6 +1098,42 @@ static void *unit_in_view(unsigned char *hero, unsigned char *level, const float
     return best;
 }
 
+/* The 360's second unit query (sub_821EB598 -> sub_821B58C0 mode 3: any targetable unit within
+ * 0.5 of the origin 1.5 behind the hero, or in the 30-degree cone from it up to 3.5, in sight, the
+ * nearest) also finds its trigger units: a waygate is one, used by A (its Use, slot +308; a
+ * WAYPOINTNODE opens the waypoint menu, sub_822D8548). The 360 catches the town's gate only with
+ * the hero on it or just past it (the recomp agent's run: 1.15 from it, behind, in the 0.5 disc).
+ * GOG keeps trigger units in the level's item list, where item_in_view (3 from the hero, ahead)
+ * does not reach a gate under the hero: the same query over them (the recomp agent, 2026-11-07). */
+static void *trigger_in_view(unsigned char *level, const float *m) {
+    void **node = *(void ***)*(void **)(level + GOG_LEVEL_ITEMS);
+    void *best = 0;
+    float best_d = 9999.0f, tan30 = 0.57735f;
+    int n = 0;
+    for (; node && n < 100000; node = (void **)node[1], n++) {
+        unsigned char *it = (unsigned char *)node[0];
+        float p[3], dx, dz, lx, lz, d;
+        if (!it || !it[0x19c] || it[0x19d] || !it[0x161]) continue;
+        if (!((bool_fn)(*(void ***)it)[0x20 / 4])(it, 0)) continue;
+        if (!derives_from(it, ".?AVCTriggerUnit@@")) continue;
+        ((get_position_fn)GOG_GET_POSITION)(it, 0, p, 1);
+        dx = p[0] - m[3];
+        dz = p[2] - m[11];
+        d = root(dx * dx + dz * dz);
+        lz = m[2] * dx + m[10] * dz;
+        lx = m[10] * dx - m[2] * dz;
+        if (d > TARGET_MIN) {
+            float from[3], to[3];
+            if (!(lz > 0 && (lx < 0 ? -lx : lx) <= lz * tan30 && d <= TARGET_RANGE_ANY)) continue;
+            from[0] = m[3]; from[1] = m[7] + 5.0f; from[2] = m[11];
+            to[0] = p[0]; to[1] = p[1] + 5.0f; to[2] = p[2];
+            if (!((sight_fn)GOG_SIGHT_UNOBSTRUCTED)(level, 0, from, to, 0)) continue;
+        }
+        if (d < best_d) { best = it; best_d = d; }
+    }
+    return best;
+}
+
 /* The comparison with the recomp's log (pad_log=1): a unit's distance and signed angle from the
  * hero's facing, as the search measures them. */
 static void log_rel(const float *m, void *unit) {
@@ -1285,7 +1321,7 @@ static long long t_units, t_items, w_units, w_items;
 static int want_items;                      /* unused: the item search runs every 0.1 s for the highlight */
 static void choose_targets(unsigned char *hero, unsigned char *level) {
     float m[16];
-    void *c, *a, *it;
+    void *c, *a, *it, *trigger = 0;
     hero_matrix(hero, m);
     /* The 360 (sub_821EB598): an enemy in the cone within 7 or the weapon's range + 2; else any
      * unit in the cone within 3.5;
@@ -1306,10 +1342,21 @@ static void choose_targets(unsigned char *hero, unsigned char *level) {
             b[7] -= BEHIND * m[6];
             b[11] -= BEHIND * m[10];
             c = unit_in_view(hero, level, b, ALIGN_ANY, TARGET_RANGE_ANY);
+            trigger = trigger_in_view(level, b);
+            if (c && trigger) {
+                /* One query on the 360: the nearer of the two to the origin wins (the review). */
+                float pc[3], pt[3], dc, dt;
+                ((get_position_fn)GOG_GET_POSITION)(c, 0, pc, 1);
+                ((get_position_fn)GOG_GET_POSITION)(trigger, 0, pt, 1);
+                dc = (pc[0] - b[3]) * (pc[0] - b[3]) + (pc[2] - b[11]) * (pc[2] - b[11]);
+                dt = (pt[0] - b[3]) * (pt[0] - b[3]) + (pt[2] - b[11]) * (pt[2] - b[11]);
+                if (dt < dc) c = 0; else trigger = 0;
+            }
             candidate_friendly = c != 0;
         }
         QueryPerformanceCounter(&t1);
         it = item_in_view(hero, level, m, 0);
+        if (!it && trigger) it = trigger;   /* A works it as PC's click on it does (an item's order) */
         QueryPerformanceCounter(&t2);
         t_units += t1 - t0; t_items += t2 - t1;
         if (t1 - t0 > w_units) w_units = t1 - t0;

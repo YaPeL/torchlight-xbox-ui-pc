@@ -10239,9 +10239,10 @@ static void cursor_hook_install(void) {
  *   Choice1-10, the hero's waypoints in their stored order, the rest hidden; the same focus; A on
  *   ButtonN travels, B closes; X, Y and Start nothing. No bars.
  * Here, over PC's own screens (diemenu.layout: Resurrect1-3, ExitGame; waypointmenu.layout:
- * Button1-10, Cancel; at a hardcore death PC's modal), which do the acts: their texts are copied
- * (PC's costs are PC's), their shown buttons shown, PC's Frame moved off the screen while the 360's
- * shows (as the modal's), and the 360's button pressed as PC's (a click at its centre). */
+ * Button1-10, Cancel; at a hardcore death the same death menu, its Resurrects hidden), which do
+ * the acts: their texts are copied (PC's costs are PC's), their shown buttons shown, PC's Frame
+ * moved off the screen while the 360's shows (as the modal's), and the 360's button pressed as
+ * PC's (a click at its centre). */
 #define DIE_PREFIX "x360die_"
 #define WP_PREFIX "x360wp_"
 #define LIST_MAX 10
@@ -10400,8 +10401,10 @@ static int die360_tick(const char *pc, int up) {
     if (die_hardcore_shown) { die_hardcore_shown = 0; list_close(&die_menu, pc_modal_prefix); }
     if (!list_open(&die_menu, pc)) return 0;
     list_frame_away(&die_menu, pc, 1);   /* again after a press that left PC's screen up */
-    show(win_of(DIE_PREFIX, "hardcoretext"), 0);
     list_copy(&die_menu, pc, shown);
+    /* A hardcore death: GOG shows this same screen with its Resurrects hidden (a run of 2026-11-09,
+     * no modal), as the 360 hides its own and shows hardcoretext (hero+2469). */
+    show(win_of(DIE_PREFIX, "hardcoretext"), !shown[0] && !shown[1] && !shown[2]);
     pressed = list_pad(&die_menu, shown, &focus);
     if ((pressed & 0x1000) && focus >= 0) {   /* A: the focused choice */
         char b[32];
