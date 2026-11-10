@@ -649,10 +649,18 @@ class TextLfTest(unittest.TestCase):
         parse = text[text.index("/* texts-parse: begin */"):text.index("/* texts-parse: end */")]
         main = lf + parse + r"""
 #include <stdio.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 int main(int argc, char **argv) {
     static char buf[8192];
     const char *k[64], *v[64];
-    FILE *f = fopen(argv[1], "rb");
+    FILE *f;
+#ifdef _WIN32
+    _setmode(_fileno(stdout), _O_BINARY);   /* the bytes as they are: no LF made CRLF */
+#endif
+    f = fopen(argv[1], "rb");
     unsigned long n = (unsigned long)fread(buf, 1, sizeof buf - 1, f), m;
     int i, c;
     m = x360_lf(buf, n);
