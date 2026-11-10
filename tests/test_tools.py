@@ -548,6 +548,42 @@ int main(int argc, char **argv) { save_root_folders(argv[1], make); return 0; }
             self.assertEqual(made("C:\\" + "a" * 300), [])                    # too long: nothing made
 
 
+class OutResolveTest(unittest.TestCase):
+    """out= relative to the DLL's folder, absolute ones kept (proxy/cegui_proxy.c, between its
+    markers), compiled on the host: a moved game's folder keeps its converted folder."""
+
+    def test_out(self):
+        import shutil as sh
+        cc = sh.which("cc") or sh.which("gcc") or sh.which("clang")
+        if not cc:
+            self.skipTest("no C compiler")
+        src = Path(__file__).resolve().parent.parent / "proxy" / "cegui_proxy.c"
+        text = src.read_text()
+        body = text[text.index("/* out-relative: begin"):text.index("/* out-relative: end */")]
+        main = "#include <stdio.h>\n#include <string.h>\n" + body + r"""
+int main(int argc, char **argv) {
+    char out[40];
+    strcpy(out, argv[1]);
+    int ok = out_resolve(out, sizeof out, argv[2], (unsigned)strlen(argv[2]));
+    printf("%d %s\n", ok, out);
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as root:
+            c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
+            write(c_file, main)
+            subprocess.run([cc, "-Wall", "-Werror", "-o", exe, c_file], check=True, capture_output=True)
+
+            def resolve(out, folder="D:\\Games\\TL\\"):
+                return subprocess.run([exe, out, folder], check=True, capture_output=True).stdout.decode().strip()
+            self.assertEqual(resolve("x360ui"), "1 D:\\Games\\TL\\x360ui")
+            self.assertEqual(resolve("C:\\old\\x360ui"), "1 C:\\old\\x360ui")          # an old ini's
+            self.assertEqual(resolve("Z:\\home\\me\\x360ui"), "1 Z:\\home\\me\\x360ui")
+            self.assertEqual(resolve("\\\\server\\x360ui"), "1 \\\\server\\x360ui")
+            self.assertEqual(resolve("/abs/x360ui"), "1 /abs/x360ui")
+            self.assertEqual(resolve("x360ui", "D:\\" + "a" * 30 + "\\"), "0 x360ui")   # too long: kept
+
+
 class TextLfTest(unittest.TestCase):
     """The rule: every text the mod reads tolerates CRLF (docs/regressions.md). The proxy's one
     reader's line-end step (x360_lf, between markers in cegui_proxy.c) compiled on the host: the
@@ -1083,6 +1119,11 @@ class InstallTest(unittest.TestCase):
             self.assertNotIn("out=old", text)
             self.assertNotIn("update_check", text)
             self.assertEqual(install.read_ini(game)["bag"], "360")
+            # out= relative to the game's folder (which can then be moved), else the game's own path.
+            self.assertEqual(install.read_ini(game)["out"], "x360ui")
+            self.assertEqual(install.ini_out(game + os.sep, os.path.join(game, "x360ui")), "x360ui")
+            elsewhere = os.path.join(home, "x360ui")
+            self.assertEqual(install.ini_out(game, elsewhere), install.wine_path(elsewhere))
 
     def test_reads_the_360_copy_from_an_extracted_folder(self):
         with tempfile.TemporaryDirectory() as home:
