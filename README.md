@@ -8,8 +8,8 @@
 [![Steam](https://img.shields.io/badge/Steam-supported-1b2838?logo=steam&logoColor=white)](#installing)
 
 > **Beta:** v0.6.6 played with GOG's, Epic's and Steam's builds on Windows, Steam's on the Steam
-> Deck, and GOG's under Proton on Linux; v0.6.9's, v0.6.13's and v0.8.0's changes played on GOG's
-> under Proton, and v0.8.0's place for the mod's files also on Windows 11. Report problems in
+> Deck, and GOG's under Proton on Linux; v0.6.9's, v0.6.13's and v0.8.2's changes played on GOG's
+> under Proton, and v0.8.2's place for the mod's files also on Windows 11. Report problems in
 > [Issues](https://github.com/YaPeL/torchlight-xbox-ui-pc/issues), with the mod's log attached:
 > `x360_ui.log`, in the game's folder (or in `%LOCALAPPDATA%\x360ui` when the game is in a folder
 > it cannot write, such as Program Files).
