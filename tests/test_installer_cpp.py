@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stfs  # noqa: E402
 from test_tools import stfs_package  # noqa: E402
+import user_paths  # noqa: E402  (installed by test_tools' import: the user's folders out of reach)
 
 BINARY = os.environ.get("X360UI_INSTALLER")
 TOOLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")
@@ -1153,6 +1154,10 @@ class InstallCppTest(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("nothing was changed", r.stderr)
         self.assertEqual(_tree(game), before)
+
+
+def tearDownModule():
+    user_paths.check()
 
 
 if __name__ == "__main__":

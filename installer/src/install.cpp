@@ -367,13 +367,23 @@ std::string wine_path(const fs::path& p) {
 #endif
 }
 
+// out= for the ini: relative to the game's folder when the converted folder is in it (the proxy
+// takes it from the DLL's folder, so the game's folder can be moved), else the game's own path
+// (install.ini_out).
+std::string ini_out(const fs::path& game, const fs::path& out) {
+  fs::path o = fs::absolute(out).lexically_normal(), g = fs::absolute(game).lexically_normal();
+  if (!o.has_filename()) o = o.parent_path();   // a trailing separator
+  if (!g.has_filename()) g = g.parent_path();
+  return o.parent_path() == g ? S(o.filename()) : wine_path(out);
+}
+
 Bytes ini_text(const fs::path& game, const fs::path& out, const std::string& bag) {
   // Remembered once the 360's bag was used, until uninstall: a character not yet loaded and saved
   // with PC's bag would lose what does not fit it.
   auto old = read_ini(game);
   const bool used = bag == "360" || old["bag"] == "360" || old["bag_360_used"] == "1";
   std::vector<std::pair<std::string, std::string>> owned = {
-      {"mode", "scheme"}, {"out", wine_path(out)}, {"pad", "1"}, {"pad_mode", "direct"}, {"prompts", "auto"}, {"bag", bag}};
+      {"mode", "scheme"}, {"out", ini_out(game, out)}, {"pad", "1"}, {"pad_mode", "direct"}, {"prompts", "auto"}, {"bag", bag}};
   if (used) owned.push_back({"bag_360_used", "1"});
   std::set<std::string> keys = {"mode", "out", "pad", "pad_mode", "prompts", "bag", "bag_360_used", "update_check"};
   std::vector<U32> kept;
@@ -1009,10 +1019,14 @@ int do_uninstall(const Args& args) {
         continue;
       }
       if (n.rfind("x360ui-build-", 0) == 0 || n.rfind("x360ui-work-", 0) == 0 ||
-          (n.rfind("x360_dump_", 0) == 0 && n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0))
+          (n.rfind("x360_dump_", 0) == 0 && n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0) ||
+          // the pad's test records, beside the game when the proxy keeps its files there
+          n.rfind("x360_record-", 0) == 0 || n.rfind("x360_trace-", 0) == 0 || n.rfind("x360_frames-", 0) == 0)
         gone.push_back(it->path());
     }
-    for (const char* n : {"x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt"}) gone.push_back(game / n);
+    for (const char* n : {"x360_ui.ini", "x360_ui.log", "x360_update.txt", "x360_settings.ini", "x360_stop.txt",
+                          "x360_ui.write-test"})   // the proxy's write test (deleted on close; a leftover all the same)
+      gone.push_back(game / n);
     for (const fs::path& p : gone) ch.put_aside(p);
     if (std::getenv("X360UI_TEST_FAIL_AFTER_PROXY")) throw Exit("a failure asked for by a test");
     ch.commit();
@@ -1036,6 +1050,10 @@ int do_uninstall(const Args& args) {
       // into the user's VirtualStore (install.py the same).
       const fs::path store = fs::path(P(l)) / "VirtualStore" / fs::absolute(game, ec).relative_path();
       for (const char* n : {"x360_ui.log", "x360_settings.ini", "x360_stop.txt"}) fs::remove(store / n, ec);
+      // And the folders that held only them (the proxy's write test makes the chain too), while
+      // empty, up to the VirtualStore itself.
+      for (fs::path d = store; d.has_relative_path() && d != fs::path(P(l)) / "VirtualStore"; d = d.parent_path())
+        if (!fs::remove(d, ec)) break;
     }
 #endif
     for (const fs::path& d : data) if (is_dir(d)) fs::remove_all(d, ec);

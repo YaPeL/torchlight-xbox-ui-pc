@@ -10,12 +10,13 @@
  * argument has the same convention (this in ecx, edx unused, the callee pops the stack
  * arguments), so the thunks are plain C and need no MSVC C++ ABI. CEGUI::String is only read,
  * through the real DLL's String::c_str(). No CRT: kernel32 only, plus msvcr90's SEH handler.
- * The log is x360_ui.log in %LOCALAPPDATA%\x360ui (x360_data_path). The export table is made by tools/build_proxy.py from
+ * The log is x360_ui.log beside the game, or in %LOCALAPPDATA%\x360ui (x360_data_path). The export table is made by tools/build_proxy.py from
  * the user's own CEGUIBase.dll.
  *
  * x360_ui.ini next to this DLL (optional; without it the proxy only logs):
  *   mode=scheme                                 after PC loads GuiLookSkin.scheme, load the 360 one
- *   out=Z:\home\me\torchlight-gog\x360ui        the converter's OUT (tools/convert_x360_ui.py)
+ *   out=x360ui                                  the converter's OUT (tools/convert_x360_ui.py), relative
+ *                                               to this DLL's folder or absolute (out_resolve)
  *   trace=1                                     also log, once each, the window names the game's
  *                                               own code (Torchlight.exe) looks up, the properties
  *                                               it reads and the texts it sets
@@ -111,10 +112,13 @@ static void put_dec(unsigned long v) {
 }
 
 /* ---- the mod's own files (x360_ui.log, x360_settings.ini; x360_stop.txt in x360_menu.c) ----
- * In %LOCALAPPDATA%\x360ui (under Wine or Proton, the prefix's): the game's folder may be Program
- * Files, which the game cannot write and Windows would redirect into VirtualStore, where no
- * uninstaller looks. Beside this DLL only when there is no LOCALAPPDATA or its folder cannot be
- * made. Wide paths (any user name); kernel32's W functions, looked up (no import). */
+ * Beside this DLL, in the game's folder, when the game can write there for real: the mod leaves
+ * nothing elsewhere on the disk, and uninstalling it (or deleting the game) takes them (the owner,
+ * 2026-11-01). Else in %LOCALAPPDATA%\x360ui (under Wine or Proton, the prefix's), where they were
+ * before: the game's folder may be Program Files, which the game cannot write and Windows
+ * redirects into the user's VirtualStore, where no uninstaller looks (so a write that lands there
+ * counts as not writable). The uninstallers remove both. Wide paths (any user name); kernel32's W
+ * functions, looked up (no import). */
 typedef unsigned short wchar16;
 static FARPROC kernel32_proc(const char *name) {
     HMODULE k = GetModuleHandleA("kernel32.dll");
@@ -126,32 +130,185 @@ static void wcat16(wchar16 *d, unsigned size, const char *ascii) {
     while (*ascii && n + 1 < size) d[n++] = (unsigned char)*ascii++;
     d[n] = 0;
 }
-int x360_data_path(const char *name, wchar16 *out, unsigned size) {
-    typedef DWORD (__stdcall *getenv_fn)(const wchar16 *n, wchar16 *o, DWORD s);
-    typedef BOOL (__stdcall *mkdir_fn)(const wchar16 *n, void *sec);
-    typedef DWORD (__stdcall *attr_fn)(const wchar16 *n);
+static void wcatw(wchar16 *d, unsigned size, const wchar16 *w) {
+    unsigned n = 0;
+    while (d[n]) n++;
+    while (*w && n + 1 < size) d[n++] = *w++;
+    d[n] = 0;
+}
+static unsigned length_w(const wchar16 *w) { unsigned n = 0; while (w[n]) n++; return n; }
+typedef DWORD (__stdcall *getenv_w_fn)(const wchar16 *n, wchar16 *o, DWORD s);
+typedef DWORD (__stdcall *attr_w_fn)(const wchar16 *n);
+static const wchar16 localappdata_var[] = {'L','O','C','A','L','A','P','P','D','A','T','A',0};
+/* This DLL's folder, ending in a separator; 0 when unknown. */
+static int dll_folder(wchar16 *out, unsigned size) {
     typedef DWORD (__stdcall *module_fn)(HMODULE m, wchar16 *o, DWORD s);
-    static const wchar16 var[] = {'L','O','C','A','L','A','P','P','D','A','T','A',0};
-    getenv_fn env = (getenv_fn)kernel32_proc("GetEnvironmentVariableW");
-    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryW");
-    attr_fn attr = (attr_fn)kernel32_proc("GetFileAttributesW");
     module_fn mod = (module_fn)kernel32_proc("GetModuleFileNameW");
-    DWORD n = env ? env(var, out, size - 48) : 0;
-    if (n && n < size - 48 && mkdir && attr) {
-        wcat16(out, size, "\\x360ui");
-        mkdir(out, 0);
-        DWORD at = attr(out);
-        if (at != (DWORD)-1 && (at & 0x10)) {   /* FILE_ATTRIBUTE_DIRECTORY */
-            wcat16(out, size, "\\");
+    DWORD n = mod ? mod(self_module, out, size - 48) : 0;
+    if (!n || n >= size - 48) { out[0] = 0; return 0; }
+    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
+    out[n] = 0;
+    return n != 0;
+}
+/* %LOCALAPPDATA%\x360ui, ending in a separator, made if missing (`make`); 0 when there is none. */
+static int local_folder(wchar16 *out, unsigned size, int make) {
+    typedef BOOL (__stdcall *mkdir_fn)(const wchar16 *n, void *sec);
+    getenv_w_fn env = (getenv_w_fn)kernel32_proc("GetEnvironmentVariableW");
+    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryW");
+    attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+    DWORD n = env ? env(localappdata_var, out, size - 48) : 0, at;
+    if (!n || n >= size - 48 || !mkdir || !attr) { out[0] = 0; return 0; }
+    wcat16(out, size, "\\x360ui");
+    if (make) mkdir(out, 0);
+    at = attr(out);
+    if (at == (DWORD)-1 || !(at & 0x10)) { out[0] = 0; return 0; }   /* FILE_ATTRIBUTE_DIRECTORY */
+    wcat16(out, size, "\\");
+    return 1;
+}
+/* Whether the game can write in this DLL's folder for real: a file made there (deleted when its
+ * handle closes, a crash included) that is not in the user's VirtualStore. */
+static int dll_folder_writable(void) {
+    typedef HANDLE (__stdcall *create_fn)(const wchar16 *n, DWORD a, DWORD s, void *sec, DWORD d, DWORD f, HANDLE t);
+    create_fn create = (create_fn)kernel32_proc("CreateFileW");
+    getenv_w_fn env = (getenv_w_fn)kernel32_proc("GetEnvironmentVariableW");
+    attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+    static const char test[] = "x360_ui.write-test";
+    static wchar16 path[600], store[700];   /* static: no __chkstk without the CRT (once, at the start) */
+    HANDLE h;
+    int real = 1;
+    DWORD n;
+    if (!create || !attr || !dll_folder(path, 600)) return 0;
+    wcat16(path, 600, test);
+    /* GENERIC_WRITE, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE */
+    h = create(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0x100 | 0x04000000, 0);
+    if (h == INVALID_HANDLE) return 0;
+    /* Virtualized: the file is %LOCALAPPDATA%\VirtualStore\<the folder without its drive>\<test>. */
+    n = env ? env(localappdata_var, store, 600) : 0;
+    if (n && n < 600 && path[0] && path[1] == ':') {
+        wcat16(store, 700, "\\VirtualStore");
+        wcatw(store, 700, path + 2);
+        if (attr(store) != (DWORD)-1) real = 0;
+    }
+    CloseHandle(h);
+    if (!real) {
+        /* The folders Windows made in the VirtualStore for the test go too, while empty (up to the
+         * VirtualStore itself, kept): nothing left there by the test. */
+        typedef BOOL (__stdcall *rmdir_fn)(const wchar16 *n);
+        rmdir_fn rmdir = (rmdir_fn)kernel32_proc("RemoveDirectoryW");
+        unsigned root = n + 13, m = length_w(store);   /* LOCALAPPDATA + "\VirtualStore" */
+        while (rmdir && m > root) {
+            while (m > root && store[m - 1] != '\\') m--;
+            if (m <= root + 1) break;
+            store[m - 1] = 0;
+            m--;
+            if (!rmdir(store)) break;
+        }
+    }
+    return real;
+}
+/* Whether the game runs elevated (as administrator): there a Program Files folder is written for
+ * real, and the next normal run would not find its files (they would be virtualized away). */
+static int elevated(void) {
+    typedef BOOL (__stdcall *open_token_fn)(HANDLE process, DWORD access, HANDLE *token);
+    typedef BOOL (__stdcall *token_info_fn)(HANDLE token, int cls, void *out, DWORD size, DWORD *len);
+    typedef HANDLE (__stdcall *current_fn)(void);
+    HMODULE adv = GetModuleHandleA("advapi32.dll");
+    open_token_fn open_token;
+    token_info_fn info;
+    current_fn current = (current_fn)kernel32_proc("GetCurrentProcess");
+    HANDLE token = 0;
+    DWORD value = 0, len = 0;
+    if (!adv) adv = LoadLibraryA("advapi32.dll");
+    open_token = adv ? (open_token_fn)GetProcAddress(adv, "OpenProcessToken") : 0;
+    info = adv ? (token_info_fn)GetProcAddress(adv, "GetTokenInformation") : 0;
+    if (!open_token || !info || !current || !open_token(current(), 8, &token)) return 0;   /* TOKEN_QUERY */
+    if (!info(token, 20, &value, sizeof value, &len)) value = 0;   /* TokenElevation */
+    CloseHandle(token);
+    return value != 0;
+}
+/* 1: beside the DLL; 0: %LOCALAPPDATA%\x360ui; -1: not decided yet (decided once, at the first
+ * file, so every file of a run is in one place). An elevated run goes beside the DLL only where an
+ * earlier run already keeps its files (its log there). */
+static int data_beside = -1;
+static int data_beside_new;   /* beside the DLL, and no log there yet: the first such run (data_migrate) */
+int x360_data_beside(void) {
+    if (data_beside < 0) {
+        attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+        static wchar16 log[600];   /* static: no __chkstk (once, at the start) */
+        int had_log = attr && dll_folder(log, 600) && (wcat16(log, 600, "x360_ui.log"), attr(log) != (DWORD)-1);
+        data_beside = dll_folder_writable() && (had_log || !elevated());
+        data_beside_new = data_beside && !had_log;
+    }
+    return data_beside;
+}
+/* name's path where the mod keeps its files; `other` 1: the other place, only to look in (an older
+ * version or a fallback may have left it there), 2: the other place, to write in (the fallback).
+ * Returns 1 when that is %LOCALAPPDATA%\x360ui, 0 beside the DLL; the path empty when the other
+ * place is a %LOCALAPPDATA%\x360ui that is not there. */
+int x360_data_path_at(const char *name, wchar16 *out, unsigned size, int other) {
+    const int beside = x360_data_beside() ? !other : !!other;
+    out[0] = 0;
+    if (!beside) {
+        /* Made as the place itself, or for a write: only looking makes nothing. */
+        if (local_folder(out, size, other != 1)) {
             wcat16(out, size, name);
             return 1;
         }
+        if (other) { out[0] = 0; return 1; }
     }
-    n = mod ? mod(self_module, out, size - 48) : 0;
-    while (n && out[n - 1] != '\\' && out[n - 1] != '/') n--;
-    out[n] = 0;
-    wcat16(out, size, name);
+    if (dll_folder(out, size)) wcat16(out, size, name);
     return 0;
+}
+int x360_data_path(const char *name, wchar16 *out, unsigned size) { return x360_data_path_at(name, out, size, 0); }
+/* Whether file a was written after file b (both there). */
+static int newer(const wchar16 *a, const wchar16 *b) {
+    typedef struct { DWORD attributes, created[2], accessed[2], written[2], size_high, size_low; } file_data;
+    typedef BOOL (__stdcall *attr_ex_fn)(const wchar16 *n, int level, file_data *out);
+    attr_ex_fn get = (attr_ex_fn)kernel32_proc("GetFileAttributesExW");
+    file_data fa, fb;
+    if (!get || !get(a, 0, &fa) || !get(b, 0, &fb)) return 0;
+    return fa.written[1] != fb.written[1] ? fa.written[1] > fb.written[1] : fa.written[0] > fb.written[0];
+}
+/* Beside the DLL for the first time (no log there before this run): what an older version left in
+ * %LOCALAPPDATA%\x360ui moves here (the settings and a stop's text not yet shown, when there is
+ * none here or an older one), its old log goes, and the folder too once empty. Once only: a game
+ * that keeps its files there (another copy, in Program Files) is not taken from at every start.
+ * Called once the log is open, before its first line; data_migrate_report says what it did. */
+static const char *const migrated[] = {"x360_settings.ini", "x360_stop.txt", 0};
+static int migrate_moved[sizeof migrated / sizeof *migrated - 1], migrate_log_removed, migrate_dir_removed;
+static void data_migrate(void) {
+    typedef BOOL (__stdcall *move_fn)(const wchar16 *from, const wchar16 *to, DWORD flags);
+    typedef BOOL (__stdcall *delete_fn)(const wchar16 *n);
+    typedef BOOL (__stdcall *rmdir_fn)(const wchar16 *n);
+    move_fn move = (move_fn)kernel32_proc("MoveFileExW");
+    delete_fn del = (delete_fn)kernel32_proc("DeleteFileW");
+    rmdir_fn rmdir = (rmdir_fn)kernel32_proc("RemoveDirectoryW");
+    attr_w_fn attr = (attr_w_fn)kernel32_proc("GetFileAttributesW");
+    static wchar16 old_dir[600], from[600], to[600];   /* static: no __chkstk (once, at the start) */
+    int i;
+    if (!x360_data_beside() || !data_beside_new || !move || !del || !rmdir || !attr || !local_folder(old_dir, 600, 0)) return;
+    for (i = 0; migrated[i]; i++) {
+        from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, migrated[i]);
+        if (attr(from) == (DWORD)-1) continue;
+        x360_data_path(migrated[i], to, 600);
+        /* One beside the game already: the newer wins (a version before 2026-10-23 wrote them here,
+         * and its file may be older than the one moved since). */
+        if ((attr(to) == (DWORD)-1 || newer(from, to)) && move(from, to, 2 | 1)) {   /* COPY_ALLOWED | REPLACE_EXISTING */
+            migrate_moved[i] = 1;
+        } else if (attr(to) != (DWORD)-1 && !newer(from, to)) {
+            del(from);   /* the one here is as new: the old copy goes (a failed move keeps it) */
+        }
+    }
+    from[0] = 0; wcatw(from, 600, old_dir); wcat16(from, 600, "x360_ui.log");
+    migrate_log_removed = del(from) != 0;
+    old_dir[length_w(old_dir) - 1] = 0;   /* without its separator */
+    migrate_dir_removed = rmdir(old_dir) != 0;
+}
+static void data_migrate_report(void) {
+    int i;
+    for (i = 0; migrated[i]; i++)
+        if (migrate_moved[i]) { put("moved "); put(migrated[i]); put(" from %LOCALAPPDATA%\\x360ui beside the game\r\n"); }
+    if (migrate_dir_removed) put("%LOCALAPPDATA%\\x360ui removed (empty)\r\n");
 }
 /* CreateFileW on x360_data_path(name). */
 HANDLE x360_data_open(const char *name, DWORD access, DWORD share, DWORD disposition) {
@@ -210,8 +367,14 @@ static void open_log(void) {
     path[0] = 0;
     local = x360_data_path("x360_ui.log", path, 600);
     log_file = x360_data_open("x360_ui.log", GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS);
+    data_migrate();
     put("x360_ui proxy CEGUIBase.dll " X360_VERSION ": loaded\r\n");
-    put(local ? "the log in %LOCALAPPDATA%\\x360ui\r\n" : "the log beside the DLL (no LOCALAPPDATA)\r\n");
+    put(local ? "the log in %LOCALAPPDATA%\\x360ui (the game's folder cannot be written, or runs elevated)"
+        : x360_data_beside() ? "the log beside the game (its folder is written)"
+                             : "the log beside the game (its folder may not be written, and LOCALAPPDATA cannot be used)");
+    /* Said on this line: whoever looks for the old log learns here where it went. */
+    put(migrate_log_removed ? "; the old log in %LOCALAPPDATA%\\x360ui was removed\r\n" : "\r\n");
+    data_migrate_report();
     log_system();
 }
 
@@ -398,13 +561,30 @@ static int bag_360;
 /* save_root=DIR (a diagnosis for tests on copies, off by default): the folder the game takes as
  * the user's application data (SHGetSpecialFolderPathW with CSIDL_APPDATA, called by the game's
  * one wrapper 0x5cc6c0), so its "Runic Games\Torchlight" (saves, settings) is DIR's and the
- * user's own is not read or written. DIR: a Windows path in ASCII that exists. */
+ * user's own is not read or written. DIR: a Windows path in ASCII that exists; its "runic games\torchlight"
+ * is made when missing (save_root_folders). */
 static char save_root[260];
 void x360_prompt_folder(char *out_dir, unsigned size, const char *setting);
 void x360_bag_patch(void);
 void x360_load_hook_install(void);
 
 void x360_test_options_notice(const char *names);
+/* out-relative: begin (tests/test_tools.py compiles this part on the host) */
+/* out= relative to the DLL's folder (the installers write out=x360ui), so the game's folder can be
+ * moved; an absolute one, as older installers wrote ("C:\...", "Z:\...", "\\server\..."), is
+ * kept. folder: the DLL's folder with its separator, n its length. Returns 0 when it does not fit
+ * (out left as it was). */
+static int out_resolve(char *out, unsigned size, const char *folder, unsigned n) {
+    unsigned k = 0, i;
+    if (!out[0] || out[0] == '\\' || out[0] == '/' || out[1] == ':') return 1;
+    while (out[k]) k++;
+    if (n + k + 1 > size) return 0;
+    for (i = k + 1; i-- > 0;) out[n + i] = out[i];
+    for (i = 0; i < n; i++) out[i] = folder[i];
+    return 1;
+}
+/* out-relative: end */
+
 static void read_config(void) {
     static char text[4096];   /* static: over a page on the stack needs __chkstk, which is in the CRT */
     char path[520], *line, test_names[160];
@@ -491,6 +671,7 @@ static void read_config(void) {
     }
     if (test_names[0]) { put("test options on: "); put(test_names); put("\r\n"); }
     if (test_names[0] && mode_scheme) x360_test_options_notice(test_names);
+    if (!out_resolve(out_dir, sizeof out_dir, path, n)) put("out= beside the DLL too long: kept as written\r\n");
     put(mode_scheme ? "mode scheme, out \"" : "mode log, out \""); put(out_dir); put("\"");
     put(trace ? ", trace\r\n" : "\r\n");
 }
@@ -934,6 +1115,30 @@ static int same_name(const char *a, const char *b) {   /* ASCII, case-insensitiv
     return *a == *b;
 }
 
+/* save-root-folders: begin (tests/test_tools.py compiles this part on the host) */
+/* The game's own folder inside save_root, "runic games\torchlight", made when missing: the game
+ * does not make it, and without it it closes at startup (an access violation in OgreMain.dll
+ * before Ogre.log, Windows 11, #124). make: makes one folder (one already there is no failure). */
+static void save_root_folders(const char *root, int (*make)(const char *path)) {
+    static const char *const parts[] = {"runic games", "torchlight", 0};
+    char path[300];
+    unsigned n = 0, i, k;
+    for (; root[n] && n < 260; n++) path[n] = root[n];
+    if (root[n]) return;
+    for (k = 0; parts[k]; k++) {
+        if (n && path[n - 1] != '\\' && path[n - 1] != '/') path[n++] = '\\';
+        for (i = 0; parts[k][i]; i++) path[n++] = parts[k][i];
+        path[n] = 0;
+        make(path);
+    }
+}
+/* save-root-folders: end */
+static int make_folder(const char *path) {
+    typedef BOOL (__stdcall *mkdir_fn)(const char *n, void *security);
+    mkdir_fn mkdir = (mkdir_fn)kernel32_proc("CreateDirectoryA");
+    return mkdir && mkdir(path, 0);
+}
+
 /* The executable's import of SHELL32!SHGetSpecialFolderPathW replaced (found in its import table,
  * by name: the same in every build). */
 static void save_root_install(void) {
@@ -946,6 +1151,7 @@ static void save_root_install(void) {
     }
     save_root_w[i] = 0;
     if (GetFileAttributesA(save_root) == 0xffffffff) { put("save_root: no such folder, not used\r\n"); return; }
+    save_root_folders(save_root, make_folder);
     nt = base + *(DWORD *)(base + 0x3c);
     for (desc = (DWORD *)(base + *(DWORD *)(nt + 0x80)); desc[3]; desc += 5) {
         DWORD *names = (DWORD *)(base + (desc[0] ? desc[0] : desc[4])), *slots = (DWORD *)(base + desc[4]);
