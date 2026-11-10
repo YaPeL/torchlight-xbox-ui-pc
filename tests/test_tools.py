@@ -518,6 +518,36 @@ int main(int argc, char **argv) {
             self.assertEqual(parse(b"a=1\r\nb=2\r\nc=3\r\n", cap=2), ["[a]=[1]", "[b]=[2]"])
 
 
+class SaveRootFoldersTest(unittest.TestCase):
+    """save_root's "runic games\\torchlight" made when missing (proxy/cegui_proxy.c, between its
+    markers), compiled on the host: without it the game closed at startup (#124)."""
+
+    def test_folders(self):
+        import shutil as sh
+        cc = sh.which("cc") or sh.which("gcc") or sh.which("clang")
+        if not cc:
+            self.skipTest("no C compiler")
+        src = Path(__file__).resolve().parent.parent / "proxy" / "cegui_proxy.c"
+        text = src.read_text()
+        body = text[text.index("/* save-root-folders: begin"):text.index("/* save-root-folders: end */")]
+        main = "#include <stdio.h>\n" + body + r"""
+static int make(const char *path) { printf("%s\n", path); return 1; }
+int main(int argc, char **argv) { save_root_folders(argv[1], make); return 0; }
+"""
+        with tempfile.TemporaryDirectory() as root:
+            c_file, exe = os.path.join(root, "t.c"), os.path.join(root, "t")
+            write(c_file, main)
+            subprocess.run([cc, "-Wall", "-Werror", "-o", exe, c_file], check=True, capture_output=True)
+
+            def made(r):
+                return subprocess.run([exe, r], check=True, capture_output=True).stdout.decode().splitlines()
+            want = ["C:\\tl-root\\runic games", "C:\\tl-root\\runic games\\torchlight"]
+            self.assertEqual(made("C:\\tl-root"), want)
+            self.assertEqual(made("C:\\tl-root\\"), want)                     # its separator kept once
+            self.assertEqual(made("Z:/home/x"), ["Z:/home/x\\runic games", "Z:/home/x\\runic games\\torchlight"])
+            self.assertEqual(made("C:\\" + "a" * 300), [])                    # too long: nothing made
+
+
 class TextLfTest(unittest.TestCase):
     """The rule: every text the mod reads tolerates CRLF (docs/regressions.md). The proxy's one
     reader's line-end step (x360_lf, between markers in cegui_proxy.c) compiled on the host: the

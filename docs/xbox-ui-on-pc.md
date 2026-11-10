@@ -3122,6 +3122,9 @@ another type's section with PC's) is lost at load. The owner's plan: placed agai
 folder made DIR (the executable's import of `SHGetSpecialFolderPathW` replaced, found by name;
 the game asks for CSIDL_APPDATA through its one wrapper `0x5cc6c0`), so a test runs on copies in
 DIR's `runic games\torchlight` and the user's own folder is neither read nor written. Not run yet.
+DIR must exist; its `runic games\torchlight` is made when missing (`save_root_folders`): the game
+does not make it, and with DIR empty it closed at startup, an access violation in OgreMain.dll
+before Ogre.log (Windows 11, #124).
 
 **QA run 28 (2026-10-23, the copy of the test hero, its health potion's slot made 70 with the 360's
 bag).** The potion was not in the bag after loading (the HUD's count gone) nor in the file after
