@@ -4776,3 +4776,28 @@ when the converted folder is in the game's folder, and the proxy takes a relativ
 DLL's folder (`out_resolve`, in `read_config`). An absolute `out=` (an older ini, `C:\`, `Z:\`,
 `\\server`, `/`) is kept as it is. The log's `mode scheme, out "..."` line shows the resolved path.
 Tests: `OutResolveTest` (the function compiled on the host) and the installer's ini test.
+
+## 58. Enchanting with a full bag (2026-11-12)
+
+**[read, 360]** (the recomp agent) The enchant button (`sub_8236B348`) calls `sub_82361C78` on the
+selected item, which changes it where it is (its affixes, its enchant count `+792`); it never
+takes it out of its slot, never puts it in the bag, never drops it. A full bag cannot matter.
+**[read, PC]** PC's act (`0x57a800`) enchants the item in the hero's slot 14, takes it out
+(`0x4e9ca0`) and picks it up into the bag (`0x4e9a30`, called at `0x57b62a`); when that fails it
+drops the item at the hero (`0x4f5960`). The proxy puts the selected item in slot 14 for the act
+and back in its place after it.
+**[run]** GOG, the synthetic shrine save, PC's bag filled to 21/21 with the console
+(`SPAWNCLASS`, `X360PICKUP`):
+- the equipped sword enchanted: still equipped, the bag 21/21, nothing on the floor (PC's pickup
+  fills the empty equipment slot first);
+- a sword moved to the pet's bag (identified first), the hero's bag 20/21: enchanted, back in the
+  pet's bag.
+The case left is an item of the pet's bag with the hero's bag full, which PC would drop.
+**[port]** The call at `0x57b62a` (Steam `0x57653f`) goes through `ench_pickup_hook`: during the
+proxy's act, when the pickup fails for the item being enchanted, the item is kept (marked aside,
+so no save happens meanwhile) and PC's drop is skipped; after the act it goes back to its place,
+else to the hero's bag, else the game stops unsaved (`move_lost`). The call's bytes are checked
+first; if they differ the hook is left out and logged. **[run]** The hook installed on GOG and let
+the act through in the run above; the full-bag case itself was not reached: two ways to fill the
+hero's bag after moving an item to the pet failed (the console's pickups ran out first), so it
+stopped there.

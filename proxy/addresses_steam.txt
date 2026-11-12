@@ -281,6 +281,7 @@
 0x0057a800 0x00575740 verified   code    body, callers
 0x0057aea4 0x00575dc5 verified   comment window, local
 0x0057b619 0x0057652e verified   comment window, local
+0x0057b62a 0x0057653f verified   code    window, local
 0x0057b6c9 0x005765db verified   comment window, local
 0x0057c173 0x00577076 verified   comment window, local
 0x0057c900 0x005777e0 verified   comment window, vtable, body

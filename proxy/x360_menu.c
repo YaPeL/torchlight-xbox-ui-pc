@@ -3130,6 +3130,40 @@ void x360_retire_act(void) {
     }
 }
 
+/* With no room in the hero's bag, PC's act drops the enchanted item at the hero (its pickup
+ * 0x4e9a30 at 0x57b62a fails, then 0x4f5960): an item from the pet's bag with the hero's bag full.
+ * The 360 enchants the item where it is and never drops it (sub_82361C78, the recomp agent's
+ * reading, 2026-11-11). So that call is hooked: during the proxy's act, the item the act could
+ * not place is kept (PC's drop skipped, as if picked up) and given back to its place after it. */
+#define GOG_ENCHANT_PICKUP_CALL 0x0057b62a   /* in CEnchantMenu's act, the call of 0x4e9a30 */
+static void *ench_item;     /* the item the proxy's act enchants */
+static int ench_kept;       /* it fitted nowhere: out of every bag, to put back */
+static void *__fastcall ench_pickup_hook(void *inv, void *edx, void *item, int flag) {
+    void *r = ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, edx, item, flag);
+    if (!r && ench_acting && item && item == ench_item) {
+        ench_kept = 1;
+        in_move[0].item = item; in_move[0].inv = 0; in_move[0].slot = -1;   /* aside: no save meanwhile */
+        x360_log("x360 enchanter: no room in the bag: the item kept, not dropped\r\n");
+        return item;
+    }
+    return r;
+}
+static void ench_pickup_hook_install(void) {
+    static int done;
+    unsigned char *c = (unsigned char *)GOG_ENCHANT_PICKUP_CALL;
+    unsigned long old;
+    if (done) return;
+    done = 1;
+    if (c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PICKUP_EQUIPMENT ||
+        !VirtualProtect(c, 5, 0x40, &old)) {
+        x360_log("x360 enchanter: the act's pickup not as read: with the bag full PC drops the item\r\n");
+        return;
+    }
+    *(int *)(c + 1) = (int)(void *)ench_pickup_hook - (int)(c + 5);
+    VirtualProtect(c, 5, old, &old);
+    x360_log("x360 enchanter: the act's pickup hooked (no drop with the bag full)\r\n");
+}
+
 /* A at the enchanter: the selected item into the hero's slot 14, PC's own enchanting there
  * (CEnchantMenu's command 9), and back to its place (a bag's slot, an equipped one, the pet's). */
 static void enchant(void) {
@@ -3154,9 +3188,18 @@ static void enchant(void) {
     move_done();
     ench_result[0] = 0;
     modal_hook_install();
+    ench_pickup_hook_install();
+    ench_item = item;
+    ench_kept = 0;
     ench_acting = 1;
     ((void_fn)GOG_ENCHANT_ACT)(m, 0);
     ench_acting = 0;
+    ench_item = 0;
+    if (ench_kept) {   /* out of every bag (ench_pickup_hook): back to its place */
+        if (!give_back(from, slot, item) && !give_back(bag, -1, item)) move_lost(item);
+        else x360_log("x360 enchanter: A: the item kept from PC's drop put back in its place\r\n");
+        move_done();
+    }
     /* The 360 writes the result in the page, yellow, and the page stays open: the gem goblins' in
      * getsocketresult or destroysocketresult (in-game/14), the enchanter's in resultofenchant
      * (in-game/22-24). PC shows it in its modal (0x54cad0, called from the act: 0x57b6c9 and
