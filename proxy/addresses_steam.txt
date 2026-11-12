@@ -281,8 +281,11 @@
 0x0057a800 0x00575740 verified   code    body, callers
 0x0057aea4 0x00575dc5 verified   comment window, local
 0x0057b619 0x0057652e verified   comment window, local
+0x0057b62a 0x0057653f verified   code    window, local
 0x0057b6c9 0x005765db verified   comment window, local
+0x0057c084 0x00576f8a verified   code    window, local
 0x0057c173 0x00577076 verified   comment window, local
+0x0057c372 0x00577272 verified   code    window, local
 0x0057c900 0x005777e0 verified   comment window, vtable, body
 0x0057c997 0x00577866 verified   comment window, local
 0x0057d060 0x00577f30 verified   comment window, vtable, body

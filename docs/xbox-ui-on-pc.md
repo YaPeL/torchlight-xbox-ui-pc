@@ -4776,3 +4776,38 @@ when the converted folder is in the game's folder, and the proxy takes a relativ
 DLL's folder (`out_resolve`, in `read_config`). An absolute `out=` (an older ini, `C:\`, `Z:\`,
 `\\server`, `/`) is kept as it is. The log's `mode scheme, out "..."` line shows the resolved path.
 Tests: `OutResolveTest` (the function compiled on the host) and the installer's ini test.
+
+## 58. Enchanting with a full bag (2026-11-12)
+
+**[read, 360]** (the recomp agent) The enchant button (`sub_8236B348`) calls `sub_82361C78` on the
+selected item, which changes it where it is (its affixes, its enchant count `+792`); it never
+takes it out of its slot, never puts it in the bag, never drops it. A full bag cannot matter.
+**[read, PC]** PC's act (`0x57a800`) enchants the item in the hero's slot 14, takes it out
+(`0x4e9ca0`) and picks it up into the bag (`0x4e9a30`, called at `0x57b62a`); when that fails it
+drops the item at the hero (`0x4f5960`). The proxy puts the selected item in slot 14 for the act
+and back in its place after it.
+**[run]** GOG, the synthetic shrine save, PC's bag filled to 21/21 with the console
+(`SPAWNCLASS`, `X360PICKUP`):
+- the equipped sword enchanted: still equipped, the bag 21/21, nothing on the floor (PC's pickup
+  fills the empty equipment slot first);
+- a sword moved to the pet's bag (identified first), the hero's bag 20/21: enchanted, back in the
+  pet's bag.
+The case left is an item of the pet's bag with the hero's bag full, which PC would drop.
+**[port]** The act has one block per mode (its table at `0x57c8d8`, by mode - 0x15), each with its
+own copy of the pickup and the drop: the enchanter's (0x15) at `0x57b62a`, the shrine's (0x16) at
+`0x57c084`, the gem goblin's that keeps the item (0x19) at `0x57c372` (Steam `0x57653f`,
+`0x576f8a`, `0x577272`); mode 0x1a's pickup is for the gems taken out and 0x1b's for the retired
+hero's, left alone. (The first version hooked only the enchanter's; the clean-context review found
+the others.) Those three calls go through `ench_pickup_hook`: during the proxy's act, when the
+pickup fails for the item being enchanted, the item is kept and PC's drop skipped; the saves are
+held (`x360_save_held`) and the item marked as moving, so an exception in the rest of the act
+stops the game unsaved. After the act the item goes back to its place, else to the hero's bag,
+else the game stops unsaved (`move_lost`), and the saves' hold is put back. Each call's bytes are
+checked first; one that differs is left out and logged.
+**[run]** The hooks installed on GOG and let the act through when the pickup succeeds (the run
+above). The full-bag case itself was not reached: three ways to set it up failed (the console's
+pickups ran out before an item could be moved to the pet; then the first inventory tip took the
+X), so it stopped there. **To test by hand:** an identified item in the pet's bag, the hero's bag
+full (PC's bag: 21/21) with a weapon equipped, then A on the pet's item at a shrine or the
+enchanter: the item is enchanted and stays in the pet's bag, nothing on the floor, and the log says
+"no room in the bag: the item kept, not dropped".
