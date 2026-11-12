@@ -4794,7 +4794,7 @@ it, puts a random tip of PC's in its `TipText` (`+0x29c`; `0x524d40`, `0x524d90`
 frame; on hide it takes the root off. PC's load draws nothing else, so there is no pump.
 **[port]** `loading_hook` runs before PC's function (its first instructions from a copy, as the
 modal's hook): on show the 360's `loading.layout` (prefix `x360ld_`) is put up, scaled, with one of
-the 360's tips (`loadtip.N`, written by the converters; uniform as the 360's)
+the 360's tips (`loadtip.N`, written by the converters since PR #135; uniform as the 360's)
 in its `TipText`, the fonts' spacing and colour markup set as for the dialogs, and PC's root
 hidden for PC's one frame; on hide both go back. With no `loadtip` in `x360_strings.txt` (an
 install older than the converters' change) or no layout, PC's screen stays. The hourglass stays
@@ -4802,3 +4802,8 @@ opaque: the 360's first frame; PC has no pump to pulse it or change the tip.
 **[run]** GOG, the bench save loaded from the title (a copy of the converted folder with the 360's
 12 tips added, Steam UNCHANGED, everything put back): the 360's screen (its picture, Loading, the
 hourglass, a tip of the 360's) shown twice at the load, tips 2 and 8; the log names each.
+**[measured]** Against the recomp agent's capture of the 360's loading screen (1280x720, scaled to
+1080): the picture's sides (about x 307-1672 against the port's 305-1670), the hourglass (about
+1552, 847 against 1550, 850) and the tip's lines (y 930-997) are in the same places. The 360's
+hourglass there is half transparent (after pumps); the port's is opaque (the 360's first frame).
+**For the owner:** a visible change (every load shows the 360's screen); there is no ini switch.

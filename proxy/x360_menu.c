@@ -9668,7 +9668,12 @@ static void __fastcall loading_hook(unsigned char *gui, void *edx, int on) {
     void *pc = gui ? *(void **)(gui + GOG_LOADING_ROOT) : 0;
     int ours = 0;
     if (on & 0xff) {
-        __try { ours = loading_show(); } __except (1) { ours = 0; loading_failed = 1; x360_log("x360 loading: showing threw: PC's screen kept\r\n"); }
+        __try { ours = loading_show(); } __except (1) {
+            ours = 0;
+            loading_failed = 1;
+            if (loading_root) set_visible(loading_root, 0, 0);   /* not both screens */
+            x360_log("x360 loading: showing threw: PC's screen kept\r\n");
+        }
         if (ours && pc) set_visible(pc, 0, 0);   /* PC's root under the 360's, hidden for its frame */
         ((orig_fn)(void *)loading_tramp)(gui, edx, on);
         return;
