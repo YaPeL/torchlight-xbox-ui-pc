@@ -29,8 +29,8 @@ Every item follows the path the death and waypoint menus took (doc section 56):
 
 | # | Item | Size | Risk | 1.0 item |
 | --- | --- | --- | --- | --- |
-| 1 | Enchanting with a full bag | 1 | low | bug |
-| 2 | The quest reward's card width | 1-2 | low | limitation |
+| 1 | Enchanting with a full bag | 1 | low | bug (PR #134) |
+| 2 | The quest reward's card width | 2-3 | low | limitation (stopped: cause not found) |
 | 3 | The loading screens | 3-5 | medium | **yes** |
 | 4 | The pause menu | 4-6 | medium | **yes** (with 5) |
 | 5 | The main menu (the front end) | 8-12 | high | **yes** (with 4) |
@@ -64,10 +64,11 @@ Total: about 22-34 sessions before the owner's played runs.
   dropped at the hero. Not run: two tries to set it up failed (the item moved to the pet was
   unidentified, so the page refused it; the bag was one short). Stopped there by the
   two-tries rule.
-- **[port, proposed]** While the proxy's act runs (`ench_acting`), a hook on `0x4f5960` that
-  keeps the item being enchanted instead of dropping it, and the proxy gives it back to its place
-  (the pet's slot) after the act, as the 360 leaves it. The hook needs Steam's address. A test:
-  the setup above with an identified item in the pet's bag (an identify scroll first).
+- **[port]** Pull request #134: PC's act has one pickup per mode (the enchanter's, the shrine's and
+  the gem goblin's that keeps the item); the three calls are hooked so that, during the proxy's
+  act, an item that fits nowhere is kept (saves held) and given back to its place. Built for GOG
+  and Steam; the hooks install and let the act through in a run; the full-bag case itself was not
+  reached in a run (three ways to set it up failed), so it has steps for a hand test.
 - **What PC does without the mod:** the item is dragged into the enchant slot from the bag, which
   frees its bag slot, so the vanilla game does not drop it in practice either.
 
@@ -82,11 +83,19 @@ Total: about 22-34 sessions before the owner's played runs.
   So the 360's card grows with its text up to about 1000 units before it wraps.
 - **[measured]** The port's reward card was 446 px wide at 1920x1080 against the 360's 786 (doc
   section 37): PC's tooltip wraps its text narrower, so the card is narrower and taller.
-- **[port]** Find PC's wrap width in its equipment tooltip (`GOG_SHOW_EQUIPMENT_TOOLTIP`'s
-  builder) and give it the 360's allowance during `fill_card`, for every card (the inventory's
-  matched the 360 within a few pixels for items with short texts, which the change leaves alone).
-  Check the inventory's cards again after it.
-- **[run]** The quest offer of section 37 and an item with a long description in the bag.
+- **[read, PC, 2026-11-12]** PC's equipment tooltip (GOG `0x541e80`) measures the same way: the
+  non-description blocks Centred in a rect 1000 wide, each extent + 4, the widest kept; the
+  description WordWrapLeftAligned in a rect 1.5 times the widest line (`0xaa4d04` = 1.5; the
+  calls at `0x54656c`, `0x546929`; Steam `0x541f96`, `0x542341`).
+- **[read, 360]** (the recomp agent's follow-up) The 360's description block is the same: 1.5
+  times the running widest line (`sub_8233FE48`, 0x82342F50); only its name block differs, word
+  wrapped centred in 1000.
+- **Stopped (two hypotheses failed):** the wrap width (1000) and the description's factor (1.5)
+  are the same in both games, so neither explains 446 px against 786. What is left to compare:
+  the content measured before the description (which blocks the 360 builds for a reward item, and
+  their texts), the fonts' sizes at the measure, and the layout's padding. Next step: a dump of
+  both cards' windows for the same item (the port's `x360_dump`, a recomp capture with its
+  window rects) before any code.
 
 ### 3. The loading screens (size 3-5, risk medium) — 1.0 item
 
