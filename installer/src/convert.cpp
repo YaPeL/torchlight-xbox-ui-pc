@@ -501,6 +501,23 @@ std::vector<std::pair<std::string, std::string>> context_tips(const Bytes& raw) 
   return out;
 }
 
+// The texts of a GLOBALS.DAT.adm's LOADINGTIPS node, in order (one TIP property each): the 360's
+// loading screen's tips (convert_x360_ui.loading_tips).
+std::vector<std::string> loading_tips(const Bytes& raw) {
+  const Adm a = adm_tree(raw, {6});
+  std::vector<std::string> out;
+  std::function<void(const AdmNode&)> walk = [&](const AdmNode& n) {
+    if (n.name == "LOADINGTIPS")
+      for (const AdmProp& p : n.props) {
+        auto it = a.table.find(uint32_t(p.value));
+        if (p.key == "TIP" && p.kind == 8 && p.value <= 0xFFFFFFFFu && it != a.table.end()) out.push_back(spaced(it->second));
+      }
+    for (const AdmNode& c : n.children) walk(c);
+  };
+  walk(a.root);
+  return out;
+}
+
 Bytes globals_of(const std::string& pak) {
   Zip z(pak);
   auto is_globals = [](const std::string& low) { return low == "media/globals.dat.adm"; };
@@ -1021,6 +1038,8 @@ std::vector<std::string> convert_ui(const ConvertOptions& opt) {
     const auto tips = context_tips(globals_of(opt.pak)), pc_tips = context_tips(globals_of(opt.pc_pak));
     for (const auto& [k, v] : tips) text_set("tip." + k, v);
     for (const auto& [k, v] : pc_tips) text_set("pctip." + k, v);
+    const auto loads = loading_tips(globals_of(opt.pak));
+    for (size_t i = 0; i < loads.size(); i++) text_set("loadtip." + std::to_string(i + 1), loads[i]);
   }
   if (!texts.empty()) {
     std::sort(texts.begin(), texts.end());

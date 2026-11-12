@@ -2542,6 +2542,9 @@ inventory (section 13), so each run's batch is one.
   (CONTEXTTIPS, 24 in each game, 23 in both) written for the pad: the converter's `--pc-pak`
   writes `tip.ID` and `pctip.ID` into `x360_strings.txt`, and the proxy shows the 360's text of
   the tip whose PC text PC set (TIP_HOWTOATTACK, PC's only, stays PC's). Not run yet.
+- The 360's loading tips (GLOBALS' LOADINGTIPS, one TIP property each; 12 in the owner's package)
+  are written by both converters as `loadtip.1`..`loadtip.N`, in their order (2026-11-12); the
+  proxy does not show them yet (`docs/plan-1.0.md`, item 3).
 - TIP_INVENTORY did not show at the 360 inventory's first opening: PC requests it (one of the 24
   callers of `0x55f570`, by index) when PC's own inventory opens, which the 360's does not open.
   It showed with the stash. Whether the 360 requests it from its inventory was not read.
