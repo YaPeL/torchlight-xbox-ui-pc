@@ -4793,11 +4793,21 @@ and back in its place after it.
 - a sword moved to the pet's bag (identified first), the hero's bag 20/21: enchanted, back in the
   pet's bag.
 The case left is an item of the pet's bag with the hero's bag full, which PC would drop.
-**[port]** The call at `0x57b62a` (Steam `0x57653f`) goes through `ench_pickup_hook`: during the
-proxy's act, when the pickup fails for the item being enchanted, the item is kept (marked aside,
-so no save happens meanwhile) and PC's drop is skipped; after the act it goes back to its place,
-else to the hero's bag, else the game stops unsaved (`move_lost`). The call's bytes are checked
-first; if they differ the hook is left out and logged. **[run]** The hook installed on GOG and let
-the act through in the run above; the full-bag case itself was not reached: two ways to fill the
-hero's bag after moving an item to the pet failed (the console's pickups ran out first), so it
-stopped there.
+**[port]** The act has one block per mode (its table at `0x57c8d8`, by mode - 0x15), each with its
+own copy of the pickup and the drop: the enchanter's (0x15) at `0x57b62a`, the shrine's (0x16) at
+`0x57c084`, the gem goblin's that keeps the item (0x19) at `0x57c372` (Steam `0x57653f`,
+`0x576f8a`, `0x577272`); mode 0x1a's pickup is for the gems taken out and 0x1b's for the retired
+hero's, left alone. (The first version hooked only the enchanter's; the clean-context review found
+the others.) Those three calls go through `ench_pickup_hook`: during the proxy's act, when the
+pickup fails for the item being enchanted, the item is kept and PC's drop skipped; the saves are
+held (`x360_save_held`) and the item marked as moving, so an exception in the rest of the act
+stops the game unsaved. After the act the item goes back to its place, else to the hero's bag,
+else the game stops unsaved (`move_lost`), and the saves' hold is put back. Each call's bytes are
+checked first; one that differs is left out and logged.
+**[run]** The hooks installed on GOG and let the act through when the pickup succeeds (the run
+above). The full-bag case itself was not reached: three ways to set it up failed (the console's
+pickups ran out before an item could be moved to the pet; then the first inventory tip took the
+X), so it stopped there. **To test by hand:** an identified item in the pet's bag, the hero's bag
+full (PC's bag: 21/21) with a weapon equipped, then A on the pet's item at a shrine or the
+enchanter: the item is enchanted and stays in the pet's bag, nothing on the floor, and the log says
+"no room in the bag: the item kept, not dropped".
