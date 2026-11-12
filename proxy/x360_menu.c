@@ -9564,10 +9564,12 @@ static const char hooks_off_text[] =
     "loaded, the game deletes the items that do not fit the bag chosen at install. Install again with PC's "
     "bag before loading a character. Characters saved with the 360's bag can lose items with the original game "
     "too: load and save each with the mod's PC's bag first.";
+static void loading_hook_install(void);
 void x360_load_hook_install(void) {
     unsigned char *c = (unsigned char *)GOG_LOAD_PUT_CALL;
     unsigned long old;
     int saves = save_hook_install();
+    loading_hook_install();
     if (saves) x360_log("x360 load: PC's save function hooked (held back while items are aside or a stop is pending)\r\n");
     else x360_log("x360 load: no save hook: the load hook only stops\r\n");
     if (x360_test_load_hook_fails || c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PUT_AT_SLOT ||
@@ -9581,6 +9583,121 @@ void x360_load_hook_install(void) {
     VirtualProtect(c, 5, old, &old);
     x360_log(saves ? "x360 load: saved items placed again when their slot does not fit\r\n"
                    : "x360 load: the load hook in its stop-only mode\r\n");
+}
+
+/* ---- the loading screen (docs/plan-1.0.md, item 3) ----
+ * The 360's (the recomp agent's reading, 2026-11-11/12): loading.uilayout, made by CGameUI's
+ * create-menus (sub_823392E8; its root at +0x344, TipText +0x348, HOURGLASS +0x364), shown and
+ * hidden by sub_82338218(CGameUI*, bool), which on show picks a tip from GLOBALS' LOADINGTIPS
+ * (sub_82391370: uniform over the tips, all of weight 1.0, a repeat allowed) and puts it in
+ * TipText. Its pump (sub_82337D58, from the level load's steps) changes the tip after 6 s and
+ * pulses the hourglass; until the first pump the hourglass is drawn opaque. The picture is one
+ * image for every area.
+ * PC's counterpart is CGameUI 0x540ca0(bool): on show it puts its loading root (+0x298) on the
+ * sheet, a random tip of its own in its TipText (+0x29c), and renders one frame; it has no pump
+ * (its load does not draw), so the 360's screen is shown for that frame, its tip one of the 360's
+ * (the converter's loadtip.N), its hourglass opaque, as the 360's first frame. PC's root is
+ * hidden under it. Without the 360's tips (an install older than the converter's loadtip) or
+ * without its layout, PC's screen stays. The function's first instructions run from a copy, as
+ * the modal's (GOG's push -1; push the handler; Steam's mov eax, fs:[0]; push -1). */
+#define GOG_SHOW_LOADING 0x00540ca0         /* CGameUI: its loading screen shown (1) or hidden (0) */
+#define GOG_SHOW_LOADING_HANDLER 0x00720608 /* its exception handler (its push imm32) */
+#define GOG_LOADING_ROOT 0x298              /* CGameUI: PC's loading root (media/ui/loading.layout) */
+#define LOAD_PREFIX "x360ld_"
+#ifdef X360_TARGET_STEAM
+static const unsigned char loading_want[9] = {0x64, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x6a, 0xff, 0x68};
+#define LOADING_MOVED 8
+#else
+static const unsigned char loading_want[3] = {0x6a, 0xff, 0x68};
+#define LOADING_MOVED 7
+#endif
+static unsigned char loading_tramp[16];
+static void *loading_root;
+static int loading_failed, loading_tips = -1;
+static unsigned loading_seed;
+/* The number of the 360's loading tips (loadtip.1..N), 0 without them. */
+static int loading_tip_count(void) {
+    char key[24];
+    int n = 0;
+    while (n < 99) {
+        copy(key, sizeof key, "loadtip.", 0);
+        if (n + 1 >= 10) { key[8] = (char)('0' + (n + 1) / 10); key[9] = (char)('0' + (n + 1) % 10); key[10] = 0; }
+        else { key[8] = (char)('0' + n + 1); key[9] = 0; }
+        if (!x360_text(key)[0]) break;
+        n++;
+    }
+    return n;
+}
+/* The 360's screen up, a tip drawn at random (uniform, as sub_82391370 with every weight 1.0). */
+static int loading_show(void) {
+    char key[24];
+    unsigned i;
+    if (loading_failed) return 0;
+    if (loading_tips < 0) loading_tips = loading_tip_count();
+    if (!loading_tips) { loading_failed = 1; x360_log("x360 loading: no loadtip in x360_strings.txt (install again): PC's screen kept\r\n"); return 0; }
+    if (!loading_root) {
+        RECT r;
+        HWND hw = active_window();
+        loading_root = load("media/ui/x360/loading.layout", LOAD_PREFIX);
+        if (!loading_root) { loading_failed = 1; return 0; }
+        if (!k) k = (hw && GetClientRect(hw, &r) && r.bottom > r.top) ? (float)(r.bottom - r.top) / 768.0f : 1.0f;
+        scale_tree(loading_root, k, 0);
+        pass_mouse(loading_root);
+        loading_seed = GetTickCount();
+    }
+    {
+        RECT r;
+        HWND hw = active_window();
+        if (hw && GetClientRect(hw, &r) && r.bottom > r.top)   /* the 360's spacing and the colour markup, as the tip's */
+            match_spacing((float)(r.right - r.left), (float)(r.bottom - r.top));
+    }
+    loading_seed = loading_seed * 1103515245u + 12345u;
+    i = (loading_seed >> 16) % (unsigned)loading_tips;
+    copy(key, sizeof key, "loadtip.", 0);
+    if (i + 1 >= 10) { key[8] = (char)('0' + (i + 1) / 10); key[9] = (char)('0' + (i + 1) % 10); key[10] = 0; }
+    else { key[8] = (char)('0' + i + 1); key[9] = 0; }
+    text(win_of(LOAD_PREFIX, "TipText"), x360_text(key));
+    set_visible(loading_root, 0, 1);
+    prop(loading_root, "AlwaysOnTop", "True");
+    move_to_front(loading_root, 0);
+    x360_log("x360 loading: the 360's screen shown, tip "); x360_log_num((long)i + 1); x360_log("\r\n");
+    return 1;
+}
+static void __fastcall loading_hook(unsigned char *gui, void *edx, int on) {
+    typedef void (__fastcall *orig_fn)(void *gui, void *edx, int on);
+    void *pc = gui ? *(void **)(gui + GOG_LOADING_ROOT) : 0;
+    int ours = 0;
+    if (on & 0xff) {
+        __try { ours = loading_show(); } __except (1) { ours = 0; loading_failed = 1; x360_log("x360 loading: showing threw: PC's screen kept\r\n"); }
+        if (ours && pc) set_visible(pc, 0, 0);   /* PC's root under the 360's, hidden for its frame */
+        ((orig_fn)(void *)loading_tramp)(gui, edx, on);
+        return;
+    }
+    ((orig_fn)(void *)loading_tramp)(gui, edx, on);
+    __try {
+        if (loading_root) set_visible(loading_root, 0, 0);
+        if (pc) set_visible(pc, 0, 1);
+    } __except (1) { x360_log("x360 loading: hiding threw\r\n"); }
+}
+static void loading_hook_install(void) {
+    unsigned char *f = (unsigned char *)GOG_SHOW_LOADING;
+    unsigned long old;
+    unsigned i;
+    for (i = 0; i < sizeof loading_want; i++) if (f[i] != loading_want[i]) break;
+    if (i < sizeof loading_want || *(unsigned *)(f + sizeof loading_want) != GOG_SHOW_LOADING_HANDLER) {
+        x360_log("x360 loading: PC's loading function not as expected: PC's screen kept\r\n");
+        return;
+    }
+    for (i = 0; i < LOADING_MOVED; i++) loading_tramp[i] = f[i];
+    loading_tramp[LOADING_MOVED] = 0xe9;
+    *(int *)(loading_tramp + LOADING_MOVED + 1) = (int)(f + LOADING_MOVED) - (int)(loading_tramp + LOADING_MOVED + 5);
+    if (!VirtualProtect(loading_tramp, sizeof loading_tramp, 0x40, &old)) return;
+    if (!VirtualProtect(f, LOADING_MOVED, 0x40, &old)) return;
+    f[0] = 0xe9;
+    *(int *)(f + 1) = (int)(void *)loading_hook - (int)(f + 5);
+    for (i = 5; i < LOADING_MOVED; i++) f[i] = 0x90;
+    VirtualProtect(f, LOADING_MOVED, old, &old);
+    x360_log("x360 loading: PC's loading screen hooked (the 360's shown over it)\r\n");
 }
 
 /* A stop's text left by the last run (x360_stop.txt): the player did not see it (the game ended

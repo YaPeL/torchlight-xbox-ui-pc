@@ -4776,3 +4776,29 @@ when the converted folder is in the game's folder, and the proxy takes a relativ
 DLL's folder (`out_resolve`, in `read_config`). An absolute `out=` (an older ini, `C:\`, `Z:\`,
 `\\server`, `/`) is kept as it is. The log's `mode scheme, out "..."` line shows the resolved path.
 Tests: `OutResolveTest` (the function compiled on the host) and the installer's ini test.
+
+## 59. The 360's loading screen (2026-11-12)
+
+**[read, 360]** (the recomp agent) `loading.uilayout`, made by CGameUI's create-menus
+(`sub_823392E8`: the root at `+0x344`, `TipText` `+0x348`, `HOURGLASS` `+0x364`); shown and hidden
+by `sub_82338218(CGameUI*, bool)`. On show it draws a tip from GLOBALS' LOADINGTIPS
+(`sub_82391370`: uniform, every weight 1.0, a repeat of the last load's tip allowed). Its pump
+(`sub_82337D58`, called from the level load's steps) changes the tip after 6 s (another than the
+current one) and pulses the hourglass (a phase `+880` from 100.0, +1.0 per pump, never reset;
+alpha `sin(phase) * 0.5 + 0.5`); until the first pump the hourglass is opaque. One picture for
+every area. The ratings and Xbox LIVE Arcade images of the first boot are the console's: not
+ported.
+**[read, PC]** CGameUI `0x540ca0(bool)` (Steam `0x53c720`): on show, if its loading root (`+0x298`,
+`media/ui/loading.layout`) is not on the sheet (`+0x294`), it closes the menus (`0x540010`), adds
+it, puts a random tip of PC's in its `TipText` (`+0x29c`; `0x524d40`, `0x524d90`) and renders one
+frame; on hide it takes the root off. PC's load draws nothing else, so there is no pump.
+**[port]** `loading_hook` runs before PC's function (its first instructions from a copy, as the
+modal's hook): on show the 360's `loading.layout` (prefix `x360ld_`) is put up, scaled, with one of
+the 360's tips (`loadtip.N`, written by the converters, section 15's tips; uniform as the 360's)
+in its `TipText`, the fonts' spacing and colour markup set as for the dialogs, and PC's root
+hidden for PC's one frame; on hide both go back. With no `loadtip` in `x360_strings.txt` (an
+install older than the converters' change) or no layout, PC's screen stays. The hourglass stays
+opaque: the 360's first frame; PC has no pump to pulse it or change the tip.
+**[run]** GOG, the bench save loaded from the title (a copy of the converted folder with the 360's
+12 tips added, Steam UNCHANGED, everything put back): the 360's screen (its picture, Loading, the
+hourglass, a tip of the 360's) shown twice at the load, tips 2 and 8; the log names each.
