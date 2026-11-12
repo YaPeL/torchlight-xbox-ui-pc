@@ -13,7 +13,7 @@ keys and the addresses.
 --pc-pak PCPAK: the user's PC `Pak.zip`. The context tips (`media/GLOBALS.DAT.adm`, its
 CONTEXTTIPS: TIP_WELCOME, TIP_STASH, ...) of both games are written to OUT/x360_strings.txt as
 `tip.ID` (the 360's text, written for the pad) and `pctip.ID` (PC's), so that the proxy shows the
-360's text of the tip PC opens.
+360's text of the tip PC opens; the 360's loading tips (LOADINGTIPS) as `loadtip.1`, `loadtip.2`...
 
 --prompts playstation3|playstation4|playstation5|playstation|nintendo draws the pad prompts (a_button,
 left_bumper, start_button, the sticks, the d-pad, the help screen's controller...) with
@@ -556,6 +556,24 @@ def context_tips(raw):
     return out
 
 
+def loading_tips(raw):
+    """[text] of a GLOBALS.DAT.adm's LOADINGTIPS node, in order (one TIP property each): the tips the
+    360's loading screen draws from (the recomp agent's reading: sub_8231D850)."""
+    table, root = adm_tree(raw)
+    out = []
+
+    def walk(n):
+        name, props, children = n
+        if name == "LOADINGTIPS":
+            for key, kind, value in props:
+                if key == "TIP" and kind == 8 and value in table:
+                    out.append(table[value].replace("\r", " ").replace("\n", " "))
+        for c in children:
+            walk(c)
+    walk(root)
+    return out
+
+
 def globals_of(pak):
     with zipfile.ZipFile(pak) as z:
         for i in z.infolist():
@@ -621,6 +639,9 @@ def main():
         texts.update({f"tip.{k}": v for k, v in tips.items()})
         texts.update({f"pctip.{k}": v for k, v in pc_tips.items()})
         print(f"{len(tips)} tips of the 360's, {len(pc_tips)} of PC's, {len(set(tips) & set(pc_tips))} in both")
+        loads = loading_tips(globals_of(pak))
+        texts.update({f"loadtip.{i + 1}": v for i, v in enumerate(loads)})
+        print(f"{len(loads)} loading tips of the 360's")
     if texts:
         with open(os.path.join(dest, "x360_strings.txt"), "w", encoding="utf-8") as f:
             f.write("".join(f"{k}={v}\n" for k, v in sorted(texts.items())))

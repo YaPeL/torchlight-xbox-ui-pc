@@ -1434,6 +1434,14 @@ class ContextTipsTest(unittest.TestCase):
         self.assertEqual(convert_x360_ui.context_tips(raw), {"TIP_A": "Press A", "TIP_B": "Push B"})
 
 
+class LoadingTipsTest(unittest.TestCase):
+    def test_tips_in_order(self):
+        strings = {1: "GLOBALS", 2: "LOADINGTIPS", 3: "TIP", 4: "First", 5: "Second\r\nline", 6: "OTHER", 7: "CONTEXTTIPS"}
+        root = (1, [], [(7, [(3, 8, 4)], []), (2, [(3, 8, 5), (6, 8, 4), (3, 8, 4), (3, 1, 9), (3, 8, 99)], [])])
+        raw = synthetic_adm(strings, root)
+        self.assertEqual(convert_x360_ui.loading_tips(raw), ["Second  line", "First"])
+
+
 def two_section_pe(code, data, code_rva=0x1000, data_rva=0x9000):
     """A minimal PE32 with a .text and a .data section (no imports or exports)."""
     head = bytearray(0x200)
