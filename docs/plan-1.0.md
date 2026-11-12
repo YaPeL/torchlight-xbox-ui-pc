@@ -31,7 +31,7 @@ Every item follows the path the death and waypoint menus took (doc section 56):
 | --- | --- | --- | --- | --- |
 | 1 | Enchanting with a full bag | 1 | low | bug (PR #134) |
 | 2 | The quest reward's card width | 2-3 | low | limitation (stopped: cause not found) |
-| 3 | The loading screens | 3-5 | medium | **yes** |
+| 3 | The loading screens | 3-5 | medium | **yes** (PRs #135, #136) |
 | 4 | The pause menu | 4-6 | medium | **yes** (with 5) |
 | 5 | The main menu (the front end) | 8-12 | high | **yes** (with 4) |
 | 6 | The installer's check of the saves before changing the bag | 3-4 | medium | limitation |
@@ -114,20 +114,18 @@ Total: about 22-34 sessions before the owner's played runs.
   - The picture: one image (`set:Loading image:loading`), the same for every area.
   - The ratings and Xbox LIVE Arcade images show 3 s each at the first boot only: not ported (the
     console's).
+- **[read, PC, 2026-11-12]** PC's counterpart is CGameUI `0x540ca0(bool)` (Steam `0x53c720`): on
+  show it puts its loading root (`+0x298`) on the sheet, a tip of PC's in its `TipText`
+  (`+0x29c`) and renders one frame. PC's load draws nothing else: there is no pump.
 - **[port]**
-  - The converters (Python and C++, with a parity fixture) write the 360's loading tips as
-    `loadtip.N` keys in `x360_strings.txt`, as the context tips are now.
-  - The proxy shows the 360's `loading.layout` over PC's loading screen while PC loads (a level
-    change, a portal, the first load) and hides it when play starts; PC's own loading picture and
-    tip are hidden under it.
-  - The pulse and the tip's change follow PC's load steps: the place to hook is PC's own call that
-    redraws during a load (to find in GOG's executable: the counterpart of the 360's
-    `sub_82337D58`), with Steam's address.
-- **Risk:** PC draws during a load from its own loop; a window shown at the wrong moment can stay
-  over play, and a hook in the load path can stall it. The first step is a diagnosis run that
-  only logs the calls.
-- **[measured]** A recomp capture of a load (the picture, the tip's place, the hourglass) and one
-  at a tip change.
+  - PR #135: the converters (Python and C++, parity tested) write the 360's tips as `loadtip.N`.
+  - PR #136: a hook before PC's function puts the 360's `loading.layout` up with a uniform random
+    tip of the 360's (as `sub_82391370`) and hides PC's root for its one frame. Without the tips
+    or the layout, PC's screen stays.
+  - Not ported: the pulse and the 6 s tip change, which need a pump PC does not have (a hook in
+    PC's level load's steps would be a new mechanism: left for the owner to decide).
+- **[run, 2026-11-12]** GOG, the bench save's load: the 360's screen with a 360 tip.
+- **[measured]** Still to compare with a capture of the 360's loading screen.
 
 ### 4. The pause menu (size 4-6, risk medium) — 1.0 item, with 5
 
