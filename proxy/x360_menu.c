@@ -3142,6 +3142,7 @@ void x360_retire_act(void) {
 static void *ench_item;          /* the item the proxy's act enchants */
 static int ench_kept;            /* it fitted nowhere: out of every bag, to put back */
 static int ench_saves_were_held; /* x360_save_held before the hook held the saves */
+static int stop_asked;           /* (below) a stop was decided: its hold kept */
 static void *__fastcall ench_pickup_hook(void *inv, void *edx, void *item, int flag) {
     void *r = ((pickup_fn)GOG_PICKUP_EQUIPMENT)(inv, edx, item, flag);
     if (!r && ench_acting && item && item == ench_item && !ench_kept) {
@@ -3160,20 +3161,25 @@ static void ench_pickup_hook_install(void) {
     static int done;
     const unsigned calls[3] = {0x0057b62a, 0x0057c084, 0x0057c372};   /* not static: Steam's are relocated */
     unsigned long old;
-    int i;
+    int i, hooked = 0;
     if (done) return;
     done = 1;
     for (i = 0; i < 3; i++) {
         unsigned char *c = (unsigned char *)calls[i];
         if (c[0] != 0xe8 || (unsigned)(unsigned long)(c + 5) + *(unsigned *)(c + 1) != GOG_PICKUP_EQUIPMENT ||
             !VirtualProtect(c, 5, 0x40, &old)) {
-            x360_log("x360 enchanter: an act's pickup not as read: with the bag full PC drops the item there\r\n");
+            x360_log("x360 enchanter: an act's pickup not as read, left out (with the bag full PC drops the item there): mode ");
+            x360_log_num(i == 0 ? 0x15 : i == 1 ? 0x16 : 0x19);
+            x360_log("\r\n");
             continue;
         }
         *(int *)(c + 1) = (int)(void *)ench_pickup_hook - (int)(c + 5);
         VirtualProtect(c, 5, old, &old);
+        hooked++;
     }
-    x360_log("x360 enchanter: the act's pickups hooked (no drop with the bag full)\r\n");
+    x360_log("x360 enchanter: the act's pickups hooked (no drop with the bag full): ");
+    x360_log_num(hooked);
+    x360_log(" of 3\r\n");
 }
 
 /* A at the enchanter: the selected item into the hero's slot 14, PC's own enchanting there
@@ -3209,7 +3215,7 @@ static void enchant(void) {
     ench_item = 0;
     if (ench_kept) {   /* out of every bag (ench_pickup_hook): back to its place */
         if (!give_back(from, slot, item) && !give_back(bag, -1, item)) move_lost(item);   /* stops, saves held */
-        else { x360_save_held = ench_saves_were_held; x360_log("x360 enchanter: A: the item kept from PC's drop put back in its place\r\n"); }
+        else { x360_save_held = ench_saves_were_held || stop_asked; x360_log("x360 enchanter: A: the item kept from PC's drop put back in its place\r\n"); }
         move_done();
     }
     /* The 360 writes the result in the page, yellow, and the page stays open: the gem goblins' in
