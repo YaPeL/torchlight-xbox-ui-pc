@@ -4794,7 +4794,7 @@ it, puts a random tip of PC's in its `TipText` (`+0x29c`; `0x524d40`, `0x524d90`
 frame; on hide it takes the root off. PC's load draws nothing else, so there is no pump.
 **[port]** `loading_hook` runs before PC's function (its first instructions from a copy, as the
 modal's hook): on show the 360's `loading.layout` (prefix `x360ld_`) is put up, scaled, with one of
-the 360's tips (`loadtip.N`, written by the converters, section 15's tips; uniform as the 360's)
+the 360's tips (`loadtip.N`, written by the converters; uniform as the 360's)
 in its `TipText`, the fonts' spacing and colour markup set as for the dialogs, and PC's root
 hidden for PC's one frame; on hide both go back. With no `loadtip` in `x360_strings.txt` (an
 install older than the converters' change) or no layout, PC's screen stays. The hourglass stays
