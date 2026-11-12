@@ -216,8 +216,12 @@ class ConvertCppTest(unittest.TestCase):
         files["media/UI/modalmenu.uilayout"] = files["media/UI/modalmenu.uilayout"].encode("utf-16")
         tips = {1: "CONTEXTTIPS", 2: "TIP_WELCOME", 3: "Hello\r\nthere", 4: "TIP_STASH", 5: "Stash tip", 6: "ROOT",
                 7: "LOADINGTIPS", 8: "TIP", 9: "Loading one", 10: "Two\r\nlines"}
-        files["media/GLOBALS.DAT.adm"] = _adm(tips, (6, [], [(1, [(2, 8, 3), (4, 8, 5), (99, 8, 3)], []),
-                                                             (7, [(8, 8, 9), (2, 8, 5), (8, 8, 10), (8, 8, 99)], [])]))
+        tips.update({20 + i: f"Filler {i}" for i in range(9)})
+        # Eleven tips over two LOADINGTIPS nodes (loadtip.10 and .11 sort before .2), a TIP of
+        # another kind and an id missing from the table left out.
+        files["media/GLOBALS.DAT.adm"] = _adm(tips, (6, [], [
+            (1, [(2, 8, 3), (4, 8, 5), (99, 8, 3)], []),
+            (7, [(8, 8, 9), (2, 8, 5), (8, 8, 10), (8, 8, 99), (8, 1, 9)], [(7, [(8, 8, 20 + i) for i in range(9)], [])])]))
         unit = lambda name, desc: _adm({1: "NAME", 2: "DESCRIPTION", 3: name, 4: desc, 5: "U"}, (5, [(1, 8, 3), (2, 8, 4)], []))
         files["media/units/items/a.adm"] = unit("Sword", "The 360's line")
         files["media/units/items/b.adm"] = unit("Same", "Same text")
@@ -270,8 +274,9 @@ class ConvertCppTest(unittest.TestCase):
             with open(os.path.join(root, "py-nintendo", "x360_strings.txt"), encoding="utf-8") as f:
                 strings = f.read()
             self.assertIn("tip.TIP_WELCOME=Hello  there", strings)
-            self.assertIn("loadtip.1=Loading one\nloadtip.2=Two  lines\n", strings)
-            self.assertNotIn("loadtip.3", strings)
+            self.assertIn("loadtip.1=Loading one\nloadtip.10=Filler 7\nloadtip.11=Filler 8\nloadtip.2=Two  lines\n"
+                          "loadtip.3=Filler 0\n", strings)
+            self.assertNotIn("loadtip.12", strings)
             self.assertIn("desc.Sword=~The 360's line", strings)
             with open(os.path.join(root, "cpp-xbox", "media", "ui", "x360", "skillsmenu_xenon.layout"), encoding="utf-8") as f:
                 skills = f.read()
